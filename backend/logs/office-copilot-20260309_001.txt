@@ -1,0 +1,448 @@
+2026-03-09 10:39:10.394 +08:00 [INF] Office Copilot Server starting on []
+2026-03-09 10:39:10.423 +08:00 [DBG] Hosting starting
+2026-03-09 10:39:10.440 +08:00 [DBG] Middleware configuration started with options: {AllowedHosts = *, AllowEmptyHosts = True, IncludeFailureMessage = True}
+2026-03-09 10:39:10.442 +08:00 [DBG] Wildcard detected, all requests with hosts will be allowed.
+2026-03-09 10:39:10.452 +08:00 [ERR] Hosting failed to start
+System.IO.IOException: Failed to bind to address http://127.0.0.1:8765: address already in use.
+ ---> Microsoft.AspNetCore.Connections.AddressInUseException: 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+ ---> System.Net.Sockets.SocketException (10048): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+2026-03-09 10:39:10.469 +08:00 [FTL] Application terminated unexpectedly
+System.IO.IOException: Failed to bind to address http://127.0.0.1:8765: address already in use.
+ ---> Microsoft.AspNetCore.Connections.AddressInUseException: 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+ ---> System.Net.Sockets.SocketException (10048): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+   at Microsoft.Extensions.Hosting.Internal.Host.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.Run(IHost host)
+   at Program.<Main>$(String[] args) in D:\CodeBase\_Taskly\backend\Program.cs:line 142
+2026-03-09 14:42:40.855 +08:00 [INF] Office Copilot Server starting on []
+2026-03-09 14:42:40.879 +08:00 [DBG] Hosting starting
+2026-03-09 14:42:40.896 +08:00 [DBG] Middleware configuration started with options: {AllowedHosts = *, AllowEmptyHosts = True, IncludeFailureMessage = True}
+2026-03-09 14:42:40.897 +08:00 [DBG] Wildcard detected, all requests with hosts will be allowed.
+2026-03-09 14:42:40.906 +08:00 [INF] Now listening on: http://localhost:8765
+2026-03-09 14:42:40.906 +08:00 [DBG] Loaded hosting startup assembly OfficeCopilot.Server
+2026-03-09 14:42:40.906 +08:00 [INF] Application started. Press Ctrl+C to shut down.
+2026-03-09 14:42:40.906 +08:00 [INF] Hosting environment: Development
+2026-03-09 14:42:40.906 +08:00 [INF] Content root path: D:\CodeBase\_Taskly\backend
+2026-03-09 14:42:40.906 +08:00 [DBG] Hosting started
+2026-03-09 14:42:56.835 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" accepted.
+2026-03-09 14:42:56.835 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" started.
+2026-03-09 14:42:56.853 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=0be2c2698e2e&token=office-copilot-dev-token - null null
+2026-03-09 14:42:56.877 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-09 14:42:56.877 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-09 14:42:56.879 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-09 14:42:56.879 +08:00 [INF] CORS policy execution successful.
+2026-03-09 14:42:56.880 +08:00 [INF] Executing endpoint '/ws'
+2026-03-09 14:42:56.889 +08:00 [INF] Loaded user config from D:\CodeBase\_Taskly\backend\bin\Debug\net10.0\user-config.json
+2026-03-09 14:42:59.620 +08:00 [INF] Kernel rebuilt. Model: kimi-k2-turbo-preview, Plugins: 6, UserSkills: 1, MCPs: 0
+2026-03-09 14:42:59.629 +08:00 [INF] Session 0be2c2698e2e connected
+2026-03-09 14:42:59.653 +08:00 [INF] [0be2c2698e2e] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-09 14:42:59.660 +08:00 [INF] [0be2c2698e2e] Mode changed to: workspace
+2026-03-09 14:42:59.661 +08:00 [INF] [0be2c2698e2e] Mode updated to workspace in ChatService
+2026-03-09 14:43:33.340 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" accepted.
+2026-03-09 14:43:33.341 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" started.
+2026-03-09 14:43:33.342 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/config - null null
+2026-03-09 14:43:33.342 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-09 14:43:33.342 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:33.343 +08:00 [INF] Executing endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:33.344 +08:00 [INF] Writing value of type 'AppConfig' as Json.
+2026-03-09 14:43:33.347 +08:00 [INF] Executed endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:33.347 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:33.347 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/config - 200 null application/json; charset=utf-8 5.6566ms
+2026-03-09 14:43:33.352 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 14:43:33.353 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 14:43:33.353 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:33.354 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:33.358 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:33.359 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:33.359 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:33.360 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 7.414ms
+2026-03-09 14:43:35.330 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 14:43:35.330 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 14:43:35.330 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:35.330 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:35.335 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:35.336 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:35.336 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:35.337 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 7.0293ms
+2026-03-09 14:43:36.177 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 14:43:36.178 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 14:43:36.178 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:36.178 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:36.178 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:36.178 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:36.178 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:36.179 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 1.1849ms
+2026-03-09 14:43:45.593 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" received FIN.
+2026-03-09 14:43:45.594 +08:00 [INF] Session 0be2c2698e2e disconnected
+2026-03-09 14:43:45.594 +08:00 [INF] Executed endpoint '/ws'
+2026-03-09 14:43:45.596 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 14:43:45.596 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" disconnecting.
+2026-03-09 14:43:45.596 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=0be2c2698e2e&token=office-copilot-dev-token - 101 null null 48744.8169ms
+2026-03-09 14:43:45.598 +08:00 [DBG] Connection id "0HNJTKSCIJ03T" stopped.
+2026-03-09 14:43:50.392 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" accepted.
+2026-03-09 14:43:50.392 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" started.
+2026-03-09 14:43:50.393 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=5f09a4fe3ea6&token=office-copilot-dev-token - null null
+2026-03-09 14:43:50.393 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-09 14:43:50.393 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-09 14:43:50.393 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-09 14:43:50.393 +08:00 [INF] CORS policy execution successful.
+2026-03-09 14:43:50.393 +08:00 [INF] Executing endpoint '/ws'
+2026-03-09 14:43:50.394 +08:00 [INF] Session 5f09a4fe3ea6 connected
+2026-03-09 14:43:50.434 +08:00 [INF] [5f09a4fe3ea6] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-09 14:43:50.434 +08:00 [INF] [5f09a4fe3ea6] Mode changed to: workspace
+2026-03-09 14:43:50.434 +08:00 [INF] [5f09a4fe3ea6] Mode updated to workspace in ChatService
+2026-03-09 14:43:52.124 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/config - null null
+2026-03-09 14:43:52.124 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-09 14:43:52.124 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:52.124 +08:00 [INF] Executing endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:52.124 +08:00 [INF] Writing value of type 'AppConfig' as Json.
+2026-03-09 14:43:52.125 +08:00 [INF] Executed endpoint 'HTTP: GET /api/config'
+2026-03-09 14:43:52.125 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:52.125 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/config - 200 null application/json; charset=utf-8 0.5784ms
+2026-03-09 14:43:52.129 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 14:43:52.129 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 14:43:52.129 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:52.129 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:52.129 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:52.129 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:52.129 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:52.129 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.6627ms
+2026-03-09 14:43:55.863 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 14:43:55.863 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 14:43:55.863 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:55.863 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:55.864 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:55.864 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:43:55.864 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:55.864 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.3165ms
+2026-03-09 14:43:56.621 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 14:43:56.621 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 14:43:56.621 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:56.621 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:56.621 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:43:56.621 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 14:43:56.621 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" completed keep alive response.
+2026-03-09 14:43:56.621 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.5897ms
+2026-03-09 14:46:06.932 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" disconnecting.
+2026-03-09 14:46:06.933 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" stopped.
+2026-03-09 14:46:06.933 +08:00 [DBG] Connection id "0HNJTKSCIJ03U" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 14:56:15.164 +08:00 [DBG] Connection id "0HNJTKSCIJ040" accepted.
+2026-03-09 14:56:15.164 +08:00 [DBG] Connection id "0HNJTKSCIJ040" started.
+2026-03-09 14:56:15.164 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 14:56:15.164 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 14:56:15.164 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:15.165 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:15.165 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:56:15.165 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:15.165 +08:00 [DBG] Connection id "0HNJTKSCIJ040" completed keep alive response.
+2026-03-09 14:56:15.165 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 0.8193ms
+2026-03-09 14:56:16.693 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 14:56:16.694 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 14:56:16.694 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:16.694 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:16.694 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 14:56:16.695 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 14:56:16.695 +08:00 [DBG] Connection id "0HNJTKSCIJ040" completed keep alive response.
+2026-03-09 14:56:16.695 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.4211ms
+2026-03-09 14:58:27.444 +08:00 [DBG] Connection id "0HNJTKSCIJ040" disconnecting.
+2026-03-09 14:58:27.444 +08:00 [DBG] Connection id "0HNJTKSCIJ040" stopped.
+2026-03-09 14:58:27.444 +08:00 [DBG] Connection id "0HNJTKSCIJ040" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 15:08:28.352 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" received FIN.
+2026-03-09 15:08:28.353 +08:00 [INF] Session 5f09a4fe3ea6 disconnected
+2026-03-09 15:08:28.353 +08:00 [INF] Executed endpoint '/ws'
+2026-03-09 15:08:28.353 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 15:08:28.353 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" disconnecting.
+2026-03-09 15:08:28.353 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=5f09a4fe3ea6&token=office-copilot-dev-token - 101 null null 1477960.6657ms
+2026-03-09 15:08:28.353 +08:00 [DBG] Connection id "0HNJTKSCIJ03V" stopped.
+2026-03-09 15:17:59.623 +08:00 [INF] Session 5f09a4fe3ea6 expired and removed
+2026-03-09 15:17:59.623 +08:00 [INF] Session 0be2c2698e2e expired and removed
+2026-03-09 15:21:17.754 +08:00 [INF] Office Copilot Server starting on []
+2026-03-09 15:21:17.779 +08:00 [DBG] Hosting starting
+2026-03-09 15:21:17.797 +08:00 [DBG] Middleware configuration started with options: {AllowedHosts = *, AllowEmptyHosts = True, IncludeFailureMessage = True}
+2026-03-09 15:21:17.798 +08:00 [DBG] Wildcard detected, all requests with hosts will be allowed.
+2026-03-09 15:21:17.807 +08:00 [INF] Now listening on: http://localhost:8765
+2026-03-09 15:21:17.807 +08:00 [DBG] Loaded hosting startup assembly OfficeCopilot.Server
+2026-03-09 15:21:17.807 +08:00 [INF] Application started. Press Ctrl+C to shut down.
+2026-03-09 15:21:17.807 +08:00 [INF] Hosting environment: Development
+2026-03-09 15:21:17.807 +08:00 [INF] Content root path: D:\CodeBase\_Taskly\backend
+2026-03-09 15:21:17.807 +08:00 [DBG] Hosting started
+2026-03-09 15:49:00.298 +08:00 [DBG] Connection id "0HNJTM19P41KQ" accepted.
+2026-03-09 15:49:00.300 +08:00 [DBG] Connection id "0HNJTM19P41KQ" started.
+2026-03-09 15:49:00.326 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=de4e7d4af511&token=office-copilot-dev-token - null null
+2026-03-09 15:49:00.387 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-09 15:49:00.388 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-09 15:49:00.390 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-09 15:49:00.391 +08:00 [INF] CORS policy execution successful.
+2026-03-09 15:49:00.392 +08:00 [INF] Executing endpoint '/ws'
+2026-03-09 15:49:00.410 +08:00 [INF] Loaded user config from D:\CodeBase\_Taskly\backend\bin\Debug\net10.0\user-config.json
+2026-03-09 15:49:00.494 +08:00 [INF] Kernel rebuilt. Model: kimi-k2-turbo-preview, Plugins: 6, UserSkills: 1, MCPs: 0
+2026-03-09 15:49:00.507 +08:00 [INF] Session de4e7d4af511 connected
+2026-03-09 15:49:00.520 +08:00 [INF] [de4e7d4af511] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-09 15:49:00.532 +08:00 [INF] [de4e7d4af511] Mode changed to: workspace
+2026-03-09 15:49:00.535 +08:00 [INF] [de4e7d4af511] Mode updated to workspace in ChatService
+2026-03-09 15:49:23.345 +08:00 [INF] [de4e7d4af511] WS Recv type=text len=60 preview={"type":"text","content":"帮我总结一下当前页面内容 并且生成一个word文档 放到下载目录"}
+2026-03-09 15:49:23.348 +08:00 [INF] [de4e7d4af511] Chat stream start, promptLen=32
+2026-03-09 15:49:23.363 +08:00 [DBG] [de4e7d4af511] SessionContext.SetSessionId(de4e7d4af511)
+2026-03-09 15:49:26.493 +08:00 [DBG] Connection id "0HNJTM19P41KR" accepted.
+2026-03-09 15:49:26.493 +08:00 [DBG] Connection id "0HNJTM19P41KR" started.
+2026-03-09 15:49:26.494 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/config - null null
+2026-03-09 15:49:26.495 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-09 15:49:26.495 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/config'
+2026-03-09 15:49:26.496 +08:00 [INF] Executing endpoint 'HTTP: GET /api/config'
+2026-03-09 15:49:26.497 +08:00 [INF] Writing value of type 'AppConfig' as Json.
+2026-03-09 15:49:26.499 +08:00 [INF] Executed endpoint 'HTTP: GET /api/config'
+2026-03-09 15:49:26.499 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:26.500 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/config - 200 null application/json; charset=utf-8 5.4724ms
+2026-03-09 15:49:26.511 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 15:49:26.513 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 15:49:26.513 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:26.514 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:26.515 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:26.516 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:26.516 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:26.516 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 5.536ms
+2026-03-09 15:49:27.392 +08:00 [INF] Invoking tool: run_page_script
+2026-03-09 15:49:27.393 +08:00 [DBG] [Filter] Injected sessionId into run_page_script
+2026-03-09 15:49:27.404 +08:00 [INF] [Browser] run_page_script scriptId=get_visible_text sessionId=de4e7d4af511
+2026-03-09 15:49:27.407 +08:00 [DBG] [RPC] Register request id=08e1f1af91a444e6b6b9fb97827940de pending=1
+2026-03-09 15:49:27.414 +08:00 [INF] [de4e7d4af511] WS Recv type=rpc_response len=251 preview={"type":"rpc_response","id":"08e1f1af91a444e6b6b9fb97827940de","result":null,"error":"Cannot access contents of url \"chrome-extension://phphpajjpegjhfocelfefiejekeakifk/options.html\". Extension mani...
+2026-03-09 15:49:27.416 +08:00 [DBG] [de4e7d4af511] RPC response id=08e1f1af91a444e6b6b9fb97827940de hasError=true
+2026-03-09 15:49:27.416 +08:00 [DBG] [RPC] Response id=08e1f1af91a444e6b6b9fb97827940de hasError=true
+2026-03-09 15:49:27.884 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:49:27.884 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:49:27.884 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:27.885 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:27.887 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:27.887 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:27.887 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:27.888 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 3.2733ms
+2026-03-09 15:49:28.603 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 15:49:28.604 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 15:49:28.604 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:28.604 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:28.604 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:28.604 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:28.604 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:28.604 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.9857ms
+2026-03-09 15:49:29.286 +08:00 [INF] Invoking tool: capture_full_page
+2026-03-09 15:49:29.286 +08:00 [DBG] [Filter] Injected sessionId into capture_full_page
+2026-03-09 15:49:29.300 +08:00 [INF] [Browser] capture_full_page sessionId=de4e7d4af511
+2026-03-09 15:49:29.300 +08:00 [DBG] [RPC] Register request id=ac964aadb3b549fd9cc8fefc8ce2aa2b pending=1
+2026-03-09 15:49:29.305 +08:00 [INF] [de4e7d4af511] WS Recv type=rpc_response len=251 preview={"type":"rpc_response","id":"ac964aadb3b549fd9cc8fefc8ce2aa2b","result":null,"error":"Cannot access contents of url \"chrome-extension://phphpajjpegjhfocelfefiejekeakifk/options.html\". Extension mani...
+2026-03-09 15:49:29.306 +08:00 [DBG] [de4e7d4af511] RPC response id=ac964aadb3b549fd9cc8fefc8ce2aa2b hasError=true
+2026-03-09 15:49:29.306 +08:00 [DBG] [RPC] Response id=ac964aadb3b549fd9cc8fefc8ce2aa2b hasError=true
+2026-03-09 15:49:29.306 +08:00 [WRN] [Browser] capture_full_page failed
+System.Exception: Frontend RPC Error: Cannot access contents of url "chrome-extension://phphpajjpegjhfocelfefiejekeakifk/options.html". Extension manifest must request permission to access this host.
+   at OfficeCopilot.Server.Plugins.BrowserPlugin.CaptureFullPageAsync(KernelArguments arguments) in D:\CodeBase\_Taskly\backend\Plugins\BrowserPlugin.cs:line 177
+2026-03-09 15:49:31.574 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:49:31.575 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:49:31.575 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:31.575 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:31.575 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:31.576 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:31.576 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:31.576 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.2963ms
+2026-03-09 15:49:34.033 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:49:34.033 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:49:34.033 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:34.033 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:34.034 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:34.034 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:34.034 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:34.035 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.4512ms
+2026-03-09 15:49:34.097 +08:00 [INF] Invoking tool: write_word_document
+2026-03-09 15:49:34.097 +08:00 [DBG] [Filter] Injected sessionId into write_word_document
+2026-03-09 15:49:34.104 +08:00 [INF] [Word] write_word_document path=C:\Users\torsi\Downloads\页面内容总结.docx
+2026-03-09 15:49:34.261 +08:00 [INF] [Word] write_word_document success: C:\Users\torsi\Downloads\页面内容总结.docx
+2026-03-09 15:49:34.956 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 15:49:34.956 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 15:49:34.956 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:34.956 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:34.956 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:34.956 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:34.956 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:34.956 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.5551ms
+2026-03-09 15:49:37.143 +08:00 [INF] [de4e7d4af511] Turn completed, history=9 turns
+2026-03-09 15:49:37.143 +08:00 [DBG] [de4e7d4af511] SessionContext cleared
+2026-03-09 15:49:37.143 +08:00 [INF] [de4e7d4af511] Chat stream end
+2026-03-09 15:49:58.274 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:49:58.274 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:49:58.274 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:58.274 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:58.275 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:58.275 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:49:58.275 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:58.275 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.4583ms
+2026-03-09 15:49:58.969 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 15:49:58.969 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 15:49:58.969 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:58.969 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:58.970 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:49:58.970 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:49:58.970 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:49:58.970 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.5049ms
+2026-03-09 15:50:40.934 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:50:40.934 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:50:40.934 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:40.934 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:40.935 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:50:40.935 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:40.935 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:50:40.935 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.3921ms
+2026-03-09 15:50:49.272 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:50:49.272 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:50:49.272 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:49.272 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:49.273 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:50:49.273 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:49.273 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:50:49.273 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.3885ms
+2026-03-09 15:50:49.745 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 15:50:49.745 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 15:50:49.745 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:50:49.745 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:50:49.745 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:50:49.745 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 15:50:49.745 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:50:49.745 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.6283ms
+2026-03-09 15:50:55.039 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 15:50:55.039 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 15:50:55.040 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:55.040 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:55.040 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 15:50:55.040 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 15:50:55.040 +08:00 [DBG] Connection id "0HNJTM19P41KR" completed keep alive response.
+2026-03-09 15:50:55.040 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 0.9252ms
+2026-03-09 15:51:07.618 +08:00 [DBG] Connection id "0HNJTM19P41KQ" received FIN.
+2026-03-09 15:51:07.629 +08:00 [DBG] Connection id "0HNJTM19P41KQ" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 15:51:07.629 +08:00 [DBG] Connection id "0HNJTM19P41KQ" disconnecting.
+2026-03-09 15:51:07.630 +08:00 [INF] Session de4e7d4af511 disconnected
+2026-03-09 15:51:07.631 +08:00 [INF] Executed endpoint '/ws'
+2026-03-09 15:51:07.632 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=de4e7d4af511&token=office-copilot-dev-token - 101 null null 127308.7954ms
+2026-03-09 15:51:07.636 +08:00 [DBG] Connection id "0HNJTM19P41KQ" stopped.
+2026-03-09 15:51:09.508 +08:00 [DBG] Connection id "0HNJTM19P41KS" accepted.
+2026-03-09 15:51:09.509 +08:00 [DBG] Connection id "0HNJTM19P41KS" started.
+2026-03-09 15:51:09.509 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=12b7fa0869b9&token=office-copilot-dev-token - null null
+2026-03-09 15:51:09.509 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-09 15:51:09.509 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-09 15:51:09.509 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-09 15:51:09.509 +08:00 [INF] CORS policy execution successful.
+2026-03-09 15:51:09.509 +08:00 [INF] Executing endpoint '/ws'
+2026-03-09 15:51:09.509 +08:00 [INF] Session 12b7fa0869b9 connected
+2026-03-09 15:51:09.514 +08:00 [INF] [12b7fa0869b9] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-09 15:51:09.514 +08:00 [INF] [12b7fa0869b9] Mode changed to: workspace
+2026-03-09 15:51:09.514 +08:00 [INF] [12b7fa0869b9] Mode updated to workspace in ChatService
+2026-03-09 15:51:42.022 +08:00 [DBG] Connection id "0HNJTM19P41KS" received FIN.
+2026-03-09 15:51:42.022 +08:00 [INF] Session 12b7fa0869b9 disconnected
+2026-03-09 15:51:42.022 +08:00 [INF] Executed endpoint '/ws'
+2026-03-09 15:51:42.022 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=12b7fa0869b9&token=office-copilot-dev-token - 101 null null 32513.1893ms
+2026-03-09 15:51:42.023 +08:00 [DBG] Connection id "0HNJTM19P41KS" disconnecting.
+2026-03-09 15:51:42.023 +08:00 [DBG] Connection id "0HNJTM19P41KS" stopped.
+2026-03-09 15:51:42.026 +08:00 [DBG] Connection id "0HNJTM19P41KS" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 15:51:43.929 +08:00 [DBG] Connection id "0HNJTM19P41KT" accepted.
+2026-03-09 15:51:43.929 +08:00 [DBG] Connection id "0HNJTM19P41KT" started.
+2026-03-09 15:51:43.929 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=212afe8d9f13&token=office-copilot-dev-token - null null
+2026-03-09 15:51:43.929 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-09 15:51:43.929 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-09 15:51:43.929 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-09 15:51:43.929 +08:00 [INF] CORS policy execution successful.
+2026-03-09 15:51:43.929 +08:00 [INF] Executing endpoint '/ws'
+2026-03-09 15:51:43.930 +08:00 [INF] Session 212afe8d9f13 connected
+2026-03-09 15:51:43.934 +08:00 [INF] [212afe8d9f13] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-09 15:51:43.935 +08:00 [INF] [212afe8d9f13] Mode changed to: workspace
+2026-03-09 15:51:43.935 +08:00 [INF] [212afe8d9f13] Mode updated to workspace in ChatService
+2026-03-09 15:53:06.830 +08:00 [DBG] Connection id "0HNJTM19P41KR" disconnecting.
+2026-03-09 15:53:06.831 +08:00 [DBG] Connection id "0HNJTM19P41KR" stopped.
+2026-03-09 15:53:06.832 +08:00 [DBG] Connection id "0HNJTM19P41KR" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 15:53:39.372 +08:00 [DBG] Connection id "0HNJTM19P41KT" received FIN.
+2026-03-09 15:53:39.372 +08:00 [INF] Session 212afe8d9f13 disconnected
+2026-03-09 15:53:39.372 +08:00 [INF] Executed endpoint '/ws'
+2026-03-09 15:53:39.372 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=212afe8d9f13&token=office-copilot-dev-token - 101 null null 115443.3234ms
+2026-03-09 15:53:39.372 +08:00 [DBG] Connection id "0HNJTM19P41KT" disconnecting.
+2026-03-09 15:53:39.372 +08:00 [DBG] Connection id "0HNJTM19P41KT" stopped.
+2026-03-09 15:53:39.373 +08:00 [DBG] Connection id "0HNJTM19P41KT" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-09 16:14:18.356 +08:00 [DBG] Connection id "0HNJTM19P41KU" accepted.
+2026-03-09 16:14:18.358 +08:00 [DBG] Connection id "0HNJTM19P41KU" started.
+2026-03-09 16:14:18.358 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 16:14:18.358 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 16:14:18.358 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:18.358 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:18.359 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 16:14:18.359 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:18.359 +08:00 [DBG] Connection id "0HNJTM19P41KU" completed keep alive response.
+2026-03-09 16:14:18.359 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.7488ms
+2026-03-09 16:14:19.403 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 16:14:19.403 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 16:14:19.403 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:19.403 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:19.405 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 16:14:19.405 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:19.405 +08:00 [DBG] Connection id "0HNJTM19P41KU" completed keep alive response.
+2026-03-09 16:14:19.405 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 2.0749ms
+2026-03-09 16:14:32.054 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 16:14:32.054 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 16:14:32.054 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:32.055 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:32.055 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 16:14:32.056 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:32.056 +08:00 [DBG] Connection id "0HNJTM19P41KU" completed keep alive response.
+2026-03-09 16:14:32.056 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.5858ms
+2026-03-09 16:14:32.587 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-09 16:14:32.587 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-09 16:14:32.587 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:32.587 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:32.587 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 16:14:32.587 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-09 16:14:32.588 +08:00 [DBG] Connection id "0HNJTM19P41KU" completed keep alive response.
+2026-03-09 16:14:32.588 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.8056ms
+2026-03-09 16:14:33.292 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/skills - null null
+2026-03-09 16:14:33.292 +08:00 [DBG] 1 candidate(s) found for the request path '/api/skills'
+2026-03-09 16:14:33.292 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:33.292 +08:00 [INF] Executing endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:33.293 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-09 16:14:33.294 +08:00 [INF] Executed endpoint 'HTTP: GET /api/skills'
+2026-03-09 16:14:33.294 +08:00 [DBG] Connection id "0HNJTM19P41KU" completed keep alive response.
+2026-03-09 16:14:33.294 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/skills - 200 null application/json; charset=utf-8 1.8765ms

@@ -1,0 +1,202 @@
+2026-03-10 15:04:59.578 +08:00 [INF] Office Copilot Server starting on []
+2026-03-10 15:04:59.608 +08:00 [DBG] Hosting starting
+2026-03-10 15:04:59.624 +08:00 [DBG] Middleware configuration started with options: {AllowedHosts = *, AllowEmptyHosts = True, IncludeFailureMessage = True}
+2026-03-10 15:04:59.626 +08:00 [DBG] Wildcard detected, all requests with hosts will be allowed.
+2026-03-10 15:04:59.634 +08:00 [ERR] Hosting failed to start
+System.IO.IOException: Failed to bind to address http://127.0.0.1:8765: address already in use.
+ ---> Microsoft.AspNetCore.Connections.AddressInUseException: 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+ ---> System.Net.Sockets.SocketException (10048): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+2026-03-10 15:04:59.648 +08:00 [FTL] Application terminated unexpectedly
+System.IO.IOException: Failed to bind to address http://127.0.0.1:8765: address already in use.
+ ---> Microsoft.AspNetCore.Connections.AddressInUseException: 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+ ---> System.Net.Sockets.SocketException (10048): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+   at Microsoft.Extensions.Hosting.Internal.Host.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+   at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.Run(IHost host)
+   at Program.<Main>$(String[] args) in D:\CodeBase\_Taskly\backend\Program.cs:line 144
+2026-03-10 15:14:41.239 +08:00 [INF] Office Copilot Server starting on []
+2026-03-10 15:14:41.267 +08:00 [DBG] Hosting starting
+2026-03-10 15:14:41.285 +08:00 [DBG] Middleware configuration started with options: {AllowedHosts = *, AllowEmptyHosts = True, IncludeFailureMessage = True}
+2026-03-10 15:14:41.286 +08:00 [DBG] Wildcard detected, all requests with hosts will be allowed.
+2026-03-10 15:14:41.295 +08:00 [INF] Now listening on: http://localhost:8765
+2026-03-10 15:14:41.296 +08:00 [DBG] Loaded hosting startup assembly OfficeCopilot.Server
+2026-03-10 15:14:41.296 +08:00 [INF] Application started. Press Ctrl+C to shut down.
+2026-03-10 15:14:41.296 +08:00 [INF] Hosting environment: Development
+2026-03-10 15:14:41.296 +08:00 [INF] Content root path: D:\CodeBase\_Taskly\backend
+2026-03-10 15:14:41.296 +08:00 [DBG] Hosting started
+2026-03-10 15:15:20.290 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" accepted.
+2026-03-10 15:15:20.291 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" started.
+2026-03-10 15:15:20.326 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ws?sessionId=f4ca20f1992a&token=office-copilot-dev-token - null null
+2026-03-10 15:15:20.378 +08:00 [DBG] 1 candidate(s) found for the request path '/ws'
+2026-03-10 15:15:20.379 +08:00 [DBG] Request matched endpoint '/ws'
+2026-03-10 15:15:20.383 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-10 15:15:20.383 +08:00 [INF] CORS policy execution successful.
+2026-03-10 15:15:20.385 +08:00 [INF] Executing endpoint '/ws'
+2026-03-10 15:15:20.407 +08:00 [INF] Loaded user config from D:\CodeBase\_Taskly\backend\bin\Debug\net10.0\user-config.json
+2026-03-10 15:15:20.515 +08:00 [INF] Kernel rebuilt. Model: gpt-4o-mini, Plugins: 6, UserSkills: 1, MCPs: 0
+2026-03-10 15:15:20.533 +08:00 [INF] Session f4ca20f1992a connected
+2026-03-10 15:15:20.549 +08:00 [INF] [f4ca20f1992a] WS Recv type=mode_change len=44 preview={"type":"mode_change","content":"workspace"}
+2026-03-10 15:15:20.566 +08:00 [INF] [f4ca20f1992a] Mode changed to: workspace
+2026-03-10 15:15:20.569 +08:00 [INF] [f4ca20f1992a] Mode updated to workspace in ChatService
+2026-03-10 15:15:30.556 +08:00 [INF] [f4ca20f1992a] WS Recv type=text len=40 preview={"type":"text","content":"你现在都有哪些MCP工具"}
+2026-03-10 15:15:30.559 +08:00 [INF] [f4ca20f1992a] Chat stream start, promptLen=12
+2026-03-10 15:15:30.583 +08:00 [DBG] [f4ca20f1992a] SessionContext.SetSessionId(f4ca20f1992a)
+2026-03-10 15:15:32.430 +08:00 [ERR] [f4ca20f1992a] Chat stream error
+System.ClientModel.ClientResultException: HTTP 401 (invalid_request_error: )
+
+You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.
+   at OpenAI.ClientPipelineExtensions.ProcessMessageAsync(ClientPipeline pipeline, PipelineMessage message, RequestOptions options)
+   at OpenAI.Chat.ChatClient.CompleteChatAsync(BinaryContent content, RequestOptions options)
+   at OpenAI.Chat.ChatClient.<>c__DisplayClass19_0.<<CompleteChatStreamingAsync>b__0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at OpenAI.AsyncSseUpdateCollection`1.GetRawPagesAsync()+MoveNext()
+   at OpenAI.AsyncSseUpdateCollection`1.GetRawPagesAsync()+System.Threading.Tasks.Sources.IValueTaskSource<System.Boolean>.GetResult()
+   at System.ClientModel.AsyncCollectionResult`1.GetAsyncEnumerator(CancellationToken cancellationToken)+MoveNext()
+   at System.ClientModel.AsyncCollectionResult`1.GetAsyncEnumerator(CancellationToken cancellationToken)+MoveNext()
+   at System.ClientModel.AsyncCollectionResult`1.GetAsyncEnumerator(CancellationToken cancellationToken)+System.Threading.Tasks.Sources.IValueTaskSource<System.Boolean>.GetResult()
+   at Microsoft.SemanticKernel.Connectors.OpenAI.ClientCore.GetStreamingChatMessageContentsAsync(String targetModel, ChatHistory chatHistory, PromptExecutionSettings executionSettings, Kernel kernel, CancellationToken cancellationToken)+MoveNext()
+   at Microsoft.SemanticKernel.Connectors.OpenAI.ClientCore.GetStreamingChatMessageContentsAsync(String targetModel, ChatHistory chatHistory, PromptExecutionSettings executionSettings, Kernel kernel, CancellationToken cancellationToken)+MoveNext()
+   at Microsoft.SemanticKernel.Connectors.OpenAI.ClientCore.GetStreamingChatMessageContentsAsync(String targetModel, ChatHistory chatHistory, PromptExecutionSettings executionSettings, Kernel kernel, CancellationToken cancellationToken)+System.Threading.Tasks.Sources.IValueTaskSource<System.Boolean>.GetResult()
+   at OfficeCopilot.Server.ChatService.StreamChatAsync(String sessionId, String userMessage, CancellationToken ct)+MoveNext() in D:\CodeBase\_Taskly\backend\ChatService.cs:line 235
+   at OfficeCopilot.Server.ChatService.StreamChatAsync(String sessionId, String userMessage, CancellationToken ct)+MoveNext() in D:\CodeBase\_Taskly\backend\ChatService.cs:line 235
+   at OfficeCopilot.Server.ChatService.StreamChatAsync(String sessionId, String userMessage, CancellationToken ct)+System.Threading.Tasks.Sources.IValueTaskSource<System.Boolean>.GetResult()
+   at Program.<<Main>$>g__HandleChatStream|0_1(WebSocket ws, String sessionId, WsMessage incoming, ChatService chatService, ILogger logger) in D:\CodeBase\_Taskly\backend\Program.cs:line 260
+   at Program.<<Main>$>g__HandleChatStream|0_1(WebSocket ws, String sessionId, WsMessage incoming, ChatService chatService, ILogger logger) in D:\CodeBase\_Taskly\backend\Program.cs:line 260
+2026-03-10 15:15:32.450 +08:00 [DBG] [f4ca20f1992a] SessionContext cleared
+2026-03-10 15:15:32.450 +08:00 [INF] [f4ca20f1992a] Chat stream end
+2026-03-10 15:15:37.913 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" accepted.
+2026-03-10 15:15:37.913 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" started.
+2026-03-10 15:15:37.914 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/config - null null
+2026-03-10 15:15:37.915 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-10 15:15:37.915 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:37.915 +08:00 [INF] Executing endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:37.918 +08:00 [INF] Writing value of type 'AppConfig' as Json.
+2026-03-10 15:15:37.922 +08:00 [INF] Executed endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:37.922 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:37.923 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/config - 200 null application/json; charset=utf-8 8.5253ms
+2026-03-10 15:15:37.924 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-10 15:15:37.925 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-10 15:15:37.925 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:37.926 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:37.928 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-10 15:15:37.929 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:37.929 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:37.929 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 4.3771ms
+2026-03-10 15:15:39.395 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-10 15:15:39.395 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-10 15:15:39.395 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:39.395 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:39.395 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-10 15:15:39.395 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:39.395 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:39.395 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.812ms
+2026-03-10 15:15:48.155 +08:00 [INF] Request starting HTTP/1.1 POST http://localhost:8765/api/config - application/json 807
+2026-03-10 15:15:48.156 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-10 15:15:48.156 +08:00 [DBG] Request matched endpoint 'HTTP: POST /api/config'
+2026-03-10 15:15:48.156 +08:00 [DBG] The request has an origin header: 'chrome-extension://phphpajjpegjhfocelfefiejekeakifk'.
+2026-03-10 15:15:48.156 +08:00 [INF] CORS policy execution successful.
+2026-03-10 15:15:48.157 +08:00 [INF] Executing endpoint 'HTTP: POST /api/config'
+2026-03-10 15:15:48.163 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK", Request id "0HNJUEJ4VDVRK:00000004": started reading request body.
+2026-03-10 15:15:48.163 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK", Request id "0HNJUEJ4VDVRK:00000004": done reading request body.
+2026-03-10 15:15:48.167 +08:00 [INF] User config saved to D:\CodeBase\_Taskly\backend\bin\Debug\net10.0\user-config.json
+2026-03-10 15:15:48.209 +08:00 [INF] Setting HTTP status code 200.
+2026-03-10 15:15:48.209 +08:00 [INF] Executed endpoint 'HTTP: POST /api/config'
+2026-03-10 15:15:48.210 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:48.210 +08:00 [INF] Request finished HTTP/1.1 POST http://localhost:8765/api/config - 200 0 null 54.3741ms
+2026-03-10 15:15:48.212 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/config - null null
+2026-03-10 15:15:48.212 +08:00 [DBG] 1 candidate(s) found for the request path '/api/config'
+2026-03-10 15:15:48.212 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:48.212 +08:00 [INF] Executing endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:48.212 +08:00 [INF] Writing value of type 'AppConfig' as Json.
+2026-03-10 15:15:48.213 +08:00 [INF] Executed endpoint 'HTTP: GET /api/config'
+2026-03-10 15:15:48.213 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:48.213 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/config - 200 null application/json; charset=utf-8 0.6406ms
+2026-03-10 15:15:48.215 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/api/tools/builtin - null null
+2026-03-10 15:15:48.215 +08:00 [DBG] 1 candidate(s) found for the request path '/api/tools/builtin'
+2026-03-10 15:15:48.215 +08:00 [DBG] Request matched endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:48.215 +08:00 [INF] Executing endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:48.215 +08:00 [INF] Writing value of type 'List`1' as Json.
+2026-03-10 15:15:48.215 +08:00 [INF] Executed endpoint 'HTTP: GET /api/tools/builtin'
+2026-03-10 15:15:48.215 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" completed keep alive response.
+2026-03-10 15:15:48.215 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/api/tools/builtin - 200 null application/json; charset=utf-8 0.4806ms
+2026-03-10 15:15:48.282 +08:00 [WRN] [MCP sales-db-mcp STDERR] 提供的文件路径不存在: sales-db-mcp/SalesDbMcp.csproj。
+2026-03-10 15:16:18.210 +08:00 [ERR] Failed to start MCP Client SalesDbMcp
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at OfficeCopilot.Server.Mcp.McpClient.SendRequestAsync(String method, Object parameters, CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 132
+   at OfficeCopilot.Server.Mcp.McpClient.InitializeAsync(CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 151
+   at OfficeCopilot.Server.Mcp.McpClient.StartAsync(CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 70
+   at OfficeCopilot.Server.Mcp.McpClientManager.StartClientAsync(McpServerConfig config, CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClientManager.cs:line 25
+2026-03-10 15:16:18.211 +08:00 [ERR] Failed to bind MCP server SalesDbMcp to Kernel
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at OfficeCopilot.Server.Mcp.McpClient.SendRequestAsync(String method, Object parameters, CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 132
+   at OfficeCopilot.Server.Mcp.McpClient.InitializeAsync(CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 151
+   at OfficeCopilot.Server.Mcp.McpClient.StartAsync(CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClient.cs:line 70
+   at OfficeCopilot.Server.Mcp.McpClientManager.StartClientAsync(McpServerConfig config, CancellationToken ct) in D:\CodeBase\_Taskly\backend\Mcp\McpClientManager.cs:line 25
+   at OfficeCopilot.Server.ChatService.RebuildKernelAsync() in D:\CodeBase\_Taskly\backend\ChatService.cs:line 147
+2026-03-10 15:16:18.212 +08:00 [INF] Kernel rebuilt. Model: gpt-4o-mini, Plugins: 6, UserSkills: 1, MCPs: 0
+2026-03-10 15:17:59.299 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" disconnecting.
+2026-03-10 15:17:59.300 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" stopped.
+2026-03-10 15:17:59.303 +08:00 [DBG] Connection id "0HNJUEJ4VDVRK" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-10 15:34:17.975 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" received FIN.
+2026-03-10 15:34:17.975 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-10 15:34:17.976 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" disconnecting.
+2026-03-10 15:34:17.977 +08:00 [INF] Session f4ca20f1992a disconnected
+2026-03-10 15:34:17.977 +08:00 [INF] Executed endpoint '/ws'
+2026-03-10 15:34:17.978 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ws?sessionId=f4ca20f1992a&token=office-copilot-dev-token - 101 null null 1137653.8616ms
+2026-03-10 15:34:17.978 +08:00 [DBG] Connection id "0HNJUEJ4VDVRJ" stopped.
+2026-03-10 15:50:20.517 +08:00 [INF] Session f4ca20f1992a expired and removed
+2026-03-10 17:33:55.567 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" accepted.
+2026-03-10 17:33:55.568 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" started.
+2026-03-10 17:33:55.569 +08:00 [INF] Request starting HTTP/1.1 GET http://localhost:8765/ - null null
+2026-03-10 17:33:55.569 +08:00 [DBG] No candidates found for the request path '/'
+2026-03-10 17:33:55.570 +08:00 [DBG] Request did not match any endpoints
+2026-03-10 17:33:55.570 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" completed keep alive response.
+2026-03-10 17:33:55.570 +08:00 [INF] Request finished HTTP/1.1 GET http://localhost:8765/ - 404 0 null 0.5723ms
+2026-03-10 17:33:55.570 +08:00 [INF] Request reached the end of the middleware pipeline without being handled by application code. Request path: GET http://localhost:8765/, Response status code: 404
+2026-03-10 17:33:55.573 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" received FIN.
+2026-03-10 17:33:55.573 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" sending FIN because: "The Socket transport's send loop completed gracefully."
+2026-03-10 17:33:55.573 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" disconnecting.
+2026-03-10 17:33:55.573 +08:00 [DBG] Connection id "0HNJUEJ4VDVRL" stopped.

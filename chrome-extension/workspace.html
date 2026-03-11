@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Copilot - Workspace</title>
+  <link rel="stylesheet" href="libs/github-dark.min.css">
+  <script src="libs/marked.min.js"></script>
+  <script src="libs/highlight.min.js"></script>
+  <script src="libs/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0f0f0f;
+      --text-primary: #e8e8e8;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      padding: 16px 24px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+    #content-area {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    #canvas-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+      border-radius: 8px;
+      display: none;
+    }
+    .markdown-body {
+      max-width: 900px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+    .markdown-body pre {
+      background: #0d1117;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .markdown-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+    }
+    .markdown-body th, .markdown-body td {
+      border: 1px solid #333;
+      padding: 8px 12px;
+    }
+    .markdown-body th {
+      background: #252525;
+    }
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #666;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⚡ Office Copilot Workspace</h1>
+    <span id="status-text" style="color: #999; font-size: 14px;">等待接收数据...</span>
+  </header>
+  <div id="content-area">
+    <div id="empty-state" class="empty-state">在侧边栏中发起对话以在此处生成内容</div>
+    <div id="markdown-container" class="markdown-body" style="display: none;"></div>
+    <iframe id="canvas-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+  <script src="workspace.js"></script>
+</body>
+</html>

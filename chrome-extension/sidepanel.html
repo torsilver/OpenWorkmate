@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Copilot</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="libs/github-dark.min.css">
+  <script src="libs/marked.min.js"></script>
+  <script src="libs/highlight.min.js"></script>
+  <script src="libs/mermaid.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-title">
+        <span class="header-icon">⚡</span>
+        <h1>Office Copilot</h1>
+      </div>
+      <div class="header-controls">
+        <button id="toggle-debug-btn" title="Toggle Debug" style="background:none; border:none; cursor:pointer; font-size:16px;">🐛</button>
+        <div class="mode-toggle" title="切换模式">
+          <input type="checkbox" id="mode-switch" class="mode-switch-checkbox">
+          <label class="mode-switch-label" for="mode-switch">
+            <span class="mode-switch-inner"></span>
+            <span class="mode-switch-switch"></span>
+          </label>
+        </div>
+        <div id="status" class="status status--disconnected" title="连接状态">
+          <span class="status-dot"></span>
+          <span class="status-text">未连接</span>
+        </div>
+        <button id="settings-btn" title="设置" style="background:none; border:none; cursor:pointer; font-size:16px;">⚙️</button>
+      </div>
+    </header>
+
+    <main id="messages" class="messages">
+      <div class="welcome">
+        <p class="welcome-title">你好，我是 Office Copilot 👋</p>
+        <p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。</p>
+      </div>
+    </main>
+
+    <div id="debug-panel" class="debug-panel" style="display: none;">
+      <div class="debug-header">
+        <span>🐛 Debug / 对话历史与运行日志</span>
+        <button id="clear-runtime-log-btn" title="清空运行日志">清空日志</button>
+        <button id="close-debug-btn">×</button>
+      </div>
+      <div id="debug-tabs" class="debug-tabs">
+        <button type="button" class="debug-tab active" data-tab="history">对话历史</button>
+        <button type="button" class="debug-tab" data-tab="runtime">运行日志</button>
+      </div>
+      <div id="debug-content" class="debug-content"></div>
+      <div id="debug-runtime-log" class="debug-content debug-runtime-log" style="display: none;"></div>
+    </div>
+
+    <footer class="input-area">
+      <div class="input-row">
+        <textarea
+          id="input"
+          class="input-box"
+          placeholder="输入消息..."
+          rows="1"
+          autofocus
+        ></textarea>
+        <button id="send-btn" class="send-btn" title="发送">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </footer>
+
+    <div id="hitl-overlay" class="hitl-overlay" style="display: none;" aria-hidden="true">
+      <div class="hitl-card">
+        <p class="hitl-title">AI 请求执行</p>
+        <p id="hitl-action" class="hitl-action"></p>
+        <div class="hitl-buttons">
+          <button type="button" id="hitl-allow-btn" class="hitl-btn hitl-btn--allow">允许</button>
+          <button type="button" id="hitl-deny-btn" class="hitl-btn hitl-btn--deny">拒绝</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
