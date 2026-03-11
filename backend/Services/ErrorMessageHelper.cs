@@ -27,6 +27,10 @@ public static class ErrorMessageHelper
             || msg.Contains("文件正在使用") || msg.Contains("sharing violation") || msg.Contains("locked"))
             return "文件正被其他程序占用，请关闭后重试。";
 
+        // API 404：接口或模型不存在（优先于通用「未找到」）
+        if (msg.Contains("404") || (msg.Contains("not found") && (full.Contains("service request") || full.Contains("clientresult") || full.Contains("openai") || full.Contains("chat"))))
+            return "AI 接口返回 404，请到设置页检查：1) 接口地址是否需加 /v1 后缀（如 http://地址:端口/v1）；2) 模型 ID 是否在该服务中存在。";
+
         // 文件未找到
         if (ex is FileNotFoundException || msg.Contains("not found") || msg.Contains("找不到")
             || msg.Contains("does not exist") || full.Contains("filenotfound"))

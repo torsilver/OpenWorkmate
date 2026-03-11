@@ -24,6 +24,7 @@ builder.Services.AddSingleton<SessionManager>();
 builder.Services.AddSingleton<RpcManager>();
 builder.Services.AddSingleton<HitlManager>();
 builder.Services.AddSingleton<ScreenshotCacheService>();
+builder.Services.AddSingleton<StreamCancelService>();
 builder.Services.AddSingleton<ChatService>();
     
     builder.Services.AddCors();
@@ -88,7 +89,8 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
         var hitlManager = app.Services.GetRequiredService<HitlManager>();
-        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, app.Logger);
+        var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
+        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, streamCancelService, app.Logger);
     }
     finally
     {
@@ -155,7 +157,7 @@ finally
 
 static async Task HandleSession(
     WebSocket ws, string sessionId, SessionManager sessions,
-    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
 {
     var buffer = new byte[4096];
 
@@ -196,9 +198,10 @@ static async Task HandleSession(
             continue;
         }
 
-        // Only require Content for message types that use it for chat
-        var needsContent = incoming.Type is not ("ping" or "mode_change" or "rpc_response" or "confirm_response" or "get_debug_history");
-        if (needsContent && string.IsNullOrWhiteSpace(incoming.Content))
+        // Only require Content for message types that use it for chat (allow empty content when attachments present)
+        var needsContent = incoming.Type is not ("ping" or "mode_change" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop");
+        var hasAttachments = incoming.Attachments is { Count: > 0 };
+        if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
             await SendJson(ws, new WsMessage { Type = "error", Content = "Empty message." });
             continue;
@@ -232,9 +235,12 @@ static async Task HandleSession(
                 var historyStr = string.Join("\n\n", history.Select(m => $"[{m.Role}]:\n{m.Content}"));
                 await SendJson(ws, new WsMessage { Type = "debug_history", Content = historyStr });
                 break;
+            case "stop":
+                streamCancelService.Cancel(sessionId);
+                break;
             default:
                 // 不 await，避免阻塞消息循环；否则工具发 rpc_request 后无法在同一连接上收到 rpc_response，导致超时
-                _ = HandleChatStream(ws, sessionId, incoming, chatService, logger);
+                _ = HandleChatStream(ws, sessionId, incoming, chatService, streamCancelService, logger);
                 break;
         }
     }
@@ -242,25 +248,30 @@ static async Task HandleSession(
 
 static async Task HandleChatStream(
     WebSocket ws, string sessionId, WsMessage incoming,
-    ChatService chatService, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
 {
     logger.LogInformation("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
     await SendJson(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
+    var ct = streamCancelService.CreateForSession(sessionId);
     SessionContext.SetSessionId(sessionId);
     logger.LogDebug("[{SessionId}] SessionContext.SetSessionId({Sid})", sessionId, sessionId);
     try
     {
-        string prompt = incoming.Content;
+        string prompt = incoming.Content ?? "";
         if (incoming.Type == "text_with_context" && incoming.Context != null)
         {
             prompt = $"[当前网页上下文]\n标题: {incoming.Context.Title}\nURL: {incoming.Context.Url}\n内容:\n{incoming.Context.Content}\n\n[用户输入]\n{incoming.Content}";
         }
 
-        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt))
+        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, ct))
         {
             await SendJson(ws, new WsMessage { Type = "stream_chunk", Content = chunk });
         }
+    }
+    catch (OperationCanceledException)
+    {
+        logger.LogInformation("[{SessionId}] Chat stream stopped by user", sessionId);
     }
     catch (Exception ex)
     {
@@ -274,6 +285,7 @@ static async Task HandleChatStream(
     }
     finally
     {
+        streamCancelService.Remove(sessionId);
         SessionContext.SetSessionId(null);
         logger.LogDebug("[{SessionId}] SessionContext cleared", sessionId);
     }

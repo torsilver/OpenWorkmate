@@ -35,8 +35,11 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             return;
         }
 
+        // 对 run_command / run_page_script 提取正在执行的命令或脚本，便于前端展示
+        var startDetail = GetRunningDetail(functionName, context.Arguments);
+
         // 发送开始
-        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null);
+        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail);
 
         try
         {
@@ -63,21 +66,44 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         }
     }
 
+    private static string? GetRunningDetail(string functionName, KernelArguments arguments)
+    {
+        if (arguments == null) return null;
+        if (functionName == "run_command" && arguments.TryGetValue("command", out var cmdObj))
+        {
+            var cmd = cmdObj?.ToString()?.Trim();
+            return string.IsNullOrEmpty(cmd) ? null : $"命令 «{cmd}»";
+        }
+        if (functionName == "run_page_script" && arguments.TryGetValue("scriptId", out var scriptObj))
+        {
+            var scriptId = scriptObj?.ToString()?.Trim();
+            if (string.IsNullOrEmpty(scriptId)) return null;
+            if (arguments.TryGetValue("paramsJson", out var paramsObj) && paramsObj is string paramsStr && !string.IsNullOrWhiteSpace(paramsStr) && paramsStr != "{}")
+                return $"页面脚本 «{scriptId}» 参数: {paramsStr}";
+            return $"页面脚本 «{scriptId}»";
+        }
+        return null;
+    }
+
     private async Task SendToolStatusAsync(
         string sessionId,
         string type,
         string plugin,
         string function,
         bool? success,
-        string? content)
+        string? content,
+        string? startDetail = null)
     {
+        var summary = type == "tool_invocation_start"
+            ? (string.IsNullOrEmpty(startDetail) ? $"正在执行: {plugin}.{function}" : $"正在执行: {plugin}.{function} — {startDetail}")
+            : null;
         var msg = new WsMessage
         {
             Type = type,
             Plugin = plugin,
             Function = function,
             Success = success,
-            Summary = type == "tool_invocation_start" ? $"正在执行: {plugin}.{function}" : null,
+            Summary = summary,
             Content = content ?? ""
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);

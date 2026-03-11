@@ -29,7 +29,7 @@ public class AppConfig
 
 public sealed class ConfigService
 {
-    private readonly string _configPath = Path.Combine(AppContext.BaseDirectory, "user-config.json");
+    private readonly string _configPath;
     private AppConfig _currentConfig;
     private readonly ILogger<ConfigService> _logger;
     private readonly object _lock = new();
@@ -39,6 +39,14 @@ public sealed class ConfigService
     public ConfigService(IConfiguration defaultConfig, ILogger<ConfigService> logger)
     {
         _logger = logger;
+        // 使用用户本地应用数据目录，与运行目录无关，避免 dotnet run/clean 后配置丢失
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrEmpty(appData) || !Path.IsPathRooted(appData))
+            appData = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? AppContext.BaseDirectory;
+        var appDir = Path.Combine(appData, "OfficeCopilot");
+        try { Directory.CreateDirectory(appDir); } catch { /* 无权限时后续写文件会报错 */ }
+        _configPath = Path.Combine(appDir, "user-config.json");
+        _logger.LogInformation("Config file path: {Path} (exists: {Exists})", _configPath, File.Exists(_configPath));
         _currentConfig = LoadConfig(defaultConfig);
     }
 
@@ -52,16 +60,21 @@ public sealed class ConfigService
             {
                 var json = File.ReadAllText(_configPath);
                 var config = JsonSerializer.Deserialize<AppConfig>(json, JsonCtx.Default.AppConfig);
-                if (config != null)
+                if (config != null && config.AI != null)
                 {
                     _logger.LogInformation("Loaded user config from {Path}", _configPath);
                     return config;
                 }
+                _logger.LogWarning("User config file was empty or invalid, using default.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load user config. Falling back to default.");
             }
+        }
+        else
+        {
+            _logger.LogInformation("No user config file at {Path}, using default.", _configPath);
         }
 
         // Fallback to appsettings.json
@@ -76,17 +89,18 @@ public sealed class ConfigService
         {
             try
             {
-                // 可读格式：中文等不转成 \uXXXX，并缩进
+                // 与 JsonCtx 一致使用 CamelCase，否则下次反序列化时字段对不上
                 var options = new JsonSerializerOptions
                 {
                     Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                     WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                     TypeInfoResolver = JsonCtx.Default
                 };
                 var json = JsonSerializer.Serialize(newConfig, typeof(AppConfig), options);
                 File.WriteAllText(_configPath, json);
                 _currentConfig = newConfig;
-                _logger.LogInformation("User config saved to {Path}", _configPath);
+                _logger.LogInformation("User config saved to {Path} (length {Len})", _configPath, json.Length);
                 OnConfigChanged?.Invoke();
             }
             catch (Exception ex)

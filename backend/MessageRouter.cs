@@ -109,6 +109,20 @@ public class WsMessage
     [JsonPropertyName("summary")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Summary { get; set; }
+
+    /// <summary>User-attached images (base64 data + mime type) for multimodal chat.</summary>
+    [JsonPropertyName("attachments")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AttachmentDto>? Attachments { get; set; }
+}
+
+public class AttachmentDto
+{
+    [JsonPropertyName("mimeType")]
+    public string MimeType { get; set; } = "image/png";
+
+    [JsonPropertyName("data")]
+    public string Data { get; set; } = ""; // base64
 }
 
 public class WebPageContext
@@ -146,4 +160,6 @@ public class BuiltInPluginInfo
 [JsonSerializable(typeof(McpCallToolResult))]
 [JsonSerializable(typeof(BuiltInPluginInfo))]
 [JsonSerializable(typeof(List<BuiltInPluginInfo>))]
+[JsonSerializable(typeof(AttachmentDto))]
+[JsonSerializable(typeof(List<AttachmentDto>))]
 internal partial class JsonCtx : JsonSerializerContext;

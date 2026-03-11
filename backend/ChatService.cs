@@ -196,6 +196,16 @@ public sealed class ChatService : IDisposable
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, null, ct))
+            yield return chunk;
+    }
+
+    public async IAsyncEnumerable<string> StreamChatAsync(
+        string sessionId,
+        string userMessage,
+        IReadOnlyList<AttachmentDto>? attachments,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
         Kernel kernel;
         IChatCompletionService chat;
         string systemPrompt;
@@ -224,7 +234,23 @@ public sealed class ChatService : IDisposable
                 finalMessage = "[系统提示：当前处于 Assistant 模式，请简明扼要地回答，主要基于提供的网页上下文。重要：如果用户要求高亮文字或在网页上添加笔记，你必须调用 BrowserPlugin 里的 highlight_webpage_text 或 add_floating_note 工具，千万不要只是口头回答。当工具返回的结果中包含「成功」时，请直接简短告知用户操作已成功完成，不要道歉或说无法使用。]\n" + userMessage;
             }
 
-            state.History.AddUserMessage(finalMessage);
+            if (attachments is { Count: > 0 })
+            {
+                var items = new ChatMessageContentItemCollection { new TextContent(finalMessage) };
+                foreach (var att in attachments)
+                {
+                    if (string.IsNullOrWhiteSpace(att.Data)) continue;
+                    var mime = string.IsNullOrWhiteSpace(att.MimeType) ? "image/png" : att.MimeType;
+                    var dataUri = "data:" + mime + ";base64," + att.Data.Trim();
+                    items.Add(new ImageContent(dataUri));
+                }
+                state.History.Add(new ChatMessageContent(AuthorRole.User, items));
+            }
+            else
+            {
+                state.History.AddUserMessage(finalMessage);
+            }
+
             TrimHistory(state.History);
 
             var execSettings = new OpenAIPromptExecutionSettings

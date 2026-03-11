@@ -56,7 +56,14 @@
     </div>
 
     <footer class="input-area">
+      <div id="attachments-preview" class="attachments-preview" style="display: none;"></div>
       <div class="input-row">
+        <input type="file" id="file-input" accept="image/*" multiple hidden>
+        <button id="attach-btn" class="attach-btn" type="button" title="附加图片">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
         <textarea
           id="input"
           class="input-box"
@@ -64,6 +71,11 @@
           rows="1"
           autofocus
         ></textarea>
+        <button id="stop-btn" class="stop-btn" title="停止生成" style="display: none;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
         <button id="send-btn" class="send-btn" title="发送">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

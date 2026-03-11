@@ -7,6 +7,10 @@ const RECONNECT_MAX_MS = 16000;
 const $messages = document.getElementById("messages");
 const $input = document.getElementById("input");
 const $sendBtn = document.getElementById("send-btn");
+const $stopBtn = document.getElementById("stop-btn");
+const $attachBtn = document.getElementById("attach-btn");
+const $fileInput = document.getElementById("file-input");
+const $attachmentsPreview = document.getElementById("attachments-preview");
 const $status = document.getElementById("status");
 const $settingsBtn = document.getElementById("settings-btn");
 
@@ -22,6 +26,7 @@ let reconnectDelay = RECONNECT_BASE_MS;
 let reconnectTimer = null;
 let streamingBubble = null;
 let currentMode = "workspace"; // 'workspace' or 'assistant'
+const attachments = []; // { mimeType, data (base64), id } for preview
 
 const $modeSwitch = document.getElementById("mode-switch");
 if ($modeSwitch) {
@@ -172,11 +177,13 @@ function scheduleReconnect() {
   }, reconnectDelay);
 }
 
-function send(text) {
+function send(text, attachmentsPayload = null) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const payload = JSON.stringify({ type: "text", content: text });
+  const payload = attachmentsPayload && attachmentsPayload.length > 0
+    ? JSON.stringify({ type: "text", content: text || "", attachments: attachmentsPayload })
+    : JSON.stringify({ type: "text", content: text });
   ws.send(payload);
-  debugLog("WS Send", "type=text len=" + text.length, "send");
+  debugLog("WS Send", "type=text len=" + (text || "").length + " attachments=" + (attachmentsPayload?.length || 0), "send");
 }
 
 // ───── Init Libraries ─────
@@ -199,27 +206,49 @@ if (typeof mermaid !== 'undefined') {
 // ───── Streaming state ─────
 
 let currentBotMessageRaw = "";
-let toolStatusDiv = null; // 当前回复下的工具执行状态条
+// 本轮回复的容器与可折叠「执行过程」区域（多层折叠：执行过程 → 每个工具块）
+let currentRoundWrapper = null;
+let executionLogSection = null;   // <details> 外层
+let executionLogBody = null;       // 内层 div，挂多个工具块
+let executionLogSummaryEl = null;  // 用于更新「执行过程 (N 个操作)」
+let currentRoundToolBlocks = [];   // 本轮的每个工具块 <details>
+let currentToolEndIndex = 0;
 
 function beginStream() {
-  if (toolStatusDiv && toolStatusDiv.parentNode) {
-    toolStatusDiv.parentNode.removeChild(toolStatusDiv);
-  }
-  toolStatusDiv = null;
-  streamingBubble = appendMsg("msg--bot msg--streaming", "");
+  const welcome = $messages.querySelector(".welcome");
+  if (welcome) welcome.remove();
+
+  currentRoundWrapper = document.createElement("div");
+  currentRoundWrapper.className = "msg msg--round";
+
+  streamingBubble = document.createElement("div");
+  streamingBubble.className = "msg msg--bot msg--streaming";
+  streamingBubble.textContent = "";
+  currentRoundWrapper.appendChild(streamingBubble);
+
+  // 执行过程：进行中时展开，最终答案给出后再折叠
+  executionLogSection = document.createElement("details");
+  executionLogSection.className = "msg msg--execution-log";
+  executionLogSummaryEl = document.createElement("summary");
+  executionLogSummaryEl.textContent = "执行过程 (0 个操作)";
+  executionLogSection.appendChild(executionLogSummaryEl);
+  executionLogBody = document.createElement("div");
+  executionLogBody.className = "execution-log-body";
+  executionLogSection.appendChild(executionLogBody);
+  executionLogSection.open = false; // 有块时在 updateExecutionLogCount 里会打开
+  currentRoundWrapper.appendChild(executionLogSection);
+
+  $messages.appendChild(currentRoundWrapper);
   currentBotMessageRaw = "";
+  currentRoundToolBlocks = [];
+  currentToolEndIndex = 0;
   setInputEnabled(false);
 }
 
-function ensureToolStatusDiv() {
-  if (toolStatusDiv) return;
-  toolStatusDiv = document.createElement("div");
-  toolStatusDiv.className = "msg msg--tool-status tool-status--running";
-  if (streamingBubble && streamingBubble.nextSibling) {
-    $messages.insertBefore(toolStatusDiv, streamingBubble.nextSibling);
-  } else {
-    $messages.appendChild(toolStatusDiv);
-  }
+function updateExecutionLogCount() {
+  if (executionLogSummaryEl) executionLogSummaryEl.textContent = "执行过程 (" + currentRoundToolBlocks.length + " 个操作)";
+  // 进行中：有新的执行过程时保持展开
+  if (executionLogSection && currentRoundToolBlocks.length > 0) executionLogSection.open = true;
 }
 
 function appendStreamChunk(text) {
@@ -241,12 +270,8 @@ function appendStreamChunk(text) {
 function finalizeStream() {
   if (streamingBubble) {
     streamingBubble.classList.remove("msg--streaming");
-    
-    // Final render
     if (typeof marked !== 'undefined') {
       streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-      
-      // Render mermaid diagrams
       if (typeof mermaid !== 'undefined') {
         const mermaidBlocks = streamingBubble.querySelectorAll('.language-mermaid');
         mermaidBlocks.forEach((block, index) => {
@@ -256,7 +281,6 @@ function finalizeStream() {
           container.className = 'mermaid-container';
           container.id = id;
           block.parentNode.replaceWith(container);
-          
           mermaid.render(id + '-svg', code).then(result => {
             container.innerHTML = result.svg;
           }).catch(err => {
@@ -265,14 +289,22 @@ function finalizeStream() {
         });
       }
     }
-    
     streamingBubble = null;
     currentBotMessageRaw = "";
   }
-  if (toolStatusDiv && toolStatusDiv.parentNode) {
-    toolStatusDiv.parentNode.removeChild(toolStatusDiv);
+  if (executionLogSection) {
+    executionLogSection.style.display = currentRoundToolBlocks.length === 0 ? "none" : "";
+    if (currentRoundToolBlocks.length > 0) {
+      executionLogSection.open = false; // 给出最终答案后折叠「执行过程」
+      currentRoundToolBlocks.forEach(function (b) { b.open = false; });
+    }
   }
-  toolStatusDiv = null;
+  currentRoundWrapper = null;
+  executionLogSection = null;
+  executionLogBody = null;
+  executionLogSummaryEl = null;
+  currentRoundToolBlocks = [];
+  currentToolEndIndex = 0;
   setInputEnabled(true);
 }
 
@@ -302,26 +334,45 @@ function handleMessage(raw) {
       extractAndRenderCanvas(rawMsg);
       break;
 
-    case "tool_invocation_start":
-      ensureToolStatusDiv();
-      if (toolStatusDiv) {
-        const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
-        toolStatusDiv.innerHTML = `<span class="tool-status-icon">⏳</span> ${escapeHtml(label)}`;
-        toolStatusDiv.classList.remove("tool-status--done", "tool-status--fail");
-        toolStatusDiv.classList.add("tool-status--running");
-      }
+    case "tool_invocation_start": {
+      if (!executionLogBody) break;
+      const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
+      const block = document.createElement("details");
+      block.className = "tool-call-block tool-call--running";
+      block.dataset.label = label;
+      const sum = document.createElement("summary");
+      sum.innerHTML = `<span class="tool-status-icon">⏳</span> ${escapeHtml(label)}`;
+      block.appendChild(sum);
+      const out = document.createElement("pre");
+      out.className = "tool-call-output";
+      block.appendChild(out);
+      executionLogBody.appendChild(block);
+      currentRoundToolBlocks.push(block);
+      block.open = true; // 进行中时每个工具块默认展开
+      updateExecutionLogCount();
       break;
+    }
 
-    case "tool_invocation_end":
-      if (toolStatusDiv) {
+    case "tool_invocation_end": {
+      const block = currentRoundToolBlocks[currentToolEndIndex];
+      if (block) {
         const ok = msg.success === true;
         const name = `${msg.plugin || ""}.${msg.function || ""}`;
         const content = (msg.content && String(msg.content).trim()) || "";
-        toolStatusDiv.innerHTML = `<span class="tool-status-icon">${ok ? "✓" : "✗"}</span> ${escapeHtml(name)}${content ? ": " + escapeHtml(content) : ""}`;
-        toolStatusDiv.classList.remove("tool-status--running");
-        toolStatusDiv.classList.add(ok ? "tool-status--done" : "tool-status--fail");
+        const displayLabel = (block.dataset.label || name).replace(/^正在执行:\s*/i, "");
+        block.classList.remove("tool-call--running");
+        block.classList.add(ok ? "tool-call--done" : "tool-call--fail");
+        const sum = block.querySelector("summary");
+        if (sum) sum.innerHTML = `<span class="tool-status-icon">${ok ? "✓" : "✗"}</span> ${escapeHtml(displayLabel)}`;
+        const out = block.querySelector(".tool-call-output");
+        if (out) {
+          out.textContent = content || "";
+          out.style.display = content ? "block" : "none";
+        }
       }
+      currentToolEndIndex++;
       break;
+    }
 
     case "echo":
     case "text":
@@ -826,20 +877,27 @@ function setStatus(connected) {
 function setInputEnabled(enabled) {
   $input.disabled = !enabled;
   $sendBtn.disabled = !enabled;
+  if ($stopBtn) $stopBtn.style.display = enabled ? "none" : "flex";
+  if ($sendBtn) $sendBtn.style.display = enabled ? "flex" : "none";
   if (enabled) $input.focus();
 }
 
 // ───── Input handling ─────
 
+function buildAttachmentsPayload() {
+  return attachments.map(a => ({ mimeType: a.mimeType, data: a.data }));
+}
+
 async function handleSend() {
   const text = $input.value.trim();
-  if (!text) return;
+  const hasAttachments = attachments.length > 0;
+  if (!text && !hasAttachments) return;
   if (streamingBubble) return;
 
-  addUserMessage(text);
-  
+  const attachmentsPayload = buildAttachmentsPayload();
+  addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
+
   if (currentMode === 'assistant') {
-    // Fetch context from active tab
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && !tab.url.startsWith('chrome://')) {
@@ -849,41 +907,153 @@ async function handleSend() {
             return {
               title: document.title,
               url: window.location.href,
-              content: document.body.innerText.substring(0, 5000) // limit context length
+              content: document.body.innerText.substring(0, 5000)
             };
           }
         });
-        
         if (results && results[0] && results[0].result) {
-          const context = results[0].result;
-          sendWithContext(text, context);
+          sendWithContext(text, results[0].result, attachmentsPayload);
         } else {
-          send(text);
+          send(text, attachmentsPayload);
         }
       } else {
-        send(text);
+        send(text, attachmentsPayload);
       }
     } catch (err) {
       console.error("Failed to get page context:", err);
-      send(text);
+      send(text, attachmentsPayload);
     }
   } else {
-    send(text);
+    send(text, attachmentsPayload);
   }
 
   $input.value = "";
   $input.style.height = "auto";
+  attachments.length = 0;
+  renderAttachmentsPreview();
   $input.focus();
 }
 
-function sendWithContext(text, context) {
+function sendWithContext(text, context, attachmentsPayload = null) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const payload = JSON.stringify({ type: "text_with_context", content: text, context: context });
+  const payload = JSON.stringify({
+    type: "text_with_context",
+    content: text || "",
+    context: context,
+    ...(attachmentsPayload && attachmentsPayload.length > 0 ? { attachments: attachmentsPayload } : {})
+  });
   ws.send(payload);
-  debugLog("WS Send", "type=text_with_context len=" + text.length + " contextTitle=" + (context?.title || "").slice(0, 30), "send");
+  debugLog("WS Send", "type=text_with_context len=" + (text || "").length + " contextTitle=" + (context?.title || "").slice(0, 30) + " attachments=" + (attachmentsPayload?.length || 0), "send");
+}
+
+// ───── Attachments (images) ─────
+
+function renderAttachmentsPreview() {
+  if (!$attachmentsPreview) return;
+  $attachmentsPreview.innerHTML = "";
+  if (attachments.length === 0) {
+    $attachmentsPreview.style.display = "none";
+    return;
+  }
+  $attachmentsPreview.style.display = "flex";
+  attachments.forEach((att, index) => {
+    const wrap = document.createElement("div");
+    wrap.className = "attachment-thumb-wrap";
+    const img = document.createElement("img");
+    img.className = "attachment-thumb";
+    img.src = "data:" + (att.mimeType || "image/png") + ";base64," + att.data;
+    img.alt = "附件";
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "attachment-remove";
+    removeBtn.title = "移除";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", () => {
+      attachments.splice(index, 1);
+      renderAttachmentsPreview();
+    });
+    wrap.appendChild(img);
+    wrap.appendChild(removeBtn);
+    $attachmentsPreview.appendChild(wrap);
+  });
+}
+
+function addAttachment(mimeType, base64Data) {
+  attachments.push({ id: Date.now() + "-" + Math.random(), mimeType: mimeType || "image/png", data: base64Data });
+  renderAttachmentsPreview();
+}
+
+function addFilesAsAttachments(files) {
+  const imageFiles = Array.from(files).filter(f => f.type.startsWith("image/"));
+  if (imageFiles.length === 0) return;
+  imageFiles.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      const mime = match ? match[1] : "image/png";
+      const data = match ? match[2] : dataUrl.split(",")[1] || "";
+      if (data) addAttachment(mime, data);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+if ($attachBtn && $fileInput) {
+  $attachBtn.addEventListener("click", () => $fileInput.click());
+  $fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length) {
+      addFilesAsAttachments(e.target.files);
+      e.target.value = "";
+    }
+  });
+}
+
+$input.addEventListener("paste", (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const files = [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith("image/")) files.push(items[i].getAsFile());
+  }
+  if (files.length) {
+    e.preventDefault();
+    addFilesAsAttachments(files);
+  }
+});
+
+const $inputArea = document.querySelector(".input-area");
+if ($inputArea) {
+  $inputArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $inputArea.classList.add("input-area--drag");
+  });
+  $inputArea.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $inputArea.classList.remove("input-area--drag");
+  });
+  $inputArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $inputArea.classList.remove("input-area--drag");
+    if (e.dataTransfer?.files?.length) addFilesAsAttachments(e.dataTransfer.files);
+  });
 }
 
 $sendBtn.addEventListener("click", handleSend);
+
+if ($stopBtn) {
+  $stopBtn.addEventListener("click", () => {
+    if (!streamingBubble) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "stop" }));
+      debugLog("WS Send", "type=stop", "send");
+    }
+    finalizeStream();
+  });
+}
 
 $input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {

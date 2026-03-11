@@ -286,6 +286,8 @@ html, body {
   padding: 6px 10px;
   margin-top: 2px;
   margin-bottom: 4px;
+  max-width: 100%;
+  word-break: break-word; /* 长命令/脚本单行可换行显示 */
 }
 .msg--tool-status .tool-status-icon {
   margin-right: 6px;
@@ -300,6 +302,84 @@ html, body {
   color: var(--danger);
   border-color: rgba(248, 113, 113, 0.3);
 }
+
+/* 单轮回复容器（含主内容 + 可折叠执行过程） */
+.msg--round {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+/* 执行过程：外层折叠「执行过程 (N 个操作)」 */
+.msg--execution-log {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.msg--execution-log summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.msg--execution-log summary::-webkit-details-marker { display: none; }
+.msg--execution-log summary::before {
+  content: "▶ ";
+  font-size: 10px;
+  margin-right: 4px;
+  opacity: 0.7;
+}
+.msg--execution-log[open] summary::before { content: "▼ "; }
+.execution-log-body {
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 每个工具调用：内层折叠块 */
+.tool-call-block {
+  font-size: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tool-call-block summary {
+  padding: 5px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.tool-call-block summary::-webkit-details-marker { display: none; }
+.tool-call-block summary::before {
+  content: "▶ ";
+  font-size: 9px;
+  margin-right: 4px;
+  opacity: 0.6;
+}
+.tool-call-block[open] summary::before { content: "▼ "; }
+.tool-call-block .tool-status-icon { margin-right: 6px; }
+.tool-call-block .tool-call-output {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+.tool-call-block.tool-call--running summary { color: var(--accent); }
+.tool-call-block.tool-call--done summary { color: var(--success); }
+.tool-call-block.tool-call--fail summary { color: var(--danger); }
 
 /* 错误类气泡（友好文案） */
 .msg--error {
@@ -436,6 +516,77 @@ html, body {
   background: #fff;
 }
 
+.attachments-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0 4px;
+  min-height: 0;
+}
+
+.attachment-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.attachment-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.attachment-remove:hover {
+  opacity: 0.9;
+}
+
+.attach-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--transition), background var(--transition);
+}
+
+.attach-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.input-area--drag {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
 .input-row {
   display: flex;
   align-items: flex-end;
@@ -491,6 +642,25 @@ html, body {
 .send-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity var(--transition);
+}
+
+.stop-btn:hover {
+  opacity: 0.9;
 }
 
 /* ===== Streaming cursor ===== */
