@@ -19,13 +19,15 @@ try
 
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
+    builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
-builder.Services.AddSingleton<SessionManager>();
-builder.Services.AddSingleton<RpcManager>();
-builder.Services.AddSingleton<HitlManager>();
-builder.Services.AddSingleton<ScreenshotCacheService>();
-builder.Services.AddSingleton<StreamCancelService>();
-builder.Services.AddSingleton<ChatService>();
+    builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
+    builder.Services.AddSingleton<SessionManager>();
+    builder.Services.AddSingleton<RpcManager>();
+    builder.Services.AddSingleton<HitlManager>();
+    builder.Services.AddSingleton<ScreenshotCacheService>();
+    builder.Services.AddSingleton<StreamCancelService>();
+    builder.Services.AddSingleton<ChatService>();
     
     builder.Services.AddCors();
 
@@ -40,6 +42,8 @@ var wsConfig = app.Configuration.GetSection("WebSocket");
 var wsPath = wsConfig["Path"] ?? "/ws";
 var authToken = wsConfig["AuthToken"] ?? "";
 var allowedOrigins = wsConfig.GetSection("AllowedOrigins").Get<string[]>() ?? [];
+const string DevToken = "office-copilot-dev-token";
+var isDev = app.Environment.IsDevelopment();
 
 app.UseCors(policy => 
     policy.WithOrigins(allowedOrigins.Length > 0 ? allowedOrigins : new[] { "*" })
@@ -69,7 +73,10 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     }
 
     var token = context.Request.Query["token"].ToString();
-    if (!string.IsNullOrEmpty(authToken) && token != authToken)
+    var tokenOk = string.IsNullOrEmpty(authToken)
+        || token == authToken
+        || (isDev && token == DevToken);
+    if (!tokenOk)
     {
         app.Logger.LogWarning("Rejected connection: invalid token");
         context.Response.StatusCode = 401;
@@ -101,6 +108,9 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
 
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
 
+app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenAccepted={Dev}, AllowedOriginsCount={Count}",
+    wsPath, !string.IsNullOrEmpty(authToken), isDev, allowedOrigins.Length);
+
 app.MapGet("/api/config", (ConfigService config) => Results.Json(config.Current, JsonCtx.Default.AppConfig));
 app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
 {
@@ -113,6 +123,63 @@ app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
     return Results.BadRequest();
 });
 
+app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logger) =>
+{
+    TestAiRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<TestAiRequest>(ctx.Request.Body, JsonCtx.Default.TestAiRequest);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test AI: request body deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON 且字段为 endpoint、modelId、apiKey、provider、deploymentName（小写驼峰）。" }, statusCode: 200);
+    }
+    if (body == null || string.IsNullOrWhiteSpace(body.Endpoint) || string.IsNullOrWhiteSpace(body.ModelId))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint 或 modelId，请检查请求格式。" }, statusCode: 200);
+    }
+    var endpoint = body.Endpoint.Trim().TrimEnd('/');
+    var modelId = (body.Provider == "Azure" && !string.IsNullOrWhiteSpace(body.DeploymentName))
+        ? body.DeploymentName.Trim()
+        : body.ModelId.Trim();
+    var apiKey = body.ApiKey?.Trim() ?? "";
+    var url = endpoint.Contains("/v1") ? endpoint + "/chat/completions" : endpoint + "/v1/chat/completions";
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+        return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 200);
+    using var http = new HttpClient();
+    http.Timeout = TimeSpan.FromSeconds(5);
+    var payload = new
+    {
+        model = modelId,
+        messages = new[] { new { role = "user", content = "Hi" } },
+        max_tokens = 2
+    };
+    var request = new HttpRequestMessage(HttpMethod.Post, uri);
+    if (!string.IsNullOrEmpty(apiKey))
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+    request.Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+    try
+    {
+        var response = await http.SendAsync(request);
+        var responseText = await response.Content.ReadAsStringAsync();
+        if (response.IsSuccessStatusCode)
+            return Results.Ok(new { ok = true, message = "连接成功，接口与 Key/模型可用。" });
+        logger.LogWarning("Test AI failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 200);
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.Ok(new { ok = false, message = "连接超时，请检查接口地址或网络。" });
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test AI exception");
+        return Results.Ok(new { ok = false, message = "连接失败: " + ex.Message });
+    }
+});
+
 app.MapGet("/api/tools/builtin", () =>
 {
     var builtIn = new List<BuiltInPluginInfo>
@@ -121,7 +188,9 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "File", Name = "File", Description = "保存截图到下载文件夹" },
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
-        new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" }
+        new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
+        new() { Id = "Tavily", Name = "Tavily", Description = "Tavily 网页搜索与 URL 正文提取（需配置 TAVILY_API_KEY）" },
+        new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" }
     };
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);
 });
@@ -250,6 +319,7 @@ static async Task HandleChatStream(
     WebSocket ws, string sessionId, WsMessage incoming,
     ChatService chatService, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
 {
+    var streamEndedByError = false;
     logger.LogInformation("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
     await SendJson(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
@@ -275,13 +345,23 @@ static async Task HandleChatStream(
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "[{SessionId}] Chat stream error", sessionId);
+        var historyCount = 0;
+        try { historyCount = chatService.GetSessionHistory(sessionId)?.Count ?? 0; } catch { /* ignore */ }
+        logger.LogError(ex, "[{SessionId}] Chat stream error (history messages: {HistoryCount})", sessionId, historyCount);
+        logger.LogError("[AI-RESPONSE-ERROR] 对方返回/异常全文 FullDetail={Detail}", ex.ToString());
         var friendlyMessage = ErrorMessageHelper.GetFriendlyMessage(ex);
-        await SendJson(ws, new WsMessage
+        if (ws.State != WebSocketState.Open)
+            logger.LogWarning("[{SessionId}] Skip sending error: WebSocket not open", sessionId);
+        else
         {
-            Type = "error",
-            Content = friendlyMessage
-        });
+            await SendJson(ws, new WsMessage
+            {
+                Type = "error",
+                Content = friendlyMessage
+            });
+            logger.LogInformation("[{SessionId}] Chat stream error sent to client", sessionId);
+        }
+        streamEndedByError = true;
     }
     finally
     {
@@ -290,8 +370,11 @@ static async Task HandleChatStream(
         logger.LogDebug("[{SessionId}] SessionContext cleared", sessionId);
     }
 
-    logger.LogInformation("[{SessionId}] Chat stream end", sessionId);
-    await SendJson(ws, new WsMessage { Type = "stream_end" });
+    logger.LogInformation("[{SessionId}] Chat stream end {Suffix}", sessionId, streamEndedByError ? "(after error)" : "(completed)");
+    if (ws.State != WebSocketState.Open)
+        logger.LogWarning("[{SessionId}] Skip sending stream_end: WebSocket not open", sessionId);
+    else
+        await SendJson(ws, new WsMessage { Type = "stream_end" });
 }
 
 static string GetMessageType(string raw)

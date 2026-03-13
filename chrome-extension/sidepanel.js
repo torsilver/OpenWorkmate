@@ -24,6 +24,8 @@ let ws = null;
 let sessionId = null;
 let reconnectDelay = RECONNECT_BASE_MS;
 let reconnectTimer = null;
+/** 断线时未发出去的消息，重连后按顺序自动重发 */
+let pendingMessages = [];
 let streamingBubble = null;
 let currentMode = "workspace"; // 'workspace' or 'assistant'
 const attachments = []; // { mimeType, data (base64), id } for preview
@@ -149,6 +151,12 @@ function connect() {
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
     ws.send(JSON.stringify({ type: "mode_change", content: currentMode }));
+    const toFlush = pendingMessages.length;
+    while (pendingMessages.length > 0) {
+      const m = pendingMessages.shift();
+      send(m.text, m.attachmentsPayload);
+    }
+    if (toFlush > 0) addSystemMessage("已重连，待发消息已自动发出");
   });
 
   ws.addEventListener("message", (e) => {
@@ -156,8 +164,11 @@ function connect() {
   });
 
   ws.addEventListener("close", () => {
+    const wasStreaming = !!streamingBubble;
+    ws = null;
     setStatus(false);
     finalizeStream();
+    if (wasStreaming) addBotMessage("连接已断开，请检查网络或稍后重试", true);
     debugLog("WS", "closed", "recv");
     scheduleReconnect();
   });
@@ -178,7 +189,10 @@ function scheduleReconnect() {
 }
 
 function send(text, attachmentsPayload = null) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addBotMessage("连接已断开，消息未发送。请检查网络或刷新侧边栏后重试。", true);
+    return;
+  }
   const payload = attachmentsPayload && attachmentsPayload.length > 0
     ? JSON.stringify({ type: "text", content: text || "", attachments: attachmentsPayload })
     : JSON.stringify({ type: "text", content: text });
@@ -369,6 +383,18 @@ function handleMessage(raw) {
           out.textContent = content || "";
           out.style.display = content ? "block" : "none";
         }
+        if (!ok && content && (content.includes("未配置") || content.includes("请在设置") || content.includes("API Key") || content.includes("API_KEY"))) {
+          let btn = block.querySelector(".tool-call-goto-settings");
+          if (!btn) {
+            btn = document.createElement("button");
+            btn.className = "tool-call-goto-settings";
+            btn.textContent = "前往设置";
+            btn.type = "button";
+            btn.style.cssText = "margin-top:8px;padding:6px 12px;font-size:12px;cursor:pointer;background:var(--accent, #3b82f6);color:#fff;border:none;border-radius:6px;";
+            btn.addEventListener("click", () => { if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage(); });
+            block.appendChild(btn);
+          }
+        }
       }
       currentToolEndIndex++;
       break;
@@ -384,7 +410,7 @@ function handleMessage(raw) {
 
     case "error":
       finalizeStream();
-      addBotMessage(msg.content || "请求失败", true);
+      addBotMessage((msg.content && String(msg.content).trim()) || "请求失败，请稍后重试", true);
       break;
 
     case "debug_history":
@@ -895,6 +921,24 @@ async function handleSend() {
   if (streamingBubble) return;
 
   const attachmentsPayload = buildAttachmentsPayload();
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
+    pendingMessages.push({ text, attachmentsPayload });
+    addBotMessage("连接已断开，正在重连并自动重发…", true);
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    connect();
+    $input.value = "";
+    $input.style.height = "auto";
+    attachments.length = 0;
+    renderAttachmentsPreview();
+    $input.focus();
+    return;
+  }
+
   addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
 
   if (currentMode === 'assistant') {
@@ -1068,5 +1112,19 @@ $input.addEventListener("input", () => {
 });
 
 // ───── Boot ─────
+
+function ensureConnectionOnVisible() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  connect();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") ensureConnectionOnVisible();
+});
+window.addEventListener("focus", ensureConnectionOnVisible);
 
 connect();

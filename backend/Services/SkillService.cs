@@ -13,6 +13,16 @@ public class SkillDefinition
     public string PromptTemplate { get; set; } = "";
     /// <summary>是否启用；停用后不会注册到 Kernel。</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>技能所在目录的完整路径，供可执行技能定位 scripts/ 等。</summary>
+    public string BaseDir { get; set; } = "";
+    /// <summary>Clawhub metadata：依赖的可执行程序，如 ["node"]。</summary>
+    public List<string> RequiresBins { get; set; } = new();
+    /// <summary>Clawhub metadata：依赖的环境变量，如 ["TAVILY_API_KEY"]。</summary>
+    public List<string> RequiresEnv { get; set; } = new();
+    /// <summary>主环境变量 key，用于配置展示/校验。</summary>
+    public string? PrimaryEnv { get; set; }
+    /// <summary>是否为可执行技能（有 requires.bins 或 scripts）。</summary>
+    public bool IsExecutable { get; set; }
 }
 
 public sealed class SkillService
@@ -46,7 +56,7 @@ public sealed class SkillService
                 if (!File.Exists(skillMd)) continue;
                 try
                 {
-                    var skill = ParseSkillMd(skillMd, Path.GetFileName(dir));
+                    var skill = ParseSkillMd(skillMd, Path.GetFileName(dir), dir);
                     if (skill != null && !string.IsNullOrEmpty(skill.Id))
                     {
                         byId[skill.Id] = skill;
@@ -84,8 +94,8 @@ public sealed class SkillService
         }
     }
 
-    /// <summary>解析 Agent Skills 格式的 SKILL.md：YAML frontmatter + Markdown body。</summary>
-    private static SkillDefinition? ParseSkillMd(string skillMdPath, string defaultId)
+    /// <summary>解析 Agent Skills 格式的 SKILL.md：YAML frontmatter + Markdown body；支持 Clawhub metadata。</summary>
+    private static SkillDefinition? ParseSkillMd(string skillMdPath, string defaultId, string baseDir)
     {
         var raw = File.ReadAllText(skillMdPath, Encoding.UTF8);
         var match = Regex.Match(raw, @"^\s*---\s*\r?\n(.*?)\r?\n---\s*\r?\n([\s\S]*)", RegexOptions.Singleline);
@@ -94,13 +104,18 @@ public sealed class SkillService
         var description = "";
         var title = "";
         var enabled = true;
+        var requiresBins = new List<string>();
+        var requiresEnv = new List<string>();
+        string? primaryEnv = null;
 
         if (match.Success)
         {
             var frontmatter = match.Groups[1].Value;
             body = match.Groups[2].Value.Trim();
-            foreach (var line in frontmatter.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            var lines = frontmatter.Split(new[] { '\r', '\n' }, StringSplitOptions.None);
+            for (var i = 0; i < lines.Length; i++)
             {
+                var line = lines[i];
                 var colon = line.IndexOf(':');
                 if (colon <= 0) continue;
                 var key = line[..colon].Trim().ToLowerInvariant();
@@ -111,6 +126,24 @@ public sealed class SkillService
                 else if (key == "description") description = value;
                 else if (key == "title") title = value;
                 else if (key == "enabled") enabled = value.Trim().ToLowerInvariant() is "true" or "1" or "yes";
+                else if (key == "metadata")
+                {
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        var metadataLines = new List<string>();
+                        for (var j = i + 1; j < lines.Length; j++)
+                        {
+                            var next = lines[j];
+                            if (string.IsNullOrWhiteSpace(next)) break;
+                            if (next.Length > 0 && (next[0] == ' ' || next[0] == '\t'))
+                                metadataLines.Add(next);
+                            else
+                                break;
+                        }
+                        value = metadataLines.Count > 0 ? string.Join("\n", metadataLines) : value;
+                    }
+                    ParseClawhubMetadata(value, requiresBins, requiresEnv, ref primaryEnv);
+                }
             }
         }
         else
@@ -118,6 +151,7 @@ public sealed class SkillService
             body = raw.Trim();
         }
 
+        var isExecutable = requiresBins.Count > 0 || Directory.Exists(Path.Combine(baseDir, "scripts"));
 
         if (string.IsNullOrWhiteSpace(name)) return null;
 
@@ -127,8 +161,63 @@ public sealed class SkillService
             Name = string.IsNullOrWhiteSpace(title) ? name : title,
             Description = description,
             PromptTemplate = body,
-            Enabled = enabled
+            Enabled = enabled,
+            BaseDir = baseDir,
+            RequiresBins = requiresBins,
+            RequiresEnv = requiresEnv,
+            PrimaryEnv = primaryEnv,
+            IsExecutable = isExecutable
         };
+    }
+
+    /// <summary>解析 Clawhub metadata（JSON 或 YAML 风格）：clawdbot.requires.bins / env、primaryEnv。</summary>
+    private static void ParseClawhubMetadata(string metadataJson, List<string> requiresBins, List<string> requiresEnv, ref string? primaryEnv)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (!doc.RootElement.TryGetProperty("clawdbot", out var clawdbot)) return;
+            if (!clawdbot.TryGetProperty("requires", out var requires)) return;
+            if (requires.TryGetProperty("bins", out var bins) && bins.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var b in bins.EnumerateArray())
+                    if (b.GetString() is { } s && !string.IsNullOrEmpty(s))
+                        requiresBins.Add(s);
+            }
+            if (requires.TryGetProperty("anyBins", out var anyBins) && anyBins.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var b in anyBins.EnumerateArray())
+                    if (b.GetString() is { } s && !string.IsNullOrEmpty(s) && !requiresBins.Contains(s))
+                        requiresBins.Add(s);
+            }
+            if (requires.TryGetProperty("env", out var env) && env.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in env.EnumerateArray())
+                    if (e.GetString() is { } s && !string.IsNullOrEmpty(s))
+                        requiresEnv.Add(s);
+            }
+            if (clawdbot.TryGetProperty("primaryEnv", out var pe))
+                primaryEnv = pe.GetString();
+        }
+        catch
+        {
+            // JSON 解析失败时尝试从 YAML 风格块中提取 env（如 microsoft-excel 等 Clawhub 技能）
+            ParseClawhubMetadataYamlStyle(metadataJson, requiresBins, requiresEnv, ref primaryEnv);
+        }
+    }
+
+    /// <summary>从 YAML 风格 metadata 块中提取 requires.env（env: 后的 - VAR_NAME 行）。</summary>
+    private static void ParseClawhubMetadataYamlStyle(string block, List<string> requiresBins, List<string> requiresEnv, ref string? primaryEnv)
+    {
+        if (string.IsNullOrWhiteSpace(block)) return;
+        var envIdx = block.IndexOf("env:", StringComparison.OrdinalIgnoreCase);
+        var searchStart = envIdx >= 0 ? envIdx : 0;
+        foreach (Match m in Regex.Matches(block[searchStart..], @"-\s*([A-Za-z_][A-Za-z0-9_]*)"))
+        {
+            var s = m.Groups[1].Value;
+            if (!string.IsNullOrEmpty(s) && !requiresEnv.Contains(s))
+                requiresEnv.Add(s);
+        }
     }
 
     public void SaveSkill(SkillDefinition skill)

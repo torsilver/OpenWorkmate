@@ -1,0 +1,32 @@
+---
+description: 后端 API 与前端 JSON 约定及错误返回方式，避免“像前端问题”的 400
+globs: backend/**/*.cs
+alwaysApply: false
+---
+
+# 后端 API：JSON 契约与错误返回
+
+## 1. 前后端 JSON 字段命名必须一致
+
+- 前端（JS/扩展）普遍使用 **camelCase**（如 `endpoint`、`modelId`）。
+- 后端反序列化时若使用默认的 PascalCase 匹配，会拿不到字段，得到 null，再根据“是否填写”报错，**容易让人误以为是前端没传或没填**。
+- **必须**对“前端会调用的”接口使用与前端一致的命名：
+  - 使用项目内已有的 `JsonCtx`（已配置 `PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase`）做反序列化；
+  - 或使用 `JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }`。
+- 新增 DTO 若会被前端 POST/GET 使用，**必须**在 `JsonCtx` 中注册 `[JsonSerializable(typeof(YourDto))]`，并用 `JsonCtx.Default.YourDto` 做反序列化，不要用无参数的 `JsonSerializer.DeserializeAsync<T>(stream)`。
+
+```csharp
+// ❌ 错误：默认反序列化不认 camelCase，body 字段全为 null，易误判为“用户没填”
+var body = await JsonSerializer.DeserializeAsync<TestAiRequest>(ctx.Request.Body);
+
+// ✅ 正确：用 JsonCtx，与前端 camelCase 一致
+var body = await JsonSerializer.DeserializeAsync<TestAiRequest>(ctx.Request.Body, JsonCtx.Default.TestAiRequest);
+```
+
+## 2. 参数/格式错误不要用 400 + “请填写…”类文案
+
+- 返回 **400 Bad Request** 且 message 像“请填写接口地址和模型 ID”时，用户和开发者会以为是**前端没传或表单没填**，而实际可能是**后端反序列化或参数校验**问题。
+- 对“参数缺失、格式错误、校验失败”等**契约/请求问题**：
+  - 优先 **HTTP 200 + JSON body**：`{ "ok": false, "message": "…" }`，在 message 里写清是**请求参数/格式**问题（例如：“请求体解析失败…”“请求参数无效：缺少或为空 endpoint 或 modelId，请检查请求格式。”），方便前端统一按 `data.ok` / `data.message` 处理；
+  - 若必须用 4xx，则 message 明确写是**服务端收到的请求**有问题（如“请求参数无效：缺少 endpoint 或 modelId”），避免使用“请填写…”这种像在指导用户填表单的措辞。
+- 这样既避免浏览器控制台只显示 400 掩盖真实原因，也避免把后端契约/解析问题误判为前端或用户操作问题。

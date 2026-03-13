@@ -150,6 +150,8 @@ public class BuiltInPluginInfo
 [JsonSerializable(typeof(WebPageContext))]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(AiConfig))]
+[JsonSerializable(typeof(AiModelEntry))]
+[JsonSerializable(typeof(List<AiModelEntry>))]
 [JsonSerializable(typeof(SkillDefinition))]
 [JsonSerializable(typeof(List<SkillDefinition>))]
 [JsonSerializable(typeof(McpServerConfig))]
@@ -162,4 +164,6 @@ public class BuiltInPluginInfo
 [JsonSerializable(typeof(List<BuiltInPluginInfo>))]
 [JsonSerializable(typeof(AttachmentDto))]
 [JsonSerializable(typeof(List<AttachmentDto>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(TestAiRequest))]
 internal partial class JsonCtx : JsonSerializerContext;

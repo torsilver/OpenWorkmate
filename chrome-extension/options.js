@@ -3,14 +3,26 @@ const SKILLS_API_URL = "http://localhost:8765/api/skills";
 const BUILTIN_TOOLS_URL = "http://localhost:8765/api/tools/builtin";
 
 const els = {
-  provider: document.getElementById('provider'),
-  endpoint: document.getElementById('endpoint'),
-  apiKey: document.getElementById('apiKey'),
-  modelId: document.getElementById('modelId'),
-  systemPrompt: document.getElementById('systemPrompt'),
   allowedPageScriptIds: document.getElementById('allowedPageScriptIds'),
   saveBtn: document.getElementById('saveBtn'),
   statusMessage: document.getElementById('statusMessage'),
+  aiModelsList: document.getElementById('aiModelsList'),
+  addAiModelBtn: document.getElementById('addAiModelBtn'),
+  aiModelEditor: document.getElementById('aiModelEditor'),
+  aiModelEditorTitle: document.getElementById('aiModelEditorTitle'),
+  closeAiModelEditorBtn: document.getElementById('closeAiModelEditorBtn'),
+  aiModelDisplayName: document.getElementById('aiModelDisplayName'),
+  aiModelProvider: document.getElementById('aiModelProvider'),
+  aiModelEndpoint: document.getElementById('aiModelEndpoint'),
+  aiModelApiKey: document.getElementById('aiModelApiKey'),
+  aiModelDeploymentName: document.getElementById('aiModelDeploymentName'),
+  aiModelApiVersion: document.getElementById('aiModelApiVersion'),
+  aiModelModelId: document.getElementById('aiModelModelId'),
+  aiModelSystemPrompt: document.getElementById('aiModelSystemPrompt'),
+  aiModelEnabled: document.getElementById('aiModelEnabled'),
+  saveAiModelBtn: document.getElementById('saveAiModelBtn'),
+  testAiConnectionBtn: document.getElementById('testAiConnectionBtn'),
+  testAiStatus: document.getElementById('testAiStatus'),
   
   // Tabs
   tabs: document.querySelectorAll('.tab'),
@@ -28,6 +40,13 @@ const els = {
   saveSkillBtn: document.getElementById('saveSkillBtn'),
   cancelSkillBtn: document.getElementById('cancelSkillBtn')
 };
+
+/** 内存中的 AI 模型列表，与 fullConfig.aiModels 同步，编辑时直接修改 */
+let aiModelsCache = [];
+/** 当前编辑的模型 Id，空表示新增 */
+let editingAiModelId = null;
+/** 测试连接时使用的字段缓存，打开编辑时写入、输入时同步，点击测试时只读此对象避免 DOM 读取异常 */
+let testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '' };
 
 // ───── Tabs ─────
 els.tabs.forEach(tab => {
@@ -49,6 +68,236 @@ els.tabs.forEach(tab => {
 
 // ───── AI Config ─────
 let fullConfig = null;
+/** 当前渲染的「技能环境变量」键名列表，保存时据此收集表单值 */
+let skillEnvKeys = [];
+
+function getAiModels() {
+  const raw = fullConfig && (fullConfig.aiModels || fullConfig.AiModels);
+  return Array.isArray(raw) ? raw : [];
+}
+
+function renderAiModelsList() {
+  if (!els.aiModelsList) return;
+  aiModelsCache = getAiModels();
+  const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
+  els.aiModelsList.innerHTML = aiModelsCache.map(function (m) {
+    const id = m.id || m.Id || '';
+    const name = m.displayName || m.DisplayName || id || '(未命名)';
+    const provider = m.provider || m.Provider || 'OpenAI';
+    const enabled = m.enabled !== false && m.Enabled !== false;
+    const isActive = (activeId && id && activeId === id);
+    const enableBtn = isActive ? '' : ('<button type="button" class="btn-secondary enable-ai-btn" data-id="' + escapeAttr(id) + '">启用</button>');
+    return '<div class="mcp-server-row" data-ai-id="' + escapeAttr(id) + '">' +
+      '<div class="mcp-icon">' + (provider.substring(0, 1).toUpperCase()) + '</div>' +
+      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + ' <span style="color:var(--text-secondary);font-weight:400;">(' + escapeHtml(provider) + ')</span>' + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml(m.modelId || m.ModelId || '') + '</div></div>' +
+      '<div class="mcp-actions">' + enableBtn +
+      '<button type="button" class="btn-secondary edit-ai-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
+      '<button type="button" class="btn-danger delete-ai-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
+      '</div></div>';
+  }).join('');
+  els.aiModelsList.querySelectorAll('.enable-ai-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { setActiveAiModel(btn.dataset.id); });
+  });
+  els.aiModelsList.querySelectorAll('.edit-ai-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openAiModelEditor(btn.dataset.id); });
+  });
+  els.aiModelsList.querySelectorAll('.delete-ai-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { deleteAiModel(btn.dataset.id); });
+  });
+}
+
+function setActiveAiModel(id) {
+  if (!id || !fullConfig) return;
+  fullConfig.activeModelId = id;
+  fullConfig.ActiveModelId = id;
+  renderAiModelsList();
+  saveConfig();
+}
+
+function openAiModelEditor(existingId) {
+  editingAiModelId = existingId || null;
+  els.aiModelEditorTitle.textContent = existingId ? '编辑 AI 模型' : '添加新 AI';
+  if (existingId) {
+    const m = aiModelsCache.find(function (x) { return (x.id || x.Id) === existingId; });
+    if (m) {
+      els.aiModelDisplayName.value = m.displayName || m.DisplayName || '';
+      els.aiModelProvider.value = m.provider || m.Provider || 'OpenAI';
+      els.aiModelEndpoint.value = m.endpoint || m.Endpoint || '';
+      els.aiModelApiKey.value = m.apiKey || m.ApiKey || '';
+      els.aiModelDeploymentName.value = m.deploymentName || m.DeploymentName || '';
+      els.aiModelApiVersion.value = m.apiVersion || m.ApiVersion || '2024-02-01';
+      els.aiModelModelId.value = m.modelId || m.ModelId || '';
+      els.aiModelSystemPrompt.value = m.systemPrompt || m.SystemPrompt || '';
+      els.aiModelEnabled.checked = m.enabled !== false && m.Enabled !== false;
+      testConnectionFields = {
+        endpoint: String(m.endpoint || m.Endpoint || '').trim(),
+        modelId: String(m.modelId || m.ModelId || '').trim(),
+        apiKey: m.apiKey || m.ApiKey || '',
+        provider: m.provider || m.Provider || 'OpenAI',
+        deploymentName: String(m.deploymentName || m.DeploymentName || '').trim()
+      };
+    }
+  } else {
+    els.aiModelDisplayName.value = '';
+    els.aiModelProvider.value = 'OpenAI';
+    els.aiModelEndpoint.value = '';
+    els.aiModelApiKey.value = '';
+    els.aiModelDeploymentName.value = '';
+    els.aiModelApiVersion.value = '2024-02-01';
+    els.aiModelModelId.value = '';
+    els.aiModelSystemPrompt.value = '';
+    els.aiModelEnabled.checked = true;
+    testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '' };
+  }
+  toggleAzureFields();
+  if (els.aiModelEditor) els.aiModelEditor.style.display = 'block';
+  bindTestConnectionFieldsSync();
+}
+
+function bindTestConnectionFieldsSync() {
+  var form = document.getElementById('aiModelForm');
+  if (!form) return;
+  function update() {
+    var e = form.elements['endpoint'];
+    var m = form.elements['modelId'];
+    var p = form.elements['provider'];
+    var d = form.elements['deploymentName'];
+    var k = form.elements['apiKey'];
+    if (e && e.value != null) testConnectionFields.endpoint = String(e.value).trim();
+    if (m && m.value != null) testConnectionFields.modelId = String(m.value).trim();
+    if (p && p.value) testConnectionFields.provider = p.value;
+    if (d && d.value != null) testConnectionFields.deploymentName = String(d.value).trim();
+    if (k && k.value != null) testConnectionFields.apiKey = k.value;
+  }
+  ['endpoint', 'modelId', 'apiKey', 'provider', 'deploymentName'].forEach(function (name) {
+    var el = form.elements[name];
+    if (el) {
+      el.removeEventListener('input', update);
+      el.removeEventListener('change', update);
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
+    }
+  });
+}
+
+function closeAiModelEditor() {
+  editingAiModelId = null;
+  if (els.aiModelEditor) els.aiModelEditor.style.display = 'none';
+}
+
+function toggleAzureFields() {
+  var providerEl = document.getElementById('aiModelProvider');
+  const provider = (providerEl && providerEl.value) ? providerEl.value : 'OpenAI';
+  const isAzure = provider === 'Azure';
+  const isOllama = provider === 'Ollama';
+  const deployGroup = document.getElementById('aiModelDeploymentGroup');
+  const apiVerGroup = document.getElementById('aiModelApiVersionGroup');
+  const apiKeyGroup = document.getElementById('aiModelApiKeyGroup');
+  if (deployGroup) deployGroup.style.display = isAzure ? 'block' : 'none';
+  if (apiVerGroup) apiVerGroup.style.display = isAzure ? 'block' : 'none';
+  if (apiKeyGroup) apiKeyGroup.style.display = isOllama ? 'none' : 'block';
+}
+
+function saveAiModelFromEditor() {
+  const id = editingAiModelId || ('ai_' + Date.now());
+  const entry = {
+    id: id,
+    displayName: (els.aiModelDisplayName && els.aiModelDisplayName.value.trim()) || id,
+    provider: (els.aiModelProvider && els.aiModelProvider.value) || 'OpenAI',
+    endpoint: (els.aiModelEndpoint && els.aiModelEndpoint.value.trim()) || '',
+    apiKey: (els.aiModelApiKey && els.aiModelApiKey.value) || '',
+    deploymentName: (els.aiModelDeploymentName && els.aiModelDeploymentName.value.trim()) || '',
+    apiVersion: (els.aiModelApiVersion && els.aiModelApiVersion.value.trim()) || '2024-02-01',
+    modelId: (els.aiModelModelId && els.aiModelModelId.value.trim()) || '',
+    systemPrompt: (els.aiModelSystemPrompt && els.aiModelSystemPrompt.value.trim()) || '',
+    enabled: els.aiModelEnabled ? els.aiModelEnabled.checked : true
+  };
+  if (editingAiModelId) {
+    const idx = aiModelsCache.findIndex(function (x) { return (x.id || x.Id) === editingAiModelId; });
+    if (idx >= 0) aiModelsCache[idx] = entry;
+  } else {
+    aiModelsCache.push(entry);
+  }
+  fullConfig = fullConfig || {};
+  fullConfig.aiModels = aiModelsCache;
+  fullConfig.AiModels = aiModelsCache;
+  if (aiModelsCache.length === 1 && !(fullConfig.activeModelId || fullConfig.ActiveModelId)) {
+    fullConfig.activeModelId = entry.id;
+    fullConfig.ActiveModelId = entry.id;
+  }
+  closeAiModelEditor();
+  renderAiModelsList();
+}
+
+function deleteAiModel(id) {
+  if (!id || !confirm('确定删除该 AI 模型？')) return;
+  aiModelsCache = aiModelsCache.filter(function (m) { return (m.id || m.Id) !== id; });
+  fullConfig = fullConfig || {};
+  fullConfig.aiModels = aiModelsCache;
+  fullConfig.AiModels = aiModelsCache;
+  if ((fullConfig.activeModelId || fullConfig.ActiveModelId) === id) {
+    fullConfig.activeModelId = aiModelsCache.length ? (aiModelsCache[0].id || aiModelsCache[0].Id) : '';
+    fullConfig.ActiveModelId = fullConfig.activeModelId;
+  }
+  renderAiModelsList();
+}
+
+async function loadSkillEnvSection() {
+  const listEl = document.getElementById('skillEnvList');
+  const sectionEl = document.getElementById('skillEnvSection');
+  if (!listEl || !sectionEl) return;
+  const skillEnv = fullConfig && (fullConfig.skillEnv || fullConfig.SkillEnv);
+  const existing = skillEnv && typeof skillEnv === 'object' ? Object.keys(skillEnv) : [];
+  let keysSet = new Set(existing);
+  try {
+    const res = await fetch(SKILLS_API_URL);
+    if (res.ok) {
+      const skills = await res.json();
+      if (Array.isArray(skills)) {
+        skills.forEach(function (s) {
+          const env = s.requiresEnv || s.RequiresEnv;
+          if (Array.isArray(env)) env.forEach(function (k) { if (k) keysSet.add(k); });
+          if (s.primaryEnv || s.PrimaryEnv) keysSet.add(s.primaryEnv || s.PrimaryEnv);
+        });
+      }
+    }
+  } catch (e) { /* 忽略，仅用已有 key 渲染 */ }
+  skillEnvKeys = Array.from(keysSet).sort();
+  if (skillEnvKeys.length === 0) {
+    listEl.innerHTML = '<p class="help-text" style="margin:0;">当前没有需要配置环境变量的技能。安装带 requires.env 的 Clawhub 技能后刷新本页即可出现对应输入项。</p>';
+    return;
+  }
+  listEl.innerHTML = skillEnvKeys.map(function (key) {
+    const val = (skillEnv && skillEnv[key]) || '';
+    const id = 'skillEnv_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
+    return '<div class="form-group" style="margin-bottom:12px;"><label for="' + escapeAttr(id) + '">' + escapeHtml(key) + '</label><input type="password" id="' + escapeAttr(id) + '" placeholder="可选，也可用系统环境变量" value="' + escapeAttr(String(val)) + '"></div>';
+  }).join('');
+}
+
+function escapeAttr(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function collectSkillEnv() {
+  const base = fullConfig && (fullConfig.skillEnv || fullConfig.SkillEnv);
+  const out = base && typeof base === 'object' ? { ...base } : {};
+  skillEnvKeys.forEach(function (key) {
+    const id = 'skillEnv_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
+    const el = document.getElementById(id);
+    if (el) {
+      const v = (el.value && el.value.trim()) || '';
+      if (v) out[key] = v; else delete out[key];
+    }
+  });
+  return out;
+}
 
 async function loadConfig() {
   try {
@@ -60,15 +309,7 @@ async function loadConfig() {
     
     fullConfig = await response.json();
     const data = fullConfig;
-    // 兼容后端 camelCase 与 PascalCase
-    const ai = data && (data.ai || data.AI);
-    if (ai) {
-      els.provider.value = ai.provider ?? ai.Provider ?? '';
-      els.endpoint.value = ai.endpoint ?? ai.Endpoint ?? '';
-      els.apiKey.value = ai.apiKey ?? ai.ApiKey ?? '';
-      els.modelId.value = ai.modelId ?? ai.ModelId ?? '';
-      els.systemPrompt.value = ai.systemPrompt ?? ai.SystemPrompt ?? '';
-    }
+    renderAiModelsList();
     const ids = data.allowedPageScriptIds ?? data.AllowedPageScriptIds;
     if (els.allowedPageScriptIds) {
       els.allowedPageScriptIds.value = Array.isArray(ids) ? ids.join('\n') : '';
@@ -79,6 +320,7 @@ async function loadConfig() {
     }
     const mcps = data.mcpServers ?? data.McpServers;
     renderMcpList(mcps || []);
+    await loadSkillEnvSection();
     await loadBuiltinTools();
   } catch (err) {
     console.error(err);
@@ -102,14 +344,27 @@ async function saveConfig() {
     else allowedCliCommands = getAllowedCliCommands();
     const runEverythingEl = document.getElementById('runEverythingMode');
     const runEverythingMode = runEverythingEl ? runEverythingEl.checked : !!(fullConfig && (fullConfig.runEverythingMode ?? fullConfig.RunEverythingMode));
+    const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
+    var aiModelsToSave = (aiModelsCache && aiModelsCache.length) ? aiModelsCache : (fullConfig.aiModels || fullConfig.AiModels || []);
+    var activeEntry = aiModelsToSave.find(function (m) { return (m.id || m.Id) === activeId; });
+    var legacyAi = fullConfig && (fullConfig.ai || fullConfig.AI);
+    if (activeEntry && legacyAi) {
+      legacyAi = {
+        provider: activeEntry.provider || activeEntry.Provider || 'OpenAI',
+        endpoint: activeEntry.endpoint || activeEntry.Endpoint || '',
+        apiKey: activeEntry.apiKey || activeEntry.ApiKey || '',
+        modelId: activeEntry.modelId || activeEntry.ModelId || '',
+        systemPrompt: (activeEntry.systemPrompt || activeEntry.SystemPrompt) || (legacyAi.systemPrompt || legacyAi.SystemPrompt || ''),
+        toolSelectionMode: legacyAi.toolSelectionMode || legacyAi.ToolSelectionMode || 'Keyword',
+        alwaysIncludePlugins: legacyAi.alwaysIncludePlugins || legacyAi.AlwaysIncludePlugins || []
+      };
+    }
     const payload = {
-      ai: {
-        provider: els.provider.value.trim(),
-        endpoint: els.endpoint.value.trim(),
-        apiKey: els.apiKey.value.trim(),
-        modelId: els.modelId.value.trim(),
-        systemPrompt: els.systemPrompt.value.trim()
-      },
+      ai: legacyAi || fullConfig.ai || fullConfig.AI || {},
+      aiModels: aiModelsToSave,
+      activeModelId: activeId,
+      tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
+      skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
       allowedPageScriptIds: allowedPageScriptIds,
       allowedCliCommands: allowedCliCommands,
@@ -122,7 +377,7 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Failed to save');
-    fullConfig = { ai: payload.ai, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode };
+    fullConfig = { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode };
     els.statusMessage.style.opacity = '1';
     setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
     await loadConfig();
@@ -136,6 +391,55 @@ async function saveConfig() {
 }
 
 els.saveBtn.addEventListener('click', saveConfig);
+
+if (els.addAiModelBtn) els.addAiModelBtn.addEventListener('click', function () { openAiModelEditor(null); });
+if (els.closeAiModelEditorBtn) els.closeAiModelEditorBtn.addEventListener('click', closeAiModelEditor);
+if (els.saveAiModelBtn) els.saveAiModelBtn.addEventListener('click', saveAiModelFromEditor);
+if (els.aiModelProvider) els.aiModelProvider.addEventListener('change', toggleAzureFields);
+if (els.testAiConnectionBtn) els.testAiConnectionBtn.addEventListener('click', testAiConnection);
+
+async function testAiConnection() {
+  var statusEl = document.getElementById('testAiStatus');
+  if (!statusEl) return;
+  var endpoint = testConnectionFields.endpoint || '';
+  var modelId = testConnectionFields.modelId || '';
+  var provider = testConnectionFields.provider || 'OpenAI';
+  var deploymentName = testConnectionFields.deploymentName || '';
+  var apiKey = testConnectionFields.apiKey || '';
+  if (!endpoint || !modelId) {
+    statusEl.textContent = '请先填写接口地址和模型 ID';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  statusEl.textContent = '测试中…';
+  statusEl.style.color = 'var(--text-secondary)';
+  const testModelId = (provider === 'Azure' && deploymentName) ? deploymentName : modelId;
+  try {
+    const baseUrl = API_URL.replace('/api/config', '');
+    const res = await fetch(baseUrl + '/api/config/test-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: endpoint,
+        apiKey: apiKey,
+        modelId: testModelId,
+        provider: provider,
+        deploymentName: deploymentName
+      })
+    });
+    const data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
+    if (data.ok) {
+      statusEl.textContent = '连接成功';
+      statusEl.style.color = 'var(--success)';
+    } else {
+      statusEl.textContent = data.message || '连接失败';
+      statusEl.style.color = 'var(--danger)';
+    }
+  } catch (err) {
+    statusEl.textContent = '请求失败: ' + (err.message || '请确保后端已启动');
+    statusEl.style.color = 'var(--danger)';
+  }
+}
 
 // ───── Skills ─────
 let currentSkills = [];
@@ -604,6 +908,8 @@ async function _saveFullConfig() {
         modelId: els.modelId.value.trim(),
         systemPrompt: els.systemPrompt.value.trim()
       },
+      tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
+      skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && (fullConfig.mcpServers || fullConfig.McpServers)) || [],
       allowedPageScriptIds: allowedPageScriptIds,
       allowedCliCommands: (function () {

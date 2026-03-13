@@ -273,31 +273,72 @@
     
     <!-- 大模型设置 -->
     <div id="tab-ai" class="tab-content active">
-      <div class="form-group">
-        <label for="provider">服务商 (Provider)</label>
-        <input type="text" id="provider" placeholder="例如: OpenAI, DeepSeek, Moonshot">
+      <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-secondary);">AI 模型列表</h4>
+      <p class="help-text" style="margin-top: -4px; margin-bottom: 12px;">点击某条目的「启用」即设为当前使用模型，其它模型自动停用；所有对话将使用当前启用的模型。</p>
+      <div id="aiModelsList" class="ai-models-list"></div>
+      <button type="button" id="addAiModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加新 AI</button>
+
+      <!-- 添加/编辑 AI 表单（初始隐藏） -->
+      <div id="aiModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
+        <div class="skill-header">
+          <span id="aiModelEditorTitle" class="skill-title">添加新 AI</span>
+          <button type="button" id="closeAiModelEditorBtn" class="btn-secondary">取消</button>
+        </div>
+        <form id="aiModelForm" onsubmit="return false;">
+          <div class="form-group">
+            <label for="aiModelDisplayName">展示名称</label>
+            <input type="text" id="aiModelDisplayName" name="displayName" placeholder="例如: 我的 GPT-4">
+          </div>
+          <div class="form-group">
+            <label for="aiModelProvider">类型 (Provider)</label>
+            <select id="aiModelProvider" name="provider">
+              <option value="OpenAI">OpenAI / 兼容接口</option>
+              <option value="Azure">Azure OpenAI</option>
+              <option value="Ollama">Ollama</option>
+              <option value="Anthropic">Anthropic (Claude)</option>
+            </select>
+          </div>
+          <div class="form-group" id="aiModelEndpointGroup">
+            <label for="aiModelEndpoint">接口地址 (Endpoint)</label>
+            <input type="text" id="aiModelEndpoint" name="endpoint" placeholder="https://api.openai.com/v1">
+            <div class="help-text">多数需以 <code>/v1</code> 结尾。Ollama 常用 <code>http://localhost:11434/v1</code>。</div>
+          </div>
+          <div class="form-group" id="aiModelApiKeyGroup">
+            <label for="aiModelApiKey">API Key</label>
+            <input type="password" id="aiModelApiKey" name="apiKey" placeholder="sk-...">
+          </div>
+          <div class="form-group" id="aiModelDeploymentGroup" style="display: none;">
+            <label for="aiModelDeploymentName">部署名 (Deployment Name)</label>
+            <input type="text" id="aiModelDeploymentName" name="deploymentName" placeholder="gpt-4o">
+          </div>
+          <div class="form-group" id="aiModelApiVersionGroup" style="display: none;">
+            <label for="aiModelApiVersion">API Version</label>
+            <input type="text" id="aiModelApiVersion" name="apiVersion" placeholder="2024-02-01">
+          </div>
+          <div class="form-group">
+            <label for="aiModelModelId">模型 ID (Model)</label>
+            <input type="text" id="aiModelModelId" name="modelId" placeholder="gpt-4o-mini / llama3">
+          </div>
+          <div class="form-group">
+            <label for="aiModelSystemPrompt">系统提示词（可选，不填用全局默认）</label>
+            <textarea id="aiModelSystemPrompt" name="systemPrompt" placeholder="可选"></textarea>
+          </div>
+          <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="aiModelEnabled" name="enabled" checked>
+            <label for="aiModelEnabled" style="margin: 0;">启用（在列表中可点击「启用」设为当前使用）</label>
+          </div>
+          <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
+            <button type="button" id="testAiConnectionBtn" class="btn-secondary">测试连接</button>
+            <button type="button" id="saveAiModelBtn">保存</button>
+            <span id="testAiStatus" class="help-text" style="margin-left: 8px;"></span>
+          </div>
+        </form>
       </div>
 
-      <div class="form-group">
-        <label for="endpoint">接口地址 (Endpoint)</label>
-        <input type="text" id="endpoint" placeholder="例如: https://api.openai.com/v1">
-        <div class="help-text">若是其他兼容接口，请填完整 Base URL，且多数需以 <code>/v1</code> 结尾（如 <code>http://地址:端口/v1</code>），否则可能报 404。</div>
-      </div>
-
-      <div class="form-group">
-        <label for="apiKey">API Key</label>
-        <input type="password" id="apiKey" placeholder="sk-...">
-      </div>
-
-      <div class="form-group">
-        <label for="modelId">模型 ID (Model)</label>
-        <input type="text" id="modelId" placeholder="例如: gpt-4o, deepseek-chat">
-      </div>
-
-      <div class="form-group">
-        <label for="systemPrompt">系统提示词 (System Prompt)</label>
-        <textarea id="systemPrompt" placeholder="你是 Office Copilot..."></textarea>
-        <div class="help-text">控制 AI 的行为边界和输出格式。</div>
+      <div id="skillEnvSection" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">技能所需环境变量</h4>
+        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>
+        <div id="skillEnvList"></div>
       </div>
 
       <div class="actions">
