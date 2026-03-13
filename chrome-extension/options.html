@@ -335,6 +335,14 @@
         </form>
       </div>
 
+      <details id="toolSelectionModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <summary id="toolSelectionModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">工具选择模型（未指定）</summary>
+        <div style="margin-top: 12px;">
+          <p class="help-text" style="margin-bottom: 12px;">下方指定用于插件筛选的模型；不填则使用本机嵌入式小模型（若可用），否则主模型兜底。列表包含本地 GGUF 与上方已配置的 AI 模型。</p>
+          <div id="toolSelectionModelList"></div>
+        </div>
+      </details>
+
       <div id="skillEnvSection" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">技能所需环境变量</h4>
         <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>

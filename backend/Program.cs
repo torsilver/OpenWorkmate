@@ -1,10 +1,38 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using LLama.Native;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Mcp;
 using Serilog;
+
+// 优先尝试 CUDA；若未装 CUDA 运行时（仅游戏驱动时 cuda12 的 DLL 会加载失败），则回退为默认加载，嵌入模型用 CPU
+try
+{
+    if (OperatingSystem.IsWindows())
+    {
+        var cuda12Dir = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", "cuda12");
+        var cuda12Llama = Path.Combine(cuda12Dir, "llama.dll");
+        if (File.Exists(cuda12Llama))
+        {
+            // 将 cuda12 目录加入 PATH，便于加载 cudart 等依赖（需已安装 CUDA Toolkit 12）
+            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            if (!path.StartsWith(cuda12Dir, StringComparison.OrdinalIgnoreCase))
+                Environment.SetEnvironmentVariable("PATH", cuda12Dir + Path.PathSeparator + path, EnvironmentVariableTarget.Process);
+            NativeLibraryConfig.All.WithCuda(true);
+        }
+        else
+        {
+            NativeLibraryConfig.All.WithCuda(true);
+        }
+    }
+    else
+    {
+        NativeLibraryConfig.All.WithCuda(true);
+    }
+}
+catch { /* 已加载或配置失败时忽略 */ }
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
@@ -21,6 +49,8 @@ try
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
+    builder.Services.AddSingleton<IKernelAccessor, KernelAccessor>();
+    builder.Services.AddSingleton<IEmbeddedToolSelectionModel, EmbeddedToolSelectionModel>();
     builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
@@ -112,6 +142,21 @@ app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenA
     wsPath, !string.IsNullOrEmpty(authToken), isDev, allowedOrigins.Length);
 
 app.MapGet("/api/config", (ConfigService config) => Results.Json(config.Current, JsonCtx.Default.AppConfig));
+app.MapGet("/api/config/embedded-models", () =>
+{
+    var modelsDir = Path.Combine(AppContext.BaseDirectory, "Models");
+    var list = new List<object>();
+    if (Directory.Exists(modelsDir))
+    {
+        foreach (var path in Directory.EnumerateFiles(modelsDir, "*.gguf", SearchOption.TopDirectoryOnly))
+        {
+            var fullPath = Path.GetFullPath(path);
+            var fileName = Path.GetFileName(path);
+            list.Add(new { fileName, path = fullPath });
+        }
+    }
+    return Results.Json(new { models = list });
+});
 app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
 {
     var newConfig = await JsonSerializer.DeserializeAsync<AppConfig>(ctx.Request.Body, JsonCtx.Default.AppConfig);

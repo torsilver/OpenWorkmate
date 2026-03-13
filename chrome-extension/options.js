@@ -115,6 +115,98 @@ function setActiveAiModel(id) {
   saveConfig();
 }
 
+function normalizePath(p) {
+  return (p || '').replace(/\\/g, '/').toLowerCase();
+}
+
+function updateToolSelectionSummary() {
+  var summaryEl = document.getElementById('toolSelectionModelSummary');
+  if (!summaryEl) return;
+  var toolId = (fullConfig && fullConfig.ai) ? (fullConfig.ai.toolSelectionModelId || fullConfig.ai.ToolSelectionModelId || '') : '';
+  var embeddedPath = (fullConfig && (fullConfig.embeddedToolSelectionModelPath ?? fullConfig.EmbeddedToolSelectionModelPath)) || '';
+  if (embeddedPath) {
+    var name = embeddedPath.split(/[/\\]/).pop() || '';
+    summaryEl.textContent = '工具选择模型（当前：本地 ' + (name || '…') + '）';
+  } else if (toolId) {
+    var models = getAiModels();
+    var m = models.find(function (x) { return (x.id || x.Id) === toolId; });
+    var displayName = m ? (m.displayName || m.DisplayName || m.id || m.Id || '') : toolId;
+    summaryEl.textContent = '工具选择模型（当前：远程 ' + displayName + '）';
+  } else {
+    summaryEl.textContent = '工具选择模型（未指定，使用默认本地）';
+  }
+}
+
+async function renderToolSelectionModelList() {
+  var container = document.getElementById('toolSelectionModelList');
+  if (!container) return;
+  var toolId = (fullConfig && fullConfig.ai) ? (fullConfig.ai.toolSelectionModelId || fullConfig.ai.ToolSelectionModelId || '') : '';
+  var embeddedPath = (fullConfig && (fullConfig.embeddedToolSelectionModelPath ?? fullConfig.EmbeddedToolSelectionModelPath)) || '';
+  var normalizedEmbedded = normalizePath(embeddedPath);
+  var baseUrl = API_URL.replace('/api/config', '');
+  var rows = [];
+  try {
+    var res = await fetch(baseUrl + '/api/config/embedded-models');
+    if (res.ok) {
+      var data = await res.json();
+      var localList = data.models || [];
+      localList.forEach(function (m, index) {
+        var path = m.path || '';
+        var fileName = m.fileName || path.split(/[/\\]/).pop() || '';
+        var isCurrent = normalizedEmbedded ? (normalizePath(path) === normalizedEmbedded) : (index === 0);
+        var enableBtn = isCurrent ? '' : ('<button type="button" class="btn-secondary tool-selection-enable-btn" data-type="embedded" data-path="' + escapeAttr(path) + '">启用</button>');
+        rows.push('<div class="mcp-server-row" data-type="embedded" data-path="' + escapeAttr(path) + '">' +
+          '<div class="mcp-icon">本</div>' +
+          '<div class="mcp-info"><div class="mcp-name">本地: ' + escapeHtml(fileName) + (isCurrent ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+          '<div class="mcp-desc">Models / ' + escapeHtml(fileName) + '</div></div>' +
+          '<div class="mcp-actions">' + enableBtn + '</div></div>');
+      });
+    }
+  } catch (e) { /* ignore */ }
+  var aiModels = getAiModels();
+  aiModels.forEach(function (m) {
+    var id = m.id || m.Id || '';
+    var name = m.displayName || m.DisplayName || id || '(未命名)';
+    var provider = m.provider || m.Provider || 'OpenAI';
+    var isCurrent = toolId && id && toolId === id;
+    var enableBtn = isCurrent ? '' : ('<button type="button" class="btn-secondary tool-selection-enable-btn" data-type="ai" data-id="' + escapeAttr(id) + '">启用</button>');
+    rows.push('<div class="mcp-server-row" data-type="ai" data-id="' + escapeAttr(id) + '">' +
+      '<div class="mcp-icon">' + (provider.substring(0, 1).toUpperCase()) + '</div>' +
+      '<div class="mcp-info"><div class="mcp-name">远程: ' + escapeHtml(name) + ' <span style="color:var(--text-secondary);font-weight:400;">(' + escapeHtml(provider) + ')</span>' + (isCurrent ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml(m.modelId || m.ModelId || '') + '</div></div>' +
+      '<div class="mcp-actions">' + enableBtn + '</div></div>');
+  });
+  container.innerHTML = rows.length ? rows.join('') : '<p class="help-text">暂无模型，请先在上方添加 AI 模型或在 Models 文件夹中放入 .gguf 文件后刷新本页。</p>';
+  container.querySelectorAll('.tool-selection-enable-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!fullConfig) return;
+      var type = btn.getAttribute('data-type');
+      if (type === 'embedded') {
+        var path = btn.getAttribute('data-path');
+        if (path) {
+          fullConfig.embeddedToolSelectionModelPath = path;
+          fullConfig.EmbeddedToolSelectionModelPath = path;
+          if (fullConfig.ai) fullConfig.ai.toolSelectionModelId = '';
+          if (fullConfig.AI) fullConfig.AI.ToolSelectionModelId = '';
+          saveConfig().then(function () { renderToolSelectionModelList(); updateToolSelectionSummary(); });
+        }
+      } else if (type === 'ai') {
+        var id = btn.getAttribute('data-id');
+        if (id) {
+          if (!fullConfig.ai) fullConfig.ai = {};
+          if (!fullConfig.AI) fullConfig.AI = {};
+          fullConfig.ai.toolSelectionModelId = id;
+          fullConfig.AI.ToolSelectionModelId = id;
+          fullConfig.embeddedToolSelectionModelPath = '';
+          fullConfig.EmbeddedToolSelectionModelPath = '';
+          saveConfig().then(function () { renderToolSelectionModelList(); updateToolSelectionSummary(); });
+        }
+      }
+    });
+  });
+  updateToolSelectionSummary();
+}
+
 function openAiModelEditor(existingId) {
   editingAiModelId = existingId || null;
   els.aiModelEditorTitle.textContent = existingId ? '编辑 AI 模型' : '添加新 AI';
@@ -310,6 +402,7 @@ async function loadConfig() {
     fullConfig = await response.json();
     const data = fullConfig;
     renderAiModelsList();
+    await renderToolSelectionModelList();
     const ids = data.allowedPageScriptIds ?? data.AllowedPageScriptIds;
     if (els.allowedPageScriptIds) {
       els.allowedPageScriptIds.value = Array.isArray(ids) ? ids.join('\n') : '';
@@ -355,12 +448,16 @@ async function saveConfig() {
         apiKey: activeEntry.apiKey || activeEntry.ApiKey || '',
         modelId: activeEntry.modelId || activeEntry.ModelId || '',
         systemPrompt: (activeEntry.systemPrompt || activeEntry.SystemPrompt) || (legacyAi.systemPrompt || legacyAi.SystemPrompt || ''),
-        toolSelectionMode: legacyAi.toolSelectionMode || legacyAi.ToolSelectionMode || 'Keyword',
+        toolSelectionModelId: legacyAi.toolSelectionModelId ?? legacyAi.ToolSelectionModelId,
         alwaysIncludePlugins: legacyAi.alwaysIncludePlugins || legacyAi.AlwaysIncludePlugins || []
       };
     }
+    var aiPayload = legacyAi || fullConfig.ai || fullConfig.AI || {};
+    var toolId = (fullConfig && fullConfig.ai) ? (fullConfig.ai.toolSelectionModelId ?? fullConfig.ai.ToolSelectionModelId) : '';
+    aiPayload = Object.assign({}, aiPayload, { toolSelectionModelId: (toolId && String(toolId).trim()) || undefined });
+    const embeddedPath = (fullConfig && (fullConfig.embeddedToolSelectionModelPath ?? fullConfig.EmbeddedToolSelectionModelPath)) || undefined;
     const payload = {
-      ai: legacyAi || fullConfig.ai || fullConfig.AI || {},
+      ai: aiPayload,
       aiModels: aiModelsToSave,
       activeModelId: activeId,
       tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
@@ -369,7 +466,8 @@ async function saveConfig() {
       allowedPageScriptIds: allowedPageScriptIds,
       allowedCliCommands: allowedCliCommands,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
-      runEverythingMode: runEverythingMode
+      runEverythingMode: runEverythingMode,
+      embeddedToolSelectionModelPath: embeddedPath
     };
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -377,7 +475,7 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Failed to save');
-    fullConfig = { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode };
+    fullConfig = { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddedToolSelectionModelPath: payload.embeddedToolSelectionModelPath };
     els.statusMessage.style.opacity = '1';
     setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
     await loadConfig();

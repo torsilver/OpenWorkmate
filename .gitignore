@@ -48,6 +48,10 @@ Thumbs.db
 .idea/
 *.iml
 
+# ---- 嵌入模型与日志（大文件/运行时） ----
+*.gguf
+backend/logs/
+
 # ---- 其他 ----
 *.cache
 .env

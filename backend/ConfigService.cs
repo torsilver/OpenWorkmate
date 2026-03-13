@@ -11,10 +11,12 @@ public class AiConfig
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
     public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。";
-    /// <summary>工具选择方式：Keyword（关键词匹配）或 LLM（一次 LLM 调用）。按需工具选择始终启用。</summary>
-    public string ToolSelectionMode { get; set; } = "Keyword";
+    /// <summary>工具选择专用模型 Id，对应 AiModels 中某条；为空则使用嵌入式小模型或当前主模型兜底。</summary>
+    public string? ToolSelectionModelId { get; set; }
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
+    /// <summary>为 true 时使用两阶段工具选择（一阶段选子类、二阶段选函数）；为 false 时退化为单阶段选插件。null 视为 true。</summary>
+    public bool? ToolSelectionTwoStage { get; set; } = true;
 }
 
 /// <summary>多模型列表中的单条：支持 OpenAI / Azure / Ollama / Anthropic。</summary>
@@ -66,6 +68,8 @@ public class AppConfig
     public string TavilyApiKey { get; set; } = "";
     /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY、OPENAI_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取，若无则从系统环境变量读取。可在设置页或 user-config.json 中配置。</summary>
     public Dictionary<string, string> SkillEnv { get; set; } = new();
+    /// <summary>嵌入式工具选择模型路径（GGUF 文件）；为空时使用运行目录下 Models/ 中默认文件名。设置页「本地兜底模型」列表中启用某条时写入。</summary>
+    public string? EmbeddedToolSelectionModelPath { get; set; }
 }
 
 public sealed class ConfigService

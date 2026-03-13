@@ -28,9 +28,10 @@ public sealed class ChatService : IDisposable
     private readonly McpClientManager _mcpManager;
     private readonly IToolSelector _toolSelector;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IKernelAccessor _kernelAccessor;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -39,6 +40,7 @@ public sealed class ChatService : IDisposable
         _mcpManager = mcpManager;
         _toolSelector = toolSelector;
         _serviceProvider = serviceProvider;
+        _kernelAccessor = kernelAccessor;
 
         var session = config.GetSection("Session");
         _maxTurns = session.GetValue("MaxHistoryTurns", 50);
@@ -184,6 +186,11 @@ public sealed class ChatService : IDisposable
             }
         }
 
+        var embeddedModel = _serviceProvider.GetRequiredService<IEmbeddedToolSelectionModel>();
+        var embeddedChat = embeddedModel.GetChatCompletionService();
+        if (embeddedChat != null)
+            builder.Services.AddKeyedSingleton<IChatCompletionService>(EmbeddedToolSelectionModel.ServiceId, embeddedChat);
+
         var newKernel = builder.Build();
 
         // 注册安全拦截器（含 HITL：拦截时发确认请求，用户允许则继续执行）
@@ -303,6 +310,7 @@ public sealed class ChatService : IDisposable
         {
             _kernel = newKernel;
             _activeModelId = activeId;
+            _kernelAccessor.Set(_kernel, _activeModelId);
         }
 
         _logger.LogInformation("Kernel rebuilt. ActiveModel: {ActiveId}, Plugins: {Count}, UserSkills: {SkillCount}, MCPs: {McpCount}",
@@ -415,22 +423,33 @@ public sealed class ChatService : IDisposable
                 "[AI-REQUEST] SessionId={SessionId} Model={Model} Endpoint={Endpoint} MessageCount={Count} Messages={Messages}",
                 sessionId, modelForLog, endpointForLog, state.History.Count, requestSummary);
 
-            var availableNames = GetAvailablePluginNames(kernel);
-            IReadOnlyList<string> selectedNames;
+            var aiConfig = _configService.Current.AI;
+            var useTwoStage = aiConfig?.ToolSelectionTwoStage != false;
+            IReadOnlyList<KernelFunction>? selectedFunctions = null;
             try
             {
                 var recentHistory = state.History.Count > 1 ? state.History : null;
-                selectedNames = await _toolSelector.SelectPluginNamesAsync(finalMessage, recentHistory, availableNames, ct).ConfigureAwait(false);
+                if (useTwoStage)
+                {
+                    var selectedPairs = await _toolSelector.SelectFunctionsAsync(finalMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                    if (selectedPairs is { Count: > 0 })
+                        selectedFunctions = GetFunctionsByPluginAndFunctionNames(kernel, selectedPairs);
+                }
+                if (selectedFunctions == null || selectedFunctions.Count == 0)
+                {
+                    var availableNames = GetAvailablePluginNames(kernel);
+                    var selectedNames = await _toolSelector.SelectPluginNamesAsync(finalMessage, recentHistory, availableNames, ct).ConfigureAwait(false);
+                    selectedFunctions = selectedNames is { Count: > 0 }
+                        ? GetFunctionsForPluginNames(kernel, selectedNames)
+                        : null;
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
-                selectedNames = Array.Empty<string>();
+                selectedFunctions = null;
             }
 
-            var selectedFunctions = selectedNames is { Count: > 0 }
-                ? GetFunctionsForPluginNames(kernel, selectedNames)
-                : null;
             OpenAIPromptExecutionSettings execSettings;
             if (selectedFunctions is { Count: > 0 })
             {
@@ -438,8 +457,8 @@ public sealed class ChatService : IDisposable
                 {
                     FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(selectedFunctions)
                 };
-                _logger.LogInformation("[{SessionId}] Tool selection: {Count} plugins, {FunctionCount} functions",
-                    sessionId, selectedNames.Count, selectedFunctions.Count);
+                _logger.LogInformation("[{SessionId}] Tool selection: {FunctionCount} functions",
+                    sessionId, selectedFunctions.Count);
             }
             else
             {
@@ -516,6 +535,19 @@ public sealed class ChatService : IDisposable
         {
             if (!nameSet.Contains(plugin.Name)) continue;
             foreach (KernelFunction func in plugin)
+                functions.Add(func);
+        }
+        return functions;
+    }
+
+    /// <summary>按 (插件名, 函数名) 列表从 Kernel 中取出对应 KernelFunction；用于两阶段工具选择结果。</summary>
+    private static IReadOnlyList<KernelFunction> GetFunctionsByPluginAndFunctionNames(Kernel kernel, IReadOnlyList<(string PluginName, string FunctionName)> selected)
+    {
+        if (selected == null || selected.Count == 0) return Array.Empty<KernelFunction>();
+        var functions = new List<KernelFunction>();
+        foreach (var (pluginName, functionName) in selected)
+        {
+            if (kernel.Plugins.TryGetFunction(pluginName, functionName, out var func) && func != null)
                 functions.Add(func);
         }
         return functions;
