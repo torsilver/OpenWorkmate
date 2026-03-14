@@ -4,6 +4,7 @@ using System.Text.Json;
 using LLama.Native;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Mcp;
 using Serilog;
 
@@ -50,6 +51,23 @@ try
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
     builder.Services.AddSingleton<IKernelAccessor, KernelAccessor>();
+    builder.Services.AddSingleton<EmbeddingProvider>();
+    builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());
+    builder.Services.AddSingleton<IVectorStore>(sp =>
+    {
+        var config = sp.GetRequiredService<ConfigService>().Current;
+        var t = (config.RagStorageType ?? "").Trim();
+        var path = (config.RagStoragePath ?? "").Trim();
+        if (string.Equals(t, "Sqlite", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(path))
+        {
+            path = Environment.ExpandEnvironmentVariables(path);
+            if (!Path.IsPathRooted(path))
+                path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OfficeCopilot", path);
+            return new SqliteVectorStore("Data Source=" + path);
+        }
+        return new InMemoryVectorStore();
+    });
+    builder.Services.AddSingleton<IMemoryStoreService, MemoryStoreService>();
     builder.Services.AddSingleton<IEmbeddedToolSelectionModel, EmbeddedToolSelectionModel>();
     builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
     builder.Services.AddSingleton<SessionManager>();
@@ -235,7 +253,8 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
         new() { Id = "Tavily", Name = "Tavily", Description = "Tavily 网页搜索与 URL 正文提取（需配置 TAVILY_API_KEY）" },
-        new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" }
+        new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
+        new() { Id = "Memory", Name = "Memory", Description = "长期记忆：保存与检索用户偏好、关键事实（需配置 Embedding 模型）" }
     };
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);
 });
@@ -254,6 +273,73 @@ app.MapDelete("/api/skills/{id}", (string id, SkillService skills) =>
 {
     skills.DeleteSkill(id);
     return Results.Ok();
+});
+
+// ----- 阶段 3：RAG 摄入与记忆 CRUD -----
+app.MapPost("/api/rag/ingest", async (HttpContext ctx, IMemoryStoreService memory) =>
+{
+    if (!memory.IsAvailable)
+        return Results.Json(new { ok = false, message = "未配置 Embedding 模型，无法摄入知识库。" }, statusCode: 400);
+    var body = await JsonSerializer.DeserializeAsync<RagIngestRequest>(ctx.Request.Body, JsonCtx.Default.RagIngestRequest);
+    if (body == null || string.IsNullOrWhiteSpace(body.KnowledgeBaseId) || string.IsNullOrWhiteSpace(body.Text))
+        return Results.BadRequest(new { ok = false, message = "需要 knowledgeBaseId 和 text。" });
+    var chunks = TextChunker.Chunk(body.Text, body.MaxChunkChars, body.OverlapChars);
+    var added = 0;
+    for (var i = 0; i < chunks.Count; i++)
+    {
+        var chunkId = $"{body.KnowledgeBaseId}:{i}";
+        await memory.AddChunkToKnowledgeBaseAsync(body.KnowledgeBaseId, chunkId, chunks[i], null).ConfigureAwait(false);
+        added++;
+    }
+    return Results.Json(new { ok = true, chunksAdded = added });
+});
+
+app.MapGet("/api/memory", async (string? sessionId, int skip, int take, IMemoryStoreService memory) =>
+{
+    if (!memory.IsAvailable)
+        return Results.Json(new { ok = false, message = "未配置 Embedding 模型。" }, statusCode: 400);
+    var list = await memory.ListAsync(sessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100)).ConfigureAwait(false);
+    return Results.Json(new { ok = true, items = list });
+});
+
+app.MapPost("/api/memory", async (HttpContext ctx, IMemoryStoreService memory) =>
+{
+    if (!memory.IsAvailable)
+        return Results.Json(new { ok = false, message = "未配置 Embedding 模型。" }, statusCode: 400);
+    var body = await JsonSerializer.DeserializeAsync<MemoryAddRequest>(ctx.Request.Body, JsonCtx.Default.MemoryAddRequest);
+    if (body == null || string.IsNullOrWhiteSpace(body.Text))
+        return Results.BadRequest(new { ok = false, message = "需要 text。" });
+    var metadata = string.IsNullOrWhiteSpace(body.Tags) ? null : new Dictionary<string, string> { ["tags"] = body.Tags };
+    var id = await memory.SaveAsync(null, body.Text.Trim(), body.SessionId, metadata).ConfigureAwait(false);
+    return Results.Json(new { ok = true, id });
+});
+
+app.MapGet("/api/memory/{id}", async (string id, IMemoryStoreService memory) =>
+{
+    var item = await memory.GetAsync(id).ConfigureAwait(false);
+    if (item == null) return Results.NotFound();
+    return Results.Json(item);
+});
+
+app.MapPut("/api/memory/{id}", async (string id, HttpContext ctx, IMemoryStoreService memory) =>
+{
+    if (!memory.IsAvailable)
+        return Results.Json(new { ok = false, message = "未配置 Embedding 模型。" }, statusCode: 400);
+    var body = await JsonSerializer.DeserializeAsync<MemoryUpdateRequest>(ctx.Request.Body, JsonCtx.Default.MemoryUpdateRequest);
+    if (body == null || string.IsNullOrWhiteSpace(body.Text))
+        return Results.BadRequest(new { ok = false, message = "需要 text。" });
+    var existing = await memory.GetAsync(id).ConfigureAwait(false);
+    var sessionId = existing?.SessionId;
+    var metadata = string.IsNullOrWhiteSpace(body.Tags) ? null : new Dictionary<string, string> { ["tags"] = body.Tags };
+    await memory.SaveAsync(id, body.Text.Trim(), sessionId, metadata).ConfigureAwait(false);
+    return Results.Ok(new { ok = true });
+});
+
+app.MapDelete("/api/memory/{id}", async (string id, IMemoryStoreService memory) =>
+{
+    var deleted = await memory.DeleteAsync(id).ConfigureAwait(false);
+    if (!deleted) return Results.NotFound();
+    return Results.Ok(new { ok = true });
 });
 
 app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
@@ -379,7 +465,7 @@ static async Task HandleChatStream(
             prompt = $"[当前网页上下文]\n标题: {incoming.Context.Title}\nURL: {incoming.Context.Url}\n内容:\n{incoming.Context.Content}\n\n[用户输入]\n{incoming.Content}";
         }
 
-        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, ct))
+        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, ct))
         {
             await SendJson(ws, new WsMessage { Type = "stream_chunk", Content = chunk });
         }

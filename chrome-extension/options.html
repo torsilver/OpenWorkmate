@@ -267,6 +267,7 @@
     
     <div class="tabs">
       <div class="tab active" data-target="tab-ai">大模型设置</div>
+      <div class="tab" data-target="tab-memory">记忆与 RAG</div>
       <div class="tab" data-target="tab-skills">自定义技能 (Skills)</div>
       <div class="tab" data-target="tab-mcp">外部组件 (MCP)</div>
     </div>
@@ -343,6 +344,55 @@
         </div>
       </details>
 
+      <details id="embeddingModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <summary id="embeddingModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">Embedding 模型（未配置）</summary>
+        <div style="margin-top: 12px;">
+          <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。可选本地 GGUF（LLamaSharp）或远程 Embedding API。不配置则记忆/RAG 不生效。</p>
+          <div class="form-group">
+            <label>来源</label>
+            <select id="embeddingSource" style="padding: 6px 10px; border-radius: 6px;">
+              <option value="">不配置</option>
+              <option value="Local">本地模型 (GGUF)</option>
+              <option value="Remote">远程 API</option>
+            </select>
+          </div>
+          <div id="embeddingLocalSection" style="display: none;">
+            <div class="form-group">
+              <label for="embeddingModelPath">本地模型路径</label>
+              <input type="text" id="embeddingModelPath" placeholder="留空则用 Models 目录下默认；或选择下方列表">
+            </div>
+            <p class="help-text" style="margin-bottom: 8px;">从后端 Models 目录选用：</p>
+            <div id="embeddingModelList"></div>
+          </div>
+          <div id="embeddingRemoteSection" style="display: none;">
+            <div class="form-group">
+              <label for="embeddingEndpoint">接口地址 (Endpoint)</label>
+              <input type="text" id="embeddingEndpoint" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+              <label for="embeddingApiKey">API Key</label>
+              <input type="password" id="embeddingApiKey" placeholder="sk-...">
+            </div>
+            <div class="form-group">
+              <label for="embeddingModelId">模型 ID (Model)</label>
+              <input type="text" id="embeddingModelId" placeholder="text-embedding-3-small">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div id="ragStorageSection" style="margin-top: 16px;">
+        <label style="font-size: 13px; color: var(--text-secondary);">向量存储</label>
+        <select id="ragStorageType" style="margin-top: 4px; padding: 6px 10px; border-radius: 6px;">
+          <option value="Memory">内存（进程重启后清空）</option>
+          <option value="Sqlite">SQLite 文件（持久化）</option>
+        </select>
+        <div id="ragStoragePathGroup" style="display: none; margin-top: 8px;">
+          <label for="ragStoragePath">数据库路径</label>
+          <input type="text" id="ragStoragePath" placeholder="留空则用 %LocalAppData%/OfficeCopilot/rag.db">
+        </div>
+      </div>
+
       <div id="skillEnvSection" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">技能所需环境变量</h4>
         <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>
@@ -355,6 +405,36 @@
       </div>
     </div>
     
+    <!-- 记忆与 RAG -->
+    <div id="tab-memory" class="tab-content">
+      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">记忆管理（增删改查）</h3>
+      <p class="help-text" style="margin-bottom: 12px;">需先在「大模型设置」中配置 Embedding 模型（与对话大模型独立）。此处可查看、新增、编辑、删除长期记忆。</p>
+      <div style="margin-bottom: 12px;">
+        <button type="button" id="addMemoryBtn" class="btn-secondary">+ 新增记忆</button>
+        <input type="text" id="memorySessionFilter" placeholder="按会话 ID 筛选（可选）" style="margin-left: 12px; width: 200px; padding: 6px 10px;">
+        <button type="button" id="refreshMemoryListBtn" class="btn-secondary" style="margin-left: 8px;">刷新</button>
+      </div>
+      <div id="memoryListContainer">
+        <div id="memoryList"></div>
+      </div>
+      <div id="memoryEditor" style="display: none; margin-top: 20px; padding: 16px; border: 1px solid var(--border); border-radius: 8px;">
+        <h4 id="memoryEditorTitle" style="margin-bottom: 12px;">新增记忆</h4>
+        <input type="hidden" id="memoryEditId">
+        <div class="form-group">
+          <label for="memoryEditText">内容</label>
+          <textarea id="memoryEditText" rows="4" placeholder="要记住的文本"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="memoryEditTags">标签（可选，逗号分隔）</label>
+          <input type="text" id="memoryEditTags" placeholder="例如: 偏好, 待办">
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <button type="button" id="saveMemoryBtn">保存</button>
+          <button type="button" id="cancelMemoryEditBtn" class="btn-secondary">取消</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MCP 管理 -->
     <div id="tab-mcp" class="tab-content">
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认</h3>

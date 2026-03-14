@@ -63,6 +63,9 @@ els.tabs.forEach(tab => {
     if (tab.dataset.target === 'tab-mcp') {
       loadBuiltinTools();
     }
+    if (tab.dataset.target === 'tab-memory') {
+      loadMemoryList();
+    }
   });
 });
 
@@ -206,6 +209,180 @@ async function renderToolSelectionModelList() {
   });
   updateToolSelectionSummary();
 }
+
+function toggleEmbeddingSections() {
+  var srcEl = document.getElementById('embeddingSource');
+  var src = srcEl ? srcEl.value : '';
+  var localSec = document.getElementById('embeddingLocalSection');
+  var remoteSec = document.getElementById('embeddingRemoteSection');
+  if (localSec) localSec.style.display = (src === 'Local') ? 'block' : 'none';
+  if (remoteSec) remoteSec.style.display = (src === 'Remote') ? 'block' : 'none';
+}
+
+function updateEmbeddingModelSummary() {
+  var sum = document.getElementById('embeddingModelSummary');
+  if (!sum) return;
+  var srcEl = document.getElementById('embeddingSource');
+  var src = (srcEl && srcEl.value) || (fullConfig && (fullConfig.embeddingSource ?? fullConfig.EmbeddingSource)) || '';
+  var path = (document.getElementById('embeddingModelPath') && document.getElementById('embeddingModelPath').value) || (fullConfig && (fullConfig.embeddingModelPath ?? fullConfig.EmbeddingModelPath)) || '';
+  var modelId = (document.getElementById('embeddingModelId') && document.getElementById('embeddingModelId').value) || (fullConfig && (fullConfig.embeddingModelId ?? fullConfig.EmbeddingModelId)) || '';
+  var endpoint = (document.getElementById('embeddingEndpoint') && document.getElementById('embeddingEndpoint').value) || (fullConfig && (fullConfig.embeddingEndpoint ?? fullConfig.EmbeddingEndpoint)) || '';
+  if (src === 'Local') {
+    var name = path ? (path.split(/[/\\]/).pop() || '…') : '未选';
+    sum.textContent = 'Embedding 模型（当前：本地 ' + name + '）';
+  } else if (src === 'Remote' && (modelId || endpoint)) {
+    sum.textContent = 'Embedding 模型（当前：远程 ' + (modelId || endpoint) + '）';
+  } else {
+    sum.textContent = 'Embedding 模型（未配置）';
+  }
+}
+
+async function renderEmbeddingModelList() {
+  var container = document.getElementById('embeddingModelList');
+  if (!container) return;
+  var src = (document.getElementById('embeddingSource') && document.getElementById('embeddingSource').value) || (fullConfig && (fullConfig.embeddingSource ?? fullConfig.EmbeddingSource)) || '';
+  var path = (document.getElementById('embeddingModelPath') && document.getElementById('embeddingModelPath').value) || (fullConfig && (fullConfig.embeddingModelPath ?? fullConfig.EmbeddingModelPath)) || '';
+  var baseUrl = API_URL.replace('/api/config', '');
+  var rows = [];
+  try {
+    var res = await fetch(baseUrl + '/api/config/embedded-models');
+    if (res.ok) {
+      var data = await res.json();
+      var list = (data.models || []).map(function (x) { return { type: 'local', path: x.path || '', name: (x.fileName || x.path || '').split(/[/\\]/).pop() || 'model' }; });
+      list.forEach(function (item) {
+        var isSelected = (src === 'Local' && normalizePath(path) === normalizePath(item.path));
+        rows.push('<div class="mcp-server-row" data-emb-type="local" data-emb-path="' + escapeAttr(item.path) + '">' +
+          '<div class="mcp-icon">L</div><div class="mcp-info"><div class="mcp-name">' + escapeHtml(item.name) + ' (本地)</div></div>' +
+          '<div class="mcp-actions"><button type="button" class="btn-secondary select-embedding-btn" data-type="local" data-path="' + escapeAttr(item.path) + '">' + (isSelected ? '当前' : '选用') + '</button></div></div>');
+      });
+    }
+  } catch (e) { console.warn('Embedding local list failed', e); }
+  container.innerHTML = rows.length ? rows.join('') : '<p class="help-text">无本地 GGUF，请将模型放入后端 Models 目录。</p>';
+  container.querySelectorAll('.select-embedding-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pathVal = btn.getAttribute('data-path');
+      if (!fullConfig) return;
+      fullConfig.embeddingSource = 'Local';
+      fullConfig.EmbeddingSource = 'Local';
+      fullConfig.embeddingModelPath = pathVal || '';
+      fullConfig.EmbeddingModelPath = fullConfig.embeddingModelPath;
+      fullConfig.embeddingEndpoint = '';
+      fullConfig.EmbeddingEndpoint = '';
+      fullConfig.embeddingApiKey = '';
+      fullConfig.EmbeddingApiKey = '';
+      fullConfig.embeddingModelId = '';
+      fullConfig.EmbeddingModelId = '';
+      var pathEl = document.getElementById('embeddingModelPath');
+      if (pathEl) pathEl.value = pathVal || '';
+      saveConfig().then(function () { renderEmbeddingModelList(); updateEmbeddingModelSummary(); });
+    });
+  });
+}
+
+function loadMemoryList() {
+  var sessionId = (document.getElementById('memorySessionFilter') && document.getElementById('memorySessionFilter').value.trim()) || undefined;
+  var baseUrl = API_URL.replace('/api/config', '');
+  var url = baseUrl + '/api/memory?skip=0&take=50' + (sessionId ? '&sessionId=' + encodeURIComponent(sessionId) : '');
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var list = data.items || [];
+    var html = list.length ? list.map(function (item) {
+      var text = (item.text || '').substring(0, 120);
+      if ((item.text || '').length > 120) text += '…';
+      var createdAt = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
+      return '<div class="skill-card" data-memory-id="' + escapeAttr(item.id) + '">' +
+        '<div class="skill-header"><span class="skill-title">' + escapeHtml(item.id) + '</span>' +
+        '<div><button type="button" class="btn-secondary edit-memory-btn" data-id="' + escapeAttr(item.id) + '">编辑</button> ' +
+        '<button type="button" class="btn-danger delete-memory-btn" data-id="' + escapeAttr(item.id) + '">删除</button></div></div>' +
+        '<div class="skill-desc">' + escapeHtml(text) + '</div>' +
+        '<div class="help-text">' + (item.sessionId ? '会话: ' + escapeHtml(item.sessionId) + ' | ' : '') + createdAt + '</div></div>';
+    }).join('') : '<p class="help-text">暂无记忆，或未配置 Embedding 模型。</p>';
+    var el = document.getElementById('memoryList');
+    if (el) el.innerHTML = html;
+    document.querySelectorAll('.edit-memory-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { openMemoryEditor(btn.getAttribute('data-id')); });
+    });
+    document.querySelectorAll('.delete-memory-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { deleteMemory(btn.getAttribute('data-id')); });
+    });
+  }).catch(function (e) {
+    var el = document.getElementById('memoryList');
+    if (el) el.innerHTML = '<p class="help-text">加载失败: ' + escapeHtml(String(e.message || e)) + '</p>';
+  });
+}
+
+function openMemoryEditor(id) {
+  var title = document.getElementById('memoryEditorTitle');
+  var editId = document.getElementById('memoryEditId');
+  var textEl = document.getElementById('memoryEditText');
+  var tagsEl = document.getElementById('memoryEditTags');
+  var editor = document.getElementById('memoryEditor');
+  if (!editor || !textEl) return;
+  if (id) {
+    if (title) title.textContent = '编辑记忆';
+    if (editId) editId.value = id;
+    var baseUrl = API_URL.replace('/api/config', '');
+    fetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (item) {
+      textEl.value = item.text || '';
+      tagsEl.value = (item.metadata && item.metadata.tags) ? item.metadata.tags : '';
+      editor.style.display = 'block';
+    });
+  } else {
+    if (title) title.textContent = '新增记忆';
+    if (editId) editId.value = '';
+    textEl.value = '';
+    tagsEl.value = '';
+    editor.style.display = 'block';
+  }
+}
+
+function closeMemoryEditor() {
+  var editor = document.getElementById('memoryEditor');
+  if (editor) editor.style.display = 'none';
+}
+
+function saveMemoryFromEditor() {
+  var editId = document.getElementById('memoryEditId');
+  var textEl = document.getElementById('memoryEditText');
+  var tagsEl = document.getElementById('memoryEditTags');
+  var id = editId && editId.value ? editId.value.trim() : '';
+  var text = textEl && textEl.value ? textEl.value.trim() : '';
+  if (!text) { alert('请输入内容'); return; }
+  var baseUrl = API_URL.replace('/api/config', '');
+  var url = id ? baseUrl + '/api/memory/' + encodeURIComponent(id) : baseUrl + '/api/memory';
+  var method = id ? 'PUT' : 'POST';
+  var body = id ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '' }) : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '' });
+  fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
+    if (!r.ok) throw new Error('保存失败');
+    closeMemoryEditor();
+    loadMemoryList();
+  }).catch(function (e) { alert('保存失败: ' + (e.message || e)); });
+}
+
+function deleteMemory(id) {
+  if (!id || !confirm('确定删除这条记忆？')) return;
+  var baseUrl = API_URL.replace('/api/config', '');
+  fetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
+    if (!r.ok) throw new Error('删除失败');
+    loadMemoryList();
+  }).catch(function (e) { alert('删除失败: ' + (e.message || e)); });
+}
+
+var embeddingSourceEl = document.getElementById('embeddingSource');
+if (embeddingSourceEl) embeddingSourceEl.addEventListener('change', function () {
+  toggleEmbeddingSections();
+  updateEmbeddingModelSummary();
+});
+
+var ragStorageTypeEl = document.getElementById('ragStorageType');
+if (ragStorageTypeEl) ragStorageTypeEl.addEventListener('change', function () {
+  var g = document.getElementById('ragStoragePathGroup');
+  if (g) g.style.display = (this.value === 'Sqlite') ? 'block' : 'none';
+});
+
+if (document.getElementById('addMemoryBtn')) document.getElementById('addMemoryBtn').addEventListener('click', function () { openMemoryEditor(null); });
+if (document.getElementById('refreshMemoryListBtn')) document.getElementById('refreshMemoryListBtn').addEventListener('click', loadMemoryList);
+if (document.getElementById('saveMemoryBtn')) document.getElementById('saveMemoryBtn').addEventListener('click', saveMemoryFromEditor);
+if (document.getElementById('cancelMemoryEditBtn')) document.getElementById('cancelMemoryEditBtn').addEventListener('click', closeMemoryEditor);
 
 function openAiModelEditor(existingId) {
   editingAiModelId = existingId || null;
@@ -415,6 +592,32 @@ async function loadConfig() {
     renderMcpList(mcps || []);
     await loadSkillEnvSection();
     await loadBuiltinTools();
+    var embSrc = (data.embeddingSource ?? data.EmbeddingSource) || '';
+    var embPath = (data.embeddingModelPath ?? data.EmbeddingModelPath) || '';
+    var embEndpoint = (data.embeddingEndpoint ?? data.EmbeddingEndpoint) || '';
+    var embApiKey = (data.embeddingApiKey ?? data.EmbeddingApiKey) || '';
+    var embModelId = (data.embeddingModelId ?? data.EmbeddingModelId) || '';
+    var embSourceEl = document.getElementById('embeddingSource');
+    var embPathEl = document.getElementById('embeddingModelPath');
+    var embEndpointEl = document.getElementById('embeddingEndpoint');
+    var embApiKeyEl = document.getElementById('embeddingApiKey');
+    var embModelIdEl = document.getElementById('embeddingModelId');
+    if (embSourceEl) embSourceEl.value = embSrc || '';
+    if (embPathEl) embPathEl.value = embPath || '';
+    if (embEndpointEl) embEndpointEl.value = embEndpoint || '';
+    if (embApiKeyEl) embApiKeyEl.value = embApiKey || '';
+    if (embModelIdEl) embModelIdEl.value = embModelId || '';
+    toggleEmbeddingSections();
+    await renderEmbeddingModelList();
+    updateEmbeddingModelSummary();
+    var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Memory';
+    var ragPath = data.ragStoragePath ?? data.RagStoragePath ?? '';
+    var rtEl = document.getElementById('ragStorageType');
+    var rpEl = document.getElementById('ragStoragePath');
+    var rpGroup = document.getElementById('ragStoragePathGroup');
+    if (rtEl) rtEl.value = ragType || 'Memory';
+    if (rpEl) rpEl.value = ragPath || '';
+    if (rpGroup) rpGroup.style.display = (ragType === 'Sqlite') ? 'block' : 'none';
   } catch (err) {
     console.error(err);
     alert('无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
@@ -456,6 +659,20 @@ async function saveConfig() {
     var toolId = (fullConfig && fullConfig.ai) ? (fullConfig.ai.toolSelectionModelId ?? fullConfig.ai.ToolSelectionModelId) : '';
     aiPayload = Object.assign({}, aiPayload, { toolSelectionModelId: (toolId && String(toolId).trim()) || undefined });
     const embeddedPath = (fullConfig && (fullConfig.embeddedToolSelectionModelPath ?? fullConfig.EmbeddedToolSelectionModelPath)) || undefined;
+    var embSourceEl = document.getElementById('embeddingSource');
+    var embPathEl = document.getElementById('embeddingModelPath');
+    var embEndpointEl = document.getElementById('embeddingEndpoint');
+    var embApiKeyEl = document.getElementById('embeddingApiKey');
+    var embModelIdEl = document.getElementById('embeddingModelId');
+    var embSrc = embSourceEl ? embSourceEl.value : ((fullConfig && (fullConfig.embeddingSource ?? fullConfig.EmbeddingSource)) || '');
+    var embPath = embPathEl ? embPathEl.value.trim() : ((fullConfig && (fullConfig.embeddingModelPath ?? fullConfig.EmbeddingModelPath)) || '');
+    var embEndpoint = embEndpointEl ? embEndpointEl.value.trim() : ((fullConfig && (fullConfig.embeddingEndpoint ?? fullConfig.EmbeddingEndpoint)) || '');
+    var embApiKey = embApiKeyEl ? embApiKeyEl.value : ((fullConfig && (fullConfig.embeddingApiKey ?? fullConfig.EmbeddingApiKey)) || '');
+    var embModelId = embModelIdEl ? embModelIdEl.value.trim() : ((fullConfig && (fullConfig.embeddingModelId ?? fullConfig.EmbeddingModelId)) || '');
+    var ragTypeEl = document.getElementById('ragStorageType');
+    var ragPathEl = document.getElementById('ragStoragePath');
+    var ragType = ragTypeEl ? ragTypeEl.value : 'Memory';
+    var ragPath = ragPathEl ? ragPathEl.value : '';
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -467,7 +684,14 @@ async function saveConfig() {
       allowedCliCommands: allowedCliCommands,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       runEverythingMode: runEverythingMode,
-      embeddedToolSelectionModelPath: embeddedPath
+      embeddedToolSelectionModelPath: embeddedPath,
+      embeddingSource: embSrc || undefined,
+      embeddingModelPath: (embSrc === 'Local' && embPath) ? embPath : undefined,
+      embeddingEndpoint: (embSrc === 'Remote') ? (embEndpoint || undefined) : undefined,
+      embeddingApiKey: (embSrc === 'Remote') ? (embApiKey || undefined) : undefined,
+      embeddingModelId: (embSrc === 'Remote' && embModelId) ? embModelId : undefined,
+      ragStorageType: ragType,
+      ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined
     };
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -475,7 +699,7 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Failed to save');
-    fullConfig = { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddedToolSelectionModelPath: payload.embeddedToolSelectionModelPath };
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddedToolSelectionModelPath: payload.embeddedToolSelectionModelPath, embeddingSource: payload.embeddingSource, embeddingModelPath: payload.embeddingModelPath, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath });
     els.statusMessage.style.opacity = '1';
     setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
     await loadConfig();

@@ -1,0 +1,102 @@
+using System.Collections.Concurrent;
+
+namespace OfficeCopilot.Server.Services.Memory;
+
+/// <summary>内存向量存储，使用余弦相似度检索；进程重启后数据丢失。</summary>
+public sealed class InMemoryVectorStore : IVectorStore
+{
+    private readonly ConcurrentDictionary<string, StoredItem> _items = new();
+
+    private sealed class StoredItem
+    {
+        public string Id { get; set; } = "";
+        public string Text { get; set; } = "";
+        public float[] Vector { get; set; } = Array.Empty<float>();
+        public string? SessionId { get; set; }
+        public string? Collection { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public IReadOnlyDictionary<string, string>? Metadata { get; set; }
+    }
+
+    public Task UpsertAsync(string id, string text, float[] vector, string? sessionId, IReadOnlyDictionary<string, string>? metadata, string? collection = null, CancellationToken ct = default)
+    {
+        var createdAt = _items.TryGetValue(id, out var existing) ? existing.CreatedAt : DateTime.UtcNow;
+        _items[id] = new StoredItem
+        {
+            Id = id,
+            Text = text,
+            Vector = vector,
+            SessionId = sessionId,
+            Collection = collection,
+            CreatedAt = createdAt,
+            Metadata = metadata != null ? new Dictionary<string, string>(metadata) : null
+        };
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchAsync(float[] queryVector, int topK, string? sessionIdFilter, string? collectionFilter = null, CancellationToken ct = default)
+    {
+        var candidates = _items.Values.AsEnumerable();
+        if (!string.IsNullOrEmpty(sessionIdFilter))
+            candidates = candidates.Where(x => string.Equals(x.SessionId, sessionIdFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(collectionFilter))
+            candidates = candidates.Where(x => string.Equals(x.Collection, collectionFilter, StringComparison.OrdinalIgnoreCase));
+
+        var withScore = candidates
+            .Select(x => (x.Id, x.Text, Score: CosineSimilarity(queryVector, x.Vector)))
+            .OrderByDescending(t => t.Score)
+            .Take(topK)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<(string Id, string Text, double Score)>>(withScore);
+    }
+
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default)
+    {
+        return Task.FromResult(_items.TryRemove(id, out _));
+    }
+
+    public Task<(string Text, string? SessionId, DateTime CreatedAt, IReadOnlyDictionary<string, string>? Metadata)?> GetAsync(string id, CancellationToken ct = default)
+    {
+        if (!_items.TryGetValue(id, out var item))
+            return Task.FromResult<(string, string?, DateTime, IReadOnlyDictionary<string, string>?)?>(null);
+        return Task.FromResult<(string, string?, DateTime, IReadOnlyDictionary<string, string>?)?>((item.Text, item.SessionId, item.CreatedAt, item.Metadata));
+    }
+
+    public Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, CancellationToken ct = default)
+    {
+        var query = _items.Values.AsEnumerable();
+        if (!string.IsNullOrEmpty(sessionIdFilter))
+            query = query.Where(x => string.Equals(x.SessionId, sessionIdFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(collectionFilter))
+            query = query.Where(x => string.Equals(x.Collection, collectionFilter, StringComparison.OrdinalIgnoreCase));
+        var list = query
+            .OrderByDescending(x => x.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new MemoryRecord
+            {
+                Id = x.Id,
+                Text = x.Text,
+                SessionId = x.SessionId,
+                CreatedAt = x.CreatedAt,
+                Metadata = x.Metadata
+            })
+            .ToList();
+        return Task.FromResult<IReadOnlyList<MemoryRecord>>(list);
+    }
+
+    private static double CosineSimilarity(float[] a, float[] b)
+    {
+        if (a.Length == 0 || b.Length != a.Length) return 0;
+        double dot = 0, normA = 0, normB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+        var denom = Math.Sqrt(normA) * Math.Sqrt(normB);
+        return denom <= 0 ? 0 : dot / denom;
+    }
+}

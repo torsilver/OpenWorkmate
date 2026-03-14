@@ -4,10 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.SemanticKernel.Embeddings;
 using OfficeCopilot.Server.Filters;
 using OfficeCopilot.Server.Plugins;
-
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -29,9 +30,10 @@ public sealed class ChatService : IDisposable
     private readonly IToolSelector _toolSelector;
     private readonly IServiceProvider _serviceProvider;
     private readonly IKernelAccessor _kernelAccessor;
+    private readonly EmbeddingProvider _embeddingProvider;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -41,6 +43,7 @@ public sealed class ChatService : IDisposable
         _toolSelector = toolSelector;
         _serviceProvider = serviceProvider;
         _kernelAccessor = kernelAccessor;
+        _embeddingProvider = embeddingProvider;
 
         var session = config.GetSection("Session");
         _maxTurns = session.GetValue("MaxHistoryTurns", 50);
@@ -186,12 +189,44 @@ public sealed class ChatService : IDisposable
             }
         }
 
+        // 阶段 3：嵌入服务（仅当配置了远程 Embedding 时注册；使用独立配置，不从大模型列表选）
+        var embSrc = (config.EmbeddingSource ?? "").Trim();
+        if (string.Equals(embSrc, "Remote", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(config.EmbeddingModelId))
+        {
+            var embModelId = (config.EmbeddingModelId ?? "").Trim();
+            var embApiKey = (config.EmbeddingApiKey ?? "").Trim();
+            var embEndpoint = (config.EmbeddingEndpoint ?? "").Trim();
+            Uri? embUri = null;
+            if (embEndpoint.Length > 0 && Uri.TryCreate(embEndpoint, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
+                embUri = u;
+#pragma warning disable CS0618 // AddOpenAITextEmbeddingGeneration 在 SK 1.72 中过时，仍可用
+            try
+            {
+                if (embUri != null)
+                    builder.AddOpenAITextEmbeddingGeneration(embModelId, embApiKey, embUri.ToString(), "Embedding", httpClient);
+                else
+                    builder.AddOpenAITextEmbeddingGeneration(embModelId, embApiKey, (string?)null, "Embedding", httpClient);
+            }
+#pragma warning restore CS0618
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Skip embedding registration (Remote): {Message}", ex.Message);
+            }
+        }
+
         var embeddedModel = _serviceProvider.GetRequiredService<IEmbeddedToolSelectionModel>();
         var embeddedChat = embeddedModel.GetChatCompletionService();
         if (embeddedChat != null)
             builder.Services.AddKeyedSingleton<IChatCompletionService>(EmbeddedToolSelectionModel.ServiceId, embeddedChat);
 
         var newKernel = builder.Build();
+
+        // 阶段 3：将当前 Kernel 的嵌入服务同步到 EmbeddingProvider，供记忆/ RAG 使用
+#pragma warning disable CS0618
+        var embeddingSvc = newKernel.Services.GetKeyedService<ITextEmbeddingGenerationService>("Embedding")
+            ?? newKernel.Services.GetService<ITextEmbeddingGenerationService>();
+#pragma warning restore CS0618
+        _embeddingProvider.SetService(embeddingSvc);
 
         // 注册安全拦截器（含 HITL：拦截时发确认请求，用户允许则继续执行）
         var hitlManager = _serviceProvider.GetRequiredService<HitlManager>();
@@ -244,7 +279,14 @@ public sealed class ChatService : IDisposable
         var clawhubRunner = _serviceProvider.GetRequiredService<ClawhubScriptRunner>();
         if (!disabledBuiltIn.Contains("clawhub"))
             newKernel.Plugins.AddFromObject(new ClawhubSkillPlugin(_skillService, clawhubRunner, _configService, _loggerFactory.CreateLogger<ClawhubSkillPlugin>()), "ClawhubSkill");
-        
+
+        // 阶段 3：记忆插件（仅当已配置 Embedding 时注册）
+        if (_embeddingProvider.IsConfigured && !disabledBuiltIn.Contains("memory"))
+        {
+            var memorySvc = _serviceProvider.GetRequiredService<IMemoryStoreService>();
+            newKernel.Plugins.AddFromObject(new MemoryPlugin(memorySvc, _loggerFactory.CreateLogger<MemoryPlugin>()), "Memory");
+        }
+
         // 动态注册基于 Prompt 的 Skills（可执行技能且有原生适配器的如 tavily 不注册为 prompt，避免模型只拿到 SKILL.md 使用说明而非真正执行搜索）
         var userSkills = _skillService.GetAllSkills();
         var skillCount = 0;
@@ -354,7 +396,7 @@ public sealed class ChatService : IDisposable
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, null, ct))
+        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, null, null, ct))
             yield return chunk;
     }
 
@@ -362,6 +404,17 @@ public sealed class ChatService : IDisposable
         string sessionId,
         string userMessage,
         IReadOnlyList<AttachmentDto>? attachments,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, attachments, null, ct))
+            yield return chunk;
+    }
+
+    public async IAsyncEnumerable<string> StreamChatAsync(
+        string sessionId,
+        string userMessage,
+        IReadOnlyList<AttachmentDto>? attachments,
+        string? knowledgeBaseId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         Kernel kernel;
@@ -410,6 +463,49 @@ public sealed class ChatService : IDisposable
             }
 
             TrimHistory(state.History);
+
+            // 阶段 3：长期记忆自动注入（当轮用户消息检索相关记忆并追加到 system）
+            var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
+            if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            {
+                try
+                {
+                    var memoryResults = await memorySvc.SearchAsync(finalMessage, 5, sessionId, ct).ConfigureAwait(false);
+                    if (memoryResults.Count > 0)
+                    {
+                        var memoryLines = memoryResults.Select(r => $"- {r.Text}").ToList();
+                        var memoryBlock = "[以下是与当前对话相关的长期记忆，供参考]\n" + string.Join("\n", memoryLines);
+                        var currentSystem = state.History[0].Content ?? "";
+                        state.History.RemoveAt(0);
+                        state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + memoryBlock));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[{SessionId}] Memory search failed, continuing without injection.", sessionId);
+                }
+            }
+
+            // 阶段 3：知识库 RAG 注入（当请求带 knowledgeBaseId 时）
+            if (!string.IsNullOrWhiteSpace(knowledgeBaseId) && memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            {
+                try
+                {
+                    var kbResults = await memorySvc.SearchKnowledgeBaseAsync(knowledgeBaseId!.Trim(), finalMessage, 5, ct).ConfigureAwait(false);
+                    if (kbResults.Count > 0)
+                    {
+                        var kbLines = kbResults.Select(r => $"- {r.Text}").ToList();
+                        var kbBlock = "[以下来自知识库的参考内容]\n" + string.Join("\n", kbLines);
+                        var currentSystem = state.History[0].Content ?? "";
+                        state.History.RemoveAt(0);
+                        state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + kbBlock));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[{SessionId}] Knowledge base search failed for {KbId}.", sessionId, knowledgeBaseId);
+                }
+            }
 
             var activeEntry = GetActiveModelEntry();
             var modelForLog = activeEntry?.ModelId ?? "(default)";

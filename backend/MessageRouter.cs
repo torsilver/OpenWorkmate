@@ -114,6 +114,11 @@ public class WsMessage
     [JsonPropertyName("attachments")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<AttachmentDto>? Attachments { get; set; }
+
+    /// <summary>可选：绑定知识库 ID，对话时将检索该知识库并注入上下文（RAG）。</summary>
+    [JsonPropertyName("knowledgeBaseId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? KnowledgeBaseId { get; set; }
 }
 
 public class AttachmentDto
@@ -135,6 +140,39 @@ public class WebPageContext
 
     [JsonPropertyName("content")]
     public string? Content { get; set; }
+}
+
+/// <summary>RAG 摄入请求。</summary>
+public class RagIngestRequest
+{
+    [JsonPropertyName("knowledgeBaseId")]
+    public string KnowledgeBaseId { get; set; } = "";
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = "";
+    [JsonPropertyName("maxChunkChars")]
+    public int MaxChunkChars { get; set; } = 800;
+    [JsonPropertyName("overlapChars")]
+    public int OverlapChars { get; set; } = 50;
+}
+
+/// <summary>记忆新增请求。</summary>
+public class MemoryAddRequest
+{
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = "";
+    [JsonPropertyName("sessionId")]
+    public string? SessionId { get; set; }
+    [JsonPropertyName("tags")]
+    public string? Tags { get; set; }
+}
+
+/// <summary>记忆更新请求。</summary>
+public class MemoryUpdateRequest
+{
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = "";
+    [JsonPropertyName("tags")]
+    public string? Tags { get; set; }
 }
 
 /// <summary>内置插件信息，供设置页展示「自带的 MCP」。</summary>
@@ -166,4 +204,8 @@ public class BuiltInPluginInfo
 [JsonSerializable(typeof(List<AttachmentDto>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(TestAiRequest))]
+[JsonSerializable(typeof(RagIngestRequest))]
+[JsonSerializable(typeof(MemoryAddRequest))]
+[JsonSerializable(typeof(MemoryUpdateRequest))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.Memory.MemoryRecord))]
 internal partial class JsonCtx : JsonSerializerContext;

@@ -70,6 +70,21 @@ public class AppConfig
     public Dictionary<string, string> SkillEnv { get; set; } = new();
     /// <summary>嵌入式工具选择模型路径（GGUF 文件）；为空时使用运行目录下 Models/ 中默认文件名。设置页「本地兜底模型」列表中启用某条时写入。</summary>
     public string? EmbeddedToolSelectionModelPath { get; set; }
+    // ----- 阶段 3：嵌入与 RAG / 记忆 -----
+    /// <summary>Embedding 来源：Local = LLamaSharp + Models 目录，Remote = 独立配置的 API（与对话大模型分开）。</summary>
+    public string EmbeddingSource { get; set; } = "";
+    /// <summary>本地 Embedding 模型路径（GGUF）；EmbeddingSource=Local 时使用。</summary>
+    public string? EmbeddingModelPath { get; set; }
+    /// <summary>远程 Embedding 接口地址；EmbeddingSource=Remote 时使用，与大模型配置独立。</summary>
+    public string? EmbeddingEndpoint { get; set; }
+    /// <summary>远程 Embedding API Key；EmbeddingSource=Remote 时使用。</summary>
+    public string? EmbeddingApiKey { get; set; }
+    /// <summary>远程 Embedding 模型名（如 text-embedding-3-small）；EmbeddingSource=Remote 时使用。</summary>
+    public string? EmbeddingModelId { get; set; }
+    /// <summary>向量存储类型：Memory = 内存，Sqlite = 本地 db 文件。</summary>
+    public string RagStorageType { get; set; } = "Memory";
+    /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OfficeCopilot/rag.db。</summary>
+    public string? RagStoragePath { get; set; }
 }
 
 public sealed class ConfigService
