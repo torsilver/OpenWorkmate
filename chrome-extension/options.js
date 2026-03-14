@@ -519,6 +519,23 @@ async function loadConfig() {
       if (rcEl) rcEl.checked = !!(pc.requireConfirmForSensitiveTools ?? pc.RequireConfirmForSensitiveTools);
       if (stEl) stEl.value = Array.isArray(pc.sensitiveToolIds ?? pc.SensitiveToolIds) ? (pc.sensitiveToolIds || pc.SensitiveToolIds).join('\n') : '';
     }
+    var presets = data.contextOptimizationPresets ?? data.ContextOptimizationPresets;
+    var activePresetId = data.activeContextPresetId ?? data.ActiveContextPresetId ?? '';
+    var presetEl = document.getElementById('activeContextPreset');
+    if (presetEl) {
+      presetEl.innerHTML = '<option value="">-- 请选择 --</option>';
+      if (Array.isArray(presets) && presets.length > 0) {
+        presets.forEach(function (p) {
+          var id = p.id ?? p.Id ?? '';
+          var name = p.displayName ?? p.DisplayName ?? id;
+          var opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = name;
+          presetEl.appendChild(opt);
+        });
+      }
+      presetEl.value = activePresetId || '';
+    }
   } catch (err) {
     console.error(err);
     alert('无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
@@ -575,6 +592,16 @@ async function saveConfig() {
     if (isNaN(autoExecuteMaxSteps) || autoExecuteMaxSteps < 1) autoExecuteMaxSteps = 3;
     var requireConfirmForSensitiveTools = rcEl ? rcEl.checked : !!(fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.requireConfirmForSensitiveTools ?? fullConfig.planConfirmation.RequireConfirmForSensitiveTools));
     var sensitiveToolIds = (stEl && stEl.value) ? stEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean) : [];
+    var presetSelectEl = document.getElementById('activeContextPreset');
+    var activeContextPresetId = (presetSelectEl && presetSelectEl.value) ? presetSelectEl.value : (fullConfig && (fullConfig.activeContextPresetId ?? fullConfig.ActiveContextPresetId));
+    var contextOptimizationPresets = (fullConfig && (fullConfig.contextOptimizationPresets ?? fullConfig.ContextOptimizationPresets)) || [];
+    var planConfirmationPayload = { autoExecuteMaxSteps: autoExecuteMaxSteps, requireConfirmForSensitiveTools: requireConfirmForSensitiveTools, sensitiveToolIds: sensitiveToolIds };
+    if (activeContextPresetId && contextOptimizationPresets.length > 0) {
+      var activePreset = contextOptimizationPresets.find(function (p) { return (p.id || p.Id) === activeContextPresetId; });
+      if (activePreset) {
+        activePreset.planConfirmation = activePreset.PlanConfirmation = planConfirmationPayload;
+      }
+    }
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -592,7 +619,9 @@ async function saveConfig() {
       embeddingModelId: (embSrc === 'Remote' && embModelId) ? embModelId : undefined,
       ragStorageType: ragType,
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
-      planConfirmation: { autoExecuteMaxSteps: autoExecuteMaxSteps, requireConfirmForSensitiveTools: requireConfirmForSensitiveTools, sensitiveToolIds: sensitiveToolIds }
+      planConfirmation: planConfirmationPayload,
+      activeContextPresetId: activeContextPresetId || undefined,
+      contextOptimizationPresets: contextOptimizationPresets.length > 0 ? contextOptimizationPresets : undefined
     };
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -600,7 +629,7 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Failed to save');
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
     els.statusMessage.style.opacity = '1';
     setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
     await loadConfig();
@@ -614,6 +643,39 @@ async function saveConfig() {
 }
 
 els.saveBtn.addEventListener('click', saveConfig);
+
+var newContextPresetBtn = document.getElementById('newContextPresetBtn');
+if (newContextPresetBtn) {
+  newContextPresetBtn.addEventListener('click', function () {
+    var presets = fullConfig && (fullConfig.contextOptimizationPresets || fullConfig.ContextOptimizationPresets);
+    if (!Array.isArray(presets)) presets = [];
+    var ctx = fullConfig && (fullConfig.contextWindow || fullConfig.ContextWindow);
+    var sess = fullConfig && (fullConfig.session || fullConfig.Session);
+    var plan = fullConfig && (fullConfig.planConfirmation || fullConfig.PlanConfirmation);
+    function cloneObj(o) { return o ? JSON.parse(JSON.stringify(o)) : {}; }
+    var newId = 'custom-' + Date.now();
+    var newPreset = {
+      id: newId,
+      displayName: '自定义 ' + (presets.length + 1),
+      contextWindow: cloneObj(ctx),
+      session: cloneObj(sess),
+      planConfirmation: cloneObj(plan)
+    };
+    fullConfig = fullConfig || {};
+    fullConfig.contextOptimizationPresets = presets.slice();
+    fullConfig.contextOptimizationPresets.push(newPreset);
+    fullConfig.activeContextPresetId = newId;
+    var presetEl = document.getElementById('activeContextPreset');
+    if (presetEl) {
+      var opt = document.createElement('option');
+      opt.value = newId;
+      opt.textContent = newPreset.displayName;
+      presetEl.appendChild(opt);
+      presetEl.value = newId;
+    }
+    saveConfig();
+  });
+}
 
 if (els.addAiModelBtn) els.addAiModelBtn.addEventListener('click', function () { openAiModelEditor(null); });
 if (els.closeAiModelEditorBtn) els.closeAiModelEditorBtn.addEventListener('click', closeAiModelEditor);

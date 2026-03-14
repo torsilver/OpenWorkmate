@@ -91,6 +91,16 @@ public class ContextWindowConfig
     public int ContextLengthRetryMaxTurns { get; set; } = 10;
 }
 
+/// <summary>上下文优化预设：一组 ContextWindow + Session + PlanConfirmation，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
+public class ContextOptimizationPreset
+{
+    public string Id { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public ContextWindowConfig ContextWindow { get; set; } = new();
+    public SessionConfig Session { get; set; } = new();
+    public PlanConfirmationConfig PlanConfirmation { get; set; } = new();
+}
+
 /// <summary>测试 AI 连接时前端传入的请求体。</summary>
 public class TestAiRequest
 {
@@ -110,6 +120,10 @@ public class AppConfig
     public ContextWindowConfig? ContextWindow { get; set; }
     /// <summary>计划确认规则（步数阈值、敏感工具等）；未配置时使用默认值。</summary>
     public PlanConfirmationConfig? PlanConfirmation { get; set; }
+    /// <summary>上下文优化预设列表（内置 64K/Kimi K2.5 + 用户自定义）；空时在加载时注入内置两条。</summary>
+    public List<ContextOptimizationPreset>? ContextOptimizationPresets { get; set; }
+    /// <summary>当前生效的预设 Id；非空且存在于 Presets 时，加载后用该预设覆盖 Session/ContextWindow/PlanConfirmation。</summary>
+    public string? ActiveContextPresetId { get; set; }
     /// <summary>多套 AI 模型列表；为空时使用 AI 单条配置。</summary>
     public List<AiModelEntry> AiModels { get; set; } = new();
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
@@ -191,6 +205,10 @@ public sealed class ConfigService
                     config.Session ??= new SessionConfig();
                     config.ContextWindow ??= new ContextWindowConfig();
                     config.PlanConfirmation ??= new PlanConfirmationConfig();
+                    config.ContextOptimizationPresets ??= new List<ContextOptimizationPreset>();
+                    if (config.ContextOptimizationPresets.Count == 0)
+                        config.ContextOptimizationPresets.AddRange(GetBuiltInPresets());
+                    ApplyActivePresetIfSet(config);
                     MigrateLegacyAiIfNeeded(config);
                     return config;
                 }
@@ -215,12 +233,114 @@ public sealed class ConfigService
         defaultConfig.GetSection("ContextWindow").Bind(appConfig.ContextWindow);
         appConfig.PlanConfirmation = new PlanConfirmationConfig();
         defaultConfig.GetSection("PlanConfirmation").Bind(appConfig.PlanConfirmation);
+        appConfig.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
+        if (string.IsNullOrWhiteSpace(appConfig.ActiveContextPresetId))
+            appConfig.ActiveContextPresetId = "internal-64k";
+        ApplyActivePresetIfSet(appConfig);
         if (string.IsNullOrWhiteSpace(appConfig.TavilyApiKey))
             appConfig.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
         appConfig.SkillEnv ??= new Dictionary<string, string>();
         appConfig.AiModels ??= new List<AiModelEntry>();
         MigrateLegacyAiIfNeeded(appConfig);
         return appConfig;
+    }
+
+    /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）。</summary>
+    private static List<ContextOptimizationPreset> GetBuiltInPresets()
+    {
+        return new List<ContextOptimizationPreset>
+        {
+            new ContextOptimizationPreset
+            {
+                Id = "internal-64k",
+                DisplayName = "公司内部 64K",
+                ContextWindow = new ContextWindowConfig
+                {
+                    MaxContextTokens = 64_000,
+                    ReservedSystemTokens = 12_000,
+                    ReservedToolsTokens = 12_000,
+                    ReservedOutputTokens = 4_096,
+                    PlanContentMaxChars = 16_000,
+                    MemoryInjectionMaxChars = 4_000,
+                    MemorySessionTopK = 5,
+                    MemorySharedTopK = 3,
+                    TokenEstimation = "CharsRatio",
+                    CharsPerToken = 2,
+                    SummarizationEnabled = false,
+                    SummarizationTriggerRatio = 0.9,
+                    SummarizationMaxSummaryChars = 500,
+                    ContextLengthRetryEnabled = true,
+                    ContextLengthRetryMaxTurns = 10
+                },
+                Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+            },
+            new ContextOptimizationPreset
+            {
+                Id = "kimi-k25",
+                DisplayName = "Kimi K2.5",
+                ContextWindow = new ContextWindowConfig
+                {
+                    MaxContextTokens = 256_000,
+                    ReservedSystemTokens = 16_000,
+                    ReservedToolsTokens = 16_000,
+                    ReservedOutputTokens = 8_192,
+                    PlanContentMaxChars = 32_000,
+                    MemoryInjectionMaxChars = 8_000,
+                    MemorySessionTopK = 8,
+                    MemorySharedTopK = 5,
+                    TokenEstimation = "CharsRatio",
+                    CharsPerToken = 2,
+                    SummarizationEnabled = false,
+                    SummarizationTriggerRatio = 0.9,
+                    SummarizationMaxSummaryChars = 500,
+                    ContextLengthRetryEnabled = true,
+                    ContextLengthRetryMaxTurns = 15
+                },
+                Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+            }
+        };
+    }
+
+    /// <summary>若 ActiveContextPresetId 已设置且存在于 Presets 中，用该预设覆盖 Session/ContextWindow/PlanConfirmation。</summary>
+    private static void ApplyActivePresetIfSet(AppConfig config)
+    {
+        var id = config.ActiveContextPresetId?.Trim();
+        if (string.IsNullOrEmpty(id) || config.ContextOptimizationPresets == null) return;
+        var preset = config.ContextOptimizationPresets.Find(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (preset == null) return;
+        config.Session = new SessionConfig
+        {
+            MaxHistoryTurns = preset.Session.MaxHistoryTurns,
+            MinTurnsToKeep = preset.Session.MinTurnsToKeep,
+            TimeoutMinutes = preset.Session.TimeoutMinutes,
+            CleanupIntervalMinutes = preset.Session.CleanupIntervalMinutes
+        };
+        config.ContextWindow = new ContextWindowConfig
+        {
+            MaxContextTokens = preset.ContextWindow.MaxContextTokens,
+            ReservedSystemTokens = preset.ContextWindow.ReservedSystemTokens,
+            ReservedToolsTokens = preset.ContextWindow.ReservedToolsTokens,
+            ReservedOutputTokens = preset.ContextWindow.ReservedOutputTokens,
+            PlanContentMaxChars = preset.ContextWindow.PlanContentMaxChars,
+            MemoryInjectionMaxChars = preset.ContextWindow.MemoryInjectionMaxChars,
+            MemorySessionTopK = preset.ContextWindow.MemorySessionTopK,
+            MemorySharedTopK = preset.ContextWindow.MemorySharedTopK,
+            TokenEstimation = preset.ContextWindow.TokenEstimation,
+            CharsPerToken = preset.ContextWindow.CharsPerToken,
+            SummarizationEnabled = preset.ContextWindow.SummarizationEnabled,
+            SummarizationTriggerRatio = preset.ContextWindow.SummarizationTriggerRatio,
+            SummarizationMaxSummaryChars = preset.ContextWindow.SummarizationMaxSummaryChars,
+            ContextLengthRetryEnabled = preset.ContextWindow.ContextLengthRetryEnabled,
+            ContextLengthRetryMaxTurns = preset.ContextWindow.ContextLengthRetryMaxTurns
+        };
+        config.PlanConfirmation = new PlanConfirmationConfig
+        {
+            AutoExecuteMaxSteps = preset.PlanConfirmation.AutoExecuteMaxSteps,
+            RequireConfirmForSensitiveTools = preset.PlanConfirmation.RequireConfirmForSensitiveTools,
+            SensitiveToolIds = preset.PlanConfirmation.SensitiveToolIds != null ? new List<string>(preset.PlanConfirmation.SensitiveToolIds) : new List<string>()
+        };
     }
 
     /// <summary>若 AiModels 为空且 AI 有配置，则迁移为一条默认模型并设 ActiveModelId。</summary>
@@ -254,6 +374,10 @@ public sealed class ConfigService
             try
             {
                 // 前端可能只提交部分字段，未传的节保留当前值避免被覆盖
+                if (newConfig.ContextOptimizationPresets == null) newConfig.ContextOptimizationPresets = _currentConfig.ContextOptimizationPresets ?? new List<ContextOptimizationPreset>();
+                if (newConfig.ContextOptimizationPresets.Count == 0) newConfig.ContextOptimizationPresets.AddRange(GetBuiltInPresets());
+                if (newConfig.ActiveContextPresetId == null) newConfig.ActiveContextPresetId = _currentConfig.ActiveContextPresetId;
+                ApplyActivePresetIfSet(newConfig);
                 if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
                 if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();

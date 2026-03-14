@@ -275,6 +275,8 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]
 [JsonSerializable(typeof(PlanConfirmationConfig))]
+[JsonSerializable(typeof(ContextOptimizationPreset))]
+[JsonSerializable(typeof(List<ContextOptimizationPreset>))]
 [JsonSerializable(typeof(AiModelEntry))]
 [JsonSerializable(typeof(List<AiModelEntry>))]
 [JsonSerializable(typeof(SkillDefinition))]

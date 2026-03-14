@@ -559,7 +559,17 @@ postgresql://localhost/mydb"></textarea>
 
     <!-- 计划与准确数据（仅列表 + 删除） -->
     <div id="tab-plans-accurate" class="tab-content">
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">计划确认规则</h3>
+      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">模型优化策略</h3>
+      <p class="help-text" style="margin-bottom: 12px;">选择上下文优化预设（如公司内部 64K、Kimi K2.5），或新建自定义预设。切换后会话/上下文/计划确认参数将随之生效。</p>
+      <div class="form-group">
+        <label for="activeContextPreset">当前优化预设</label>
+        <select id="activeContextPreset" style="padding: 6px 10px; border-radius: 6px; min-width: 200px;">
+          <option value="">-- 请选择 --</option>
+        </select>
+        <button type="button" id="newContextPresetBtn" class="btn-secondary" style="margin-left: 8px;">新建预设</button>
+      </div>
+
+      <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">计划确认规则</h3>
       <p class="help-text" style="margin-bottom: 12px;">由后台规则决定生成的计划是否需要用户确认后再执行。步数不超过阈值且未涉及敏感工具时可直接执行，否则需用户确认。</p>
       <div class="form-group">
         <label for="autoExecuteMaxSteps">直接执行的最大步数（步数 ≤ 此值且未涉及敏感工具时不弹确认）</label>
