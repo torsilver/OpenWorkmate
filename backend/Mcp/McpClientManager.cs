@@ -12,14 +12,15 @@ public sealed class McpClientManager : IDisposable
         _logger = logger;
     }
 
-    public async Task<McpClient> StartClientAsync(McpServerConfig config, CancellationToken ct = default)
+    public async Task<McpClient> StartClientAsync(McpServerConfig config, IReadOnlyDictionary<string, string>? envOverlay = null, CancellationToken ct = default)
     {
         if (_clients.TryGetValue(config.Id, out var existing))
         {
             return existing; // 已经运行中
         }
 
-        var client = new McpClient(config.Id, config.Command, config.Args, _logger);
+        var env = MergeEnv(config.Env, envOverlay);
+        var client = new McpClient(config.Id, config.Command, config.Args ?? Array.Empty<string>(), env, _logger);
         try
         {
             await client.StartAsync(ct);
@@ -49,5 +50,22 @@ public sealed class McpClientManager : IDisposable
     public void Dispose()
     {
         _ = StopAllAsync();
+    }
+
+    private static IReadOnlyDictionary<string, string>? MergeEnv(Dictionary<string, string>? configEnv, IReadOnlyDictionary<string, string>? overlay)
+    {
+        if (configEnv == null && overlay == null) return null;
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (configEnv != null)
+        {
+            foreach (var kv in configEnv)
+                merged[kv.Key] = kv.Value ?? "";
+        }
+        if (overlay != null)
+        {
+            foreach (var kv in overlay)
+                merged[kv.Key] = kv.Value ?? "";
+        }
+        return merged.Count > 0 ? merged : null;
     }
 }

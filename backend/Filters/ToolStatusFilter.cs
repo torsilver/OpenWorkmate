@@ -56,6 +56,37 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             catch { /* 非字符串结果忽略 */ }
 
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, true, content);
+
+            // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页
+            if (string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var fullResult = context.Result?.GetValue<string>() ?? "";
+                    var planIdMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"planId=([a-zA-Z0-9]+)");
+                    var titleMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"标题[：:]\s*([^。\n]+)");
+                    if (planIdMatch.Success)
+                    {
+                        var createdBy = _sessionManager.GetClientType(sessionId);
+                        var requiresConfirm = fullResult.Contains("需用户确认", StringComparison.Ordinal);
+                        var planCreated = new WsMessage
+                        {
+                            Type = "plan_created",
+                            PlanId = planIdMatch.Groups[1].Value,
+                            Title = titleMatch.Success ? titleMatch.Groups[1].Value.Trim() : null,
+                            Path = null,
+                            CreatedBy = createdBy,
+                            RequiresUserConfirmation = requiresConfirm
+                        };
+                        var json = JsonSerializer.Serialize(planCreated, JsonCtx.Default.WsMessage);
+                        await _sessionManager.SendToAsync(sessionId, json);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "plan_created emit failed");
+                }
+            }
         }
         catch (Exception ex)
         {

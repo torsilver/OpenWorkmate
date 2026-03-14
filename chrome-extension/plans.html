@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>计划 - Office Copilot</title>
+  <link rel="stylesheet" href="plans.css">
+  <link rel="stylesheet" href="libs/github-dark.min.css">
+  <script src="libs/marked.min.js"></script>
+  <script src="libs/highlight.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="plans-header">
+      <h1>📋 计划</h1>
+      <p class="plans-hint">查看、编辑计划；执行计划请在创建该计划的同一端（Chrome 侧边栏 / Word·Excel / WPS）进行。</p>
+    </header>
+    <div id="plans-loading" class="plans-loading">加载中…</div>
+    <div id="plans-error" class="plans-error" style="display:none;"></div>
+    <div id="plans-detail" class="plans-detail-wrap" style="display:none;">
+      <div class="plans-detail-header">
+        <h2 id="plan-title"></h2>
+        <div class="plans-detail-actions">
+          <button type="button" id="execute-plan-btn" class="btn-execute">执行计划</button>
+          <button type="button" id="use-plan-btn" class="btn-use-plan">作为当前计划</button>
+          <button type="button" id="edit-plan-btn" class="btn-edit">编辑</button>
+          <button type="button" id="save-plan-btn" class="btn-save" style="display:none;">保存</button>
+          <button type="button" id="cancel-edit-btn" class="btn-cancel" style="display:none;">取消</button>
+        </div>
+      </div>
+      <p id="execute-hint" class="plans-execute-hint" style="display:none;"></p>
+      <div id="plan-content-view" class="plan-content markdown-body"></div>
+      <div id="plan-content-edit-wrap" style="display:none;">
+        <textarea id="plan-content-edit" class="plan-content-edit" rows="20"></textarea>
+      </div>
+    </div>
+  </div>
+  <script src="plans.js"></script>
+</body>
+</html>

@@ -27,6 +27,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["File"] = "保存文件、下载",
         ["Tavily"] = "网页搜索、查资料",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
+        ["CurrentDocument"] = "当前打开的 Word/Excel 文档（任务窗格连接时）：插入/读正文、选区、表格、查找替换、Excel 区域/公式/工作表、预定义脚本",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> 描述；内置子类（不含动态 技能/外部）。</summary>
@@ -48,6 +49,9 @@ public sealed class ToolSelectionService : IToolSelector
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["技能"] = "用户技能与 Clawhub 脚本",
         ["外部"] = "MCP 工具",
+        ["CurrentDocument-Word"] = "当前文档 Word（任务窗格）：读正文/选区、插段落/表格、查找替换",
+        ["CurrentDocument-Excel"] = "当前文档 Excel（任务窗格）：读/写区域、列工作表、UsedRange、读/写公式",
+        ["CrossAgentTask"] = "跨端派发任务：让 Word/Chrome/Excel/WPS 端的 Agent 执行某任务；或标记本端已完成的任务",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> (插件名, 函数名) 列表；仅内置固定子类，技能/外部由 Kernel 动态收集。</summary>
@@ -88,6 +92,19 @@ public sealed class ToolSelectionService : IToolSelector
             ["Tavily-搜索"] = new List<(string, string)> { ("Tavily", "tavily_search") },
             ["Tavily-提取"] = new List<(string, string)> { ("Tavily", "tavily_extract") },
             ["ClawhubSkill"] = new List<(string, string)> { ("ClawhubSkill", "run_clawhub_script") },
+            ["CurrentDocument-Word"] = new List<(string, string)>
+            {
+                ("CurrentDocument", "current_word_insert_text"), ("CurrentDocument", "current_word_read_body"),
+                ("CurrentDocument", "current_word_read_selection"), ("CurrentDocument", "current_word_insert_table"),
+                ("CurrentDocument", "current_word_search_replace")
+            },
+            ["CurrentDocument-Excel"] = new List<(string, string)>
+            {
+                ("CurrentDocument", "current_excel_read_range"), ("CurrentDocument", "current_excel_write_range"),
+                ("CurrentDocument", "current_excel_list_sheets"), ("CurrentDocument", "current_excel_get_used_range"),
+                ("CurrentDocument", "current_excel_read_formulas"), ("CurrentDocument", "current_excel_write_formulas")
+            },
+            ["CrossAgentTask"] = new List<(string, string)> { ("CrossAgentTask", "create_cross_agent_task"), ("CrossAgentTask", "complete_cross_agent_task") },
         };
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
@@ -281,7 +298,7 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。");
         return string.Join("\n", lines);
     }
 

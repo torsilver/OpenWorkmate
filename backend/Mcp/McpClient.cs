@@ -9,6 +9,7 @@ public class McpClient : IDisposable
     private readonly string _id;
     private readonly string _command;
     private readonly string[] _args;
+    private readonly IReadOnlyDictionary<string, string>? _env;
     private readonly ILogger _logger;
     private Process? _process;
     private StreamReader? _stdout;
@@ -18,11 +19,12 @@ public class McpClient : IDisposable
 
     public string Id => _id;
 
-    public McpClient(string id, string command, string[] args, ILogger logger)
+    public McpClient(string id, string command, string[] args, IReadOnlyDictionary<string, string>? env, ILogger logger)
     {
         _id = id;
         _command = command;
         _args = args;
+        _env = env;
         _logger = logger;
     }
 
@@ -41,6 +43,15 @@ public class McpClient : IDisposable
         foreach (var arg in _args)
         {
             psi.ArgumentList.Add(arg);
+        }
+
+        if (_env != null)
+        {
+            foreach (var kv in _env)
+            {
+                if (!string.IsNullOrEmpty(kv.Key))
+                    psi.Environment[kv.Key] = kv.Value ?? "";
+            }
         }
 
         _process = new Process { StartInfo = psi };

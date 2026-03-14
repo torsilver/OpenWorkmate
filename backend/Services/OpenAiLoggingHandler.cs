@@ -45,23 +45,19 @@ public sealed class OpenAiLoggingHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var reqBody = "";
+        var requestBodyLength = 0L;
         if (request.Content != null)
         {
             var contentType = request.Content.Headers.ContentType;
             var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
             request.Content = new ByteArrayContent(bytes);
             request.Content.Headers.ContentType = contentType ?? new MediaTypeHeaderValue("application/json");
-            reqBody = Encoding.UTF8.GetString(bytes);
-            if (reqBody.Length > MaxBodyLogLength)
-                reqBody = reqBody.AsSpan(0, MaxBodyLogLength).ToString() + $"... [truncated, total {bytes.Length} bytes]";
-            else
-                reqBody = ToReadableJson(reqBody);
+            requestBodyLength = bytes.Length;
         }
 
         _logger.LogInformation(
-            "[AI-HTTP-REQUEST] Method={Method} RequestUri={Uri} RequestBodyLength={Len} RequestBody={Body}",
-            request.Method, request.RequestUri, reqBody.Length, reqBody);
+            "[AI-HTTP-REQUEST] Method={Method} RequestUri={Uri} RequestBodyLength={Len}",
+            request.Method, request.RequestUri, requestBodyLength);
 
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 

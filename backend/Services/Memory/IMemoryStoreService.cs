@@ -5,10 +5,12 @@ public interface IMemoryStoreService
 {
     /// <summary>是否可用（已配置嵌入且存储就绪）。</summary>
     bool IsAvailable { get; }
-    /// <summary>保存一条记忆；若 id 已存在则更新（会重新向量化）。</summary>
-    Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, CancellationToken ct = default);
-    /// <summary>按查询文本检索最相关的 topK 条记忆。</summary>
+    /// <summary>保存一条记忆；若 id 已存在则更新（会重新向量化）。scopeShared 为 true 时写入共享区（跨端可见）。</summary>
+    Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, bool scopeShared = false, CancellationToken ct = default);
+    /// <summary>按查询文本检索最相关的 topK 条记忆（仅当前 session）。</summary>
     Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchAsync(string query, int topK, string? sessionIdFilter, CancellationToken ct = default);
+    /// <summary>在共享记忆中检索最相关的 topK 条（跨端共享的记忆）。</summary>
+    Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchSharedAsync(string query, int topK, CancellationToken ct = default);
     /// <summary>删除一条记忆。</summary>
     Task<bool> DeleteAsync(string id, CancellationToken ct = default);
     /// <summary>获取单条记忆（不包含向量）。</summary>

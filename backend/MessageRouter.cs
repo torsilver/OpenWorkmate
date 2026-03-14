@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -63,10 +64,6 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public long Timestamp { get; set; }
 
-    [JsonPropertyName("context")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public WebPageContext? Context { get; set; }
-
     // RPC fields
     [JsonPropertyName("id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -119,6 +116,41 @@ public class WsMessage
     [JsonPropertyName("knowledgeBaseId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? KnowledgeBaseId { get; set; }
+
+    /// <summary>对话模式：plan = 仅生成计划，agent = 执行（可带计划）。</summary>
+    [JsonPropertyName("mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Mode { get; set; }
+
+    /// <summary>当前绑定的计划 ID，Agent 模式下注入计划供执行。</summary>
+    [JsonPropertyName("planId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlanId { get; set; }
+
+    /// <summary>执行计划时的当前步骤索引（从 1 开始）；不传或 0 表示第 1 步。仅注入该步内容以节省上下文。</summary>
+    [JsonPropertyName("planCurrentStepIndex")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PlanCurrentStepIndex { get; set; }
+
+    /// <summary>plan_created 时：计划标题。</summary>
+    [JsonPropertyName("title")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Title { get; set; }
+
+    /// <summary>plan_created 时：计划文件路径或相对路径。</summary>
+    [JsonPropertyName("path")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Path { get; set; }
+
+    /// <summary>plan_created 时：创建该计划的端（chrome | office-word | office-excel | wps）。</summary>
+    [JsonPropertyName("createdBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CreatedBy { get; set; }
+
+    /// <summary>plan_created 时：是否需用户确认后再执行（由后台规则计算）。</summary>
+    [JsonPropertyName("requiresUserConfirmation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? RequiresUserConfirmation { get; set; }
 }
 
 public class AttachmentDto
@@ -128,18 +160,6 @@ public class AttachmentDto
 
     [JsonPropertyName("data")]
     public string Data { get; set; } = ""; // base64
-}
-
-public class WebPageContext
-{
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
-
-    [JsonPropertyName("url")]
-    public string? Url { get; set; }
-
-    [JsonPropertyName("content")]
-    public string? Content { get; set; }
 }
 
 /// <summary>RAG 摄入请求。</summary>
@@ -164,6 +184,9 @@ public class MemoryAddRequest
     public string? SessionId { get; set; }
     [JsonPropertyName("tags")]
     public string? Tags { get; set; }
+    /// <summary>为 true 时写入共享记忆（跨端可见）。</summary>
+    [JsonPropertyName("scopeShared")]
+    public bool ScopeShared { get; set; }
 }
 
 /// <summary>记忆更新请求。</summary>
@@ -173,6 +196,9 @@ public class MemoryUpdateRequest
     public string Text { get; set; } = "";
     [JsonPropertyName("tags")]
     public string? Tags { get; set; }
+    /// <summary>为 true 时改为共享记忆，为 false 时改为仅本会话（原为共享时改为 sessionId=null）。不传则保持原 scope。</summary>
+    [JsonPropertyName("scopeShared")]
+    public bool? ScopeShared { get; set; }
 }
 
 /// <summary>内置插件信息，供设置页展示「自带的 MCP」。</summary>
@@ -183,11 +209,72 @@ public class BuiltInPluginInfo
     public string Description { get; set; } = "";
 }
 
+/// <summary>PUT /api/plans/{id} 请求体。</summary>
+public class PlanUpdateRequest
+{
+    [JsonPropertyName("content")]
+    public string Content { get; set; } = "";
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+}
+
+/// <summary>POST /api/scheduled-tasks 请求体。</summary>
+public class ScheduledTaskCreateRequest
+{
+    [JsonPropertyName("title")]
+    public string Title { get; set; } = "";
+    [JsonPropertyName("content")]
+    public string Content { get; set; } = "";
+    [JsonPropertyName("scheduleType")]
+    public string ScheduleType { get; set; } = "cron";
+    [JsonPropertyName("cronExpression")]
+    public string? CronExpression { get; set; }
+    [JsonPropertyName("intervalMinutes")]
+    public int? IntervalMinutes { get; set; }
+    [JsonPropertyName("timeZone")]
+    public string? TimeZone { get; set; }
+    [JsonPropertyName("endAt")]
+    public DateTimeOffset? EndAt { get; set; }
+    [JsonPropertyName("maxRuns")]
+    public int? MaxRuns { get; set; }
+    [JsonPropertyName("deleteAfterRun")]
+    public bool DeleteAfterRun { get; set; }
+}
+
+/// <summary>PUT /api/scheduled-tasks/{id} 请求体。</summary>
+public class ScheduledTaskUpdateRequest
+{
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+    [JsonPropertyName("content")]
+    public string? Content { get; set; }
+    [JsonPropertyName("scheduleType")]
+    public string? ScheduleType { get; set; }
+    [JsonPropertyName("cronExpression")]
+    public string? CronExpression { get; set; }
+    [JsonPropertyName("intervalMinutes")]
+    public int? IntervalMinutes { get; set; }
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+    [JsonPropertyName("timeZone")]
+    public string? TimeZone { get; set; }
+    [JsonPropertyName("endAt")]
+    public DateTimeOffset? EndAt { get; set; }
+    [JsonPropertyName("maxRuns")]
+    public int? MaxRuns { get; set; }
+    [JsonPropertyName("deleteAfterRun")]
+    public bool? DeleteAfterRun { get; set; }
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(WsMessage))]
-[JsonSerializable(typeof(WebPageContext))]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(AiConfig))]
+[JsonSerializable(typeof(SessionConfig))]
+[JsonSerializable(typeof(ContextWindowConfig))]
+[JsonSerializable(typeof(PlanConfirmationConfig))]
 [JsonSerializable(typeof(AiModelEntry))]
 [JsonSerializable(typeof(List<AiModelEntry>))]
 [JsonSerializable(typeof(SkillDefinition))]
@@ -208,4 +295,11 @@ public class BuiltInPluginInfo
 [JsonSerializable(typeof(MemoryAddRequest))]
 [JsonSerializable(typeof(MemoryUpdateRequest))]
 [JsonSerializable(typeof(OfficeCopilot.Server.Services.Memory.MemoryRecord))]
+[JsonSerializable(typeof(PlanMeta))]
+[JsonSerializable(typeof(List<PlanMeta>))]
+[JsonSerializable(typeof(PlanUpdateRequest))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta))]
+[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta>))]
+[JsonSerializable(typeof(ScheduledTaskCreateRequest))]
+[JsonSerializable(typeof(ScheduledTaskUpdateRequest))]
 internal partial class JsonCtx : JsonSerializerContext;

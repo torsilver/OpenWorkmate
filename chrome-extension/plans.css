@@ -1,0 +1,151 @@
+:root {
+  --plans-bg: #0f172a;
+  --plans-border: #334155;
+  --plans-text: #e2e8f0;
+  --plans-text-secondary: #94a3b8;
+  --plans-accent: #3b82f6;
+  --plans-list-bg: #1e293b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--plans-bg);
+  color: var(--plans-text);
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.plans-header {
+  margin-bottom: 16px;
+}
+
+.plans-header h1 {
+  margin: 0 0 4px 0;
+  font-size: 1.5rem;
+}
+
+.plans-hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--plans-text-secondary);
+}
+
+.plans-loading {
+  padding: 24px;
+  color: var(--plans-text-secondary);
+  font-size: 0.9rem;
+}
+
+.plans-error {
+  padding: 24px;
+  color: #f87171;
+  font-size: 0.9rem;
+  background: var(--plans-list-bg);
+  border-radius: 8px;
+  border: 1px solid var(--plans-border);
+}
+
+.plans-detail-wrap {
+  background: var(--plans-list-bg);
+  border-radius: 8px;
+  border: 1px solid var(--plans-border);
+  padding: 16px;
+  overflow: auto;
+}
+
+.plans-execute-hint {
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.plans-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--plans-border);
+}
+
+.plans-detail-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.plans-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plans-detail-actions button {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--plans-border);
+  background: var(--plans-bg);
+  color: var(--plans-text);
+  cursor: pointer;
+}
+
+.plans-detail-actions button:hover {
+  background: var(--plans-accent);
+  border-color: var(--plans-accent);
+  color: #fff;
+}
+
+.btn-use-plan {
+  background: var(--plans-accent);
+  border-color: var(--plans-accent);
+  color: #fff;
+}
+
+.btn-execute {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #fff;
+}
+
+.btn-execute:hover {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.btn-execute:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.plan-content {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.plan-content-edit {
+  width: 100%;
+  min-height: 400px;
+  padding: 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.875rem;
+  background: var(--plans-bg);
+  border: 1px solid var(--plans-border);
+  border-radius: 6px;
+  color: var(--plans-text);
+  resize: vertical;
+}

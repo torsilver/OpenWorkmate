@@ -11,7 +11,7 @@ public class AiConfig
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
-    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。";
+    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。";
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
     /// <summary>为 true 时使用两阶段工具选择（一阶段选子类、二阶段选函数）；为 false 时退化为单阶段选插件。null 视为 true。</summary>
@@ -46,6 +46,49 @@ public class AiModelEntry
     public string SystemPrompt { get; set; } = "";
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
+    /// <summary>单模型上下文 token 上限；存在时覆盖全局 MaxContextTokens（如内部 64K、云端 128K）。</summary>
+    [JsonPropertyName("contextLength")]
+    public int? ContextLength { get; set; }
+}
+
+/// <summary>会话配置：历史轮数、超时等。</summary>
+public class SessionConfig
+{
+    public int MaxHistoryTurns { get; set; } = 80;
+    public int MinTurnsToKeep { get; set; } = 8;
+    public int TimeoutMinutes { get; set; } = 30;
+    public int CleanupIntervalMinutes { get; set; } = 5;
+}
+
+/// <summary>计划确认规则：由后台规则决定计划是否需要用户确认后再执行；步数阈值与敏感工具可配置。</summary>
+public class PlanConfirmationConfig
+{
+    /// <summary>步数 ≤ 该值时可不确认直接执行；大于则需确认。默认 3。</summary>
+    public int AutoExecuteMaxSteps { get; set; } = 3;
+    /// <summary>是否启用「涉及敏感工具则必须确认」。</summary>
+    public bool RequireConfirmForSensitiveTools { get; set; }
+    /// <summary>触发确认的工具标识（如 "CLI:run_command"、插件名:函数名），空则仅按步数判断。</summary>
+    public List<string> SensitiveToolIds { get; set; } = new();
+}
+
+/// <summary>上下文窗口配置：64K 优化及业内常用项，便于将来换硬件时改配置即可。</summary>
+public class ContextWindowConfig
+{
+    public int MaxContextTokens { get; set; } = 64_000;
+    public int ReservedSystemTokens { get; set; } = 12_000;
+    public int ReservedToolsTokens { get; set; } = 12_000;
+    public int ReservedOutputTokens { get; set; } = 4_096;
+    public int PlanContentMaxChars { get; set; } = 16_000;
+    public int MemoryInjectionMaxChars { get; set; } = 4_000;
+    public int MemorySessionTopK { get; set; } = 5;
+    public int MemorySharedTopK { get; set; } = 3;
+    public string TokenEstimation { get; set; } = "CharsRatio";
+    public int CharsPerToken { get; set; } = 2;
+    public bool SummarizationEnabled { get; set; }
+    public double SummarizationTriggerRatio { get; set; } = 0.9;
+    public int SummarizationMaxSummaryChars { get; set; } = 500;
+    public bool ContextLengthRetryEnabled { get; set; } = true;
+    public int ContextLengthRetryMaxTurns { get; set; } = 10;
 }
 
 /// <summary>测试 AI 连接时前端传入的请求体。</summary>
@@ -61,6 +104,12 @@ public class TestAiRequest
 public class AppConfig
 {
     public AiConfig AI { get; set; } = new();
+    /// <summary>会话配置（历史轮数、超时等）；未配置时使用默认值。</summary>
+    public SessionConfig? Session { get; set; }
+    /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
+    public ContextWindowConfig? ContextWindow { get; set; }
+    /// <summary>计划确认规则（步数阈值、敏感工具等）；未配置时使用默认值。</summary>
+    public PlanConfirmationConfig? PlanConfirmation { get; set; }
     /// <summary>多套 AI 模型列表；为空时使用 AI 单条配置。</summary>
     public List<AiModelEntry> AiModels { get; set; } = new();
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
@@ -91,6 +140,12 @@ public class AppConfig
     public string RagStorageType { get; set; } = "Memory";
     /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OfficeCopilot/rag.db。</summary>
     public string? RagStoragePath { get; set; }
+    /// <summary>计划存储目录（.plan.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/Plans。</summary>
+    public string? PlansDirectory { get; set; }
+    /// <summary>准确数据 MCP 存储目录；为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。启动 accurate-data-mcp 时会通过环境变量 ACCURATE_DATA_DIRECTORY 传入。</summary>
+    public string? AccurateDataDirectory { get; set; }
+    /// <summary>定时任务存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
+    public string? ScheduledTasksDirectory { get; set; }
 }
 
 public sealed class ConfigService
@@ -133,6 +188,9 @@ public sealed class ConfigService
                         config.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
                     config.SkillEnv ??= new Dictionary<string, string>();
                     config.AiModels ??= new List<AiModelEntry>();
+                    config.Session ??= new SessionConfig();
+                    config.ContextWindow ??= new ContextWindowConfig();
+                    config.PlanConfirmation ??= new PlanConfirmationConfig();
                     MigrateLegacyAiIfNeeded(config);
                     return config;
                 }
@@ -151,6 +209,12 @@ public sealed class ConfigService
         // Fallback to appsettings.json
         var appConfig = new AppConfig();
         defaultConfig.GetSection("AI").Bind(appConfig.AI);
+        appConfig.Session = new SessionConfig();
+        defaultConfig.GetSection("Session").Bind(appConfig.Session);
+        appConfig.ContextWindow = new ContextWindowConfig();
+        defaultConfig.GetSection("ContextWindow").Bind(appConfig.ContextWindow);
+        appConfig.PlanConfirmation = new PlanConfirmationConfig();
+        defaultConfig.GetSection("PlanConfirmation").Bind(appConfig.PlanConfirmation);
         if (string.IsNullOrWhiteSpace(appConfig.TavilyApiKey))
             appConfig.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
         appConfig.SkillEnv ??= new Dictionary<string, string>();
@@ -189,6 +253,10 @@ public sealed class ConfigService
         {
             try
             {
+                // 前端可能只提交部分字段，未传的节保留当前值避免被覆盖
+                if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
+                if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
+                if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();
                 // 与 JsonCtx 一致使用 CamelCase，否则下次反序列化时字段对不上
                 var options = new JsonSerializerOptions
                 {

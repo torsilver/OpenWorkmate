@@ -2,8 +2,12 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Plugins;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
+using OfficeCopilot.Server.Services.Plan;
+using OfficeCopilot.Server.Services.ScheduledTask;
+using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Mcp;
 using Serilog;
 
@@ -47,8 +51,52 @@ try
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<StreamCancelService>();
     builder.Services.AddSingleton<ChatService>();
-    
+    builder.Services.AddSingleton<IPlanStore>(sp =>
+    {
+        var config = sp.GetRequiredService<ConfigService>().Current;
+        var dir = (config.PlansDirectory ?? "").Trim();
+        if (string.IsNullOrEmpty(dir))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            dir = Path.Combine(appData, "OfficeCopilot", "Plans");
+        }
+        else
+        {
+            dir = Environment.ExpandEnvironmentVariables(dir);
+            if (!Path.IsPathRooted(dir))
+                dir = Path.Combine(AppContext.BaseDirectory, dir);
+        }
+        return new FilePlanStore(dir, sp.GetRequiredService<ILogger<FilePlanStore>>());
+    });
+    builder.Services.AddSingleton<PlanPlugin>();
+    builder.Services.AddSingleton<ICrossAgentTaskStore>(sp =>
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var dir = Path.Combine(appData, "OfficeCopilot");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "CrossAgentTasks.db");
+        return new SqliteCrossAgentTaskStore("Data Source=" + path);
+    });
+    builder.Services.AddSingleton<IScheduledTaskStore>(sp =>
+    {
+        var config = sp.GetRequiredService<ConfigService>().Current;
+        var dir = (config.ScheduledTasksDirectory ?? "").Trim();
+        if (string.IsNullOrEmpty(dir))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            dir = Path.Combine(appData, "OfficeCopilot", "ScheduledTasks");
+        }
+        else
+        {
+            dir = Environment.ExpandEnvironmentVariables(dir);
+            if (!Path.IsPathRooted(dir))
+                dir = Path.Combine(AppContext.BaseDirectory, dir);
+        }
+        return new FileScheduledTaskStore(dir, sp.GetRequiredService<ILogger<FileScheduledTaskStore>>());
+    });
+
     builder.Services.AddCors();
+    builder.Services.AddHostedService<ScheduledTaskRunnerService>();
 
     var app = builder.Build();
 
@@ -107,10 +155,14 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     if (string.IsNullOrEmpty(sessionId))
         sessionId = Guid.NewGuid().ToString("N")[..8];
 
-    using var ws = await context.WebSockets.AcceptWebSocketAsync();
-    app.Logger.LogInformation("Session {SessionId} connected", sessionId);
+    var clientType = context.Request.Query["clientType"].ToString().Trim();
+    if (string.IsNullOrEmpty(clientType))
+        clientType = null;
 
-    sessions.Add(sessionId, ws);
+    using var ws = await context.WebSockets.AcceptWebSocketAsync();
+    app.Logger.LogInformation("Session {SessionId} connected clientType={ClientType}", sessionId, clientType ?? "(none)");
+
+    sessions.Add(sessionId, ws, clientType);
     try
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
@@ -208,6 +260,7 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
+        new() { Id = "CurrentDocument", Name = "CurrentDocument", Description = "当前打开的 Word/Excel 文档（任务窗格连接时）：正文/选区/表格/查找替换、Excel 区域/公式/工作表、预定义脚本" },
         new() { Id = "Tavily", Name = "Tavily", Description = "Tavily 网页搜索与 URL 正文提取（需配置 TAVILY_API_KEY）" },
         new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
         new() { Id = "Memory", Name = "Memory", Description = "长期记忆：保存与检索用户偏好、关键事实（需配置 Embedding 模型）" }
@@ -250,11 +303,14 @@ app.MapPost("/api/rag/ingest", async (HttpContext ctx, IMemoryStoreService memor
     return Results.Json(new { ok = true, chunksAdded = added });
 });
 
-app.MapGet("/api/memory", async (string? sessionId, int skip, int take, IMemoryStoreService memory) =>
+app.MapGet("/api/memory", async (string? sessionId, string? scope, int skip, int take, IMemoryStoreService memory) =>
 {
     if (!memory.IsAvailable)
         return Results.Json(new { ok = false, message = "未配置 Embedding 模型。" }, statusCode: 400);
-    var list = await memory.ListAsync(sessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100)).ConfigureAwait(false);
+    var filterSessionId = (scope ?? "").Trim().ToLowerInvariant() == "shared"
+        ? OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId
+        : (scope == "all" ? null : sessionId);
+    var list = await memory.ListAsync(filterSessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100)).ConfigureAwait(false);
     return Results.Json(new { ok = true, items = list });
 });
 
@@ -266,7 +322,7 @@ app.MapPost("/api/memory", async (HttpContext ctx, IMemoryStoreService memory) =
     if (body == null || string.IsNullOrWhiteSpace(body.Text))
         return Results.BadRequest(new { ok = false, message = "需要 text。" });
     var metadata = string.IsNullOrWhiteSpace(body.Tags) ? null : new Dictionary<string, string> { ["tags"] = body.Tags };
-    var id = await memory.SaveAsync(null, body.Text.Trim(), body.SessionId, metadata).ConfigureAwait(false);
+    var id = await memory.SaveAsync(null, body.Text.Trim(), body.ScopeShared ? null : body.SessionId, metadata, body.ScopeShared).ConfigureAwait(false);
     return Results.Json(new { ok = true, id });
 });
 
@@ -286,14 +342,180 @@ app.MapPut("/api/memory/{id}", async (string id, HttpContext ctx, IMemoryStoreSe
         return Results.BadRequest(new { ok = false, message = "需要 text。" });
     var existing = await memory.GetAsync(id).ConfigureAwait(false);
     var sessionId = existing?.SessionId;
+    var isShared = body.ScopeShared.HasValue
+        ? body.ScopeShared.Value
+        : string.Equals(sessionId, OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal);
+    if (body.ScopeShared == false && string.Equals(sessionId, OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal))
+        sessionId = null;
     var metadata = string.IsNullOrWhiteSpace(body.Tags) ? null : new Dictionary<string, string> { ["tags"] = body.Tags };
-    await memory.SaveAsync(id, body.Text.Trim(), sessionId, metadata).ConfigureAwait(false);
+    await memory.SaveAsync(id, body.Text.Trim(), sessionId, metadata, isShared).ConfigureAwait(false);
     return Results.Ok(new { ok = true });
 });
 
 app.MapDelete("/api/memory/{id}", async (string id, IMemoryStoreService memory) =>
 {
     var deleted = await memory.DeleteAsync(id).ConfigureAwait(false);
+    if (!deleted) return Results.NotFound();
+    return Results.Ok(new { ok = true });
+});
+
+app.MapGet("/api/plans", async (IPlanStore planStore, CancellationToken ct) =>
+{
+    var list = await planStore.ListAsync(ct).ConfigureAwait(false);
+    return Results.Json(list, JsonCtx.Default.ListPlanMeta);
+});
+
+app.MapGet("/api/plans/{id}", async (string id, IPlanStore planStore, CancellationToken ct) =>
+{
+    var result = await planStore.GetAsync(id, ct).ConfigureAwait(false);
+    if (result == null) return Results.NotFound();
+    return Results.Json(new { content = result.Value.Content, meta = result.Value.Meta });
+});
+
+app.MapPut("/api/plans/{id}", async (string id, HttpContext ctx, IPlanStore planStore, CancellationToken ct) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<PlanUpdateRequest>(ctx.Request.Body, JsonCtx.Default.PlanUpdateRequest);
+    if (body == null) return Results.BadRequest(new { ok = false, message = "需要 content。" });
+    var existing = await planStore.GetAsync(id, ct).ConfigureAwait(false);
+    if (existing == null) return Results.NotFound();
+    var meta = existing.Value.Meta;
+    if (!string.IsNullOrWhiteSpace(body.Title)) meta.Title = body.Title;
+    if (!string.IsNullOrWhiteSpace(body.Status)) meta.Status = body.Status;
+    meta.UpdatedAt = DateTimeOffset.UtcNow;
+    await planStore.SaveAsync(id, body.Content ?? "", meta, ct).ConfigureAwait(false);
+    return Results.Ok(new { ok = true });
+});
+
+app.MapDelete("/api/plans/{id}", async (string id, IPlanStore planStore, CancellationToken ct) =>
+{
+    var deleted = await planStore.DeleteAsync(id, ct).ConfigureAwait(false);
+    if (!deleted) return Results.NotFound();
+    return Results.Ok(new { ok = true });
+});
+
+// ----- 准确数据 API（仅列表 + 删除，与 MCP 共用目录）-----
+static string GetAccurateDataDirectory(ConfigService configService)
+{
+    var dir = (configService.Current.AccurateDataDirectory ?? "").Trim();
+    if (string.IsNullOrEmpty(dir))
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        dir = Path.Combine(appData, "OfficeCopilot", "AccurateData");
+    }
+    else
+    {
+        dir = Environment.ExpandEnvironmentVariables(dir);
+        if (!Path.IsPathRooted(dir))
+            dir = Path.Combine(AppContext.BaseDirectory, dir);
+    }
+    return Path.GetFullPath(dir);
+}
+
+static string SanitizeAccurateDataId(string? id)
+{
+    if (string.IsNullOrWhiteSpace(id)) return "";
+    return System.Text.RegularExpressions.Regex.Replace(id.Trim(), @"[^\w\-]", "_");
+}
+
+app.MapGet("/api/accurate-data", (ConfigService configService) =>
+{
+    var root = GetAccurateDataDirectory(configService);
+    if (!Directory.Exists(root)) return Results.Json(Array.Empty<object>());
+    var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var file in Directory.EnumerateFiles(root, "*.*"))
+    {
+        var name = Path.GetFileNameWithoutExtension(file);
+        var ext = Path.GetExtension(file);
+        if (ext.Equals(".meta.json", StringComparison.OrdinalIgnoreCase)) continue;
+        if (!ext.Equals(".md", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".json", StringComparison.OrdinalIgnoreCase)) continue;
+        ids.Add(name);
+    }
+    var list = ids.Select(id => new { id, format = File.Exists(Path.Combine(root, id + ".md")) ? "md" : "json" }).OrderBy(x => x.id).ToList();
+    return Results.Json(list);
+});
+
+app.MapDelete("/api/accurate-data/{id}", (string id, ConfigService configService) =>
+{
+    var safeId = SanitizeAccurateDataId(id);
+    if (string.IsNullOrEmpty(safeId)) return Results.BadRequest();
+    var root = GetAccurateDataDirectory(configService);
+    Directory.CreateDirectory(root);
+    var rootFull = Path.GetFullPath(root);
+    var deleted = false;
+    foreach (var name in new[] { safeId + ".md", safeId + ".json", safeId + ".meta.json" })
+    {
+        var path = Path.Combine(root, name);
+        if (!File.Exists(path)) continue;
+        var full = Path.GetFullPath(path);
+        if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)) continue;
+        File.Delete(path);
+        deleted = true;
+    }
+    return deleted ? Results.Ok(new { ok = true }) : Results.NotFound();
+});
+
+// ----- 定时任务 API -----
+app.MapGet("/api/scheduled-tasks", async (IScheduledTaskStore taskStore, CancellationToken ct) =>
+{
+    var list = await taskStore.ListAsync(ct).ConfigureAwait(false);
+    return Results.Json(list, JsonCtx.Default.ListScheduledTaskMeta);
+});
+
+app.MapGet("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore taskStore, CancellationToken ct) =>
+{
+    var result = await taskStore.GetAsync(id, ct).ConfigureAwait(false);
+    if (result == null) return Results.NotFound();
+    return Results.Json(new { content = result.Value.Content, meta = result.Value.Meta });
+});
+
+app.MapPost("/api/scheduled-tasks", async (HttpContext ctx, IScheduledTaskStore taskStore, CancellationToken ct) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<ScheduledTaskCreateRequest>(ctx.Request.Body, JsonCtx.Default.ScheduledTaskCreateRequest);
+    if (body == null || string.IsNullOrWhiteSpace(body.Title) || string.IsNullOrWhiteSpace(body.Content))
+        return Results.BadRequest(new { ok = false, message = "需要 title 和 content。" });
+    var meta = new ScheduledTaskMeta
+    {
+        Title = body.Title.Trim(),
+        ScheduleType = (body.ScheduleType ?? "cron").Trim(),
+        CronExpression = body.CronExpression?.Trim(),
+        IntervalMinutes = body.IntervalMinutes,
+        Enabled = true,
+        TimeZone = body.TimeZone?.Trim(),
+        EndAt = body.EndAt,
+        MaxRuns = body.MaxRuns,
+        DeleteAfterRun = body.DeleteAfterRun
+    };
+    var nextRun = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
+    meta.NextRunAt = nextRun;
+    var id = await taskStore.SaveAsync(null, body.Content.Trim(), meta, ct).ConfigureAwait(false);
+    return Results.Json(new { ok = true, id });
+});
+
+app.MapPut("/api/scheduled-tasks/{id}", async (string id, HttpContext ctx, IScheduledTaskStore taskStore, CancellationToken ct) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<ScheduledTaskUpdateRequest>(ctx.Request.Body, JsonCtx.Default.ScheduledTaskUpdateRequest);
+    if (body == null) return Results.BadRequest(new { ok = false, message = "需要请求体。" });
+    var existing = await taskStore.GetAsync(id, ct).ConfigureAwait(false);
+    if (existing == null) return Results.NotFound();
+    var meta = existing.Value.Meta;
+    var content = body.Content ?? existing.Value.Content;
+    if (!string.IsNullOrWhiteSpace(body.Title)) meta.Title = body.Title.Trim();
+    if (body.Enabled.HasValue) meta.Enabled = body.Enabled.Value;
+    if (body.ScheduleType != null) meta.ScheduleType = body.ScheduleType.Trim();
+    if (body.CronExpression != null) meta.CronExpression = string.IsNullOrWhiteSpace(body.CronExpression) ? null : body.CronExpression.Trim();
+    if (body.IntervalMinutes.HasValue) meta.IntervalMinutes = body.IntervalMinutes;
+    if (body.TimeZone != null) meta.TimeZone = string.IsNullOrWhiteSpace(body.TimeZone) ? null : body.TimeZone.Trim();
+    if (body.EndAt.HasValue) meta.EndAt = body.EndAt;
+    if (body.MaxRuns.HasValue) meta.MaxRuns = body.MaxRuns;
+    if (body.DeleteAfterRun.HasValue) meta.DeleteAfterRun = body.DeleteAfterRun.Value;
+    meta.NextRunAt = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
+    await taskStore.SaveAsync(id, content, meta, ct).ConfigureAwait(false);
+    return Results.Ok(new { ok = true });
+});
+
+app.MapDelete("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore taskStore, CancellationToken ct) =>
+{
+    var deleted = await taskStore.DeleteAsync(id, ct).ConfigureAwait(false);
     if (!deleted) return Results.NotFound();
     return Results.Ok(new { ok = true });
 });
@@ -335,8 +557,7 @@ static async Task HandleSession(
 
         var raw = Encoding.UTF8.GetString(ms.ToArray());
         var msgType = GetMessageType(raw);
-        var preview = raw.Length > 200 ? raw[..200] + "..." : raw;
-        logger.LogInformation("[{SessionId}] WS Recv type={Type} len={Len} preview={Preview}", sessionId, msgType, raw.Length, preview);
+        logger.LogInformation("[{SessionId}] WS Recv type={Type} len={Len}", sessionId, msgType, raw.Length);
 
         WsMessage? incoming;
         try
@@ -355,7 +576,7 @@ static async Task HandleSession(
         }
 
         // Only require Content for message types that use it for chat (allow empty content when attachments present)
-        var needsContent = incoming.Type is not ("ping" or "mode_change" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop");
+        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop");
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
@@ -367,10 +588,6 @@ static async Task HandleSession(
         {
             case "ping":
                 await SendJson(ws, new WsMessage { Type = "pong", Content = "pong" });
-                break;
-            case "mode_change":
-                logger.LogInformation("[{SessionId}] Mode changed to: {Mode}", sessionId, incoming.Content);
-                chatService.SetSessionMode(sessionId, incoming.Content);
                 break;
             case "rpc_response":
                 if (incoming.Id != null)
@@ -407,7 +624,7 @@ static async Task HandleChatStream(
     ChatService chatService, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
-    logger.LogInformation("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
+    logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
     await SendJson(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
     var ct = streamCancelService.CreateForSession(sessionId);
@@ -416,12 +633,8 @@ static async Task HandleChatStream(
     try
     {
         string prompt = incoming.Content ?? "";
-        if (incoming.Type == "text_with_context" && incoming.Context != null)
-        {
-            prompt = $"[当前网页上下文]\n标题: {incoming.Context.Title}\nURL: {incoming.Context.Url}\n内容:\n{incoming.Context.Content}\n\n[用户输入]\n{incoming.Content}";
-        }
 
-        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, ct))
+        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, ct))
         {
             await SendJson(ws, new WsMessage { Type = "stream_chunk", Content = chunk });
         }

@@ -19,13 +19,6 @@
       </div>
       <div class="header-controls">
         <button id="toggle-debug-btn" title="Toggle Debug" style="background:none; border:none; cursor:pointer; font-size:16px;">🐛</button>
-        <div class="mode-toggle" title="切换模式">
-          <input type="checkbox" id="mode-switch" class="mode-switch-checkbox">
-          <label class="mode-switch-label" for="mode-switch">
-            <span class="mode-switch-inner"></span>
-            <span class="mode-switch-switch"></span>
-          </label>
-        </div>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
           <span class="status-text">未连接</span>
@@ -56,6 +49,14 @@
     </div>
 
     <footer class="input-area">
+      <div class="mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <span style="font-size:12px; color:var(--text-secondary, #94a3b8);">模式：</span>
+        <div id="mode-toggle" class="mode-toggle" role="group" aria-label="计划/执行模式" style="display:flex; border-radius:8px; overflow:hidden; border:1px solid var(--border, #334155);">
+          <button type="button" id="mode-plan" class="mode-btn" data-mode="plan" style="padding:4px 10px; font-size:12px; border:none; background:var(--bg-secondary, #1e293b); color:var(--text-secondary, #94a3b8); cursor:pointer;">计划</button>
+          <button type="button" id="mode-agent" class="mode-btn active" data-mode="agent" style="padding:4px 10px; font-size:12px; border:none; background:var(--accent, #3b82f6); color:#fff; cursor:pointer;">执行</button>
+        </div>
+        <span id="current-plan-label" style="font-size:11px; color:var(--text-secondary, #94a3b8); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="当前计划">无</span>
+      </div>
       <div id="attachments-preview" class="attachments-preview" style="display: none;"></div>
       <div class="input-row">
         <input type="file" id="file-input" accept="image/*" multiple hidden>

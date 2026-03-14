@@ -66,6 +66,13 @@ els.tabs.forEach(tab => {
     if (tab.dataset.target === 'tab-memory') {
       loadMemoryList();
     }
+    if (tab.dataset.target === 'tab-scheduled-tasks') {
+      loadScheduledTasks();
+    }
+    if (tab.dataset.target === 'tab-plans-accurate') {
+      loadPlansList();
+      loadAccurateDataList();
+    }
   });
 });
 
@@ -143,22 +150,31 @@ function updateEmbeddingModelSummary() {
   }
 }
 
+var MEMORY_SCOPE_SHARED = '__shared__';
+
 function loadMemoryList() {
+  var scopeEl = document.getElementById('memoryScopeFilter');
+  var scope = (scopeEl && scopeEl.value) || 'all';
   var sessionId = (document.getElementById('memorySessionFilter') && document.getElementById('memorySessionFilter').value.trim()) || undefined;
+  if (scope === 'session' && !sessionId) sessionId = '';
   var baseUrl = API_URL.replace('/api/config', '');
-  var url = baseUrl + '/api/memory?skip=0&take=50' + (sessionId ? '&sessionId=' + encodeURIComponent(sessionId) : '');
+  var url = baseUrl + '/api/memory?skip=0&take=50&scope=' + encodeURIComponent(scope);
+  if (scope === 'session' && sessionId !== undefined) url += '&sessionId=' + encodeURIComponent(sessionId);
   fetch(url).then(function (r) { return r.json(); }).then(function (data) {
     var list = data.items || [];
     var html = list.length ? list.map(function (item) {
       var text = (item.text || '').substring(0, 120);
       if ((item.text || '').length > 120) text += '…';
       var createdAt = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
+      var isShared = item.sessionId === MEMORY_SCOPE_SHARED;
+      var scopeLabel = isShared ? ' <span class="help-text" style="color:var(--accent);">共享</span>' : '';
+      var sessionLabel = (item.sessionId && !isShared) ? '会话: ' + escapeHtml(item.sessionId) + ' | ' : '';
       return '<div class="skill-card" data-memory-id="' + escapeAttr(item.id) + '">' +
-        '<div class="skill-header"><span class="skill-title">' + escapeHtml(item.id) + '</span>' +
+        '<div class="skill-header"><span class="skill-title">' + escapeHtml(item.id) + '</span>' + scopeLabel +
         '<div><button type="button" class="btn-secondary edit-memory-btn" data-id="' + escapeAttr(item.id) + '">编辑</button> ' +
         '<button type="button" class="btn-danger delete-memory-btn" data-id="' + escapeAttr(item.id) + '">删除</button></div></div>' +
         '<div class="skill-desc">' + escapeHtml(text) + '</div>' +
-        '<div class="help-text">' + (item.sessionId ? '会话: ' + escapeHtml(item.sessionId) + ' | ' : '') + createdAt + '</div></div>';
+        '<div class="help-text">' + sessionLabel + createdAt + '</div></div>';
     }).join('') : '<p class="help-text">暂无记忆，或未配置 Embedding 模型。</p>';
     var el = document.getElementById('memoryList');
     if (el) el.innerHTML = html;
@@ -188,6 +204,8 @@ function openMemoryEditor(id) {
     fetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (item) {
       textEl.value = item.text || '';
       tagsEl.value = (item.metadata && item.metadata.tags) ? item.metadata.tags : '';
+      var scopeCb = document.getElementById('memoryEditScopeShared');
+      if (scopeCb) scopeCb.checked = item.sessionId === MEMORY_SCOPE_SHARED;
       editor.style.display = 'block';
     });
   } else {
@@ -195,6 +213,8 @@ function openMemoryEditor(id) {
     if (editId) editId.value = '';
     textEl.value = '';
     tagsEl.value = '';
+    var scopeCb = document.getElementById('memoryEditScopeShared');
+    if (scopeCb) scopeCb.checked = false;
     editor.style.display = 'block';
   }
 }
@@ -208,13 +228,17 @@ function saveMemoryFromEditor() {
   var editId = document.getElementById('memoryEditId');
   var textEl = document.getElementById('memoryEditText');
   var tagsEl = document.getElementById('memoryEditTags');
+  var scopeCb = document.getElementById('memoryEditScopeShared');
   var id = editId && editId.value ? editId.value.trim() : '';
   var text = textEl && textEl.value ? textEl.value.trim() : '';
   if (!text) { alert('请输入内容'); return; }
+  var scopeShared = scopeCb && scopeCb.checked;
   var baseUrl = API_URL.replace('/api/config', '');
   var url = id ? baseUrl + '/api/memory/' + encodeURIComponent(id) : baseUrl + '/api/memory';
   var method = id ? 'PUT' : 'POST';
-  var body = id ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '' }) : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '' });
+  var body = id
+    ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared })
+    : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared });
   fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
     if (!r.ok) throw new Error('保存失败');
     closeMemoryEditor();
@@ -247,6 +271,15 @@ if (document.getElementById('addMemoryBtn')) document.getElementById('addMemoryB
 if (document.getElementById('refreshMemoryListBtn')) document.getElementById('refreshMemoryListBtn').addEventListener('click', loadMemoryList);
 if (document.getElementById('saveMemoryBtn')) document.getElementById('saveMemoryBtn').addEventListener('click', saveMemoryFromEditor);
 if (document.getElementById('cancelMemoryEditBtn')) document.getElementById('cancelMemoryEditBtn').addEventListener('click', closeMemoryEditor);
+var memoryScopeFilterEl = document.getElementById('memoryScopeFilter');
+var memorySessionFilterEl = document.getElementById('memorySessionFilter');
+if (memoryScopeFilterEl && memorySessionFilterEl) {
+  function toggleMemorySessionFilter() {
+    memorySessionFilterEl.style.display = (memoryScopeFilterEl.value === 'session') ? 'inline-block' : 'none';
+  }
+  memoryScopeFilterEl.addEventListener('change', toggleMemorySessionFilter);
+  toggleMemorySessionFilter();
+}
 
 function openAiModelEditor(existingId) {
   editingAiModelId = existingId || null;
@@ -477,6 +510,15 @@ async function loadConfig() {
     if (rtEl) rtEl.value = ragType || 'Memory';
     if (rpEl) rpEl.value = ragPath || '';
     if (rpGroup) rpGroup.style.display = (ragType === 'Sqlite') ? 'block' : 'none';
+    var pc = data.planConfirmation ?? data.PlanConfirmation;
+    if (pc) {
+      var aeEl = document.getElementById('autoExecuteMaxSteps');
+      var rcEl = document.getElementById('requireConfirmForSensitiveTools');
+      var stEl = document.getElementById('sensitiveToolIds');
+      if (aeEl) aeEl.value = (pc.autoExecuteMaxSteps ?? pc.AutoExecuteMaxSteps ?? 3);
+      if (rcEl) rcEl.checked = !!(pc.requireConfirmForSensitiveTools ?? pc.RequireConfirmForSensitiveTools);
+      if (stEl) stEl.value = Array.isArray(pc.sensitiveToolIds ?? pc.SensitiveToolIds) ? (pc.sensitiveToolIds || pc.SensitiveToolIds).join('\n') : '';
+    }
   } catch (err) {
     console.error(err);
     alert('无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
@@ -526,6 +568,13 @@ async function saveConfig() {
     var ragPathEl = document.getElementById('ragStoragePath');
     var ragType = ragTypeEl ? ragTypeEl.value : 'Memory';
     var ragPath = ragPathEl ? ragPathEl.value : '';
+    var aeEl = document.getElementById('autoExecuteMaxSteps');
+    var rcEl = document.getElementById('requireConfirmForSensitiveTools');
+    var stEl = document.getElementById('sensitiveToolIds');
+    var autoExecuteMaxSteps = (aeEl && aeEl.value !== '') ? parseInt(aeEl.value, 10) : (fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.autoExecuteMaxSteps ?? fullConfig.planConfirmation.AutoExecuteMaxSteps)) || 3;
+    if (isNaN(autoExecuteMaxSteps) || autoExecuteMaxSteps < 1) autoExecuteMaxSteps = 3;
+    var requireConfirmForSensitiveTools = rcEl ? rcEl.checked : !!(fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.requireConfirmForSensitiveTools ?? fullConfig.planConfirmation.RequireConfirmForSensitiveTools));
+    var sensitiveToolIds = (stEl && stEl.value) ? stEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean) : [];
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -542,7 +591,8 @@ async function saveConfig() {
       embeddingApiKey: (embSrc === 'Remote') ? (embApiKey || undefined) : undefined,
       embeddingModelId: (embSrc === 'Remote' && embModelId) ? embModelId : undefined,
       ragStorageType: ragType,
-      ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined
+      ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
+      planConfirmation: { autoExecuteMaxSteps: autoExecuteMaxSteps, requireConfirmForSensitiveTools: requireConfirmForSensitiveTools, sensitiveToolIds: sensitiveToolIds }
     };
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -550,7 +600,7 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Failed to save');
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation });
     els.statusMessage.style.opacity = '1';
     setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
     await loadConfig();
@@ -995,6 +1045,13 @@ const SALES_DB_MCP_PRESET = {
   args: ['run', '--project', 'sales-db-mcp/SalesDbMcp.csproj']
 };
 
+const ACCURATE_DATA_MCP_PRESET = {
+  id: 'accurate-data-mcp',
+  name: 'AccurateDataMcp',
+  command: 'dotnet',
+  args: ['run', '--project', 'accurate-data-mcp/AccurateDataMcp.csproj']
+};
+
 document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () => {
   if (!fullConfig) {
     alert('请先等待配置加载完成。');
@@ -1008,6 +1065,47 @@ document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () =
   }
   if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
   fullConfig.mcpServers.push({ ...SALES_DB_MCP_PRESET });
+  await _saveFullConfig();
+  renderMcpList(getMcpServers());
+});
+
+document.getElementById('addAccurateDataMcpBtn').addEventListener('click', async () => {
+  if (!fullConfig) {
+    alert('请先等待配置加载完成。');
+    return;
+  }
+  const list = getMcpServers();
+  const exists = list.some(s => (s.id || s.Id) === ACCURATE_DATA_MCP_PRESET.id);
+  if (exists) {
+    window.editMcp(ACCURATE_DATA_MCP_PRESET.id);
+    return;
+  }
+  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
+  fullConfig.mcpServers.push({ ...ACCURATE_DATA_MCP_PRESET });
+  await _saveFullConfig();
+  renderMcpList(getMcpServers());
+});
+
+const SCHEDULED_TASK_MCP_PRESET = {
+  id: 'scheduled-task-mcp',
+  name: 'ScheduledTaskMcp',
+  command: 'dotnet',
+  args: ['run', '--project', 'scheduled-task-mcp/ScheduledTaskMcp.csproj']
+};
+
+document.getElementById('addScheduledTaskMcpBtn').addEventListener('click', async () => {
+  if (!fullConfig) {
+    alert('请先等待配置加载完成。');
+    return;
+  }
+  const list = getMcpServers();
+  const exists = list.some(s => (s.id || s.Id) === SCHEDULED_TASK_MCP_PRESET.id);
+  if (exists) {
+    window.editMcp(SCHEDULED_TASK_MCP_PRESET.id);
+    return;
+  }
+  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
+  fullConfig.mcpServers.push({ ...SCHEDULED_TASK_MCP_PRESET });
   await _saveFullConfig();
   renderMcpList(getMcpServers());
 });
@@ -1064,6 +1162,253 @@ document.getElementById('saveMcpBtn').addEventListener('click', async () => {
   document.getElementById('mcpEditor').style.display = 'none';
   document.getElementById('mcpList').style.display = 'block';
 });
+
+// ───── 定时任务 Tab ─────
+const BASE_URL = () => API_URL.replace('/api/config', '');
+
+async function loadScheduledTasks() {
+  const listEl = document.getElementById('scheduledTasksList');
+  if (!listEl) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/scheduled-tasks');
+    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    const list = await res.json();
+    if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
+    if (list.length === 0) {
+      listEl.innerHTML = '<p class="help-text">暂无定时任务，点击「新建定时任务」添加。</p>';
+      return;
+    }
+    listEl.innerHTML = list.map(t => {
+      const next = t.nextRunAt ? new Date(t.nextRunAt).toLocaleString() : '-';
+      const en = t.enabled !== false;
+      return `<div class="mcp-server-row" data-scheduled-task-id="${escapeHtml(t.id)}">
+        <div class="mcp-info">
+          <div class="mcp-name">${escapeHtml(t.title || t.id)}</div>
+          <div class="mcp-desc">下次运行: ${next} · ${t.scheduleType || 'cron'} · ${en ? '已启用' : '已禁用'}</div>
+        </div>
+        <div class="mcp-actions">
+          <button type="button" class="btn-secondary scheduled-task-edit" data-id="${escapeHtml(t.id)}">编辑</button>
+          <button type="button" class="btn-secondary scheduled-task-delete" data-id="${escapeHtml(t.id)}">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.scheduled-task-edit').forEach(btn => {
+      btn.addEventListener('click', () => editScheduledTask(btn.getAttribute('data-id')));
+    });
+    listEl.querySelectorAll('.scheduled-task-delete').forEach(btn => {
+      btn.addEventListener('click', () => deleteScheduledTask(btn.getAttribute('data-id')));
+    });
+  } catch (err) {
+    console.error(err);
+    listEl.innerHTML = '<p class="help-text">加载失败: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function toggleScheduledTaskScheduleType() {
+  const st = document.getElementById('scheduledTaskScheduleType').value;
+  document.getElementById('scheduledTaskCronGroup').style.display = st === 'cron' ? 'block' : 'none';
+  document.getElementById('scheduledTaskIntervalGroup').style.display = st === 'interval' ? 'block' : 'none';
+}
+
+document.getElementById('scheduledTaskScheduleType').addEventListener('change', toggleScheduledTaskScheduleType);
+
+document.getElementById('scheduledTaskNewBtn').addEventListener('click', () => {
+  document.getElementById('scheduledTaskId').value = '';
+  document.getElementById('scheduledTaskTitle').value = '';
+  document.getElementById('scheduledTaskContent').value = '';
+  document.getElementById('scheduledTaskScheduleType').value = 'cron';
+  document.getElementById('scheduledTaskCron').value = '';
+  document.getElementById('scheduledTaskIntervalMinutes').value = '';
+  document.getElementById('scheduledTaskEnabled').checked = true;
+  document.getElementById('scheduledTaskDeleteAfterRun').checked = false;
+  toggleScheduledTaskScheduleType();
+  document.getElementById('scheduledTaskEditorTitle').textContent = '新建定时任务';
+  document.getElementById('scheduledTaskEditor').style.display = 'block';
+  document.getElementById('scheduledTasksList').style.display = 'none';
+});
+
+document.getElementById('scheduledTaskCancelBtn').addEventListener('click', () => {
+  document.getElementById('scheduledTaskEditor').style.display = 'none';
+  document.getElementById('scheduledTasksList').style.display = 'block';
+  loadScheduledTasks();
+});
+
+async function editScheduledTask(id) {
+  try {
+    const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
+    if (!res.ok) throw new Error('获取失败');
+    const data = await res.json();
+    document.getElementById('scheduledTaskId').value = id;
+    document.getElementById('scheduledTaskTitle').value = data.meta?.title ?? '';
+    document.getElementById('scheduledTaskContent').value = data.content ?? '';
+    document.getElementById('scheduledTaskScheduleType').value = data.meta?.scheduleType || 'cron';
+    document.getElementById('scheduledTaskCron').value = data.meta?.cronExpression ?? '';
+    document.getElementById('scheduledTaskIntervalMinutes').value = data.meta?.intervalMinutes ?? '';
+    document.getElementById('scheduledTaskEnabled').checked = data.meta?.enabled !== false;
+    document.getElementById('scheduledTaskDeleteAfterRun').checked = !!data.meta?.deleteAfterRun;
+    toggleScheduledTaskScheduleType();
+    document.getElementById('scheduledTaskEditorTitle').textContent = '编辑定时任务';
+    document.getElementById('scheduledTaskEditor').style.display = 'block';
+    document.getElementById('scheduledTasksList').style.display = 'none';
+  } catch (err) {
+    alert('加载失败: ' + err.message);
+  }
+}
+
+document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async () => {
+  const id = document.getElementById('scheduledTaskId').value.trim();
+  const title = document.getElementById('scheduledTaskTitle').value.trim();
+  const content = document.getElementById('scheduledTaskContent').value.trim();
+  if (!title) { alert('请填写标题'); return; }
+  if (!content) { alert('请填写任务内容'); return; }
+  const scheduleType = document.getElementById('scheduledTaskScheduleType').value;
+  const cronExpression = document.getElementById('scheduledTaskCron').value.trim();
+  const intervalMinutes = parseInt(document.getElementById('scheduledTaskIntervalMinutes').value, 10);
+  const enabled = document.getElementById('scheduledTaskEnabled').checked;
+  const deleteAfterRun = document.getElementById('scheduledTaskDeleteAfterRun').checked;
+  try {
+    if (id) {
+      const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title, content, scheduleType,
+          cronExpression: scheduleType === 'cron' ? cronExpression : null,
+          intervalMinutes: scheduleType === 'interval' && !isNaN(intervalMinutes) ? intervalMinutes : null,
+          enabled, deleteAfterRun
+        })
+      });
+      if (!res.ok) throw new Error((await res.json()).message || '更新失败');
+    } else {
+      const res = await fetch(BASE_URL() + '/api/scheduled-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title, content, scheduleType,
+          cronExpression: scheduleType === 'cron' ? cronExpression : null,
+          intervalMinutes: scheduleType === 'interval' && !isNaN(intervalMinutes) ? intervalMinutes : null,
+          deleteAfterRun
+        })
+      });
+      if (!res.ok) throw new Error((await res.json()).message || '创建失败');
+    }
+    document.getElementById('scheduledTaskEditor').style.display = 'none';
+    document.getElementById('scheduledTasksList').style.display = 'block';
+    loadScheduledTasks();
+  } catch (err) {
+    alert('保存失败: ' + err.message);
+  }
+});
+
+async function deleteScheduledTask(id) {
+  if (!confirm('确定要删除该定时任务吗？')) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error('删除失败');
+    loadScheduledTasks();
+  } catch (err) {
+    alert('删除失败: ' + err.message);
+  }
+}
+
+// ───── 计划与准确数据 Tab（仅列表 + 删除）─────
+async function loadPlansList() {
+  const listEl = document.getElementById('plansList');
+  if (!listEl) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/plans');
+    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    const list = await res.json();
+    if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
+    if (list.length === 0) {
+      listEl.innerHTML = '<p class="help-text">暂无计划。</p>';
+      return;
+    }
+    listEl.innerHTML = list.map(p => {
+      const id = p.id || p.Id || '';
+      const title = p.title || p.Title || id;
+      const updatedAt = (p.updatedAt || p.UpdatedAt) ? new Date(p.updatedAt || p.UpdatedAt).toLocaleString() : '-';
+      const status = p.status || p.Status || 'draft';
+      return `<div class="mcp-server-row" data-plan-id="${escapeHtml(id)}">
+        <div class="mcp-info">
+          <div class="mcp-name">${escapeHtml(title)}</div>
+          <div class="mcp-desc">ID: ${escapeHtml(id)} · 更新: ${escapeHtml(updatedAt)} · 状态: ${escapeHtml(status)}</div>
+        </div>
+        <div>
+          <a href="plans.html?id=${encodeURIComponent(id)}" target="_blank" class="btn-secondary" style="padding:4px 10px;font-size:12px;margin-right:6px;">查看</a>
+          <button type="button" class="btn-danger plan-delete" data-id="${escapeHtml(id)}" style="padding:4px 10px;font-size:12px;">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.plan-delete').forEach(btn => {
+      btn.addEventListener('click', () => deletePlan(btn.dataset.id));
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p class="help-text">加载失败: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+async function deletePlan(id) {
+  if (!id || !confirm('确定要删除该计划吗？')) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error('删除失败');
+    loadPlansList();
+  } catch (err) {
+    alert('删除失败: ' + err.message);
+  }
+}
+
+async function loadAccurateDataList() {
+  const listEl = document.getElementById('accurateDataList');
+  if (!listEl) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/accurate-data');
+    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    const list = await res.json();
+    if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
+    if (list.length === 0) {
+      listEl.innerHTML = '<p class="help-text">暂无准确数据条目。</p>';
+      return;
+    }
+    listEl.innerHTML = list.map(item => {
+      const id = item.id || '';
+      const format = item.format || 'md';
+      return `<div class="mcp-server-row" data-accurate-id="${escapeHtml(id)}">
+        <div class="mcp-info">
+          <div class="mcp-name">${escapeHtml(id)}</div>
+          <div class="mcp-desc">格式: ${escapeHtml(format)}</div>
+        </div>
+        <div>
+          <button type="button" class="btn-danger accurate-data-delete" data-id="${escapeHtml(id)}" style="padding:4px 10px;font-size:12px;">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.accurate-data-delete').forEach(btn => {
+      btn.addEventListener('click', () => deleteAccurateData(btn.dataset.id));
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p class="help-text">加载失败: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+async function deleteAccurateData(id) {
+  if (!id || !confirm('确定要删除该准确数据条目吗？')) return;
+  try {
+    const res = await fetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error('删除失败');
+    loadAccurateDataList();
+  } catch (err) {
+    alert('删除失败: ' + err.message);
+  }
+}
 
 async function _saveFullConfig() {
   try {

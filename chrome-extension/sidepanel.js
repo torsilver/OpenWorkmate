@@ -13,6 +13,14 @@ const $fileInput = document.getElementById("file-input");
 const $attachmentsPreview = document.getElementById("attachments-preview");
 const $status = document.getElementById("status");
 const $settingsBtn = document.getElementById("settings-btn");
+const $modePlan = document.getElementById("mode-plan");
+const $modeAgent = document.getElementById("mode-agent");
+const $currentPlanLabel = document.getElementById("current-plan-label");
+
+const STORAGE_MODE = "copilot_chat_mode";
+const STORAGE_PLAN_ID = "copilot_plan_id";
+const STORAGE_PLAN_TITLE = "copilot_plan_title";
+const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
 
 if ($settingsBtn) {
   $settingsBtn.addEventListener("click", () => {
@@ -20,27 +28,134 @@ if ($settingsBtn) {
   });
 }
 
+function getChatMode() {
+  return sessionStorage.getItem(STORAGE_MODE) || "agent";
+}
+
+function setChatMode(mode) {
+  sessionStorage.setItem(STORAGE_MODE, mode === "plan" ? "plan" : "agent");
+  if ($modePlan) $modePlan.classList.toggle("active", mode === "plan");
+  if ($modeAgent) $modeAgent.classList.toggle("active", mode === "agent");
+  if ($modePlan && $modeAgent) {
+    $modePlan.style.background = mode === "plan" ? "var(--accent, #3b82f6)" : "var(--bg-secondary, #1e293b)";
+    $modePlan.style.color = mode === "plan" ? "#fff" : "var(--text-secondary, #94a3b8)";
+    $modeAgent.style.background = mode === "agent" ? "var(--accent, #3b82f6)" : "var(--bg-secondary, #1e293b)";
+    $modeAgent.style.color = mode === "agent" ? "#fff" : "var(--text-secondary, #94a3b8)";
+  }
+}
+
+function getCurrentPlanId() {
+  return sessionStorage.getItem(STORAGE_PLAN_ID) || "";
+}
+
+function setCurrentPlan(planId, title) {
+  if (planId) {
+    sessionStorage.setItem(STORAGE_PLAN_ID, planId);
+    sessionStorage.setItem(STORAGE_PLAN_TITLE, title || planId);
+    sessionStorage.setItem(STORAGE_PLAN_STEP_INDEX, "1");
+    if (typeof chrome !== "undefined" && chrome.storage?.local)
+      chrome.storage.local.set({ copilot_plan_id: planId, copilot_plan_title: title || planId });
+  } else {
+    sessionStorage.removeItem(STORAGE_PLAN_ID);
+    sessionStorage.removeItem(STORAGE_PLAN_TITLE);
+    sessionStorage.removeItem(STORAGE_PLAN_STEP_INDEX);
+    if (typeof chrome !== "undefined" && chrome.storage?.local)
+      chrome.storage.local.set({ copilot_plan_id: "", copilot_plan_title: "" });
+  }
+  if ($currentPlanLabel) $currentPlanLabel.textContent = title || planId || "无";
+  if ($currentPlanLabel) $currentPlanLabel.title = planId ? `计划: ${title || planId}` : "当前计划";
+}
+
+function getPlanCurrentStepIndex() {
+  const v = sessionStorage.getItem(STORAGE_PLAN_STEP_INDEX);
+  const n = parseInt(v, 10);
+  return (n >= 1) ? n : 1;
+}
+
+function setPlanCurrentStepIndex(stepIndex) {
+  if (stepIndex >= 1) sessionStorage.setItem(STORAGE_PLAN_STEP_INDEX, String(stepIndex));
+}
+
+function appendPlanCreatedMessage(planId, title, isUpdated) {
+  const div = document.createElement("div");
+  div.className = "msg msg--system";
+  div.textContent = isUpdated
+    ? "计划已更新，已在新标签页打开。若需再改请在此继续说明。"
+    : "计划已生成，已在新标签页打开。若需修改请在此继续说明。";
+  $messages.appendChild(div);
+}
+
+function showPlanConfirmDialog(planId, title, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.className = "plan-confirm-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  const box = document.createElement("div");
+  box.className = "plan-confirm-box";
+  box.style.cssText = "background:var(--bg-primary,#0f172a);border:1px solid var(--border,#334155);border-radius:12px;padding:20px;max-width:360px;box-shadow:0 10px 40px rgba(0,0,0,0.3);";
+  box.innerHTML = "<p style='margin:0 0 12px;font-weight:500;'>该计划需您确认后再执行</p><p style='margin:0 0 16px;font-size:13px;color:var(--text-secondary,#94a3b8);'>" + escapeHtml(title || planId || "") + "</p><div style='display:flex;gap:10px;justify-content:flex-end;'>" +
+    "<button type='button' class='plan-confirm-cancel' style='padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;'>取消</button>" +
+    "<button type='button' class='plan-confirm-ok' style='padding:8px 16px;border-radius:8px;border:none;background:var(--accent,#3b82f6);color:#fff;cursor:pointer;'>确认执行</button></div>";
+  overlay.appendChild(box);
+  function close() {
+    overlay.remove();
+  }
+  box.querySelector(".plan-confirm-cancel").addEventListener("click", () => { close(); });
+  box.querySelector(".plan-confirm-ok").addEventListener("click", () => { close(); onConfirm(); });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
+}
+
+if ($modePlan) {
+  $modePlan.addEventListener("click", () => setChatMode("plan"));
+}
+if ($modeAgent) {
+  $modeAgent.addEventListener("click", () => setChatMode("agent"));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setChatMode(getChatMode());
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.get(["copilot_plan_id", "copilot_plan_title", "copilot_execute_plan_id", "copilot_execute_plan_title"], (r) => {
+      if (r.copilot_plan_id) setCurrentPlan(r.copilot_plan_id, r.copilot_plan_title || "");
+      else if ($currentPlanLabel) $currentPlanLabel.textContent = "无";
+      const execPlanId = r.copilot_execute_plan_id;
+      if (execPlanId) {
+        const title = r.copilot_execute_plan_title || execPlanId;
+        setCurrentPlan(execPlanId, title);
+        setChatMode("agent");
+        pendingExecutePlan = true;
+        chrome.storage.local.remove(["copilot_execute_plan_id", "copilot_execute_plan_title"]);
+      }
+    });
+    // 计划页点击「执行计划」时写入 copilot_execute_plan_id，侧边栏据此绑定计划并发送执行请求
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes.copilot_execute_plan_id) return;
+      const planId = changes.copilot_execute_plan_id.newValue;
+      if (!planId) return;
+      const title = (changes.copilot_execute_plan_title?.newValue) || planId;
+      setCurrentPlan(planId, title);
+      setChatMode("agent");
+      chrome.storage.local.remove(["copilot_execute_plan_id", "copilot_execute_plan_title"], () => {
+        if (typeof send === "function") send("请按当前绑定的计划执行");
+      });
+    });
+  } else {
+    const planId = getCurrentPlanId();
+    const title = sessionStorage.getItem(STORAGE_PLAN_TITLE);
+    if ($currentPlanLabel) $currentPlanLabel.textContent = title || planId || "无";
+  }
+});
+
 let ws = null;
 let sessionId = null;
 let reconnectDelay = RECONNECT_BASE_MS;
 let reconnectTimer = null;
 /** 断线时未发出去的消息，重连后按顺序自动重发 */
 let pendingMessages = [];
+/** 计划页触发执行、侧边栏加载时尚未连接，连接后自动发执行请求 */
+let pendingExecutePlan = false;
 let streamingBubble = null;
-let currentMode = "workspace"; // 'workspace' or 'assistant'
 const attachments = []; // { mimeType, data (base64), id } for preview
-
-const $modeSwitch = document.getElementById("mode-switch");
-if ($modeSwitch) {
-  $modeSwitch.addEventListener("change", (e) => {
-    currentMode = e.target.checked ? "assistant" : "workspace";
-    addSystemMessage(`已切换至 ${currentMode === 'assistant' ? '辅助 (Assistant)' : '工作区 (Workspace)'} 模式`);
-    // TODO: Notify backend about mode change
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "mode_change", content: currentMode }));
-    }
-  });
-}
 
 // ───── Session ID ─────
 
@@ -142,7 +257,7 @@ function connect() {
   }
 
   sessionId = getSessionId();
-  const url = `${WS_URL}?sessionId=${sessionId}&token=${AUTH_TOKEN}`;
+  const url = `${WS_URL}?sessionId=${sessionId}&token=${AUTH_TOKEN}&clientType=chrome`;
   ws = new WebSocket(url);
 
   ws.addEventListener("open", () => {
@@ -150,13 +265,16 @@ function connect() {
     setStatus(true);
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
-    ws.send(JSON.stringify({ type: "mode_change", content: currentMode }));
     const toFlush = pendingMessages.length;
     while (pendingMessages.length > 0) {
       const m = pendingMessages.shift();
       send(m.text, m.attachmentsPayload);
     }
     if (toFlush > 0) addSystemMessage("已重连，待发消息已自动发出");
+    if (pendingExecutePlan && getCurrentPlanId()) {
+      pendingExecutePlan = false;
+      send("请按当前绑定的计划执行");
+    }
   });
 
   ws.addEventListener("message", (e) => {
@@ -193,11 +311,14 @@ function send(text, attachmentsPayload = null) {
     addBotMessage("连接已断开，消息未发送。请检查网络或刷新侧边栏后重试。", true);
     return;
   }
-  const payload = attachmentsPayload && attachmentsPayload.length > 0
-    ? JSON.stringify({ type: "text", content: text || "", attachments: attachmentsPayload })
-    : JSON.stringify({ type: "text", content: text });
+  const mode = getChatMode();
+  const planId = getCurrentPlanId() || undefined;
+  const base = { type: "text", content: text || "", mode, planId };
+  if (planId) base.planCurrentStepIndex = getPlanCurrentStepIndex();
+  if (attachmentsPayload && attachmentsPayload.length > 0) base.attachments = attachmentsPayload;
+  const payload = JSON.stringify(base);
   ws.send(payload);
-  debugLog("WS Send", "type=text len=" + (text || "").length + " attachments=" + (attachmentsPayload?.length || 0), "send");
+  debugLog("WS Send", "type=text mode=" + mode + " planId=" + (planId || "-") + " step=" + (planId ? getPlanCurrentStepIndex() : "-") + " len=" + (text || "").length, "send");
 }
 
 // ───── Init Libraries ─────
@@ -427,6 +548,31 @@ function handleMessage(raw) {
     case "confirm_request":
       handleConfirmRequest(msg);
       break;
+
+    case "plan_created":
+    case "plan_updated": {
+      const planId = msg.planId || "";
+      const title = msg.title || "新计划";
+      const requiresConfirm = msg.requiresUserConfirmation === true;
+      if (planId) {
+        if (msg.type === "plan_created" && requiresConfirm) {
+          showPlanConfirmDialog(planId, title, () => {
+            setCurrentPlan(planId, title);
+            setChatMode("agent");
+            appendPlanCreatedMessage(planId, title, true);
+            chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
+          });
+        } else {
+          setCurrentPlan(planId, title);
+          appendPlanCreatedMessage(planId, title, msg.type === "plan_updated");
+          chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
+        }
+        const welcome = $messages.querySelector(".welcome");
+        if (welcome) welcome.remove();
+        $messages.scrollTop = $messages.scrollHeight;
+      }
+      break;
+    }
 
     default:
       addBotMessage(msg.content || JSON.stringify(msg));
@@ -773,29 +919,23 @@ async function extractAndRenderCanvas(rawText) {
     lastMsg.innerHTML = displayHtml;
   }
   
-  if (currentMode === 'workspace') {
-    // Send to workspace tab
-    const hasMermaid = text.includes('```mermaid');
-    if (htmlCode || hasMermaid || text.length > 500) {
-      await sendToWorkspace(htmlCode, text);
-    }
-  } else {
-    // Render in sidepanel
-    if (htmlCode) {
-      renderCanvas(htmlCode);
-    }
+  const hasMermaid = text.includes('```mermaid');
+  const isComplex = htmlCode || hasMermaid || text.length > 500;
+  if (isComplex) {
+    await sendToWorkspace(htmlCode, text);
+  } else if (htmlCode) {
+    renderCanvas(htmlCode);
   }
 }
 
 async function sendToWorkspace(htmlCode, markdown) {
   const url = chrome.runtime.getURL('workspace.html');
-  
+
   const tabs = await chrome.tabs.query({});
   let wsTab = tabs.find(t => t.url === url);
-  
+
   if (!wsTab) {
     wsTab = await chrome.tabs.create({ url: url, active: true });
-    // Wait for it to load
     await new Promise(resolve => {
       const listener = (request) => {
         if (request.type === 'WORKSPACE_READY') {
@@ -804,17 +944,16 @@ async function sendToWorkspace(htmlCode, markdown) {
         }
       };
       chrome.runtime.onMessage.addListener(listener);
-      // Fallback timeout
       setTimeout(() => {
         chrome.runtime.onMessage.removeListener(listener);
         resolve();
       }, 1500);
     });
   }
-  
+
   chrome.tabs.sendMessage(wsTab.id, {
     type: 'RENDER_WORKSPACE',
-    htmlCode: htmlCode,
+    htmlCode: htmlCode || null,
     markdown: htmlCode ? null : markdown
   });
 }
@@ -941,53 +1080,13 @@ async function handleSend() {
 
   addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
 
-  if (currentMode === 'assistant') {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab && !tab.url.startsWith('chrome://')) {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            return {
-              title: document.title,
-              url: window.location.href,
-              content: document.body.innerText.substring(0, 5000)
-            };
-          }
-        });
-        if (results && results[0] && results[0].result) {
-          sendWithContext(text, results[0].result, attachmentsPayload);
-        } else {
-          send(text, attachmentsPayload);
-        }
-      } else {
-        send(text, attachmentsPayload);
-      }
-    } catch (err) {
-      console.error("Failed to get page context:", err);
-      send(text, attachmentsPayload);
-    }
-  } else {
-    send(text, attachmentsPayload);
-  }
+  send(text, attachmentsPayload);
 
   $input.value = "";
   $input.style.height = "auto";
   attachments.length = 0;
   renderAttachmentsPreview();
   $input.focus();
-}
-
-function sendWithContext(text, context, attachmentsPayload = null) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const payload = JSON.stringify({
-    type: "text_with_context",
-    content: text || "",
-    context: context,
-    ...(attachmentsPayload && attachmentsPayload.length > 0 ? { attachments: attachmentsPayload } : {})
-  });
-  ws.send(payload);
-  debugLog("WS Send", "type=text_with_context len=" + (text || "").length + " contextTitle=" + (context?.title || "").slice(0, 30) + " attachments=" + (attachmentsPayload?.length || 0), "send");
 }
 
 // ───── Attachments (images) ─────

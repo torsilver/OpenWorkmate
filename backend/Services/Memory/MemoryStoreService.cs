@@ -14,7 +14,7 @@ public sealed class MemoryStoreService : IMemoryStoreService
 
     public bool IsAvailable => _embedding.IsConfigured;
 
-    public async Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, CancellationToken ct = default)
+    public async Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, bool scopeShared = false, CancellationToken ct = default)
     {
         if (!_embedding.IsConfigured || string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Embedding is not configured or text is empty.");
@@ -22,7 +22,8 @@ public sealed class MemoryStoreService : IMemoryStoreService
         if (vector == null || vector.Length == 0)
             throw new InvalidOperationException("Failed to generate embedding.");
         var key = id ?? Guid.NewGuid().ToString("N");
-        await _store.UpsertAsync(key, text, vector, sessionId, metadata, "memory", ct).ConfigureAwait(false);
+        var effectiveSessionId = scopeShared ? MemoryScopes.SharedSessionId : sessionId;
+        await _store.UpsertAsync(key, text, vector, effectiveSessionId, metadata, "memory", ct).ConfigureAwait(false);
         return key;
     }
 
@@ -57,6 +58,16 @@ public sealed class MemoryStoreService : IMemoryStoreService
             throw new InvalidOperationException("Failed to generate embedding.");
         var coll = "kb:" + (knowledgeBaseId ?? "").Trim();
         await _store.UpsertAsync(chunkId, text, vector, null, metadata, coll, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchSharedAsync(string query, int topK, CancellationToken ct = default)
+    {
+        if (!_embedding.IsConfigured || string.IsNullOrWhiteSpace(query))
+            return Array.Empty<(string, string, double)>();
+        var vector = await _embedding.GenerateEmbeddingAsync(query, ct).ConfigureAwait(false);
+        if (vector == null || vector.Length == 0)
+            return Array.Empty<(string, string, double)>();
+        return await _store.SearchAsync(vector, Math.Clamp(topK, 1, 20), MemoryScopes.SharedSessionId, "memory", ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchKnowledgeBaseAsync(string knowledgeBaseId, string query, int topK, CancellationToken ct = default)
