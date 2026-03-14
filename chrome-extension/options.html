@@ -385,8 +385,8 @@
       </div>
 
       <div class="actions">
-        <span id="statusMessage" class="status">保存成功！</span>
-        <button id="saveBtn">保存配置</button>
+        <span id="statusMessage" class="status save-config-status">保存成功！</span>
+        <button id="saveBtn" type="button" class="save-config-btn">保存配置</button>
       </div>
     </div>
     
@@ -428,6 +428,10 @@
           <button type="button" id="cancelMemoryEditBtn" class="btn-secondary">取消</button>
         </div>
       </div>
+      <div class="actions">
+        <span class="status save-config-status">保存成功！</span>
+        <button type="button" class="save-config-btn">保存配置</button>
+      </div>
     </div>
 
     <!-- MCP 管理 -->
@@ -459,19 +463,15 @@
       </div>
       <div class="skill-card" style="margin-bottom: 12px;">
         <div class="skill-header">
-          <div class="skill-title">准确数据 MCP</div>
-          <button type="button" id="addAccurateDataMcpBtn" class="btn-secondary" style="padding: 6px 14px;">添加准确数据 MCP</button>
+          <div class="skill-title">准确数据</div>
         </div>
-        <div class="skill-desc">将需要保证准确性的数据以文件形式存于后台目录，供 AI 写入与按 id 读取；可选与 RAG 整合做语义检索。数据目录由 MCP 的 AccurateData:Directory 或环境变量 ACCURATE_DATA_DIRECTORY 配置。</div>
-        <p class="help-text" style="margin-top: 8px;">添加后可在下方列表中编辑「启动参数」，将项目路径改为本机路径（如 <code>accurate-data-mcp/AccurateDataMcp.csproj</code>），除非后端从仓库根目录启动。</p>
+        <div class="skill-desc">将需要保证准确性的数据以文件形式存于后台目录，供 AI 写入与按 id 读取。已作为内置插件提供，无需在 MCP 列表中添加。数据目录由设置中的「准确数据目录」或配置 AccurateDataDirectory 指定。</div>
       </div>
       <div class="skill-card" style="margin-bottom: 12px;">
         <div class="skill-header">
-          <div class="skill-title">定时任务 MCP</div>
-          <button type="button" id="addScheduledTaskMcpBtn" class="btn-secondary" style="padding: 6px 14px;">添加定时任务 MCP</button>
+          <div class="skill-title">定时任务</div>
         </div>
-        <div class="skill-desc">供 AI 创建与管理定时任务（.task.md + meta）；到点后由后台将任务内容发给 AI 执行。数据目录由 SCHEDULED_TASKS_DIRECTORY 配置。</div>
-        <p class="help-text" style="margin-top: 8px;">添加后可在下方列表中编辑「启动参数」，将项目路径改为本机路径（如 <code>scheduled-task-mcp/ScheduledTaskMcp.csproj</code>），除非后端从仓库根目录启动。</p>
+        <div class="skill-desc">供 AI 创建与管理定时任务（.task.md + meta）；到点后由后台将任务内容发给 AI 执行。已作为内置插件提供，无需在 MCP 列表中添加。数据目录由设置中的「定时任务目录」或配置 ScheduledTasksDirectory 指定。</div>
       </div>
 
       <h4 style="margin: 16px 0 8px; font-size: 13px; color: var(--text-secondary);">已安装的 MCP 服务器</h4>
@@ -504,12 +504,16 @@ postgresql://localhost/mydb"></textarea>
           <button id="saveMcpBtn">保存</button>
         </div>
       </div>
+      <div class="actions">
+        <span class="status save-config-status">保存成功！</span>
+        <button type="button" class="save-config-btn">保存配置</button>
+      </div>
     </div>
 
     <!-- 定时任务 -->
     <div id="tab-scheduled-tasks" class="tab-content">
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">定时任务</h3>
-      <p class="help-text" style="margin-bottom: 16px;">到点后后台会将任务内容（MD）发给 AI 执行。可与「外部组件」中的定时任务 MCP 共用同一批任务。</p>
+      <p class="help-text" style="margin-bottom: 16px;">到点后后台会将任务内容（MD）发给 AI 执行。与内置定时任务插件共用同一批任务数据。</p>
       <div style="margin-bottom: 16px;">
         <button type="button" id="scheduledTaskNewBtn" class="btn-secondary">新建定时任务</button>
       </div>
@@ -555,6 +559,10 @@ postgresql://localhost/mydb"></textarea>
           <button type="button" id="scheduledTaskSaveBtn">保存</button>
         </div>
       </div>
+      <div class="actions">
+        <span class="status save-config-status">保存成功！</span>
+        <button type="button" class="save-config-btn">保存配置</button>
+      </div>
     </div>
 
     <!-- 计划与准确数据（仅列表 + 删除） -->
@@ -594,6 +602,10 @@ postgresql://localhost/mydb"></textarea>
       <div id="accurateDataListContainer">
         <div id="accurateDataList"></div>
       </div>
+      <div class="actions">
+        <span class="status save-config-status">保存成功！</span>
+        <button type="button" class="save-config-btn">保存配置</button>
+      </div>
     </div>
 
     <div id="tab-skills" class="tab-content">
@@ -629,6 +641,10 @@ postgresql://localhost/mydb"></textarea>
           <button id="cancelSkillBtn" class="btn-secondary">取消</button>
           <button id="saveSkillBtn">保存技能</button>
         </div>
+      </div>
+      <div class="actions">
+        <span class="status save-config-status">保存成功！</span>
+        <button type="button" class="save-config-btn">保存配置</button>
       </div>
     </div>
     

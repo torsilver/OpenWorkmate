@@ -465,10 +465,16 @@ function collectSkillEnv() {
   return out;
 }
 
+function setSaveConfigButtonsState(disabled, text) {
+  document.querySelectorAll('.save-config-btn').forEach(function (btn) {
+    btn.disabled = disabled;
+    btn.textContent = text;
+  });
+}
+
 async function loadConfig() {
   try {
-    els.saveBtn.disabled = true;
-    els.saveBtn.textContent = '加载中...';
+    setSaveConfigButtonsState(true, '加载中...');
     
     const response = await fetch(API_URL);
     if (!response.ok) throw new Error('Failed to load');
@@ -540,15 +546,13 @@ async function loadConfig() {
     console.error(err);
     alert('无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
   } finally {
-    els.saveBtn.disabled = false;
-    els.saveBtn.textContent = '保存配置';
+    setSaveConfigButtonsState(false, '保存配置');
   }
 }
 
 async function saveConfig() {
   try {
-    els.saveBtn.disabled = true;
-    els.saveBtn.textContent = '保存中...';
+    setSaveConfigButtonsState(true, '保存中...');
     const allowedPageScriptIds = (els.allowedPageScriptIds && els.allowedPageScriptIds.value)
       ? els.allowedPageScriptIds.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
       : [];
@@ -630,19 +634,26 @@ async function saveConfig() {
     });
     if (!response.ok) throw new Error('Failed to save');
     fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
-    els.statusMessage.style.opacity = '1';
-    setTimeout(function () { els.statusMessage.style.opacity = '0'; }, 2000);
+    document.querySelectorAll('.save-config-status').forEach(function (el) {
+      el.style.opacity = '1';
+    });
+    setTimeout(function () {
+      document.querySelectorAll('.save-config-status').forEach(function (el) {
+        el.style.opacity = '0';
+      });
+    }, 2000);
     await loadConfig();
   } catch (err) {
     console.error(err);
     alert('保存失败，请检查服务状态。');
   } finally {
-    els.saveBtn.disabled = false;
-    els.saveBtn.textContent = '保存配置';
+    setSaveConfigButtonsState(false, '保存配置');
   }
 }
 
-els.saveBtn.addEventListener('click', saveConfig);
+document.querySelectorAll('.save-config-btn').forEach(function (btn) {
+  btn.addEventListener('click', saveConfig);
+});
 
 var newContextPresetBtn = document.getElementById('newContextPresetBtn');
 if (newContextPresetBtn) {
@@ -1107,13 +1118,6 @@ const SALES_DB_MCP_PRESET = {
   args: ['run', '--project', 'sales-db-mcp/SalesDbMcp.csproj']
 };
 
-const ACCURATE_DATA_MCP_PRESET = {
-  id: 'accurate-data-mcp',
-  name: 'AccurateDataMcp',
-  command: 'dotnet',
-  args: ['run', '--project', 'accurate-data-mcp/AccurateDataMcp.csproj']
-};
-
 document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () => {
   if (!fullConfig) {
     alert('请先等待配置加载完成。');
@@ -1127,47 +1131,6 @@ document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () =
   }
   if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
   fullConfig.mcpServers.push({ ...SALES_DB_MCP_PRESET });
-  await _saveFullConfig();
-  renderMcpList(getMcpServers());
-});
-
-document.getElementById('addAccurateDataMcpBtn').addEventListener('click', async () => {
-  if (!fullConfig) {
-    alert('请先等待配置加载完成。');
-    return;
-  }
-  const list = getMcpServers();
-  const exists = list.some(s => (s.id || s.Id) === ACCURATE_DATA_MCP_PRESET.id);
-  if (exists) {
-    window.editMcp(ACCURATE_DATA_MCP_PRESET.id);
-    return;
-  }
-  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
-  fullConfig.mcpServers.push({ ...ACCURATE_DATA_MCP_PRESET });
-  await _saveFullConfig();
-  renderMcpList(getMcpServers());
-});
-
-const SCHEDULED_TASK_MCP_PRESET = {
-  id: 'scheduled-task-mcp',
-  name: 'ScheduledTaskMcp',
-  command: 'dotnet',
-  args: ['run', '--project', 'scheduled-task-mcp/ScheduledTaskMcp.csproj']
-};
-
-document.getElementById('addScheduledTaskMcpBtn').addEventListener('click', async () => {
-  if (!fullConfig) {
-    alert('请先等待配置加载完成。');
-    return;
-  }
-  const list = getMcpServers();
-  const exists = list.some(s => (s.id || s.Id) === SCHEDULED_TASK_MCP_PRESET.id);
-  if (exists) {
-    window.editMcp(SCHEDULED_TASK_MCP_PRESET.id);
-    return;
-  }
-  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
-  fullConfig.mcpServers.push({ ...SCHEDULED_TASK_MCP_PRESET });
   await _saveFullConfig();
   renderMcpList(getMcpServers());
 });
@@ -1472,45 +1435,9 @@ async function deleteAccurateData(id) {
   }
 }
 
+/** 保存整份 config（MCP 等 Tab 内调用）。复用主保存逻辑，不再使用已废弃的 els.provider 等。 */
 async function _saveFullConfig() {
-  try {
-    var scriptIdsEl = els.allowedPageScriptIds || document.getElementById('allowedPageScriptIds');
-    var allowedPageScriptIds = (scriptIdsEl && scriptIdsEl.value)
-      ? scriptIdsEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
-      : [];
-    const runEverythingEl = document.getElementById('runEverythingMode');
-    const runEverythingMode = runEverythingEl ? runEverythingEl.checked : !!(fullConfig && (fullConfig.runEverythingMode ?? fullConfig.RunEverythingMode));
-    const payload = {
-      ai: {
-        provider: els.provider.value.trim(),
-        endpoint: els.endpoint.value.trim(),
-        apiKey: els.apiKey.value.trim(),
-        modelId: els.modelId.value.trim(),
-        systemPrompt: els.systemPrompt.value.trim()
-      },
-      tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
-      skillEnv: collectSkillEnv(),
-      mcpServers: (fullConfig && (fullConfig.mcpServers || fullConfig.McpServers)) || [],
-      allowedPageScriptIds: allowedPageScriptIds,
-      allowedCliCommands: (function () {
-        var ta = document.getElementById('allowedCliCommands');
-        if (ta && ta.value) return ta.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-        return getAllowedCliCommands();
-      })(),
-      disabledBuiltInPlugins: getDisabledBuiltIn(),
-      runEverythingMode: runEverythingMode
-    };
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) throw new Error('Failed to save');
-    await loadConfig();
-  } catch (err) {
-    console.error(err);
-    alert('保存失败');
-  }
+  await saveConfig();
 }
 
 function getDisabledBuiltIn() {

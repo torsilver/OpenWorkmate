@@ -14,6 +14,8 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(pluginName, "Memory")
             || PluginComparer.Equals(pluginName, "CrossAgentTask")
             || PluginComparer.Equals(pluginName, "ClawhubSkill")
+            || PluginComparer.Equals(pluginName, "AccurateData")
+            || PluginComparer.Equals(pluginName, "ScheduledTask")
             || pluginName.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)
             || pluginName.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase);
     }

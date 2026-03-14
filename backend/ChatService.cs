@@ -11,6 +11,7 @@ using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.CrossAgentTask;
+using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -304,6 +305,15 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(planPlugin, "Plan");
         }
 
+        if (!disabledBuiltIn.Contains("accuratedata"))
+            newKernel.Plugins.AddFromObject(new AccurateDataPlugin(_configService), "AccurateData");
+
+        if (!disabledBuiltIn.Contains("scheduledtask"))
+        {
+            var scheduledTaskStore = _serviceProvider.GetRequiredService<IScheduledTaskStore>();
+            newKernel.Plugins.AddFromObject(new ScheduledTaskPlugin(scheduledTaskStore), "ScheduledTask");
+        }
+
         // 动态注册基于 Prompt 的 Skills（可执行技能且有原生适配器的如 tavily 不注册为 prompt，避免模型只拿到 SKILL.md 使用说明而非真正执行搜索）
         var userSkills = _skillService.GetAllSkills();
         var skillCount = 0;
@@ -338,48 +348,15 @@ public sealed class ChatService : IDisposable
             }
         }
 
-        // 动态注册外部 MCP 服务
+        // 动态注册外部 MCP 服务（accurate-data、scheduled-task 已收编为内置插件，不再在此注入）
         var mcpCount = 0;
         foreach (var mcpConfig in _configService.Current.McpServers)
         {
             if (!mcpConfig.Enabled)
                 continue;
-            IReadOnlyDictionary<string, string>? envOverlay = null;
-            if (string.Equals(mcpConfig.Id, "accurate-data-mcp", StringComparison.OrdinalIgnoreCase))
-            {
-                var dir = (_configService.Current.AccurateDataDirectory ?? "").Trim();
-                if (string.IsNullOrEmpty(dir))
-                {
-                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                    dir = Path.Combine(appData, "OfficeCopilot", "AccurateData");
-                }
-                else
-                {
-                    dir = Environment.ExpandEnvironmentVariables(dir);
-                    if (!Path.IsPathRooted(dir))
-                        dir = Path.Combine(AppContext.BaseDirectory, dir);
-                }
-                envOverlay = new Dictionary<string, string> { ["ACCURATE_DATA_DIRECTORY"] = Path.GetFullPath(dir) };
-            }
-            if (string.Equals(mcpConfig.Id, "scheduled-task-mcp", StringComparison.OrdinalIgnoreCase))
-            {
-                var dir = (_configService.Current.ScheduledTasksDirectory ?? "").Trim();
-                if (string.IsNullOrEmpty(dir))
-                {
-                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                    dir = Path.Combine(appData, "OfficeCopilot", "ScheduledTasks");
-                }
-                else
-                {
-                    dir = Environment.ExpandEnvironmentVariables(dir);
-                    if (!Path.IsPathRooted(dir))
-                        dir = Path.Combine(AppContext.BaseDirectory, dir);
-                }
-                envOverlay = new Dictionary<string, string> { ["SCHEDULED_TASKS_DIRECTORY"] = Path.GetFullPath(dir) };
-            }
             try
             {
-                var client = await _mcpManager.StartClientAsync(mcpConfig, envOverlay);
+                var client = await _mcpManager.StartClientAsync(mcpConfig, envOverlay: null);
                 var wrapper = new McpKernelPlugin(client, $"MCP_{mcpConfig.Name}");
                 var mcpPlugin = await wrapper.BuildPluginAsync();
                 newKernel.Plugins.Add(mcpPlugin);

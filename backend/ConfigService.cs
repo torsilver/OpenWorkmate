@@ -156,9 +156,9 @@ public class AppConfig
     public string? RagStoragePath { get; set; }
     /// <summary>计划存储目录（.plan.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/Plans。</summary>
     public string? PlansDirectory { get; set; }
-    /// <summary>准确数据 MCP 存储目录；为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。启动 accurate-data-mcp 时会通过环境变量 ACCURATE_DATA_DIRECTORY 传入。</summary>
+    /// <summary>准确数据插件存储目录；为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。</summary>
     public string? AccurateDataDirectory { get; set; }
-    /// <summary>定时任务存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
+    /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
     public string? ScheduledTasksDirectory { get; set; }
 }
 
