@@ -214,11 +214,6 @@ public sealed class ChatService : IDisposable
             }
         }
 
-        var embeddedModel = _serviceProvider.GetRequiredService<IEmbeddedToolSelectionModel>();
-        var embeddedChat = embeddedModel.GetChatCompletionService();
-        if (embeddedChat != null)
-            builder.Services.AddKeyedSingleton<IChatCompletionService>(EmbeddedToolSelectionModel.ServiceId, embeddedChat);
-
         var newKernel = builder.Build();
 
         // 阶段 3：将当前 Kernel 的嵌入服务同步到 EmbeddingProvider，供记忆/ RAG 使用
@@ -527,12 +522,15 @@ public sealed class ChatService : IDisposable
                 var recentHistory = state.History.Count > 1 ? state.History : null;
                 if (useTwoStage)
                 {
+                    // 两阶段：阶段一主模型选分类（无 tools），阶段二仅带选中分类下的工具一次主模型对话
                     var selectedPairs = await _toolSelector.SelectFunctionsAsync(finalMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                     if (selectedPairs is { Count: > 0 })
                         selectedFunctions = GetFunctionsByPluginAndFunctionNames(kernel, selectedPairs);
+                    // 阶段一失败或返回「全部」时 selectedPairs 为 null，此处 selectedFunctions 保持 null，使用全量工具
                 }
-                if (selectedFunctions == null || selectedFunctions.Count == 0)
+                else
                 {
+                    // 未启用两阶段：按插件名筛选（主模型选插件），或全量
                     var availableNames = GetAvailablePluginNames(kernel);
                     var selectedNames = await _toolSelector.SelectPluginNamesAsync(finalMessage, recentHistory, availableNames, ct).ConfigureAwait(false);
                     selectedFunctions = selectedNames is { Count: > 0 }

@@ -7,7 +7,7 @@ using OfficeCopilot.Server;
 namespace OfficeCopilot.Server.Services;
 
 /// <summary>
-/// 按需工具选择：单阶段选插件，或两阶段（一阶段选子类、二阶段选函数），失败则主模型兜底。
+/// 按需工具选择：两阶段均由主模型完成。启用两阶段时：阶段一主模型根据对话内容+分类信息选子类（无 tools）；阶段二仅将选中子类下的具体工具交给主模型一次对话并调用。未启用时可按插件名由主模型筛选。已完全移除嵌入式/本地小模型。
 /// </summary>
 public sealed class ToolSelectionService : IToolSelector
 {
@@ -16,8 +16,6 @@ public sealed class ToolSelectionService : IToolSelector
     private readonly ILogger<ToolSelectionService> _logger;
 
     private const string FallbackAllKeyword = "全部";
-    /// <summary>嵌入式小模型调用超时（毫秒），超时则切回主模型兜底。</summary>
-    private const int EmbeddedModelTimeoutMs = 2000;
 
     /// <summary>插件名 -> 简短描述，用于 LLM 工具选择的 system prompt。</summary>
     private static readonly FrozenDictionary<string, string> PluginDescriptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -146,7 +144,7 @@ public sealed class ToolSelectionService : IToolSelector
         var userPrompt = BuildUserPromptWithHistory(userMessage, recentHistory);
 
         // 一阶段：选子类
-        var selectedSubcategoryIds = await SelectSubcategoriesAsync(kernel, subcategories, userPrompt, ai, ct).ConfigureAwait(false);
+        var selectedSubcategoryIds = await SelectSubcategoriesWithMainModelAsync(kernel, subcategories, userPrompt, ct).ConfigureAwait(false);
         if (selectedSubcategoryIds == null)
         {
             _logger.LogDebug("ToolSelection two-stage stage1: 全部 or fallback, return null (use all tools).");
@@ -160,17 +158,10 @@ public sealed class ToolSelectionService : IToolSelector
             return null;
         }
 
-        _logger.LogDebug("ToolSelection two-stage stage1 selected {SubCount} subcategories, {FuncCount} candidate functions.", selectedSubcategoryIds.Count, candidateFunctions.Count);
+        _logger.LogDebug("ToolSelection two-stage stage1 selected {SubCount} subcategories, {FuncCount} candidate functions (stage2: use these as tool set, no second LLM).", selectedSubcategoryIds.Count, candidateFunctions.Count);
 
-        // 二阶段：选函数
-        var selectedFunctions = await SelectFunctionsFromCandidatesAsync(kernel, candidateFunctions, userPrompt, ai, ct).ConfigureAwait(false);
-        if (selectedFunctions == null || selectedFunctions.Count == 0)
-        {
-            _logger.LogDebug("ToolSelection two-stage stage2: 全部 or empty, use all candidates.");
-            selectedFunctions = candidateFunctions;
-        }
-
-        var merged = MergeFunctionsWithAlwaysInclude(selectedFunctions, ai, allKernelFunctions);
+        // 二阶段：不再单独调 LLM 选函数，直接使用选中子类下的全部函数作为本轮工具集，由主模型在对话轮中按需调用
+        var merged = MergeFunctionsWithAlwaysInclude(candidateFunctions, ai, allKernelFunctions);
         _logger.LogDebug("ToolSelection two-stage result: {Count} functions.", merged.Count);
         return merged;
     }
@@ -225,70 +216,55 @@ public sealed class ToolSelectionService : IToolSelector
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
     }
 
-    /// <summary>一阶段选子类：LLM 输出子类 id 或「全部」。</summary>
-    private async Task<List<string>?> SelectSubcategoriesAsync(Kernel kernel, List<(string Id, string Description)> subcategories, string userPrompt, AiConfig ai, CancellationToken ct)
+    /// <summary>一阶段选子类：主模型输出子类 id 或「全部」（无 tools，轻量调用）。</summary>
+    private async Task<List<string>?> SelectSubcategoriesWithMainModelAsync(Kernel kernel, List<(string Id, string Description)> subcategories, string userPrompt, CancellationToken ct)
     {
         var systemPrompt = BuildStage1SystemPrompt(subcategories);
         var chat = new ChatHistory(systemPrompt);
         chat.AddUserMessage(userPrompt);
 
-        var serviceIdToTry = (ai.ToolSelectionModelId ?? "").Trim();
-        if (string.IsNullOrEmpty(serviceIdToTry))
-            serviceIdToTry = EmbeddedToolSelectionModel.ServiceId;
-
-        for (var attempt = 0; attempt < 2; attempt++)
+        var serviceId = _kernelAccessor.ActiveModelId;
+        if (string.IsNullOrEmpty(serviceId)) serviceId = null;
+        var chatService = serviceId != null ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId) : null;
+        chatService ??= kernel.Services.GetService<IChatCompletionService>();
+        if (chatService == null)
         {
-            var serviceId = attempt == 0 && !string.IsNullOrEmpty(serviceIdToTry) ? serviceIdToTry : _kernelAccessor.ActiveModelId;
-            if (string.IsNullOrEmpty(serviceId)) serviceId = null;
-            var chatService = serviceId != null ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId) : null;
-            chatService ??= kernel.Services.GetService<IChatCompletionService>();
-            if (chatService == null) { if (attempt == 0) _logger.LogDebug("ToolSelection stage1: No chat service for {ServiceId}.", serviceId ?? "(default)"); continue; }
+            _logger.LogDebug("ToolSelection stage1: No chat service for main model.");
+            return null;
+        }
 
-            var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
-            _logger.LogDebug("ToolSelection stage1 request serviceId={ServiceId} subcategoriesCount={Count} userPreview={UserPreview}", serviceId ?? "(default)", subcategories.Count, userPreview);
+        var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
+        _logger.LogDebug("ToolSelection stage1 request serviceId={ServiceId} subcategoriesCount={Count} userPreview={UserPreview}", serviceId ?? "(default)", subcategories.Count, userPreview);
 
-            var useTimeout = string.Equals(serviceId, EmbeddedToolSelectionModel.ServiceId, StringComparison.OrdinalIgnoreCase);
-            using var timeoutCts = useTimeout ? CancellationTokenSource.CreateLinkedTokenSource(ct) : null;
-            if (useTimeout && timeoutCts != null)
-                timeoutCts.CancelAfter(EmbeddedModelTimeoutMs);
-            var token = useTimeout && timeoutCts != null ? timeoutCts.Token : ct;
-
-            try
+        try
+        {
+            var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
+            var responseText = new System.Text.StringBuilder();
+            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
             {
-                var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
-                var responseText = new System.Text.StringBuilder();
-                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, token).ConfigureAwait(false))
-                {
-                    if (msg.Content is { Length: > 0 } content)
-                        responseText.Append(content);
-                }
-                var raw = responseText.ToString().Trim();
-                _logger.LogDebug("ToolSelection stage1 response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
-                if (string.IsNullOrEmpty(raw)) continue;
-
-                if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
-                {
-                    var isMainModel = string.Equals(serviceId, _kernelAccessor.ActiveModelId, StringComparison.OrdinalIgnoreCase);
-                    if (isMainModel) return null;
-                    _logger.LogDebug("ToolSelection stage1 (embedded) returned 全部, will try main model.");
-                    continue;
-                }
-
-                var ids = ParseSubcategoryIdsFromResponse(raw, subcategories);
-                if (ids.Count > 0)
-                {
-                    _logger.LogDebug("ToolSelection stage1 selected subcategories: {Ids}", string.Join(", ", ids));
-                    return ids;
-                }
+                if (msg.Content is { Length: > 0 } content)
+                    responseText.Append(content);
             }
-            catch (OperationCanceledException)
+            var raw = responseText.ToString().Trim();
+            _logger.LogDebug("ToolSelection stage1 response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
+            if (string.IsNullOrEmpty(raw)) return null;
+
+            if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
             {
-                if (ct.IsCancellationRequested) throw;
-                _logger.LogDebug("ToolSelection stage1 embedded model timeout ({TimeoutMs}ms), will try main model.", EmbeddedModelTimeoutMs);
+                _logger.LogDebug("ToolSelection stage1 returned 全部, use all tools.");
+                return null;
             }
-            catch (Exception ex) { _logger.LogDebug(ex, "ToolSelection stage1 attempt failed."); }
-            if (attempt == 0 && !string.IsNullOrEmpty(ai.ToolSelectionModelId))
-                _logger.LogDebug("ToolSelection stage1 falling back to main model.");
+
+            var ids = ParseSubcategoryIdsFromResponse(raw, subcategories);
+            if (ids.Count > 0)
+            {
+                _logger.LogDebug("ToolSelection stage1 selected subcategories: {Ids}", string.Join(", ", ids));
+                return ids;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ToolSelection stage1 failed.");
         }
 
         _logger.LogDebug("ToolSelection stage1 fallback exhausted, treat as 全部.");
@@ -369,123 +345,6 @@ public sealed class ToolSelectionService : IToolSelector
         return result.ToList();
     }
 
-    /// <summary>二阶段：在候选函数列表中选具体函数。</summary>
-    private async Task<List<(string Plugin, string Function)>?> SelectFunctionsFromCandidatesAsync(Kernel kernel, List<(string Plugin, string Function)> candidates, string userPrompt, AiConfig ai, CancellationToken ct)
-    {
-        var items = new List<(string FullName, string Description)>();
-        foreach (var (plugin, funcName) in candidates)
-        {
-            var desc = $"{plugin}-{funcName}";
-            if (kernel.Plugins.TryGetFunction(plugin, funcName, out var func) && func?.Metadata?.Description is { } d)
-            {
-                desc = d.Length > 120 ? d[..120] + "..." : d;
-            }
-            items.Add(($"{plugin}-{funcName}", desc));
-        }
-
-        var systemPrompt = BuildStage2SystemPrompt(items);
-        var chat = new ChatHistory(systemPrompt);
-        chat.AddUserMessage(userPrompt);
-
-        var serviceIdToTry = (ai.ToolSelectionModelId ?? "").Trim();
-        if (string.IsNullOrEmpty(serviceIdToTry))
-            serviceIdToTry = EmbeddedToolSelectionModel.ServiceId;
-
-        var candidateSet = new HashSet<string>(items.Select(i => i.FullName), StringComparer.OrdinalIgnoreCase);
-
-        for (var attempt = 0; attempt < 2; attempt++)
-        {
-            var serviceId = attempt == 0 && !string.IsNullOrEmpty(serviceIdToTry) ? serviceIdToTry : _kernelAccessor.ActiveModelId;
-            if (string.IsNullOrEmpty(serviceId)) serviceId = null;
-            var chatService = serviceId != null ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId) : null;
-            chatService ??= kernel.Services.GetService<IChatCompletionService>();
-            if (chatService == null) { if (attempt == 0) _logger.LogDebug("ToolSelection stage2: No chat service."); continue; }
-
-            _logger.LogDebug("ToolSelection stage2 request serviceId={ServiceId} candidateCount={Count}", serviceId ?? "(default)", items.Count);
-
-            var useTimeoutStage2 = string.Equals(serviceId, EmbeddedToolSelectionModel.ServiceId, StringComparison.OrdinalIgnoreCase);
-            using var timeoutCtsStage2 = useTimeoutStage2 ? CancellationTokenSource.CreateLinkedTokenSource(ct) : null;
-            if (useTimeoutStage2 && timeoutCtsStage2 != null)
-                timeoutCtsStage2.CancelAfter(EmbeddedModelTimeoutMs);
-            var tokenStage2 = useTimeoutStage2 && timeoutCtsStage2 != null ? timeoutCtsStage2.Token : ct;
-
-            try
-            {
-                var settings = new OpenAIPromptExecutionSettings { MaxTokens = 512, Temperature = 0.1f };
-                var responseText = new System.Text.StringBuilder();
-                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, tokenStage2).ConfigureAwait(false))
-                {
-                    if (msg.Content is { Length: > 0 } content)
-                        responseText.Append(content);
-                }
-                var raw = responseText.ToString().Trim();
-                _logger.LogDebug("ToolSelection stage2 response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
-                if (string.IsNullOrEmpty(raw)) continue;
-
-                if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
-                {
-                    var isMainModel = string.Equals(serviceId, _kernelAccessor.ActiveModelId, StringComparison.OrdinalIgnoreCase);
-                    if (isMainModel) return null;
-                    continue;
-                }
-
-                var selectedFullNames = ParseFunctionFullNamesFromResponse(raw, candidateSet);
-                if (selectedFullNames.Count > 0)
-                {
-                    var result = new List<(string Plugin, string Function)>();
-                    foreach (var fullName in selectedFullNames)
-                    {
-                        var idx = fullName.IndexOf('-');
-                        if (idx <= 0) continue;
-                        var plugin = fullName[..idx];
-                        var func = fullName[(idx + 1)..];
-                        if (candidates.Any(c => string.Equals(c.Plugin, plugin, StringComparison.OrdinalIgnoreCase) && string.Equals(c.Function, func, StringComparison.OrdinalIgnoreCase)))
-                            result.Add((plugin, func));
-                    }
-                    if (result.Count > 0)
-                        return result;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                if (ct.IsCancellationRequested) throw;
-                _logger.LogDebug("ToolSelection stage2 embedded model timeout ({TimeoutMs}ms), will try main model.", EmbeddedModelTimeoutMs);
-            }
-            catch (Exception ex) { _logger.LogDebug(ex, "ToolSelection stage2 attempt failed."); }
-            if (attempt == 0 && !string.IsNullOrEmpty(ai.ToolSelectionModelId))
-                _logger.LogDebug("ToolSelection stage2 falling back to main model.");
-        }
-
-        return null;
-    }
-
-    private static string BuildStage2SystemPrompt(List<(string FullName, string Description)> items)
-    {
-        var lines = new List<string>
-        {
-            "根据用户消息，从下列函数中选出会用到的，只输出函数全名（插件名-函数名），多个用英文逗号分隔。不要输出序号、步骤或解释。",
-            "尽量只输出会用到的函数，不要输出「全部」；只有完全无法判断时才输出：全部。",
-            "函数列表："
-        };
-        foreach (var (fullName, desc) in items)
-            lines.Add($"- {fullName}: {desc}");
-        return string.Join("\n", lines);
-    }
-
-    private static List<string> ParseFunctionFullNamesFromResponse(string raw, HashSet<string> candidateSet)
-    {
-        var result = new List<string>();
-        var parts = raw.Split(new[] { ',', '\n', '\r', ';', '、' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var part in parts)
-        {
-            var name = part.Trim().Trim('"', '\'', '`', ' ').Trim();
-            if (string.IsNullOrEmpty(name)) continue;
-            if (candidateSet.Contains(name))
-                result.Add(name);
-        }
-        return result;
-    }
-
     /// <summary>二阶段选中的函数与 AlwaysIncludePlugins 对应插件的全部函数合并。</summary>
     private static List<(string Plugin, string Function)> MergeFunctionsWithAlwaysInclude(List<(string Plugin, string Function)> selected, AiConfig ai, List<(string Plugin, string Function)> allKernelFunctions)
     {
@@ -543,80 +402,50 @@ public sealed class ToolSelectionService : IToolSelector
         var chat = new ChatHistory(systemPrompt);
         chat.AddUserMessage(userPrompt);
 
-        var serviceIdToTry = (ai.ToolSelectionModelId ?? "").Trim();
-        if (string.IsNullOrEmpty(serviceIdToTry))
-            serviceIdToTry = EmbeddedToolSelectionModel.ServiceId;
-
-        for (var attempt = 0; attempt < 2; attempt++)
+        var serviceId = _kernelAccessor.ActiveModelId;
+        if (string.IsNullOrEmpty(serviceId)) serviceId = null;
+        var chatService = serviceId != null
+            ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId)
+            : null;
+        chatService ??= kernel.Services.GetService<IChatCompletionService>();
+        if (chatService == null)
         {
-            var serviceId = attempt == 0 && !string.IsNullOrEmpty(serviceIdToTry) ? serviceIdToTry : _kernelAccessor.ActiveModelId;
-            if (string.IsNullOrEmpty(serviceId))
-                serviceId = null;
+            _logger.LogDebug("ToolSelection LLM: No chat service for main model, using all tools.");
+            return Array.Empty<string>();
+        }
 
-            var chatService = serviceId != null
-                ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId)
-                : null;
-            chatService ??= kernel.Services.GetService<IChatCompletionService>();
-            if (chatService == null)
+        var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
+        _logger.LogDebug("ToolSelection LLM request serviceId={ServiceId} systemLen={SystemLen} userPreview={UserPreview}", serviceId ?? "(default)", systemPrompt.Length, userPreview);
+
+        try
+        {
+            var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
+            var responseText = new System.Text.StringBuilder();
+            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
             {
-                if (attempt == 0) _logger.LogDebug("ToolSelection LLM: No chat service for {ServiceId}, will try main.", serviceId ?? "(default)");
-                continue;
+                if (msg.Content is { Length: > 0 } content)
+                    responseText.Append(content);
             }
-
-            var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
-            _logger.LogDebug("ToolSelection LLM request serviceId={ServiceId} systemLen={SystemLen} userPreview={UserPreview}", serviceId ?? "(default)", systemPrompt.Length, userPreview);
-
-            var useTimeoutLlm = string.Equals(serviceId, EmbeddedToolSelectionModel.ServiceId, StringComparison.OrdinalIgnoreCase);
-            using var timeoutCtsLlm = useTimeoutLlm ? CancellationTokenSource.CreateLinkedTokenSource(ct) : null;
-            if (useTimeoutLlm && timeoutCtsLlm != null)
-                timeoutCtsLlm.CancelAfter(EmbeddedModelTimeoutMs);
-            var tokenLlm = useTimeoutLlm && timeoutCtsLlm != null ? timeoutCtsLlm.Token : ct;
-
-            try
+            var raw = responseText.ToString().Trim();
+            _logger.LogDebug("ToolSelection LLM response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
+            if (string.IsNullOrEmpty(raw))
+                return Array.Empty<string>();
+            if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
             {
-                var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
-                var responseText = new System.Text.StringBuilder();
-                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, tokenLlm).ConfigureAwait(false))
-                {
-                    if (msg.Content is { Length: > 0 } content)
-                        responseText.Append(content);
-                }
-                var raw = responseText.ToString().Trim();
-                _logger.LogDebug("ToolSelection LLM response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
-                if (string.IsNullOrEmpty(raw))
-                    continue;
-                // 仅当明确返回「全部」且无其他内容时：若已是主模型则用全部工具；否则继续用主模型尝试做一次工具选择，避免小模型总返回「全部」导致每次都传全量工具
-                if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
-                {
-                    var isMainModel = string.Equals(serviceId, _kernelAccessor.ActiveModelId, StringComparison.OrdinalIgnoreCase);
-                    if (isMainModel)
-                    {
-                        _logger.LogDebug("ToolSelection LLM (main) returned 全部, using all tools.");
-                        return Array.Empty<string>();
-                    }
-                    _logger.LogDebug("ToolSelection LLM (embedded) returned 全部, will try main model for selection.");
-                    continue;
-                }
-                var parsed = ParsePluginNamesFromResponse(raw, availableSet);
-                if (parsed.Count > 0)
-                {
-                    var merged = MergeWithAlwaysInclude(parsed, ai);
-                    _logger.LogDebug("ToolSelection LLM selected {Count} plugins: {Plugins}", merged.Count, string.Join(", ", merged));
-                    return merged;
-                }
+                _logger.LogDebug("ToolSelection LLM returned 全部, using all tools.");
+                return Array.Empty<string>();
             }
-            catch (OperationCanceledException)
+            var parsed = ParsePluginNamesFromResponse(raw, availableSet);
+            if (parsed.Count > 0)
             {
-                if (ct.IsCancellationRequested) throw;
-                _logger.LogDebug("ToolSelection LLM embedded model timeout ({TimeoutMs}ms), will try main model.", EmbeddedModelTimeoutMs);
+                var merged = MergeWithAlwaysInclude(parsed, ai);
+                _logger.LogDebug("ToolSelection LLM selected {Count} plugins: {Plugins}", merged.Count, string.Join(", ", merged));
+                return merged;
             }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "ToolSelection LLM attempt with serviceId={ServiceId} failed.", serviceId ?? "(default)");
-            }
-
-            if (attempt == 0 && !string.IsNullOrEmpty(ai.ToolSelectionModelId))
-                _logger.LogDebug("ToolSelection LLM falling back to main model.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ToolSelection LLM attempt failed.");
         }
 
         _logger.LogDebug("ToolSelection LLM fallback exhausted, using all tools.");

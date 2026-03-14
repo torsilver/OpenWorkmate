@@ -336,33 +336,16 @@
         </form>
       </div>
 
-      <details id="toolSelectionModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <summary id="toolSelectionModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">工具选择模型（未指定）</summary>
-        <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">下方指定用于插件筛选的模型；不填则使用本机嵌入式小模型（若可用），否则主模型兜底。列表包含本地 GGUF 与上方已配置的 AI 模型。</p>
-          <div id="toolSelectionModelList"></div>
-        </div>
-      </details>
-
       <details id="embeddingModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="embeddingModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">Embedding 模型（未配置）</summary>
         <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。可选本地 GGUF（LLamaSharp）或远程 Embedding API。不配置则记忆/RAG 不生效。</p>
+          <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。仅支持远程 Embedding API；不配置则记忆/RAG 不生效。</p>
           <div class="form-group">
             <label>来源</label>
             <select id="embeddingSource" style="padding: 6px 10px; border-radius: 6px;">
               <option value="">不配置</option>
-              <option value="Local">本地模型 (GGUF)</option>
               <option value="Remote">远程 API</option>
             </select>
-          </div>
-          <div id="embeddingLocalSection" style="display: none;">
-            <div class="form-group">
-              <label for="embeddingModelPath">本地模型路径</label>
-              <input type="text" id="embeddingModelPath" placeholder="留空则用 Models 目录下默认；或选择下方列表">
-            </div>
-            <p class="help-text" style="margin-bottom: 8px;">从后端 Models 目录选用：</p>
-            <div id="embeddingModelList"></div>
           </div>
           <div id="embeddingRemoteSection" style="display: none;">
             <div class="form-group">

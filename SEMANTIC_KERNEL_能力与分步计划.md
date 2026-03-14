@@ -11,6 +11,8 @@
 - 插件：Native（CLI/Excel/Word/Browser/File/Tavily/ClawhubSkill）+ 用户技能（Prompt 转 Function）+ MCP
 - 过滤器：SecurityFilter、SessionContextFilter、ToolStatusFilter
 - 多模型注册（OpenAI / Azure），按 serviceId 切换
+- **两阶段工具选择（主模型）**：启用时，第一次主模型根据对话内容+工具分类信息选子类（不传 tools）；第二次仅将选中子类下的具体工具交给主模型一次对话并调用，以平衡工具量大时的负载。已完全移除嵌入式/本地小模型。
+- **Embedding（仅远程 API）**：记忆与 RAG 的向量化仅支持远程 Embedding API；已移除本地 GGUF/LLamaSharp 能力。
 
 ---
 
@@ -20,7 +22,7 @@
 |------|------|------|------------|
 | 1 | 嵌入 + RAG / 记忆 | 文本向量化、向量存储、检索增强生成或长期记忆 | 按需求 |
 | 2 | 多模型连接器 | 配置已有 Ollama/Anthropic，仅实现了 OpenAI/Azure | 中 |
-| 3 | LLM 驱动工具选择 | 当前仅关键词匹配，配置中的 ToolSelectionMode: LLM 未实现 | 中 |
+| 3 | ~~LLM 驱动工具选择~~ | **已实现**：主模型两阶段（先选分类，再仅带选中分类下的工具对话）；嵌入式工具选择已移除 | — |
 | 4 | 提示模板与变量 | 用户技能为纯文本模板，未用 Handlebars/变量 | 低 |
 | 5 | 图像生成 | 未接入 DALL·E 等文生图能力 | 按需求 |
 
@@ -53,29 +55,16 @@
 
 ---
 
-### 阶段 2：LLM 驱动工具选择（可选）
+### 阶段 2：工具选择两阶段（主模型）— 已完成
 
-**目标**：实现 `ToolSelectionMode: "LLM"`，用一次轻量模型调用从全量插件中选出本轮需要的插件名，再交给主模型，以省 token、减少无关工具干扰。
+**目标**：工具量大时避免全量 tools 导致本地模型拒载；两阶段均由主模型完成，不再使用嵌入式/本地小模型。
 
-**步骤**：
+**当前实现**（[backend/Services/ToolSelectionService.cs](backend/Services/ToolSelectionService.cs)、[backend/ChatService.cs](backend/ChatService.cs)）：
 
-1. **设计 LLM 调用**
-   - 输入：当前用户消息 + 可选最近一条历史；输出：插件名列表（或“全部”）。
-   - 在 [backend/Services/ToolSelectionService.cs](backend/Services/ToolSelectionService.cs) 中，当 `ToolSelectionMode == "LLM"` 时：
-     - 若项目已有轻量/便宜模型配置，可单独用该模型做一次非流式 Chat Completion；
-     - 若没有，可用当前主模型做一次短对话（system prompt 明确：只返回插件名列表，不执行任务）。
-
-2. **Prompt 设计**
-   - System：说明可用插件列表及名称，要求只返回本轮可能用到的插件名，逗号分隔；若无法判断则返回“全部”。
-   - User：当前用户消息（可截断长度）。
-
-3. **解析与回退**
-   - 解析模型返回的文本 → 插件名列表；若解析失败或返回“全部”，则回退为“不限制”（与当前 Keyword 失败时一致，使用全量工具）。
-
-4. **配置与开关**
-   - 保持 `ToolSelectionMode` 配置项，Keyword 与 LLM 两种模式并存，便于 A/B 或按环境切换。
-
-**产出**：设置里选择 LLM 模式后，工具选择由模型决定，且失败时安全回退到全量工具。
+- **阶段一**：主模型一次调用，输入为对话内容 + 工具分类信息（子类 id 与描述），**不传 tools**；输出为选中的子类 id 列表（或「全部」）。失败或「全部」时使用全量工具。
+- **阶段二**：根据阶段一得到的子类，仅将对应子类下的具体工具交给主模型，一次流式对话完成回复与按需工具调用；不再单独用 LLM 从候选函数中再选一轮。
+- **配置**：`ToolSelectionTwoStage == true`（默认）启用上述两阶段；为 false 时可按插件名由主模型筛选（`SelectPluginNamesAsync`）或全量。
+- **已完全移除**：嵌入式/本地工具选择模型（EmbeddedToolSelectionModel、ToolSelectionModelId、EmbeddedToolSelectionModelPath）及对应设置页 UI。
 
 ---
 
@@ -83,10 +72,12 @@
 
 **目标**：支持“基于文档/知识库的问答”或“跨轮次记忆”，利用 SK 的嵌入与记忆能力。
 
+**当前**：Embedding 仅支持远程 API（如 OpenAI Embeddings、Azure OpenAI Embeddings）；已移除本地 GGUF/LLamaSharp。
+
 **步骤**：
 
 1. **选型**
-   - 嵌入服务：与当前主模型一致或独立的嵌入模型（如 OpenAI Embeddings、Azure OpenAI Embeddings）。
+   - 嵌入服务：与当前主模型一致或独立的远程嵌入模型（如 OpenAI Embeddings、Azure OpenAI Embeddings）。
    - 存储：内存/文件/向量库（如 Qdrant、Milvus、或 SK 示例中的简单向量存储），按规模选择。
 
 2. **依赖**
@@ -146,7 +137,7 @@
 
 ```text
 阶段 1（多模型连接器）   → 可独立先做，无依赖
-阶段 2（LLM 工具选择）   → 可独立做，依赖现有 Chat/Kernel
+阶段 2（工具选择两阶段）  → 已完成，主模型两阶段选分类+带筛选工具
 阶段 3（嵌入/RAG/记忆）  → 依赖阶段 1 的模型/配置扩展更佳，但可单独做
 阶段 4（提示模板）       → 独立，低优先级
 阶段 5（图像生成）       → 独立，按产品需求做
