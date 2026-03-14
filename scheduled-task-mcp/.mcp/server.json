@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "description": "Scheduled Task MCP - create and manage AI scheduled tasks (.task.md + meta). Backend runs tasks at scheduled time and sends content to AI.",
+  "name": "ScheduledTaskMcp",
+  "version": "0.1.0-beta",
+  "packages": [
+    {
+      "registryType": "nuget",
+      "identifier": "ScheduledTaskMcp",
+      "version": "0.1.0-beta",
+      "transport": { "type": "stdio" },
+      "packageArguments": [],
+      "environmentVariables": ["SCHEDULED_TASKS_DIRECTORY"]
+    }
+  ]
+}

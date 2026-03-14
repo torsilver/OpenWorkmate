@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Copilot</title>
+  <link rel="stylesheet" href="taskpane.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-title">
+        <span class="header-icon">⚡</span>
+        <h1>Office Copilot</h1>
+      </div>
+      <div class="header-controls">
+        <div id="status" class="status status--disconnected" title="连接状态">
+          <span class="status-dot"></span>
+          <span class="status-text">未连接</span>
+        </div>
+      </div>
+    </header>
+    <p class="config-hint">请在 Chrome 扩展中配置后台与 AI</p>
+
+    <div id="plan-panel" class="plan-panel" style="display: none;">
+      <div class="plan-panel-header">
+        <span id="plan-panel-title" class="plan-panel-title"></span>
+        <div class="plan-panel-actions">
+          <button type="button" id="plan-execute-btn" class="btn-execute-plan">执行计划</button>
+          <button type="button" id="plan-edit-btn" class="btn-edit-plan">编辑</button>
+          <button type="button" id="plan-save-btn" class="btn-save-plan" style="display: none;">保存</button>
+          <button type="button" id="plan-cancel-edit-btn" class="btn-cancel-edit" style="display: none;">取消</button>
+        </div>
+      </div>
+      <div id="plan-content-view" class="plan-content-view markdown-body"></div>
+      <textarea id="plan-content-edit" class="plan-content-edit" style="display: none;" rows="10"></textarea>
+    </div>
+
+    <main id="messages" class="messages">
+      <div class="welcome">
+        <p class="welcome-title">你好，我是 Office Copilot 👋</p>
+        <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。配置请在 Chrome 扩展中完成。</p>
+      </div>
+    </main>
+
+    <footer class="input-area">
+      <div class="input-row">
+        <textarea id="input" class="input-box" placeholder="输入消息..." rows="1" autofocus></textarea>
+        <button id="stop-btn" class="stop-btn" title="停止生成" style="display: none;">■</button>
+        <button id="send-btn" class="send-btn" title="发送">发送</button>
+      </div>
+    </footer>
+
+    <div id="hitl-overlay" class="hitl-overlay" style="display: none;" aria-hidden="true">
+      <div class="hitl-card">
+        <p class="hitl-title">AI 请求执行</p>
+        <p id="hitl-action" class="hitl-action"></p>
+        <div class="hitl-buttons">
+          <button type="button" id="hitl-allow-btn" class="hitl-btn hitl-btn--allow">允许</button>
+          <button type="button" id="hitl-deny-btn" class="hitl-btn hitl-btn--deny">拒绝</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="taskpane.js"></script>
+</body>
+</html>

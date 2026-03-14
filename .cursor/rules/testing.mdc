@@ -1,0 +1,28 @@
+---
+description: 新代码应附带单元或集成测试，便于 Cursor 与 CI 做回归
+globs: backend/**/*.cs, backend.Tests/**/*.cs
+alwaysApply: false
+---
+
+# 自动化测试约定
+
+## 1. 新加的纯逻辑应附带单元测试
+
+- 新增或修改**无外部依赖**的静态方法、纯函数、解析/分块/计算类（如 `TextChunker`、`PlanStepParser`、`CronNextRun`）时，在 [backend.Tests/Unit](backend.Tests/Unit) 中补充或更新 xUnit 单元测试。
+- 覆盖：空输入、边界、典型成功路径、易错分支（如非法 cron、越界步骤索引）。
+
+## 2. 新加的 API 端点应附带集成测试
+
+- 新增或修改**对外 HTTP 端点**（`/api/*`）时，在 [backend.Tests/Integration](backend.Tests/Integration) 中补充或更新集成测试。
+- 使用 `WebApplicationFactory<Program>` 发起请求，断言状态码与 JSON 结构（含 camelCase、`ok`/`message` 等契约，见 [api-json-contract.mdc](api-json-contract.mdc)）。
+- 至少覆盖：成功路径一例、参数/格式错误时返回 200 + `ok: false`（若适用）。
+
+## 3. 运行方式
+
+- 本地：`dotnet test backend.Tests/backend.Tests.csproj`
+- 仅单元：`dotnet test backend.Tests/backend.Tests.csproj --filter "FullyQualifiedName~Unit"`
+- 仅集成：`dotnet test backend.Tests/backend.Tests.csproj --filter "FullyQualifiedName~Integration"`
+
+## 4. Cursor 辅助
+
+- 让 AI「为 X 写单元测试」或「为 Y 端点写集成测试」即可生成用例；修 bug 或改行为后可说「为这次改动补一个测试防止回归」。
