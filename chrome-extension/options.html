@@ -332,7 +332,7 @@
           </div>
           <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
             <button type="button" id="testAiConnectionBtn" class="btn-secondary">测试连接</button>
-            <button type="button" id="saveAiModelBtn">保存</button>
+            <button type="button" id="saveAiModelBtn">完成</button>
             <span id="testAiStatus" class="help-text" style="margin-left: 8px;"></span>
           </div>
         </form>
@@ -341,26 +341,34 @@
       <details id="embeddingModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="embeddingModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">Embedding 模型（未配置）</summary>
         <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。仅支持远程 Embedding API；不配置则记忆/RAG 不生效。</p>
-          <div class="form-group">
-            <label>来源</label>
-            <select id="embeddingSource" style="padding: 6px 10px; border-radius: 6px;">
-              <option value="">不配置</option>
-              <option value="Remote">远程 API</option>
-            </select>
-          </div>
-          <div id="embeddingRemoteSection" style="display: none;">
-            <div class="form-group">
-              <label for="embeddingEndpoint">接口地址 (Endpoint)</label>
-              <input type="text" id="embeddingEndpoint" placeholder="https://api.openai.com/v1">
+          <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。仅支持远程 Embedding API；不配置则记忆/RAG 不生效。点击「设为当前」即使用该模型。</p>
+          <div id="embeddingModelsList" class="ai-models-list"></div>
+          <button type="button" id="addEmbeddingModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 Embedding 模型</button>
+          <div id="embeddingModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
+            <div class="skill-header">
+              <span id="embeddingModelEditorTitle" class="skill-title">添加 Embedding 模型</span>
+              <button type="button" id="closeEmbeddingEditorBtn" class="btn-secondary">取消</button>
             </div>
             <div class="form-group">
-              <label for="embeddingApiKey">API Key</label>
-              <input type="password" id="embeddingApiKey" placeholder="sk-...">
+              <label for="embeddingEditorDisplayName">展示名称</label>
+              <input type="text" id="embeddingEditorDisplayName" placeholder="例如: OpenAI text-embedding">
             </div>
             <div class="form-group">
-              <label for="embeddingModelId">模型 ID (Model)</label>
-              <input type="text" id="embeddingModelId" placeholder="text-embedding-3-small">
+              <label for="embeddingEditorEndpoint">接口地址 (Endpoint)</label>
+              <input type="text" id="embeddingEditorEndpoint" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+              <label for="embeddingEditorApiKey">API Key</label>
+              <input type="password" id="embeddingEditorApiKey" placeholder="sk-...">
+            </div>
+            <div class="form-group">
+              <label for="embeddingEditorModelId">模型 ID (Model)</label>
+              <input type="text" id="embeddingEditorModelId" placeholder="text-embedding-3-small">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" id="testEmbeddingBtn" class="btn-secondary">测试连接</button>
+              <button type="button" id="saveEmbeddingModelBtn" class="btn-primary">完成</button>
+              <span id="testEmbeddingStatus" class="help-text" style="margin-left: 8px;"></span>
             </div>
           </div>
         </div>
@@ -385,8 +393,7 @@
       </div>
 
       <div class="actions">
-        <span id="statusMessage" class="status save-config-status">保存成功！</span>
-        <button id="saveBtn" type="button" class="save-config-btn">保存配置</button>
+        <span id="statusMessage" class="status save-config-status">已自动保存</span>
       </div>
     </div>
     
@@ -401,8 +408,10 @@
           <option value="all">全部</option>
           <option value="shared">仅共享记忆</option>
           <option value="session">按会话 ID</option>
+          <option value="agent">按 Agent 名称</option>
         </select>
         <input type="text" id="memorySessionFilter" placeholder="会话 ID（选「按会话 ID」时填）" style="margin-left: 8px; width: 180px; padding: 6px 10px; display: none;">
+        <input type="text" id="memoryAgentFilter" placeholder="Agent 名称（选「按 Agent 名称」时填）" style="margin-left: 8px; width: 180px; padding: 6px 10px; display: none;">
         <button type="button" id="refreshMemoryListBtn" class="btn-secondary" style="margin-left: 8px;">刷新</button>
       </div>
       <div id="memoryListContainer">
@@ -424,13 +433,12 @@
           <label for="memoryEditScopeShared" style="margin: 0;">保存为共享记忆（跨端可见，各 Agent 均可检索）</label>
         </div>
         <div style="display: flex; gap: 8px; margin-top: 12px;">
-          <button type="button" id="saveMemoryBtn">保存</button>
+          <button type="button" id="saveMemoryBtn">完成</button>
           <button type="button" id="cancelMemoryEditBtn" class="btn-secondary">取消</button>
         </div>
       </div>
       <div class="actions">
-        <span class="status save-config-status">保存成功！</span>
-        <button type="button" class="save-config-btn">保存配置</button>
+        <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
@@ -501,12 +509,11 @@ postgresql://localhost/mydb"></textarea>
         
         <div class="actions" style="margin-top: 16px;">
           <button id="cancelMcpBtn" class="btn-secondary">取消</button>
-          <button id="saveMcpBtn">保存</button>
+          <button id="saveMcpBtn">完成</button>
         </div>
       </div>
       <div class="actions">
-        <span class="status save-config-status">保存成功！</span>
-        <button type="button" class="save-config-btn">保存配置</button>
+        <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
@@ -556,12 +563,11 @@ postgresql://localhost/mydb"></textarea>
         </div>
         <div class="actions" style="margin-top: 16px;">
           <button type="button" id="scheduledTaskCancelBtn" class="btn-secondary">取消</button>
-          <button type="button" id="scheduledTaskSaveBtn">保存</button>
+          <button type="button" id="scheduledTaskSaveBtn">完成</button>
         </div>
       </div>
       <div class="actions">
-        <span class="status save-config-status">保存成功！</span>
-        <button type="button" class="save-config-btn">保存配置</button>
+        <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
@@ -594,6 +600,11 @@ postgresql://localhost/mydb"></textarea>
 
       <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">计划</h3>
       <p class="help-text" style="margin-bottom: 12px;">由 AI 生成的计划，此处仅支持查看列表与删除。查看/编辑单条请从侧边栏打开计划页。</p>
+      <div style="margin-bottom: 12px;">
+        <label style="margin-right: 8px;">按 Agent 名称筛选：</label>
+        <input type="text" id="plansAgentFilter" placeholder="留空显示全部" style="width: 200px; padding: 6px 10px; margin-right: 8px;">
+        <button type="button" id="refreshPlansListBtn" class="btn-secondary">刷新</button>
+      </div>
       <div id="plansListContainer">
         <div id="plansList"></div>
       </div>
@@ -603,8 +614,7 @@ postgresql://localhost/mydb"></textarea>
         <div id="accurateDataList"></div>
       </div>
       <div class="actions">
-        <span class="status save-config-status">保存成功！</span>
-        <button type="button" class="save-config-btn">保存配置</button>
+        <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
@@ -639,12 +649,11 @@ postgresql://localhost/mydb"></textarea>
         
         <div class="actions" style="margin-top: 16px;">
           <button id="cancelSkillBtn" class="btn-secondary">取消</button>
-          <button id="saveSkillBtn">保存技能</button>
+          <button id="saveSkillBtn">完成</button>
         </div>
       </div>
       <div class="actions">
-        <span class="status save-config-status">保存成功！</span>
-        <button type="button" class="save-config-btn">保存配置</button>
+        <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
     

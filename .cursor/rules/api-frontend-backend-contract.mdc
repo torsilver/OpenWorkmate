@@ -1,0 +1,31 @@
+---
+description: 前后端 API 接口约定（状态码、错误 body、前端展示）
+alwaysApply: true
+---
+
+# 前后端 API 接口约定
+
+本规则约定后端与前端（含扩展 options/plans 等）在 HTTP 接口上的契约，便于联调与排查。JSON 字段命名见 [api-json-contract.mdc](api-json-contract.mdc)，错误可见性见 [error-visibility.mdc](error-visibility.mdc)。
+
+## 1. 状态码
+
+- **错误一律用 HTTP 状态码表示**：参数/校验失败用 **400**，资源不存在用 **404**，服务端异常用 **500** 等。
+- **不采用「200 + ok: false」表示错误**；成功才返回 200，错误用 4xx/5xx。
+- 前端通过 `res.ok`（即 2xx）判断成功，通过 `!res.ok` 判断失败并解析 body。
+
+## 2. 错误响应的 body
+
+- 所有错误响应（4xx/5xx）**必须**带 JSON body，不得空 body。
+- 统一形状：`{ "ok": false, "message": "具体原因说明" }`。
+- `message` 需写清**可被用户/开发者理解的原因**（如「未找到该计划」「请求体解析失败，请确认 JSON 格式」），避免笼统的「请求失败」。
+
+## 3. 前端的义务
+
+- 在 `!res.ok` 时**必须**尝试解析响应 body（`await res.json().catch(() => ({}))`），并优先使用 **`data.message`** 作为提示内容。
+- 展示方式：列表页在列表区域展示 `data.message`；弹窗/保存/删除等用 `alert(err.message)` 或等价方式，其中 `err.message` 应来自解析到的 `data.message` 或合理默认文案。
+- 禁止仅显示固定文案（如「加载失败」「删除失败」）而不展示服务端返回的 `message`，否则会隐藏真实原因、影响调试。
+
+## 4. 后端新增/修改接口时
+
+- 不使用无参的 `Results.BadRequest()` 或 `Results.NotFound()`；改为 `Results.Json(new { ok = false, message = "…" }, statusCode: 400)` 或 `statusCode: 404`。
+- 成功响应可返回 `{ ok: true, ... }` 或直接返回业务 JSON；失败时**必须** 4xx/5xx + 带 `message` 的 JSON body。

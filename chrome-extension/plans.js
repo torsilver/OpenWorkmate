@@ -93,7 +93,10 @@
     showLoading(true);
     try {
       const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
-      if (!res.ok) throw new Error(res.status === 404 ? "未找到该计划" : res.statusText);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || (res.status === 404 ? "未找到该计划" : res.statusText));
+      }
       const data = await res.json();
       showDetail(planId, data.meta || {}, data.content || "");
     } catch (err) {
@@ -135,7 +138,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })
         });
-        if (!res.ok) throw new Error(res.statusText);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || res.statusText);
+        }
         if (currentPlan) currentPlan.content = content;
         if ($contentView) {
           if (typeof marked !== "undefined") $contentView.innerHTML = marked.parse(content || "");

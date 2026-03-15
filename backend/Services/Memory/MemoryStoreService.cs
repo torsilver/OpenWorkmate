@@ -14,7 +14,7 @@ public sealed class MemoryStoreService : IMemoryStoreService
 
     public bool IsAvailable => _embedding.IsConfigured;
 
-    public async Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, bool scopeShared = false, CancellationToken ct = default)
+    public async Task<string> SaveAsync(string? id, string text, string? sessionId, IReadOnlyDictionary<string, string>? metadata, bool scopeShared = false, string? agentName = null, CancellationToken ct = default)
     {
         if (!_embedding.IsConfigured || string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Embedding is not configured or text is empty.");
@@ -23,7 +23,10 @@ public sealed class MemoryStoreService : IMemoryStoreService
             throw new InvalidOperationException("Failed to generate embedding.");
         var key = id ?? Guid.NewGuid().ToString("N");
         var effectiveSessionId = scopeShared ? MemoryScopes.SharedSessionId : sessionId;
-        await _store.UpsertAsync(key, text, vector, effectiveSessionId, metadata, "memory", ct).ConfigureAwait(false);
+        var meta = metadata != null ? new Dictionary<string, string>(metadata) : new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(agentName))
+            meta["agentName"] = agentName.Trim();
+        await _store.UpsertAsync(key, text, vector, effectiveSessionId, meta.Count > 0 ? meta : null, "memory", ct).ConfigureAwait(false);
         return key;
     }
 
@@ -43,11 +46,12 @@ public sealed class MemoryStoreService : IMemoryStoreService
     {
         var t = await _store.GetAsync(id, ct).ConfigureAwait(false);
         if (t == null) return null;
-        return new MemoryRecord { Id = id, Text = t.Value.Text, SessionId = t.Value.SessionId, CreatedAt = t.Value.CreatedAt, Metadata = t.Value.Metadata };
+        var agentName = t.Value.Metadata != null && t.Value.Metadata.TryGetValue("agentName", out var an) ? an : null;
+        return new MemoryRecord { Id = id, Text = t.Value.Text, SessionId = t.Value.SessionId, AgentName = agentName, CreatedAt = t.Value.CreatedAt, Metadata = t.Value.Metadata };
     }
 
-    public Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, CancellationToken ct = default)
-        => _store.ListAsync(sessionIdFilter, skip, take, "memory", ct);
+    public Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? agentNameFilter = null, CancellationToken ct = default)
+        => _store.ListAsync(sessionIdFilter, skip, take, "memory", agentNameFilter, ct);
 
     public async Task AddChunkToKnowledgeBaseAsync(string knowledgeBaseId, string chunkId, string text, IReadOnlyDictionary<string, string>? metadata, CancellationToken ct = default)
     {

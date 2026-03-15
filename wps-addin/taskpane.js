@@ -226,7 +226,12 @@
   function fetchPlanAndShow(planId, title, createdBy) {
     if (createdBy !== CLIENT_TYPE) return;
     fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId))
-      .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) return Promise.reject(new Error((data && data.message) || ("请求失败 " + res.status)));
+          return data;
+        });
+      })
       .then(function (data) {
         currentPlanId = planId;
         currentPlanTitle = title || (data.meta && data.meta.title) || planId;
@@ -246,7 +251,10 @@
         if ($planSaveBtn) $planSaveBtn.style.display = "none";
         if ($planCancelEditBtn) $planCancelEditBtn.style.display = "none";
       })
-      .catch(function (e) { console.error("fetch plan failed", e); });
+      .catch(function (e) {
+        console.error("fetch plan failed", e);
+        alert(e.message || "加载计划失败");
+      });
   }
 
   function showPlanEdit() {
@@ -345,16 +353,20 @@
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })
-      }).then(function (res) {
-        if (!res.ok) throw new Error("保存失败");
-        return res;
+      }).then(async function (res) {
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error((data && data.message) || "保存失败");
+        return data;
       }).then(function () {
         currentPlanContent = content;
         if ($planContentView) {
           $planContentView.innerHTML = (typeof marked !== "undefined") ? marked.parse(content || "") : escapeHtml(content || "");
         }
         cancelPlanEdit();
-      }).catch(function (e) { console.error("save plan failed", e); });
+      }).catch(function (e) {
+        console.error("save plan failed", e);
+        alert(e.message || "保存失败");
+      });
     });
   }
 

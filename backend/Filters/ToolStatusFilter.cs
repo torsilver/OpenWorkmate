@@ -37,28 +37,30 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 
         // 对 run_command / run_page_script 提取正在执行的命令或脚本，便于前端展示
         var startDetail = GetRunningDetail(functionName, context.Arguments);
+        var planStepIndex = GetPlanStepIndex(pluginName, functionName, context.Arguments);
 
         // 发送开始
-        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail);
+        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex);
 
         try
         {
             await next(context);
 
-            // 正常返回：发送成功结束；可选附带简短结果摘要
+            // 正常返回：发送成功结束；可选附带简短结果摘要；若返回串表示错误则按失败下发
             var content = "";
             try
             {
                 var s = context.Result?.GetValue<string>();
-                if (!string.IsNullOrEmpty(s) && s.Length <= 200)
-                    content = s;
+                if (!string.IsNullOrEmpty(s))
+                    content = s.Length <= 200 ? s : s.Substring(0, 200);
             }
             catch { /* 非字符串结果忽略 */ }
 
-            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, true, content);
+            var success = !IsToolResultFailure(content);
+            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex);
 
-            // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页
-            if (string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
+            // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页（仅当工具结果视为成功时）
+            if (success && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
@@ -92,9 +94,20 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         {
             _logger.LogWarning(ex, "[ToolStatus] Function {Plugin}.{Function} failed", pluginName, functionName);
             var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
-            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly);
+            var stepIndexOnFail = GetPlanStepIndex(pluginName, functionName, context.Arguments);
+            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail);
             throw;
         }
+    }
+
+    private static int? GetPlanStepIndex(string pluginName, string functionName, KernelArguments? arguments)
+    {
+        if (arguments == null) return null;
+        if (!string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) || !string.Equals(functionName, "execute_plan_step", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (arguments.TryGetValue("stepIndex", out var stepObj) && stepObj is int stepIndex and > 0)
+            return stepIndex;
+        return null;
     }
 
     private static string? GetRunningDetail(string functionName, KernelArguments arguments)
@@ -116,6 +129,22 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         return null;
     }
 
+    /// <summary>根据工具返回的字符串判断是否为“错误类”结果（插件/MCP/SecurityFilter 约定以 [xxx] 或关键词表示失败）。</summary>
+    private static bool IsToolResultFailure(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        if (content.StartsWith("[MCP ", StringComparison.Ordinal)) return true;
+        if (!content.StartsWith("[", StringComparison.Ordinal)) return false;
+        return content.Contains("失败", StringComparison.Ordinal)
+            || content.Contains("错误", StringComparison.Ordinal)
+            || content.Contains("未启用", StringComparison.Ordinal)
+            || content.Contains("无效", StringComparison.Ordinal)
+            || content.Contains("Error", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("系统拦截", StringComparison.Ordinal)
+            || content.Contains("用户拒绝", StringComparison.Ordinal);
+    }
+
     private async Task SendToolStatusAsync(
         string sessionId,
         string type,
@@ -123,7 +152,8 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         string function,
         bool? success,
         string? content,
-        string? startDetail = null)
+        string? startDetail = null,
+        int? planStepIndex = null)
     {
         var summary = type == "tool_invocation_start"
             ? (string.IsNullOrEmpty(startDetail) ? $"正在执行: {plugin}.{function}" : $"正在执行: {plugin}.{function} — {startDetail}")
@@ -135,7 +165,8 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             Function = function,
             Success = success,
             Summary = summary,
-            Content = content ?? ""
+            Content = content ?? "",
+            PlanStepIndex = planStepIndex
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
         await _sessionManager.SendToAsync(sessionId, json);

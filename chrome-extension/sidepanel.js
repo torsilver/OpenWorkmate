@@ -1,4 +1,5 @@
 const WS_URL = "ws://localhost:8765/ws";
+const API_BASE = "http://localhost:8765";
 const AUTH_TOKEN = "office-copilot-dev-token";
 
 const RECONNECT_BASE_MS = 1000;
@@ -13,11 +14,12 @@ const $fileInput = document.getElementById("file-input");
 const $attachmentsPreview = document.getElementById("attachments-preview");
 const $status = document.getElementById("status");
 const $settingsBtn = document.getElementById("settings-btn");
-const $modePlan = document.getElementById("mode-plan");
-const $modeAgent = document.getElementById("mode-agent");
 const $currentPlanLabel = document.getElementById("current-plan-label");
+const $currentPageLabel = document.getElementById("current-page-label");
+const $planChecklistWrap = document.getElementById("plan-checklist-wrap");
+const $planChecklistList = document.getElementById("plan-checklist-list");
+const $planChecklistSummary = document.getElementById("plan-checklist-summary");
 
-const STORAGE_MODE = "copilot_chat_mode";
 const STORAGE_PLAN_ID = "copilot_plan_id";
 const STORAGE_PLAN_TITLE = "copilot_plan_title";
 const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
@@ -28,20 +30,31 @@ if ($settingsBtn) {
   });
 }
 
-function getChatMode() {
-  return sessionStorage.getItem(STORAGE_MODE) || "agent";
+async function getActiveTabTitle() {
+  if (typeof chrome === "undefined" || !chrome.tabs) return "(无)";
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || tab.url?.startsWith("chrome://")) return "(无)";
+    return (tab.title && tab.title.trim()) ? tab.title.trim() : "(无标题)";
+  } catch {
+    return "(无)";
+  }
 }
 
-function setChatMode(mode) {
-  sessionStorage.setItem(STORAGE_MODE, mode === "plan" ? "plan" : "agent");
-  if ($modePlan) $modePlan.classList.toggle("active", mode === "plan");
-  if ($modeAgent) $modeAgent.classList.toggle("active", mode === "agent");
-  if ($modePlan && $modeAgent) {
-    $modePlan.style.background = mode === "plan" ? "var(--accent, #3b82f6)" : "var(--bg-secondary, #1e293b)";
-    $modePlan.style.color = mode === "plan" ? "#fff" : "var(--text-secondary, #94a3b8)";
-    $modeAgent.style.background = mode === "agent" ? "var(--accent, #3b82f6)" : "var(--bg-secondary, #1e293b)";
-    $modeAgent.style.color = mode === "agent" ? "#fff" : "var(--text-secondary, #94a3b8)";
+function updateCurrentPageLabel(title, sessionId) {
+  if (!$currentPageLabel) return;
+  const label = title != null && title !== "" ? title : "(无)";
+  if (sessionId != null && sessionId !== "") {
+    $currentPageLabel.textContent = label + " · " + sessionId;
+  } else {
+    $currentPageLabel.textContent = label;
   }
+}
+
+function sendSetContext(pageTitle) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !pageTitle || pageTitle === "(无)") return;
+  const t = pageTitle.length > 200 ? pageTitle.slice(0, 200) : pageTitle;
+  ws.send(JSON.stringify({ type: "set_context", pageTitle: t }));
 }
 
 function getCurrentPlanId() {
@@ -49,6 +62,8 @@ function getCurrentPlanId() {
 }
 
 function setCurrentPlan(planId, title) {
+  planChecklistSteps = [];
+  planChecklistStatus = {};
   if (planId) {
     sessionStorage.setItem(STORAGE_PLAN_ID, planId);
     sessionStorage.setItem(STORAGE_PLAN_TITLE, title || planId);
@@ -61,6 +76,7 @@ function setCurrentPlan(planId, title) {
     sessionStorage.removeItem(STORAGE_PLAN_STEP_INDEX);
     if (typeof chrome !== "undefined" && chrome.storage?.local)
       chrome.storage.local.set({ copilot_plan_id: "", copilot_plan_title: "" });
+    if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
   }
   if ($currentPlanLabel) $currentPlanLabel.textContent = title || planId || "无";
   if ($currentPlanLabel) $currentPlanLabel.title = planId ? `计划: ${title || planId}` : "当前计划";
@@ -74,6 +90,82 @@ function getPlanCurrentStepIndex() {
 
 function setPlanCurrentStepIndex(stepIndex) {
   if (stepIndex >= 1) sessionStorage.setItem(STORAGE_PLAN_STEP_INDEX, String(stepIndex));
+}
+
+// ───── Plan checklist (执行进度) ─────
+let planChecklistSteps = [];
+let planChecklistStatus = {};
+
+function parsePlanStepsFromContent(content) {
+  if (!content || typeof content !== "string") return [];
+  const steps = [];
+  const re = /^#{1,6}\s*步骤\s*(\d+)\s*$/gm;
+  let m;
+  const indices = [];
+  while ((m = re.exec(content)) !== null) indices.push({ num: parseInt(m[1], 10), pos: m.index });
+  for (let i = 0; i < indices.length; i++) {
+    const start = indices[i].pos;
+    const end = i + 1 < indices.length ? indices[i + 1].pos : content.length;
+    const block = content.slice(start, end).trim();
+    const firstLine = block.split(/\r?\n/)[0] || "";
+    const title = firstLine.replace(/^#{1,6}\s*步骤\s*\d+\s*/, "").trim() || "步骤 " + indices[i].num;
+    steps.push({ index: indices[i].num, title: title.slice(0, 60) });
+  }
+  return steps;
+}
+
+async function ensurePlanChecklistLoaded(planId) {
+  if (planChecklistSteps.length > 0) return;
+  try {
+    const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+    if (!res.ok) return;
+    const data = await res.json();
+    const content = data.content || "";
+    planChecklistSteps = parsePlanStepsFromContent(content);
+    planChecklistStatus = {};
+    planChecklistSteps.forEach(s => { planChecklistStatus[s.index] = "pending"; });
+    renderPlanChecklist();
+  } catch (e) {
+    console.warn("Failed to load plan for checklist", e);
+  }
+}
+
+function renderPlanChecklist() {
+  if (!$planChecklistWrap || !$planChecklistList) return;
+  if (planChecklistSteps.length === 0) {
+    $planChecklistWrap.style.display = "none";
+    return;
+  }
+  $planChecklistWrap.style.display = "block";
+  $planChecklistList.innerHTML = "";
+  const total = planChecklistSteps.length;
+  const done = Object.values(planChecklistStatus).filter(s => s === "done").length;
+  if ($planChecklistSummary) $planChecklistSummary.textContent = `执行进度 (${done}/${total})`;
+  planChecklistSteps.forEach(({ index, title }) => {
+    const status = planChecklistStatus[index] || "pending";
+    const li = document.createElement("li");
+    li.className = "plan-step plan-step--" + status;
+    li.dataset.stepIndex = String(index);
+    const icon = status === "done" ? "✓" : status === "in_progress" ? "◐" : "○";
+    li.innerHTML = `<span class="plan-step-icon">${icon}</span> <span class="plan-step-title">步骤 ${index}: ${escapeHtml(title)}</span>`;
+    $planChecklistList.appendChild(li);
+  });
+}
+
+function updateChecklistStep(stepIndex, status) {
+  if (!stepIndex || stepIndex < 1) return;
+  planChecklistStatus[stepIndex] = status;
+  const li = $planChecklistList?.querySelector(`[data-step-index="${stepIndex}"]`);
+  if (li) {
+    li.className = "plan-step plan-step--" + status;
+    const icon = status === "done" ? "✓" : status === "in_progress" ? "◐" : "○";
+    const titleEl = li.querySelector(".plan-step-title");
+    const title = titleEl ? titleEl.textContent.replace(/^步骤 \d+:\s*/, "") : "";
+    li.querySelector(".plan-step-icon").textContent = icon;
+  }
+  const total = planChecklistSteps.length;
+  const done = Object.values(planChecklistStatus).filter(s => s === "done").length;
+  if ($planChecklistSummary) $planChecklistSummary.textContent = `执行进度 (${done}/${total})`;
 }
 
 function appendPlanCreatedMessage(planId, title, isUpdated) {
@@ -105,15 +197,9 @@ function showPlanConfirmDialog(planId, title, onConfirm) {
   document.body.appendChild(overlay);
 }
 
-if ($modePlan) {
-  $modePlan.addEventListener("click", () => setChatMode("plan"));
-}
-if ($modeAgent) {
-  $modeAgent.addEventListener("click", () => setChatMode("agent"));
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  setChatMode(getChatMode());
+document.addEventListener("DOMContentLoaded", async () => {
+  const pageTitle = await getActiveTabTitle();
+  updateCurrentPageLabel(pageTitle, getSessionId());
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     chrome.storage.local.get(["copilot_plan_id", "copilot_plan_title", "copilot_execute_plan_id", "copilot_execute_plan_title"], (r) => {
       if (r.copilot_plan_id) setCurrentPlan(r.copilot_plan_id, r.copilot_plan_title || "");
@@ -122,7 +208,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (execPlanId) {
         const title = r.copilot_execute_plan_title || execPlanId;
         setCurrentPlan(execPlanId, title);
-        setChatMode("agent");
         pendingExecutePlan = true;
         chrome.storage.local.remove(["copilot_execute_plan_id", "copilot_execute_plan_title"]);
       }
@@ -134,7 +219,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!planId) return;
       const title = (changes.copilot_execute_plan_title?.newValue) || planId;
       setCurrentPlan(planId, title);
-      setChatMode("agent");
       chrome.storage.local.remove(["copilot_execute_plan_id", "copilot_execute_plan_title"], () => {
         if (typeof send === "function") send("请按当前绑定的计划执行");
       });
@@ -260,11 +344,14 @@ function connect() {
   const url = `${WS_URL}?sessionId=${sessionId}&token=${AUTH_TOKEN}&clientType=chrome`;
   ws = new WebSocket(url);
 
-  ws.addEventListener("open", () => {
+  ws.addEventListener("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
     setStatus(true);
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
+    const pageTitle = await getActiveTabTitle();
+    updateCurrentPageLabel(pageTitle, sessionId);
+    sendSetContext(pageTitle);
     const toFlush = pendingMessages.length;
     while (pendingMessages.length > 0) {
       const m = pendingMessages.shift();
@@ -311,14 +398,13 @@ function send(text, attachmentsPayload = null) {
     addBotMessage("连接已断开，消息未发送。请检查网络或刷新侧边栏后重试。", true);
     return;
   }
-  const mode = getChatMode();
   const planId = getCurrentPlanId() || undefined;
-  const base = { type: "text", content: text || "", mode, planId };
+  const base = { type: "text", content: text || "", mode: "agent", planId };
   if (planId) base.planCurrentStepIndex = getPlanCurrentStepIndex();
   if (attachmentsPayload && attachmentsPayload.length > 0) base.attachments = attachmentsPayload;
   const payload = JSON.stringify(base);
   ws.send(payload);
-  debugLog("WS Send", "type=text mode=" + mode + " planId=" + (planId || "-") + " step=" + (planId ? getPlanCurrentStepIndex() : "-") + " len=" + (text || "").length, "send");
+  debugLog("WS Send", "type=text planId=" + (planId || "-") + " step=" + (planId ? getPlanCurrentStepIndex() : "-") + " len=" + (text || "").length, "send");
 }
 
 // ───── Init Libraries ─────
@@ -470,6 +556,12 @@ function handleMessage(raw) {
       break;
 
     case "tool_invocation_start": {
+      if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
+        const planId = getCurrentPlanId();
+        if (planId) {
+          ensurePlanChecklistLoaded(planId).then(() => updateChecklistStep(msg.planStepIndex, "in_progress"));
+        }
+      }
       if (!executionLogBody) break;
       const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
       const block = document.createElement("details");
@@ -489,11 +581,19 @@ function handleMessage(raw) {
     }
 
     case "tool_invocation_end": {
+      if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
+        updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
+      }
       const block = currentRoundToolBlocks[currentToolEndIndex];
       if (block) {
-        const ok = msg.success === true;
+        const contentRaw = (msg.content && String(msg.content).trim()) || "";
+        const looksLikeError = (c) => {
+          if (!c) return false;
+          return c.startsWith("[错误]") || c.startsWith("[保存失败]") || c.startsWith("[记忆未启用]") || c.startsWith("[无效]") || c.startsWith("[MCP Error]") || c.startsWith("[MCP Client Exception]") || c.startsWith("[系统拦截]") || c.startsWith("[检索失败]") || c.startsWith("[创建失败]") || c.startsWith("[更新失败]") || c.startsWith("[生成计划失败]") || c.startsWith("[执行步骤失败]");
+        };
+        const ok = msg.success === true && !looksLikeError(contentRaw);
         const name = `${msg.plugin || ""}.${msg.function || ""}`;
-        const content = (msg.content && String(msg.content).trim()) || "";
+        const content = contentRaw;
         const displayLabel = (block.dataset.label || name).replace(/^正在执行:\s*/i, "");
         block.classList.remove("tool-call--running");
         block.classList.add(ok ? "tool-call--done" : "tool-call--fail");
@@ -558,7 +658,6 @@ function handleMessage(raw) {
         if (msg.type === "plan_created" && requiresConfirm) {
           showPlanConfirmDialog(planId, title, () => {
             setCurrentPlan(planId, title);
-            setChatMode("agent");
             appendPlanCreatedMessage(planId, title, true);
             chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
           });

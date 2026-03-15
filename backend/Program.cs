@@ -34,8 +34,10 @@ try
         var config = sp.GetRequiredService<ConfigService>().Current;
         var t = (config.RagStorageType ?? "").Trim();
         var path = (config.RagStoragePath ?? "").Trim();
-        if (string.Equals(t, "Sqlite", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(path))
+        if (string.Equals(t, "Sqlite", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.IsNullOrEmpty(path))
+                path = "rag.db";
             path = Environment.ExpandEnvironmentVariables(path);
             if (!Path.IsPathRooted(path))
                 path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OfficeCopilot", path);
@@ -191,7 +193,7 @@ app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
         config.SaveConfig(newConfig);
         return Results.Ok();
     }
-    return Results.BadRequest();
+    return Results.Json(new { ok = false, message = "请求体解析失败或格式无效，请确认发送的是有效 JSON 配置。" }, statusCode: 400);
 });
 
 app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logger) =>
@@ -238,16 +240,69 @@ app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logg
             return Results.Ok(new { ok = true, message = "连接成功，接口与 Key/模型可用。" });
         logger.LogWarning("Test AI failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
         var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
-        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 200);
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
     }
     catch (TaskCanceledException)
     {
-        return Results.Ok(new { ok = false, message = "连接超时，请检查接口地址或网络。" });
+        return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
     }
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Test AI exception");
-        return Results.Ok(new { ok = false, message = "连接失败: " + ex.Message });
+        return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
+    }
+});
+
+app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Program> logger) =>
+{
+    TestEmbeddingRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<TestEmbeddingRequest>(ctx.Request.Body, JsonCtx.Default.TestEmbeddingRequest);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test Embedding: request body deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、modelId、apiKey（小写驼峰）。" }, statusCode: 400);
+    }
+    if (body == null || string.IsNullOrWhiteSpace(body.Endpoint) || string.IsNullOrWhiteSpace(body.ModelId))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint 或 modelId。" }, statusCode: 400);
+    }
+    var endpoint = body.Endpoint.Trim().TrimEnd('/');
+    var modelId = body.ModelId.Trim();
+    var apiKey = body.ApiKey?.Trim() ?? "";
+    var path = endpoint.Contains("/v1", StringComparison.OrdinalIgnoreCase) ? "/embeddings" : "/v1/embeddings";
+    var url = endpoint + path;
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+    {
+        return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+    }
+    using var http = new HttpClient();
+    http.Timeout = TimeSpan.FromSeconds(5);
+    var payload = new { model = modelId, input = "test" };
+    var request = new HttpRequestMessage(HttpMethod.Post, uri);
+    if (!string.IsNullOrEmpty(apiKey))
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+    request.Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+    try
+    {
+        var response = await http.SendAsync(request);
+        var responseText = await response.Content.ReadAsStringAsync();
+        if (response.IsSuccessStatusCode)
+            return Results.Ok(new { ok = true, message = "连接成功，Embedding 接口可用。" });
+        logger.LogWarning("Test Embedding failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test Embedding exception");
+        return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
     }
 });
 
@@ -276,7 +331,7 @@ app.MapPost("/api/skills", async (HttpContext ctx, SkillService skills) =>
         skills.SaveSkill(newSkill);
         return Results.Ok(newSkill);
     }
-    return Results.BadRequest();
+    return Results.Json(new { ok = false, message = "请求体解析失败或技能数据无效，请确认 JSON 格式与必填字段。" }, statusCode: 400);
 });
 app.MapDelete("/api/skills/{id}", (string id, SkillService skills) => 
 {
@@ -303,14 +358,14 @@ app.MapPost("/api/rag/ingest", async (HttpContext ctx, IMemoryStoreService memor
     return Results.Json(new { ok = true, chunksAdded = added });
 });
 
-app.MapGet("/api/memory", async (string? sessionId, string? scope, int skip, int take, IMemoryStoreService memory) =>
+app.MapGet("/api/memory", async (string? sessionId, string? scope, string? agentName, int skip, int take, IMemoryStoreService memory) =>
 {
-    if (!memory.IsAvailable)
-        return Results.Json(new { ok = false, message = "未配置 Embedding 模型。" }, statusCode: 400);
+    // 列表不依赖 Embedding，未配置时也可返回已存在的记忆
     var filterSessionId = (scope ?? "").Trim().ToLowerInvariant() == "shared"
         ? OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId
         : (scope == "all" ? null : sessionId);
-    var list = await memory.ListAsync(filterSessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100)).ConfigureAwait(false);
+    var agentNameFilter = string.IsNullOrWhiteSpace(agentName) ? null : agentName.Trim();
+    var list = await memory.ListAsync(filterSessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100), agentNameFilter).ConfigureAwait(false);
     return Results.Json(new { ok = true, items = list });
 });
 
@@ -329,7 +384,7 @@ app.MapPost("/api/memory", async (HttpContext ctx, IMemoryStoreService memory) =
 app.MapGet("/api/memory/{id}", async (string id, IMemoryStoreService memory) =>
 {
     var item = await memory.GetAsync(id).ConfigureAwait(false);
-    if (item == null) return Results.NotFound();
+    if (item == null) return Results.Json(new { ok = false, message = "未找到该记忆。" }, statusCode: 404);
     return Results.Json(item);
 });
 
@@ -355,20 +410,25 @@ app.MapPut("/api/memory/{id}", async (string id, HttpContext ctx, IMemoryStoreSe
 app.MapDelete("/api/memory/{id}", async (string id, IMemoryStoreService memory) =>
 {
     var deleted = await memory.DeleteAsync(id).ConfigureAwait(false);
-    if (!deleted) return Results.NotFound();
+    if (!deleted) return Results.Json(new { ok = false, message = "未找到该记忆或已删除。" }, statusCode: 404);
     return Results.Ok(new { ok = true });
 });
 
-app.MapGet("/api/plans", async (IPlanStore planStore, CancellationToken ct) =>
+app.MapGet("/api/plans", async (string? agentName, IPlanStore planStore, CancellationToken ct) =>
 {
     var list = await planStore.ListAsync(ct).ConfigureAwait(false);
+    if (!string.IsNullOrWhiteSpace(agentName))
+    {
+        var name = agentName.Trim();
+        list = list.Where(m => string.Equals(m.CreatedByDisplayName, name, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
     return Results.Json(list, JsonCtx.Default.ListPlanMeta);
 });
 
 app.MapGet("/api/plans/{id}", async (string id, IPlanStore planStore, CancellationToken ct) =>
 {
     var result = await planStore.GetAsync(id, ct).ConfigureAwait(false);
-    if (result == null) return Results.NotFound();
+    if (result == null) return Results.Json(new { ok = false, message = "未找到该计划。" }, statusCode: 404);
     return Results.Json(new { content = result.Value.Content, meta = result.Value.Meta });
 });
 
@@ -377,7 +437,7 @@ app.MapPut("/api/plans/{id}", async (string id, HttpContext ctx, IPlanStore plan
     var body = await JsonSerializer.DeserializeAsync<PlanUpdateRequest>(ctx.Request.Body, JsonCtx.Default.PlanUpdateRequest);
     if (body == null) return Results.BadRequest(new { ok = false, message = "需要 content。" });
     var existing = await planStore.GetAsync(id, ct).ConfigureAwait(false);
-    if (existing == null) return Results.NotFound();
+    if (existing == null) return Results.Json(new { ok = false, message = "未找到该计划。" }, statusCode: 404);
     var meta = existing.Value.Meta;
     if (!string.IsNullOrWhiteSpace(body.Title)) meta.Title = body.Title;
     if (!string.IsNullOrWhiteSpace(body.Status)) meta.Status = body.Status;
@@ -389,7 +449,7 @@ app.MapPut("/api/plans/{id}", async (string id, HttpContext ctx, IPlanStore plan
 app.MapDelete("/api/plans/{id}", async (string id, IPlanStore planStore, CancellationToken ct) =>
 {
     var deleted = await planStore.DeleteAsync(id, ct).ConfigureAwait(false);
-    if (!deleted) return Results.NotFound();
+    if (!deleted) return Results.Json(new { ok = false, message = "未找到该计划或已删除。" }, statusCode: 404);
     return Results.Ok(new { ok = true });
 });
 
@@ -437,7 +497,7 @@ app.MapGet("/api/accurate-data", (ConfigService configService) =>
 app.MapDelete("/api/accurate-data/{id}", (string id, ConfigService configService) =>
 {
     var safeId = SanitizeAccurateDataId(id);
-    if (string.IsNullOrEmpty(safeId)) return Results.BadRequest();
+    if (string.IsNullOrEmpty(safeId)) return Results.Json(new { ok = false, message = "id 无效或包含非法字符。" }, statusCode: 400);
     var root = GetAccurateDataDirectory(configService);
     Directory.CreateDirectory(root);
     var rootFull = Path.GetFullPath(root);
@@ -451,7 +511,7 @@ app.MapDelete("/api/accurate-data/{id}", (string id, ConfigService configService
         File.Delete(path);
         deleted = true;
     }
-    return deleted ? Results.Ok(new { ok = true }) : Results.NotFound();
+    return deleted ? Results.Ok(new { ok = true }) : Results.Json(new { ok = false, message = "未找到该准确数据或已删除。" }, statusCode: 404);
 });
 
 // ----- 定时任务 API -----
@@ -464,7 +524,7 @@ app.MapGet("/api/scheduled-tasks", async (IScheduledTaskStore taskStore, Cancell
 app.MapGet("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore taskStore, CancellationToken ct) =>
 {
     var result = await taskStore.GetAsync(id, ct).ConfigureAwait(false);
-    if (result == null) return Results.NotFound();
+    if (result == null) return Results.Json(new { ok = false, message = "未找到该定时任务。" }, statusCode: 404);
     return Results.Json(new { content = result.Value.Content, meta = result.Value.Meta });
 });
 
@@ -496,7 +556,7 @@ app.MapPut("/api/scheduled-tasks/{id}", async (string id, HttpContext ctx, ISche
     var body = await JsonSerializer.DeserializeAsync<ScheduledTaskUpdateRequest>(ctx.Request.Body, JsonCtx.Default.ScheduledTaskUpdateRequest);
     if (body == null) return Results.BadRequest(new { ok = false, message = "需要请求体。" });
     var existing = await taskStore.GetAsync(id, ct).ConfigureAwait(false);
-    if (existing == null) return Results.NotFound();
+    if (existing == null) return Results.Json(new { ok = false, message = "未找到该定时任务。" }, statusCode: 404);
     var meta = existing.Value.Meta;
     var content = body.Content ?? existing.Value.Content;
     if (!string.IsNullOrWhiteSpace(body.Title)) meta.Title = body.Title.Trim();
@@ -516,7 +576,7 @@ app.MapPut("/api/scheduled-tasks/{id}", async (string id, HttpContext ctx, ISche
 app.MapDelete("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore taskStore, CancellationToken ct) =>
 {
     var deleted = await taskStore.DeleteAsync(id, ct).ConfigureAwait(false);
-    if (!deleted) return Results.NotFound();
+    if (!deleted) return Results.Json(new { ok = false, message = "未找到该定时任务或已删除。" }, statusCode: 404);
     return Results.Ok(new { ok = true });
 });
 
@@ -576,7 +636,7 @@ static async Task HandleSession(
         }
 
         // Only require Content for message types that use it for chat (allow empty content when attachments present)
-        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop");
+        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop" or "set_context");
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
@@ -586,6 +646,13 @@ static async Task HandleSession(
 
         switch (incoming.Type)
         {
+            case "set_context":
+                if (!string.IsNullOrEmpty(incoming.PageTitle))
+                {
+                    sessions.SetDisplayName(sessionId, incoming.PageTitle.Trim().Length > 200 ? incoming.PageTitle.Trim()[..200] : incoming.PageTitle.Trim());
+                    logger.LogDebug("[{SessionId}] set_context displayName={DisplayName}", sessionId, incoming.PageTitle.Trim().Length > 50 ? incoming.PageTitle.Trim()[..50] + "…" : incoming.PageTitle.Trim());
+                }
+                break;
             case "ping":
                 await SendJson(ws, new WsMessage { Type = "pong", Content = "pong" });
                 break;

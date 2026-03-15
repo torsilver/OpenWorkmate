@@ -194,13 +194,13 @@ public sealed class ChatService : IDisposable
             }
         }
 
-        // 阶段 3：嵌入服务（仅当配置了远程 Embedding 时注册；使用独立配置，不从大模型列表选）
-        var embSrc = (config.EmbeddingSource ?? "").Trim();
-        if (string.Equals(embSrc, "Remote", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(config.EmbeddingModelId))
+        // 阶段 3：嵌入服务（使用当前选中的 Embedding 模型条目；未配置或未选中则不注册）
+        var activeEmb = _configService.GetActiveEmbeddingEntry();
+        if (activeEmb != null && string.Equals((activeEmb.Source ?? "").Trim(), "Remote", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(activeEmb.ModelId))
         {
-            var embModelId = (config.EmbeddingModelId ?? "").Trim();
-            var embApiKey = (config.EmbeddingApiKey ?? "").Trim();
-            var embEndpoint = (config.EmbeddingEndpoint ?? "").Trim();
+            var embModelId = (activeEmb.ModelId ?? "").Trim();
+            var embApiKey = (activeEmb.ApiKey ?? "").Trim();
+            var embEndpoint = (activeEmb.Endpoint ?? "").Trim();
             Uri? embUri = null;
             if (embEndpoint.Length > 0 && Uri.TryCreate(embEndpoint, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
                 embUri = u;
@@ -290,7 +290,7 @@ public sealed class ChatService : IDisposable
         if (_embeddingProvider.IsConfigured && !disabledBuiltIn.Contains("memory"))
         {
             var memorySvc = _serviceProvider.GetRequiredService<IMemoryStoreService>();
-            newKernel.Plugins.AddFromObject(new MemoryPlugin(memorySvc, _loggerFactory.CreateLogger<MemoryPlugin>()), "Memory");
+            newKernel.Plugins.AddFromObject(new MemoryPlugin(memorySvc, sessionManager, _loggerFactory.CreateLogger<MemoryPlugin>()), "Memory");
         }
 
         if (!disabledBuiltIn.Contains("crossagenttask"))

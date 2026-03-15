@@ -63,24 +63,34 @@ public sealed class InMemoryVectorStore : IVectorStore
         return Task.FromResult<(string, string?, DateTime, IReadOnlyDictionary<string, string>?)?>((item.Text, item.SessionId, item.CreatedAt, item.Metadata));
     }
 
-    public Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, string? agentNameFilter = null, CancellationToken ct = default)
     {
         var query = _items.Values.AsEnumerable();
         if (!string.IsNullOrEmpty(sessionIdFilter))
             query = query.Where(x => string.Equals(x.SessionId, sessionIdFilter, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrEmpty(collectionFilter))
             query = query.Where(x => string.Equals(x.Collection, collectionFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(agentNameFilter))
+        {
+            var name = agentNameFilter.Trim();
+            query = query.Where(x => x.Metadata != null && x.Metadata.TryGetValue("agentName", out var an) && string.Equals(an, name, StringComparison.OrdinalIgnoreCase));
+        }
         var list = query
             .OrderByDescending(x => x.CreatedAt)
             .Skip(skip)
             .Take(take)
-            .Select(x => new MemoryRecord
+            .Select(x =>
             {
-                Id = x.Id,
-                Text = x.Text,
-                SessionId = x.SessionId,
-                CreatedAt = x.CreatedAt,
-                Metadata = x.Metadata
+                var agentName = x.Metadata != null && x.Metadata.TryGetValue("agentName", out var an) ? an : null;
+                return new MemoryRecord
+                {
+                    Id = x.Id,
+                    Text = x.Text,
+                    SessionId = x.SessionId,
+                    AgentName = agentName,
+                    CreatedAt = x.CreatedAt,
+                    Metadata = x.Metadata
+                };
             })
             .ToList();
         return Task.FromResult<IReadOnlyList<MemoryRecord>>(list);

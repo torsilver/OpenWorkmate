@@ -160,12 +160,13 @@ public sealed class SqliteVectorStore : IVectorStore
         return (text, sessionId, at, meta);
     }
 
-    public async Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, string? agentNameFilter = null, CancellationToken ct = default)
     {
         EnsureSchema();
         var sql = "SELECT id, text, session_id, created_at, metadata FROM vectors WHERE 1=1";
         if (!string.IsNullOrEmpty(sessionIdFilter)) sql += " AND session_id = $sid";
         if (!string.IsNullOrEmpty(collectionFilter)) sql += " AND collection = $coll";
+        if (!string.IsNullOrEmpty(agentNameFilter)) sql += " AND json_extract(metadata, '$.agentName') = $agentName";
         sql += " ORDER BY created_at DESC LIMIT $take OFFSET $skip";
         var results = new List<MemoryRecord>();
         using (var conn = new SqliteConnection(_connectionString))
@@ -175,19 +176,25 @@ public sealed class SqliteVectorStore : IVectorStore
             cmd.CommandText = sql;
             if (!string.IsNullOrEmpty(sessionIdFilter)) cmd.Parameters.AddWithValue("$sid", sessionIdFilter);
             if (!string.IsNullOrEmpty(collectionFilter)) cmd.Parameters.AddWithValue("$coll", collectionFilter);
+            if (!string.IsNullOrEmpty(agentNameFilter)) cmd.Parameters.AddWithValue("$agentName", agentNameFilter.Trim());
             cmd.Parameters.AddWithValue("$take", take);
             cmd.Parameters.AddWithValue("$skip", skip);
             using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await r.ReadAsync(ct).ConfigureAwait(false))
             {
                 IReadOnlyDictionary<string, string>? meta = null;
+                string? agentName = null;
                 if (!r.IsDBNull(4))
+                {
                     meta = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(4));
+                    if (meta != null && meta.TryGetValue("agentName", out var an)) agentName = an;
+                }
                 results.Add(new MemoryRecord
                 {
                     Id = r.GetString(0),
                     Text = r.GetString(1),
                     SessionId = r.IsDBNull(2) ? null : r.GetString(2),
+                    AgentName = agentName,
                     CreatedAt = DateTimeOffset.FromUnixTimeSeconds(r.GetInt64(3)).UtcDateTime,
                     Metadata = meta
                 });

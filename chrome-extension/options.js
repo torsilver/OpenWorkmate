@@ -3,8 +3,6 @@ const SKILLS_API_URL = "http://localhost:8765/api/skills";
 const BUILTIN_TOOLS_URL = "http://localhost:8765/api/tools/builtin";
 
 const els = {
-  allowedPageScriptIds: document.getElementById('allowedPageScriptIds'),
-  saveBtn: document.getElementById('saveBtn'),
   statusMessage: document.getElementById('statusMessage'),
   aiModelsList: document.getElementById('aiModelsList'),
   addAiModelBtn: document.getElementById('addAiModelBtn'),
@@ -102,12 +100,16 @@ function renderAiModelsList() {
       '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + ' <span style="color:var(--text-secondary);font-weight:400;">(' + escapeHtml(provider) + ')</span>' + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
       '<div class="mcp-desc">' + escapeHtml(m.modelId || m.ModelId || '') + '</div></div>' +
       '<div class="mcp-actions">' + enableBtn +
+      '<button type="button" class="btn-secondary test-ai-btn" data-id="' + escapeAttr(id) + '">测试</button>' +
       '<button type="button" class="btn-secondary edit-ai-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
       '<button type="button" class="btn-danger delete-ai-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
-      '</div></div>';
+      '<span class="ai-row-test-status help-text" style="margin-left:8px;"></span></div></div>';
   }).join('');
   els.aiModelsList.querySelectorAll('.enable-ai-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { setActiveAiModel(btn.dataset.id); });
+  });
+  els.aiModelsList.querySelectorAll('.test-ai-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { testAiConnectionById(btn.dataset.id); });
   });
   els.aiModelsList.querySelectorAll('.edit-ai-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { openAiModelEditor(btn.dataset.id); });
@@ -129,25 +131,153 @@ function normalizePath(p) {
   return (p || '').replace(/\\/g, '/').toLowerCase();
 }
 
-function toggleEmbeddingSections() {
-  var srcEl = document.getElementById('embeddingSource');
-  var src = srcEl ? srcEl.value : '';
-  var remoteSec = document.getElementById('embeddingRemoteSection');
-  if (remoteSec) remoteSec.style.display = (src === 'Remote') ? 'block' : 'none';
+function getEmbeddingModels() {
+  var raw = fullConfig && (fullConfig.embeddingModels || fullConfig.EmbeddingModels);
+  return Array.isArray(raw) ? raw : [];
+}
+
+function renderEmbeddingModelsList() {
+  var listEl = document.getElementById('embeddingModelsList');
+  if (!listEl) return;
+  var list = getEmbeddingModels();
+  var activeId = (fullConfig && (fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) || '';
+  listEl.innerHTML = list.map(function (m) {
+    var id = m.id || m.Id || '';
+    var name = m.displayName || m.DisplayName || id || '(未命名)';
+    var modelId = m.modelId || m.ModelId || '';
+    var isActive = (activeId && id && activeId === id);
+    var setActiveBtn = isActive ? '' : ('<button type="button" class="btn-secondary set-active-emb-btn" data-id="' + escapeAttr(id) + '">设为当前</button>');
+    return '<div class="mcp-server-row" data-emb-id="' + escapeAttr(id) + '">' +
+      '<div class="mcp-icon">E</div>' +
+      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml(modelId || '') + '</div></div>' +
+      '<div class="mcp-actions">' + setActiveBtn +
+      '<button type="button" class="btn-secondary test-emb-btn" data-id="' + escapeAttr(id) + '">测试</button>' +
+      '<button type="button" class="btn-secondary edit-emb-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
+      '<button type="button" class="btn-danger delete-emb-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
+      '<span class="emb-row-test-status help-text" style="margin-left:8px;"></span></div></div>';
+  }).join('');
+  listEl.querySelectorAll('.set-active-emb-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { setActiveEmbeddingModel(btn.dataset.id); });
+  });
+  listEl.querySelectorAll('.test-emb-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { testEmbeddingById(btn.dataset.id); });
+  });
+  listEl.querySelectorAll('.edit-emb-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openEmbeddingEditor(btn.dataset.id); });
+  });
+  listEl.querySelectorAll('.delete-emb-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { deleteEmbeddingModel(btn.dataset.id); });
+  });
+  updateEmbeddingModelSummary();
 }
 
 function updateEmbeddingModelSummary() {
   var sum = document.getElementById('embeddingModelSummary');
   if (!sum) return;
-  var srcEl = document.getElementById('embeddingSource');
-  var src = (srcEl && srcEl.value) || (fullConfig && (fullConfig.embeddingSource ?? fullConfig.EmbeddingSource)) || '';
-  var modelId = (document.getElementById('embeddingModelId') && document.getElementById('embeddingModelId').value) || (fullConfig && (fullConfig.embeddingModelId ?? fullConfig.EmbeddingModelId)) || '';
-  var endpoint = (document.getElementById('embeddingEndpoint') && document.getElementById('embeddingEndpoint').value) || (fullConfig && (fullConfig.embeddingEndpoint ?? fullConfig.EmbeddingEndpoint)) || '';
-  if (src === 'Remote' && (modelId || endpoint)) {
-    sum.textContent = 'Embedding 模型（当前：远程 ' + (modelId || endpoint) + '）';
+  var list = getEmbeddingModels();
+  var activeId = (fullConfig && (fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) || '';
+  var active = list.find(function (m) { return (m.id || m.Id) === activeId; });
+  if (active) {
+    var name = active.displayName || active.DisplayName || active.modelId || active.ModelId || activeId;
+    sum.textContent = 'Embedding 模型（当前：' + name + '）';
   } else {
     sum.textContent = 'Embedding 模型（未配置）';
   }
+}
+
+var editingEmbeddingId = null;
+
+function openEmbeddingEditor(id) {
+  editingEmbeddingId = id || null;
+  var titleEl = document.getElementById('embeddingModelEditorTitle');
+  var editorEl = document.getElementById('embeddingModelEditor');
+  if (titleEl) titleEl.textContent = id ? '编辑 Embedding 模型' : '添加 Embedding 模型';
+  var list = getEmbeddingModels();
+  var entry = id ? list.find(function (m) { return (m.id || m.Id) === id; }) : null;
+  var dispEl = document.getElementById('embeddingEditorDisplayName');
+  var endEl = document.getElementById('embeddingEditorEndpoint');
+  var keyEl = document.getElementById('embeddingEditorApiKey');
+  var modelEl = document.getElementById('embeddingEditorModelId');
+  if (dispEl) dispEl.value = entry ? (entry.displayName || entry.DisplayName || '') : '';
+  if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
+  if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
+  if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || '') : '';
+  var statusEl = document.getElementById('testEmbeddingStatus');
+  if (statusEl) statusEl.textContent = '';
+  if (editorEl) editorEl.style.display = 'block';
+}
+
+function closeEmbeddingEditor() {
+  editingEmbeddingId = null;
+  var editorEl = document.getElementById('embeddingModelEditor');
+  if (editorEl) editorEl.style.display = 'none';
+}
+
+function saveEmbeddingFromEditor() {
+  var dispEl = document.getElementById('embeddingEditorDisplayName');
+  var endEl = document.getElementById('embeddingEditorEndpoint');
+  var keyEl = document.getElementById('embeddingEditorApiKey');
+  var modelEl = document.getElementById('embeddingEditorModelId');
+  var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || '';
+  if (!modelId) {
+    alert('请填写模型 ID');
+    return;
+  }
+  var list = getEmbeddingModels();
+  var id = editingEmbeddingId || ('emb-' + Date.now());
+  var entry = { id: id, displayName: displayName || modelId, source: 'Remote', endpoint: endpoint, apiKey: apiKey, modelId: modelId };
+  var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingEmbeddingId; });
+  if (idx >= 0) list[idx] = entry;
+  else list.push(entry);
+  if (!fullConfig) fullConfig = {};
+  fullConfig.embeddingModels = fullConfig.EmbeddingModels = list;
+  if (list.length === 1 && !(fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) {
+    fullConfig.activeEmbeddingModelId = fullConfig.ActiveEmbeddingModelId = id;
+  }
+  closeEmbeddingEditor();
+  renderEmbeddingModelsList();
+  saveConfig();
+}
+
+function setActiveEmbeddingModel(id) {
+  if (!id || !fullConfig) return;
+  fullConfig.activeEmbeddingModelId = fullConfig.ActiveEmbeddingModelId = id;
+  renderEmbeddingModelsList();
+  saveConfig();
+}
+
+function deleteEmbeddingModel(id) {
+  if (!id || !fullConfig) return;
+  var list = getEmbeddingModels().filter(function (m) { return (m.id || m.Id) !== id; });
+  fullConfig.embeddingModels = fullConfig.EmbeddingModels = list;
+  if ((fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId) === id) {
+    fullConfig.activeEmbeddingModelId = fullConfig.ActiveEmbeddingModelId = list.length ? (list[0].id || list[0].Id) : '';
+  }
+  if (editingEmbeddingId === id) closeEmbeddingEditor();
+  renderEmbeddingModelsList();
+  saveConfig();
+}
+
+function testEmbeddingById(id) {
+  var list = getEmbeddingModels();
+  var entry = list.find(function (m) { return (m.id || m.Id) === id; });
+  if (!entry) return;
+  var endpoint = (entry.endpoint || entry.Endpoint || '').trim();
+  var apiKey = (entry.apiKey || entry.ApiKey || '') || '';
+  var modelId = (entry.modelId || entry.ModelId || '').trim();
+  var listEl = document.getElementById('embeddingModelsList');
+  var statusEl = null;
+  if (listEl) {
+    listEl.querySelectorAll('.mcp-server-row').forEach(function (row) {
+      if (row.getAttribute('data-emb-id') === id) statusEl = row.querySelector('.emb-row-test-status');
+    });
+  }
+  if (statusEl) statusEl.textContent = '';
+  doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl || undefined);
 }
 
 var MEMORY_SCOPE_SHARED = '__shared__';
@@ -156,25 +286,34 @@ function loadMemoryList() {
   var scopeEl = document.getElementById('memoryScopeFilter');
   var scope = (scopeEl && scopeEl.value) || 'all';
   var sessionId = (document.getElementById('memorySessionFilter') && document.getElementById('memorySessionFilter').value.trim()) || undefined;
+  var agentName = (document.getElementById('memoryAgentFilter') && document.getElementById('memoryAgentFilter').value.trim()) || undefined;
   if (scope === 'session' && !sessionId) sessionId = '';
   var baseUrl = API_URL.replace('/api/config', '');
-  var url = baseUrl + '/api/memory?skip=0&take=50&scope=' + encodeURIComponent(scope);
+  var urlScope = scope === 'agent' ? 'all' : scope;
+  var url = baseUrl + '/api/memory?skip=0&take=50&scope=' + encodeURIComponent(urlScope);
   if (scope === 'session' && sessionId !== undefined) url += '&sessionId=' + encodeURIComponent(sessionId);
-  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
-    var list = data.items || [];
+  if (scope === 'agent' && agentName) url += '&agentName=' + encodeURIComponent(agentName);
+  fetch(url).then(async function (r) {
+    var data = await r.json().catch(function () { return {}; });
+    if (!r.ok) {
+      var el = document.getElementById('memoryList');
+      if (el) el.innerHTML = '<p class="help-text">' + escapeHtml((data && data.message) || ('请求失败 ' + r.status)) + '</p>';
+      return;
+    }
+    var list = (data && data.items) || [];
     var html = list.length ? list.map(function (item) {
       var text = (item.text || '').substring(0, 120);
       if ((item.text || '').length > 120) text += '…';
       var createdAt = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
       var isShared = item.sessionId === MEMORY_SCOPE_SHARED;
       var scopeLabel = isShared ? ' <span class="help-text" style="color:var(--accent);">共享</span>' : '';
-      var sessionLabel = (item.sessionId && !isShared) ? '会话: ' + escapeHtml(item.sessionId) + ' | ' : '';
+      var agentLabel = (!isShared && (item.agentName || item.sessionId)) ? 'Agent: ' + escapeHtml(item.agentName || item.sessionId) + ' | ' : '';
       return '<div class="skill-card" data-memory-id="' + escapeAttr(item.id) + '">' +
         '<div class="skill-header"><span class="skill-title">' + escapeHtml(item.id) + '</span>' + scopeLabel +
         '<div><button type="button" class="btn-secondary edit-memory-btn" data-id="' + escapeAttr(item.id) + '">编辑</button> ' +
         '<button type="button" class="btn-danger delete-memory-btn" data-id="' + escapeAttr(item.id) + '">删除</button></div></div>' +
         '<div class="skill-desc">' + escapeHtml(text) + '</div>' +
-        '<div class="help-text">' + sessionLabel + createdAt + '</div></div>';
+        '<div class="help-text">' + agentLabel + createdAt + '</div></div>';
     }).join('') : '<p class="help-text">暂无记忆，或未配置 Embedding 模型。</p>';
     var el = document.getElementById('memoryList');
     if (el) el.innerHTML = html;
@@ -201,12 +340,20 @@ function openMemoryEditor(id) {
     if (title) title.textContent = '编辑记忆';
     if (editId) editId.value = id;
     var baseUrl = API_URL.replace('/api/config', '');
-    fetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (item) {
+    fetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(async function (r) {
+      var data = await r.json().catch(function () { return {}; });
+      if (!r.ok) {
+        alert('加载失败：' + (data && data.message ? data.message : r.status));
+        return;
+      }
+      var item = data;
       textEl.value = item.text || '';
       tagsEl.value = (item.metadata && item.metadata.tags) ? item.metadata.tags : '';
       var scopeCb = document.getElementById('memoryEditScopeShared');
       if (scopeCb) scopeCb.checked = item.sessionId === MEMORY_SCOPE_SHARED;
       editor.style.display = 'block';
+    }).catch(function (e) {
+      alert('加载失败：' + (e && e.message ? e.message : String(e)));
     });
   } else {
     if (title) title.textContent = '新增记忆';
@@ -240,7 +387,7 @@ function saveMemoryFromEditor() {
     ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared })
     : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared });
   fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
-    if (!r.ok) throw new Error('保存失败');
+    if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '保存失败'); });
     closeMemoryEditor();
     loadMemoryList();
   }).catch(function (e) { alert('保存失败: ' + (e.message || e)); });
@@ -250,35 +397,87 @@ function deleteMemory(id) {
   if (!id || !confirm('确定删除这条记忆？')) return;
   var baseUrl = API_URL.replace('/api/config', '');
   fetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
-    if (!r.ok) throw new Error('删除失败');
+    if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '删除失败'); });
     loadMemoryList();
   }).catch(function (e) { alert('删除失败: ' + (e.message || e)); });
 }
 
-var embeddingSourceEl = document.getElementById('embeddingSource');
-if (embeddingSourceEl) embeddingSourceEl.addEventListener('change', function () {
-  toggleEmbeddingSections();
-  updateEmbeddingModelSummary();
-});
+
+function testEmbeddingConnection() {
+  var endEl = document.getElementById('embeddingEditorEndpoint');
+  var keyEl = document.getElementById('embeddingEditorApiKey');
+  var modelEl = document.getElementById('embeddingEditorModelId');
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || '';
+  doTestEmbeddingConnection(endpoint, apiKey, modelId);
+}
+
+async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl) {
+  statusEl = statusEl || document.getElementById('testEmbeddingStatus');
+  if (!statusEl) return;
+  if (!endpoint || !modelId) {
+    statusEl.textContent = '请先填写接口地址和模型 ID';
+    statusEl.style.color = 'var(--danger, #ef4444)';
+    return;
+  }
+  statusEl.textContent = '测试中…';
+  statusEl.style.color = 'var(--text-secondary, #94a3b8)';
+  try {
+    var baseUrl = API_URL.replace('/api/config', '');
+    var res = await fetch(baseUrl + '/api/config/test-embedding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey, modelId: modelId })
+    });
+    var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
+    if (res.ok && data.ok) {
+      statusEl.textContent = '连接成功';
+      statusEl.style.color = 'var(--success, #22c55e)';
+    } else {
+      statusEl.textContent = data.message || '测试失败';
+      statusEl.style.color = 'var(--danger, #ef4444)';
+    }
+  } catch (e) {
+    statusEl.textContent = '请求失败: ' + (e.message || e);
+    statusEl.style.color = 'var(--danger, #ef4444)';
+  }
+}
+if (document.getElementById('testEmbeddingBtn')) document.getElementById('testEmbeddingBtn').addEventListener('click', testEmbeddingConnection);
+if (document.getElementById('addEmbeddingModelBtn')) document.getElementById('addEmbeddingModelBtn').addEventListener('click', function () { openEmbeddingEditor(null); });
+if (document.getElementById('closeEmbeddingEditorBtn')) document.getElementById('closeEmbeddingEditorBtn').addEventListener('click', closeEmbeddingEditor);
+if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('saveEmbeddingModelBtn').addEventListener('click', saveEmbeddingFromEditor);
 
 var ragStorageTypeEl = document.getElementById('ragStorageType');
-if (ragStorageTypeEl) ragStorageTypeEl.addEventListener('change', function () {
-  var g = document.getElementById('ragStoragePathGroup');
-  if (g) g.style.display = (this.value === 'Sqlite') ? 'block' : 'none';
-});
+if (ragStorageTypeEl) {
+  ragStorageTypeEl.addEventListener('change', function () {
+    var g = document.getElementById('ragStoragePathGroup');
+    if (g) g.style.display = (this.value === 'Sqlite') ? 'block' : 'none';
+    saveConfig();
+  });
+}
+var ragStoragePathEl = document.getElementById('ragStoragePath');
+if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveConfig);
+
+var runEverythingModeEl = document.getElementById('runEverythingMode');
+if (runEverythingModeEl) runEverythingModeEl.addEventListener('change', saveConfig);
 
 if (document.getElementById('addMemoryBtn')) document.getElementById('addMemoryBtn').addEventListener('click', function () { openMemoryEditor(null); });
 if (document.getElementById('refreshMemoryListBtn')) document.getElementById('refreshMemoryListBtn').addEventListener('click', loadMemoryList);
+if (document.getElementById('refreshPlansListBtn')) document.getElementById('refreshPlansListBtn').addEventListener('click', loadPlansList);
 if (document.getElementById('saveMemoryBtn')) document.getElementById('saveMemoryBtn').addEventListener('click', saveMemoryFromEditor);
 if (document.getElementById('cancelMemoryEditBtn')) document.getElementById('cancelMemoryEditBtn').addEventListener('click', closeMemoryEditor);
 var memoryScopeFilterEl = document.getElementById('memoryScopeFilter');
 var memorySessionFilterEl = document.getElementById('memorySessionFilter');
-if (memoryScopeFilterEl && memorySessionFilterEl) {
-  function toggleMemorySessionFilter() {
-    memorySessionFilterEl.style.display = (memoryScopeFilterEl.value === 'session') ? 'inline-block' : 'none';
+var memoryAgentFilterEl = document.getElementById('memoryAgentFilter');
+if (memoryScopeFilterEl) {
+  function toggleMemoryFilters() {
+    var scope = memoryScopeFilterEl.value;
+    if (memorySessionFilterEl) memorySessionFilterEl.style.display = (scope === 'session') ? 'inline-block' : 'none';
+    if (memoryAgentFilterEl) memoryAgentFilterEl.style.display = (scope === 'agent') ? 'inline-block' : 'none';
   }
-  memoryScopeFilterEl.addEventListener('change', toggleMemorySessionFilter);
-  toggleMemorySessionFilter();
+  memoryScopeFilterEl.addEventListener('change', toggleMemoryFilters);
+  toggleMemoryFilters();
 }
 
 function openAiModelEditor(existingId) {
@@ -394,6 +593,7 @@ function saveAiModelFromEditor() {
   }
   closeAiModelEditor();
   renderAiModelsList();
+  saveConfig();
 }
 
 function deleteAiModel(id) {
@@ -407,6 +607,7 @@ function deleteAiModel(id) {
     fullConfig.ActiveModelId = fullConfig.activeModelId;
   }
   renderAiModelsList();
+  saveConfig();
 }
 
 async function loadSkillEnvSection() {
@@ -439,6 +640,11 @@ async function loadSkillEnvSection() {
     const id = 'skillEnv_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
     return '<div class="form-group" style="margin-bottom:12px;"><label for="' + escapeAttr(id) + '">' + escapeHtml(key) + '</label><input type="password" id="' + escapeAttr(id) + '" placeholder="可选，也可用系统环境变量" value="' + escapeAttr(String(val)) + '"></div>';
   }).join('');
+  skillEnvKeys.forEach(function (key) {
+    const id = 'skillEnv_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
+    const inputEl = document.getElementById(id);
+    if (inputEl) inputEl.addEventListener('input', debouncedSaveConfig);
+  });
 }
 
 function escapeAttr(s) {
@@ -465,11 +671,22 @@ function collectSkillEnv() {
   return out;
 }
 
-function setSaveConfigButtonsState(disabled, text) {
-  document.querySelectorAll('.save-config-btn').forEach(function (btn) {
-    btn.disabled = disabled;
-    btn.textContent = text;
+function setSaveConfigButtonsState(showBusy, text) {
+  document.querySelectorAll('.save-config-status').forEach(function (el) {
+    el.textContent = text || '已自动保存';
+    el.style.opacity = text ? '1' : '0';
   });
+}
+
+var saveConfigDebounceTimer = null;
+var SAVE_DEBOUNCE_MS = 600;
+
+function debouncedSaveConfig() {
+  if (saveConfigDebounceTimer) clearTimeout(saveConfigDebounceTimer);
+  saveConfigDebounceTimer = setTimeout(function () {
+    saveConfigDebounceTimer = null;
+    saveConfig();
+  }, SAVE_DEBOUNCE_MS);
 }
 
 async function loadConfig() {
@@ -477,14 +694,17 @@ async function loadConfig() {
     setSaveConfigButtonsState(true, '加载中...');
     
     const response = await fetch(API_URL);
-    if (!response.ok) throw new Error('Failed to load');
-    
+    if (!response.ok) {
+      var errData = await response.json().catch(function () { return {}; });
+      throw new Error(errData.message || '加载配置失败');
+    }
     fullConfig = await response.json();
     const data = fullConfig;
     renderAiModelsList();
     const ids = data.allowedPageScriptIds ?? data.AllowedPageScriptIds;
-    if (els.allowedPageScriptIds) {
-      els.allowedPageScriptIds.value = Array.isArray(ids) ? ids.join('\n') : '';
+    var scriptIdsEl = document.getElementById('allowedPageScriptIds');
+    if (scriptIdsEl) {
+      scriptIdsEl.value = Array.isArray(ids) ? ids.join('\n') : '';
     }
     const runEverythingEl = document.getElementById('runEverythingMode');
     if (runEverythingEl) {
@@ -494,20 +714,7 @@ async function loadConfig() {
     renderMcpList(mcps || []);
     await loadSkillEnvSection();
     await loadBuiltinTools();
-    var embSrc = (data.embeddingSource ?? data.EmbeddingSource) || '';
-    var embEndpoint = (data.embeddingEndpoint ?? data.EmbeddingEndpoint) || '';
-    var embApiKey = (data.embeddingApiKey ?? data.EmbeddingApiKey) || '';
-    var embModelId = (data.embeddingModelId ?? data.EmbeddingModelId) || '';
-    var embSourceEl = document.getElementById('embeddingSource');
-    var embEndpointEl = document.getElementById('embeddingEndpoint');
-    var embApiKeyEl = document.getElementById('embeddingApiKey');
-    var embModelIdEl = document.getElementById('embeddingModelId');
-    if (embSourceEl) embSourceEl.value = embSrc || '';
-    if (embEndpointEl) embEndpointEl.value = embEndpoint || '';
-    if (embApiKeyEl) embApiKeyEl.value = embApiKey || '';
-    if (embModelIdEl) embModelIdEl.value = embModelId || '';
-    toggleEmbeddingSections();
-    updateEmbeddingModelSummary();
+    renderEmbeddingModelsList();
     var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Memory';
     var ragPath = data.ragStoragePath ?? data.RagStoragePath ?? '';
     var rtEl = document.getElementById('ragStorageType');
@@ -544,17 +751,22 @@ async function loadConfig() {
     }
   } catch (err) {
     console.error(err);
-    alert('无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
+    var msg = err && err.message;
+    if (msg === 'Failed to fetch' || (err && err.name === 'TypeError' && msg && msg.indexOf('fetch') !== -1)) {
+      msg = '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe';
+    }
+    alert(msg || '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
   } finally {
-    setSaveConfigButtonsState(false, '保存配置');
+    setSaveConfigButtonsState(false, '');
   }
 }
 
 async function saveConfig() {
   try {
-    setSaveConfigButtonsState(true, '保存中...');
-    const allowedPageScriptIds = (els.allowedPageScriptIds && els.allowedPageScriptIds.value)
-      ? els.allowedPageScriptIds.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
+    setSaveConfigButtonsState(true, '保存中…');
+    var scriptIdsEl = document.getElementById('allowedPageScriptIds');
+    const allowedPageScriptIds = (scriptIdsEl && scriptIdsEl.value)
+      ? scriptIdsEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
       : [];
     var allowedCliCommands = [];
     var cliTa = document.getElementById('allowedCliCommands');
@@ -577,14 +789,8 @@ async function saveConfig() {
       };
     }
     var aiPayload = legacyAi || fullConfig.ai || fullConfig.AI || {};
-    var embSourceEl = document.getElementById('embeddingSource');
-    var embEndpointEl = document.getElementById('embeddingEndpoint');
-    var embApiKeyEl = document.getElementById('embeddingApiKey');
-    var embModelIdEl = document.getElementById('embeddingModelId');
-    var embSrc = embSourceEl ? embSourceEl.value : ((fullConfig && (fullConfig.embeddingSource ?? fullConfig.EmbeddingSource)) || '');
-    var embEndpoint = embEndpointEl ? embEndpointEl.value.trim() : ((fullConfig && (fullConfig.embeddingEndpoint ?? fullConfig.EmbeddingEndpoint)) || '');
-    var embApiKey = embApiKeyEl ? embApiKeyEl.value : ((fullConfig && (fullConfig.embeddingApiKey ?? fullConfig.EmbeddingApiKey)) || '');
-    var embModelId = embModelIdEl ? embModelIdEl.value.trim() : ((fullConfig && (fullConfig.embeddingModelId ?? fullConfig.EmbeddingModelId)) || '');
+    var embeddingModelsToSave = getEmbeddingModels();
+    var activeEmbeddingModelId = (fullConfig && (fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) || '';
     var ragTypeEl = document.getElementById('ragStorageType');
     var ragPathEl = document.getElementById('ragStoragePath');
     var ragType = ragTypeEl ? ragTypeEl.value : 'Memory';
@@ -617,10 +823,8 @@ async function saveConfig() {
       allowedCliCommands: allowedCliCommands,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       runEverythingMode: runEverythingMode,
-      embeddingSource: embSrc || undefined,
-      embeddingEndpoint: (embSrc === 'Remote') ? (embEndpoint || undefined) : undefined,
-      embeddingApiKey: (embSrc === 'Remote') ? (embApiKey || undefined) : undefined,
-      embeddingModelId: (embSrc === 'Remote' && embModelId) ? embModelId : undefined,
+      embeddingModels: embeddingModelsToSave,
+      activeEmbeddingModelId: activeEmbeddingModelId || undefined,
       ragStorageType: ragType,
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
       planConfirmation: planConfirmationPayload,
@@ -632,9 +836,13 @@ async function saveConfig() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!response.ok) throw new Error('Failed to save');
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingSource: payload.embeddingSource, embeddingEndpoint: payload.embeddingEndpoint, embeddingApiKey: payload.embeddingApiKey, embeddingModelId: payload.embeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
+    if (!response.ok) {
+      var data = await response.json().catch(function () { return {}; });
+      throw new Error(data.message || '保存配置失败');
+    }
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
+      el.textContent = '已自动保存';
       el.style.opacity = '1';
     });
     setTimeout(function () {
@@ -645,15 +853,15 @@ async function saveConfig() {
     await loadConfig();
   } catch (err) {
     console.error(err);
-    alert('保存失败，请检查服务状态。');
+    var saveErrMsg = err && err.message;
+    if (saveErrMsg === 'Failed to fetch' || (err && err.name === 'TypeError' && saveErrMsg && saveErrMsg.indexOf('fetch') !== -1)) {
+      saveErrMsg = '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe';
+    }
+    alert(saveErrMsg || '保存失败，请检查服务状态。');
   } finally {
-    setSaveConfigButtonsState(false, '保存配置');
+    setSaveConfigButtonsState(false, '');
   }
 }
-
-document.querySelectorAll('.save-config-btn').forEach(function (btn) {
-  btn.addEventListener('click', saveConfig);
-});
 
 var newContextPresetBtn = document.getElementById('newContextPresetBtn');
 if (newContextPresetBtn) {
@@ -688,20 +896,48 @@ if (newContextPresetBtn) {
   });
 }
 
+var activeContextPresetEl = document.getElementById('activeContextPreset');
+if (activeContextPresetEl) activeContextPresetEl.addEventListener('change', saveConfig);
+var autoExecuteMaxStepsEl = document.getElementById('autoExecuteMaxSteps');
+if (autoExecuteMaxStepsEl) autoExecuteMaxStepsEl.addEventListener('input', debouncedSaveConfig);
+var requireConfirmForSensitiveToolsEl = document.getElementById('requireConfirmForSensitiveTools');
+if (requireConfirmForSensitiveToolsEl) requireConfirmForSensitiveToolsEl.addEventListener('change', saveConfig);
+var sensitiveToolIdsEl = document.getElementById('sensitiveToolIds');
+if (sensitiveToolIdsEl) sensitiveToolIdsEl.addEventListener('input', debouncedSaveConfig);
+
 if (els.addAiModelBtn) els.addAiModelBtn.addEventListener('click', function () { openAiModelEditor(null); });
 if (els.closeAiModelEditorBtn) els.closeAiModelEditorBtn.addEventListener('click', closeAiModelEditor);
 if (els.saveAiModelBtn) els.saveAiModelBtn.addEventListener('click', saveAiModelFromEditor);
 if (els.aiModelProvider) els.aiModelProvider.addEventListener('change', toggleAzureFields);
 if (els.testAiConnectionBtn) els.testAiConnectionBtn.addEventListener('click', testAiConnection);
 
-async function testAiConnection() {
-  var statusEl = document.getElementById('testAiStatus');
+function testAiConnectionById(id) {
+  var m = aiModelsCache.find(function (x) { return (x.id || x.Id) === id; });
+  if (!m) return;
+  var endpoint = (m.endpoint || m.Endpoint || '').trim();
+  var modelId = (m.modelId || m.ModelId || '').trim();
+  var provider = m.provider || m.Provider || 'OpenAI';
+  var deploymentName = (m.deploymentName || m.DeploymentName || '').trim();
+  var apiKey = m.apiKey || m.ApiKey || '';
+  var listEl = document.getElementById('aiModelsList');
+  var statusEl = null;
+  if (listEl) {
+    listEl.querySelectorAll('.mcp-server-row').forEach(function (row) {
+      if (row.getAttribute('data-ai-id') === id) statusEl = row.querySelector('.ai-row-test-status');
+    });
+  }
+  if (statusEl) statusEl.textContent = '';
+  doTestAiConnection({ endpoint: endpoint, modelId: modelId, provider: provider, deploymentName: deploymentName, apiKey: apiKey }, statusEl || undefined);
+}
+
+async function doTestAiConnection(fields, statusEl) {
+  statusEl = statusEl || document.getElementById('testAiStatus');
   if (!statusEl) return;
-  var endpoint = testConnectionFields.endpoint || '';
-  var modelId = testConnectionFields.modelId || '';
-  var provider = testConnectionFields.provider || 'OpenAI';
-  var deploymentName = testConnectionFields.deploymentName || '';
-  var apiKey = testConnectionFields.apiKey || '';
+  var endpoint = (fields && fields.endpoint) || '';
+  var modelId = (fields && fields.modelId) || '';
+  var provider = (fields && fields.provider) || 'OpenAI';
+  var deploymentName = (fields && fields.deploymentName) || '';
+  var apiKey = (fields && fields.apiKey) || '';
   if (!endpoint || !modelId) {
     statusEl.textContent = '请先填写接口地址和模型 ID';
     statusEl.style.color = 'var(--danger)';
@@ -709,10 +945,10 @@ async function testAiConnection() {
   }
   statusEl.textContent = '测试中…';
   statusEl.style.color = 'var(--text-secondary)';
-  const testModelId = (provider === 'Azure' && deploymentName) ? deploymentName : modelId;
+  var testModelId = (provider === 'Azure' && deploymentName) ? deploymentName : modelId;
   try {
-    const baseUrl = API_URL.replace('/api/config', '');
-    const res = await fetch(baseUrl + '/api/config/test-ai', {
+    var baseUrl = API_URL.replace('/api/config', '');
+    var res = await fetch(baseUrl + '/api/config/test-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -723,7 +959,7 @@ async function testAiConnection() {
         deploymentName: deploymentName
       })
     });
-    const data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
+    var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (data.ok) {
       statusEl.textContent = '连接成功';
       statusEl.style.color = 'var(--success)';
@@ -735,6 +971,10 @@ async function testAiConnection() {
     statusEl.textContent = '请求失败: ' + (err.message || '请确保后端已启动');
     statusEl.style.color = 'var(--danger)';
   }
+}
+
+async function testAiConnection() {
+  doTestAiConnection(testConnectionFields, document.getElementById('testAiStatus'));
 }
 
 // ───── Skills ─────
@@ -837,8 +1077,12 @@ window.deleteSkill = async (id) => {
   try {
     const res = await fetch(`${SKILLS_API_URL}/${id}`, { method: 'DELETE' });
     if (res.ok) await loadSkills();
+    else {
+      var data = await res.json().catch(function () { return {}; });
+      alert(data.message || '删除失败');
+    }
   } catch (err) {
-    alert('删除失败');
+    alert(err.message || '删除失败');
   }
 };
 
@@ -887,9 +1131,12 @@ els.saveSkillBtn.addEventListener('click', async () => {
       els.skillsList.style.display = 'block';
       els.newSkillBtn.style.display = 'block';
       await loadSkills();
+    } else {
+      var data = await res.json().catch(function () { return {}; });
+      alert(data.message || '保存失败');
     }
   } catch (err) {
-    alert('保存失败');
+    alert(err.message || '保存失败');
   } finally {
     els.saveSkillBtn.disabled = false;
   }
@@ -913,9 +1160,12 @@ window.toggleSkillEnabled = async function (id) {
       body: JSON.stringify(payload)
     });
     if (res.ok) await loadSkills();
-    else alert('操作失败');
+    else {
+      var data = await res.json().catch(function () { return {}; });
+      alert(data.message || '操作失败');
+    }
   } catch (err) {
-    alert('操作失败');
+    alert(err.message || '操作失败');
   }
 };
 
@@ -931,45 +1181,6 @@ function escapeHtml(unsafe) {
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
   loadConfig();
-  var mcpTab = document.getElementById('tab-mcp');
-  if (mcpTab) {
-    mcpTab.addEventListener('click', function (e) {
-      if (e.target.closest('.save-scripts-btn')) {
-        var ta = document.getElementById('allowedPageScriptIds');
-        if (!ta || !fullConfig) return;
-        var ids = (ta.value || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-        fullConfig.allowedPageScriptIds = ids;
-        fullConfig.AllowedPageScriptIds = ids;
-        _saveFullConfig().then(function () {
-          var card = e.target.closest('.builtin-card');
-          var statusEl = card && card.querySelector('.status-scripts');
-          if (statusEl) {
-            statusEl.style.opacity = '1';
-            statusEl.textContent = '保存成功！';
-            setTimeout(function () { statusEl.style.opacity = '0'; }, 2000);
-          }
-        });
-        return;
-      }
-      if (e.target.closest('.save-cli-whitelist-btn')) {
-        var cliTa = document.getElementById('allowedCliCommands');
-        if (!cliTa || !fullConfig) return;
-        var cmds = (cliTa.value || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-        fullConfig.allowedCliCommands = cmds;
-        fullConfig.AllowedCliCommands = cmds;
-        _saveFullConfig().then(function () {
-          var card = e.target.closest('.builtin-card');
-          var statusEl = card && card.querySelector('.status-cli-whitelist');
-          if (statusEl) {
-            statusEl.style.opacity = '1';
-            statusEl.textContent = '保存成功！';
-            setTimeout(function () { statusEl.style.opacity = '0'; }, 2000);
-          }
-          loadBuiltinTools();
-        });
-      }
-    });
-  }
 });
 
 // ───── MCP ─────
@@ -980,7 +1191,8 @@ async function loadBuiltinTools() {
   try {
     const res = await fetch(BUILTIN_TOOLS_URL);
     if (!res.ok) {
-      el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">无法加载内置插件列表（' + res.status + '）。请确认后端已启动且已更新至最新版本。</div>';
+      var data = await res.json().catch(function () { return {}; });
+      el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">' + escapeHtml(data.message || ('无法加载内置插件列表（' + res.status + '）。请确认后端已启动且已更新至最新版本。')) + '</div>';
       return;
     }
     const list = await res.json();
@@ -1002,10 +1214,10 @@ async function loadBuiltinTools() {
       const idAttr = escapeAttr(id);
       var cardBody = `<div class="skill-header"><div class="skill-title">${escapeHtml(name)}${disabled ? ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>' : ''}</div><div><button type="button" class="btn-secondary builtin-toggle-btn" style="padding:4px 12px;font-size:12px;">${disabled ? '启用' : '停用'}</button></div></div><div class="skill-desc">${escapeHtml(desc)}</div>`;
       if (id === 'browser') {
-        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedPageScriptIds">页面脚本白名单 (run_page_script)</label><textarea id="allowedPageScriptIds" placeholder="scroll_to_top&#10;scroll_to_bottom&#10;get_visible_text&#10;get_page_title" style="min-height:72px;">${scriptIdsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个 scriptId，仅允许列表内的脚本被 AI 执行。留空则使用默认列表。</div><div class="actions" style="margin-top:8px;padding-top:8px;border-top:none;"><span class="status-scripts status" style="opacity:0;">保存成功！</span><button type="button" class="btn-secondary save-scripts-btn" style="padding:4px 12px;font-size:12px;">保存白名单</button></div></div>`;
+        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedPageScriptIds">页面脚本白名单 (run_page_script)</label><textarea id="allowedPageScriptIds" placeholder="scroll_to_top&#10;scroll_to_bottom&#10;get_visible_text&#10;get_page_title" style="min-height:72px;">${scriptIdsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个 scriptId，仅允许列表内的脚本被 AI 执行。留空则使用默认列表。修改后会自动保存。</div></div>`;
       }
       if (id === 'cli') {
-        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedCliCommands">命令白名单 (run_command)</label><textarea id="allowedCliCommands" placeholder="dir&#10;echo&#10;type&#10;ping&#10;systeminfo&#10;ipconfig" style="min-height:72px;">${cliCommandsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个命令名（如 dir、echo、type），仅允许列表内的命令被 AI 执行。留空则使用默认列表。</div><div class="actions" style="margin-top:8px;padding-top:8px;border-top:none;"><span class="status-cli-whitelist status" style="opacity:0;">保存成功！</span><button type="button" class="btn-secondary save-cli-whitelist-btn" style="padding:4px 12px;font-size:12px;">保存白名单</button></div></div>`;
+        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedCliCommands">命令白名单 (run_command)</label><textarea id="allowedCliCommands" placeholder="dir&#10;echo&#10;type&#10;ping&#10;systeminfo&#10;ipconfig" style="min-height:72px;">${cliCommandsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个命令名（如 dir、echo、type），仅允许列表内的命令被 AI 执行。留空则使用默认列表。修改后会自动保存。</div></div>`;
       }
       return `<div class="skill-card builtin-card" style="opacity:0.95;" data-builtin-id="${idAttr}">${cardBody}</div>`;
     }).join('');
@@ -1026,6 +1238,10 @@ async function loadBuiltinTools() {
         _saveFullConfig().then(function () { loadBuiltinTools(); });
       });
     });
+    var scriptTa = document.getElementById('allowedPageScriptIds');
+    if (scriptTa) scriptTa.addEventListener('input', debouncedSaveConfig);
+    var cliTa = document.getElementById('allowedCliCommands');
+    if (cliTa) cliTa.addEventListener('input', debouncedSaveConfig);
   } catch (e) {
     console.warn('loadBuiltinTools failed', e);
     el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">无法加载内置插件列表（请确认后端已启动且已更新至最新版本）。</div>';
@@ -1196,7 +1412,11 @@ async function loadScheduledTasks() {
   if (!listEl) return;
   try {
     const res = await fetch(BASE_URL() + '/api/scheduled-tasks');
-    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
+      return;
+    }
     const list = await res.json();
     if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
     if (list.length === 0) {
@@ -1268,7 +1488,10 @@ document.getElementById('scheduledTaskCancelBtn').addEventListener('click', () =
 async function editScheduledTask(id) {
   try {
     const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
-    if (!res.ok) throw new Error('获取失败');
+    if (!res.ok) {
+      var errData = await res.json().catch(function () { return {}; });
+      throw new Error(errData.message || '获取失败');
+    }
     const data = await res.json();
     document.getElementById('scheduledTaskId').value = id;
     document.getElementById('scheduledTaskTitle').value = data.meta?.title ?? '';
@@ -1310,7 +1533,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
           enabled, deleteAfterRun
         })
       });
-      if (!res.ok) throw new Error((await res.json()).message || '更新失败');
+      if (!res.ok) throw new Error((await res.json().catch(function () { return {}; })).message || '更新失败');
     } else {
       const res = await fetch(BASE_URL() + '/api/scheduled-tasks', {
         method: 'POST',
@@ -1322,7 +1545,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
           deleteAfterRun
         })
       });
-      if (!res.ok) throw new Error((await res.json()).message || '创建失败');
+      if (!res.ok) throw new Error((await res.json().catch(function () { return {}; })).message || '创建失败');
     }
     document.getElementById('scheduledTaskEditor').style.display = 'none';
     document.getElementById('scheduledTasksList').style.display = 'block';
@@ -1336,7 +1559,10 @@ async function deleteScheduledTask(id) {
   if (!confirm('确定要删除该定时任务吗？')) return;
   try {
     const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (!res.ok) throw new Error('删除失败');
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      throw new Error(data.message || '删除失败');
+    }
     loadScheduledTasks();
   } catch (err) {
     alert('删除失败: ' + err.message);
@@ -1347,9 +1573,17 @@ async function deleteScheduledTask(id) {
 async function loadPlansList() {
   const listEl = document.getElementById('plansList');
   if (!listEl) return;
+  const agentFilterEl = document.getElementById('plansAgentFilter');
+  const agentName = (agentFilterEl && agentFilterEl.value.trim()) || '';
   try {
-    const res = await fetch(BASE_URL() + '/api/plans');
-    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    let url = BASE_URL() + '/api/plans';
+    if (agentName) url += '?agentName=' + encodeURIComponent(agentName);
+    const res = await fetch(url);
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
+      return;
+    }
     const list = await res.json();
     if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
     if (list.length === 0) {
@@ -1361,10 +1595,12 @@ async function loadPlansList() {
       const title = p.title || p.Title || id;
       const updatedAt = (p.updatedAt || p.UpdatedAt) ? new Date(p.updatedAt || p.UpdatedAt).toLocaleString() : '-';
       const status = p.status || p.Status || 'draft';
+      const agentName = p.createdByDisplayName || p.createdBy || p.CreatedBy || '';
+      const agentLine = agentName ? 'Agent: ' + escapeHtml(agentName) + ' · ' : '';
       return `<div class="mcp-server-row" data-plan-id="${escapeHtml(id)}">
         <div class="mcp-info">
           <div class="mcp-name">${escapeHtml(title)}</div>
-          <div class="mcp-desc">ID: ${escapeHtml(id)} · 更新: ${escapeHtml(updatedAt)} · 状态: ${escapeHtml(status)}</div>
+          <div class="mcp-desc">${agentLine}ID: ${escapeHtml(id)} · 更新: ${escapeHtml(updatedAt)} · 状态: ${escapeHtml(status)}</div>
         </div>
         <div>
           <a href="plans.html?id=${encodeURIComponent(id)}" target="_blank" class="btn-secondary" style="padding:4px 10px;font-size:12px;margin-right:6px;">查看</a>
@@ -1384,7 +1620,10 @@ async function deletePlan(id) {
   if (!id || !confirm('确定要删除该计划吗？')) return;
   try {
     const res = await fetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (!res.ok) throw new Error('删除失败');
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      throw new Error(data.message || '删除失败');
+    }
     loadPlansList();
   } catch (err) {
     alert('删除失败: ' + err.message);
@@ -1396,7 +1635,11 @@ async function loadAccurateDataList() {
   if (!listEl) return;
   try {
     const res = await fetch(BASE_URL() + '/api/accurate-data');
-    if (!res.ok) { listEl.innerHTML = '<p class="help-text">加载失败或后端未就绪。</p>'; return; }
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
+      return;
+    }
     const list = await res.json();
     if (!Array.isArray(list)) { listEl.innerHTML = '<p class="help-text">数据格式异常。</p>'; return; }
     if (list.length === 0) {
@@ -1428,7 +1671,10 @@ async function deleteAccurateData(id) {
   if (!id || !confirm('确定要删除该准确数据条目吗？')) return;
   try {
     const res = await fetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (!res.ok) throw new Error('删除失败');
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      throw new Error(data.message || '删除失败');
+    }
     loadAccurateDataList();
   } catch (err) {
     alert('删除失败: ' + err.message);

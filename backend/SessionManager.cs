@@ -3,13 +3,13 @@ using System.Net.WebSockets;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>Stores WebSocket and optional client type (chrome | office-word | office-excel | wps) per session.</summary>
+/// <summary>Stores WebSocket, optional client type (chrome | office-word | office-excel | wps), and optional display name (e.g. page title) per session.</summary>
 public sealed class SessionManager
 {
     private readonly ConcurrentDictionary<string, SessionEntry> _connections = new();
 
     public void Add(string sessionId, WebSocket ws, string? clientType = null) =>
-        _connections[sessionId] = new SessionEntry(ws, clientType);
+        _connections[sessionId] = new SessionEntry(ws, clientType, null);
 
     public void Remove(string sessionId) => _connections.TryRemove(sessionId, out _);
 
@@ -19,6 +19,17 @@ public sealed class SessionManager
     /// <summary>Gets the client type for the session, if any (e.g. chrome, office-word, office-excel, wps).</summary>
     public string? GetClientType(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.ClientType : null;
+
+    /// <summary>Sets the display name (e.g. Agent name / page title) for the session.</summary>
+    public void SetDisplayName(string sessionId, string? displayName)
+    {
+        if (_connections.TryGetValue(sessionId, out var entry))
+            _connections[sessionId] = entry with { DisplayName = displayName };
+    }
+
+    /// <summary>Gets the display name for the session, if any.</summary>
+    public string? GetDisplayName(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry) ? entry.DisplayName : null;
 
     public int Count => _connections.Count;
 
@@ -44,5 +55,5 @@ public sealed class SessionManager
         }
     }
 
-    private sealed record SessionEntry(WebSocket WebSocket, string? ClientType);
+    private sealed record SessionEntry(WebSocket WebSocket, string? ClientType, string? DisplayName);
 }

@@ -51,6 +51,23 @@ public class AiModelEntry
     public int? ContextLength { get; set; }
 }
 
+/// <summary>Embedding 模型列表中的单条；仅支持 Remote 远程 API。</summary>
+public class EmbeddingModelEntry
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = "";
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "Remote";
+    [JsonPropertyName("endpoint")]
+    public string Endpoint { get; set; } = "";
+    [JsonPropertyName("apiKey")]
+    public string ApiKey { get; set; } = "";
+    [JsonPropertyName("modelId")]
+    public string ModelId { get; set; } = "";
+}
+
 /// <summary>会话配置：历史轮数、超时等。</summary>
 public class SessionConfig
 {
@@ -111,6 +128,14 @@ public class TestAiRequest
     public string? DeploymentName { get; set; }
 }
 
+/// <summary>测试 Embedding 连接时前端传入的请求体。</summary>
+public class TestEmbeddingRequest
+{
+    public string? Endpoint { get; set; }
+    public string? ApiKey { get; set; }
+    public string? ModelId { get; set; }
+}
+
 public class AppConfig
 {
     public AiConfig AI { get; set; } = new();
@@ -142,14 +167,10 @@ public class AppConfig
     /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY、OPENAI_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取，若无则从系统环境变量读取。可在设置页或 user-config.json 中配置。</summary>
     public Dictionary<string, string> SkillEnv { get; set; } = new();
     // ----- 阶段 3：嵌入与 RAG / 记忆 -----
-    /// <summary>Embedding 来源：仅支持 Remote（远程 API）；不配置则记忆/RAG 不生效。</summary>
-    public string EmbeddingSource { get; set; } = "";
-    /// <summary>远程 Embedding 接口地址；EmbeddingSource=Remote 时使用，与大模型配置独立。</summary>
-    public string? EmbeddingEndpoint { get; set; }
-    /// <summary>远程 Embedding API Key；EmbeddingSource=Remote 时使用。</summary>
-    public string? EmbeddingApiKey { get; set; }
-    /// <summary>远程 Embedding 模型名（如 text-embedding-3-small）；EmbeddingSource=Remote 时使用。</summary>
-    public string? EmbeddingModelId { get; set; }
+    /// <summary>Embedding 模型列表；支持多条，仅 Remote 远程 API。</summary>
+    public List<EmbeddingModelEntry> EmbeddingModels { get; set; } = new();
+    /// <summary>当前使用的 Embedding 模型 Id，对应 EmbeddingModels 中某条的 Id；为空或不在列表中则视为未配置。</summary>
+    public string? ActiveEmbeddingModelId { get; set; }
     /// <summary>向量存储类型：Memory = 内存，Sqlite = 本地 db 文件。</summary>
     public string RagStorageType { get; set; } = "Memory";
     /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OfficeCopilot/rag.db。</summary>
@@ -187,6 +208,14 @@ public sealed class ConfigService
 
     public AppConfig Current => _currentConfig;
 
+    /// <summary>获取当前选中的 Embedding 配置条目；未配置或未选中时返回 null。</summary>
+    public EmbeddingModelEntry? GetActiveEmbeddingEntry()
+    {
+        var id = (_currentConfig.ActiveEmbeddingModelId ?? "").Trim();
+        if (string.IsNullOrEmpty(id) || _currentConfig.EmbeddingModels == null) return null;
+        return _currentConfig.EmbeddingModels.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+    }
+
     private AppConfig LoadConfig(IConfiguration defaultConfig)
     {
         if (File.Exists(_configPath))
@@ -202,6 +231,7 @@ public sealed class ConfigService
                         config.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
                     config.SkillEnv ??= new Dictionary<string, string>();
                     config.AiModels ??= new List<AiModelEntry>();
+                    config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
                     config.Session ??= new SessionConfig();
                     config.ContextWindow ??= new ContextWindowConfig();
                     config.PlanConfirmation ??= new PlanConfirmationConfig();
@@ -241,6 +271,7 @@ public sealed class ConfigService
             appConfig.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
         appConfig.SkillEnv ??= new Dictionary<string, string>();
         appConfig.AiModels ??= new List<AiModelEntry>();
+        appConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
         MigrateLegacyAiIfNeeded(appConfig);
         return appConfig;
     }
@@ -381,6 +412,14 @@ public sealed class ConfigService
                 if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
                 if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();
+                if (newConfig.EmbeddingModels == null) newConfig.EmbeddingModels = _currentConfig.EmbeddingModels ?? new List<EmbeddingModelEntry>();
+                if (newConfig.ActiveEmbeddingModelId == null) newConfig.ActiveEmbeddingModelId = _currentConfig.ActiveEmbeddingModelId;
+                var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
+                if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
+                {
+                    _logger.LogWarning("ActiveEmbeddingModelId \"{Id}\" not found in EmbeddingModels list, clearing.", activeEmbId);
+                    newConfig.ActiveEmbeddingModelId = null;
+                }
                 // 与 JsonCtx 一致使用 CamelCase，否则下次反序列化时字段对不上
                 var options = new JsonSerializerOptions
                 {

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
 
@@ -9,11 +10,13 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class MemoryPlugin
 {
     private readonly IMemoryStoreService _memory;
+    private readonly SessionManager _sessionManager;
     private readonly ILogger<MemoryPlugin>? _logger;
 
-    public MemoryPlugin(IMemoryStoreService memory, ILogger<MemoryPlugin>? logger = null)
+    public MemoryPlugin(IMemoryStoreService memory, SessionManager sessionManager, ILogger<MemoryPlugin>? logger = null)
     {
         _memory = memory;
+        _sessionManager = sessionManager;
         _logger = logger;
     }
 
@@ -29,17 +32,21 @@ public sealed class MemoryPlugin
         if (string.IsNullOrWhiteSpace(text))
             return "[无效] 记忆内容不能为空。";
         var sessionId = SessionContext.GetSessionId();
+        var agentName = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetDisplayName(sessionId) : null;
         var metadata = string.IsNullOrWhiteSpace(tags) ? null : new Dictionary<string, string> { ["tags"] = tags.Trim() };
         try
         {
-            var id = await _memory.SaveAsync(null, text.Trim(), sessionId, metadata, saveToShared).ConfigureAwait(false);
+            var id = await _memory.SaveAsync(null, text.Trim(), sessionId, metadata, saveToShared, agentName).ConfigureAwait(false);
             _logger?.LogInformation("save_memory: id={Id} sessionId={SessionId} shared={Shared}", id, sessionId, saveToShared);
             return saveToShared ? $"[已记住] 已保存为共享记忆（id={id}），其他端也可检索。" : $"[已记住] 已保存为长期记忆（id={id}）。";
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "save_memory failed");
-            return $"[保存失败] {ex.Message}";
+            var msg = ex.Message ?? "";
+            if (msg.IndexOf("401", StringComparison.OrdinalIgnoreCase) >= 0 || msg.IndexOf("invalid_api_key", StringComparison.OrdinalIgnoreCase) >= 0 || msg.IndexOf("API key", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "[保存失败] Embedding 接口认证失败（请检查设置中的 Embedding API 密钥是否正确）。";
+            return $"[保存失败] {msg}";
         }
     }
 

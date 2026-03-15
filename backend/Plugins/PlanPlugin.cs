@@ -74,6 +74,7 @@ public sealed class PlanPlugin
         var title = ExtractFirstLine(content) ?? planId;
         var sessionId = SessionContext.GetSessionId();
         var createdBy = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetClientType(sessionId) ?? "chrome") : "chrome";
+        var createdByDisplayName = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetDisplayName(sessionId) ?? "") : "";
         var steps = PlanStepParser.ParsePlanSteps(content);
         var pc = _configService.Current.PlanConfirmation ?? new PlanConfirmationConfig();
         var requiresConfirm = ComputeRequiresUserConfirmation(content, steps.Count, pc);
@@ -85,6 +86,7 @@ public sealed class PlanPlugin
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             CreatedBy = createdBy,
+            CreatedByDisplayName = createdByDisplayName,
             RequiresUserConfirmation = requiresConfirm
         };
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);

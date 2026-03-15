@@ -132,6 +132,16 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? PlanCurrentStepIndex { get; set; }
 
+    /// <summary>set_context 时：当前页面/Agent 名称（如页面 title），用于会话 DisplayName。</summary>
+    [JsonPropertyName("pageTitle")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PageTitle { get; set; }
+
+    /// <summary>tool_invocation_start/end 时：Plan.execute_plan_step 的步骤索引（从 1 开始），供前端 checklist 更新。</summary>
+    [JsonPropertyName("planStepIndex")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PlanStepIndex { get; set; }
+
     /// <summary>plan_created 时：计划标题。</summary>
     [JsonPropertyName("title")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -279,6 +289,8 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(List<ContextOptimizationPreset>))]
 [JsonSerializable(typeof(AiModelEntry))]
 [JsonSerializable(typeof(List<AiModelEntry>))]
+[JsonSerializable(typeof(EmbeddingModelEntry))]
+[JsonSerializable(typeof(List<EmbeddingModelEntry>))]
 [JsonSerializable(typeof(SkillDefinition))]
 [JsonSerializable(typeof(List<SkillDefinition>))]
 [JsonSerializable(typeof(McpServerConfig))]
@@ -293,6 +305,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(List<AttachmentDto>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(TestAiRequest))]
+[JsonSerializable(typeof(TestEmbeddingRequest))]
 [JsonSerializable(typeof(RagIngestRequest))]
 [JsonSerializable(typeof(MemoryAddRequest))]
 [JsonSerializable(typeof(MemoryUpdateRequest))]

@@ -24,6 +24,10 @@ public class PlanMeta
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = "";
 
+    /// <summary>创建该计划时的 Agent 显示名（如页面标题），用于按 Agent 筛选。</summary>
+    [JsonPropertyName("createdByDisplayName")]
+    public string CreatedByDisplayName { get; set; } = "";
+
     /// <summary>是否需用户确认后再执行（由后台规则根据步数阈值、敏感工具等计算）。</summary>
     [JsonPropertyName("requiresUserConfirmation")]
     public bool RequiresUserConfirmation { get; set; }

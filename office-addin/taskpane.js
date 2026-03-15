@@ -384,7 +384,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })
         });
-        if (!res.ok) throw new Error("保存失败");
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || "保存失败");
+        }
         currentPlanContent = content;
         if ($planContentView) {
           $planContentView.innerHTML = (typeof marked !== "undefined") ? marked.parse(content || "") : escapeHtml(content || "");
@@ -392,6 +395,7 @@
         cancelPlanEdit();
       } catch (e) {
         console.error("save plan failed", e);
+        alert(e.message || "保存失败");
       }
     });
   }
