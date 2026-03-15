@@ -472,6 +472,17 @@ function updateExecutionLogCount() {
   if (executionLogSection && currentRoundToolBlocks.length > 0) executionLogSection.open = true;
 }
 
+function appendStreamWarning(text) {
+  if (!currentRoundWrapper) beginStream();
+  const wrap = currentRoundWrapper;
+  if (!wrap) return;
+  const notice = document.createElement("div");
+  notice.className = "msg msg--stream-warning";
+  notice.textContent = (text && String(text).trim()) || "服务端返回了警告";
+  wrap.insertBefore(notice, wrap.firstChild);
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
+
 function appendStreamChunk(text) {
   if (!streamingBubble) {
     beginStream();
@@ -547,6 +558,10 @@ function handleMessage(raw) {
 
     case "stream_chunk":
       appendStreamChunk(msg.content);
+      break;
+
+    case "stream_warning":
+      appendStreamWarning(msg.content);
       break;
 
     case "stream_end":
@@ -726,17 +741,21 @@ let pendingConfirmId = null;
 const $hitlOverlay = document.getElementById("hitl-overlay");
 const $hitlAction = document.getElementById("hitl-action");
 const $hitlAllowBtn = document.getElementById("hitl-allow-btn");
+const $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
 const $hitlDenyBtn = document.getElementById("hitl-deny-btn");
 
 function handleConfirmRequest(msg) {
   const requestId = msg.id || msg.requestId;
   const action = msg.content || msg.action || "未知操作";
+  const hitlKind = msg.hitlKind;
   if (!requestId) {
     debugLog("HITL", "confirm_request missing id", "err");
     return;
   }
   pendingConfirmId = requestId;
   if ($hitlAction) $hitlAction.textContent = action;
+  const showAddToList = hitlKind === "run_command" || hitlKind === "run_page_script";
+  if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = showAddToList ? "" : "none";
   if ($hitlOverlay) {
     $hitlOverlay.style.display = "flex";
     $hitlOverlay.setAttribute("aria-hidden", "false");
@@ -744,12 +763,12 @@ function handleConfirmRequest(msg) {
   debugLog("HITL", "confirm_request id=" + requestId + " action=" + action.slice(0, 50), "recv");
 }
 
-function sendConfirmResponse(id, allowed) {
+function sendConfirmResponse(id, allowed, addToAllowList) {
   if (!id) return;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    const payload = JSON.stringify({ type: "confirm_response", id, allowed });
+    const payload = JSON.stringify({ type: "confirm_response", id, allowed, addToAllowList: !!addToAllowList });
     ws.send(payload);
-    debugLog("WS Send", "type=confirm_response id=" + id + " allowed=" + allowed, "send");
+    debugLog("WS Send", "type=confirm_response id=" + id + " allowed=" + allowed + " addToAllowList=" + !!addToAllowList, "send");
   }
   pendingConfirmId = null;
   if ($hitlOverlay) {
@@ -760,7 +779,12 @@ function sendConfirmResponse(id, allowed) {
 
 if ($hitlAllowBtn) {
   $hitlAllowBtn.addEventListener("click", () => {
-    if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true);
+    if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, false);
+  });
+}
+if ($hitlAddToListBtn) {
+  $hitlAddToListBtn.addEventListener("click", () => {
+    if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, true);
   });
 }
 if ($hitlDenyBtn) {

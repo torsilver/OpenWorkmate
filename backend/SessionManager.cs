@@ -3,7 +3,7 @@ using System.Net.WebSockets;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>Stores WebSocket, optional client type (chrome | office-word | office-excel | wps), and optional display name (e.g. page title) per session.</summary>
+/// <summary>Stores WebSocket, optional client type (chrome | office-word | office-excel | office-powerpoint | wps), and optional display name (e.g. page title) per session.</summary>
 public sealed class SessionManager
 {
     private readonly ConcurrentDictionary<string, SessionEntry> _connections = new();
@@ -16,7 +16,7 @@ public sealed class SessionManager
     public WebSocket? Get(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.WebSocket : null;
 
-    /// <summary>Gets the client type for the session, if any (e.g. chrome, office-word, office-excel, wps).</summary>
+    /// <summary>Gets the client type for the session, if any (e.g. chrome, office-word, office-excel, office-powerpoint, wps).</summary>
     public string? GetClientType(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.ClientType : null;
 

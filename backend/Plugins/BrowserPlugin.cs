@@ -113,7 +113,7 @@ public class BrowserPlugin
 
     /// <summary>MCP 风格工具：在当前标签页执行预定义页面脚本，仅支持白名单内的 scriptId。</summary>
     [KernelFunction("run_page_script")]
-    [Description("Executes a predefined script on the user's current browser tab. Only script IDs in the allowed whitelist can run. Use scriptId to choose the script (e.g. scroll_to_top, get_visible_text) and paramsJson for optional JSON parameters.")]
+    [Description("运行位置：用户当前浏览器标签页的页面上下文中（由扩展注入执行）。在当前标签页执行预定义脚本，仅支持白名单内的 scriptId。使用 scriptId 指定脚本（如 scroll_to_top、get_visible_text），paramsJson 为可选 JSON 参数。")]
     public async Task<string> RunPageScriptAsync(
         [Description("Predefined script ID (e.g. scroll_to_top, scroll_to_bottom, get_visible_text, get_page_title). Must be in the allowed whitelist.")] string scriptId,
         [Description("Optional JSON string for script parameters, e.g. {} or {\"selector\":\"#main\"}. Default empty object.")] string paramsJson = "{}",

@@ -1,9 +1,6 @@
 ---
-description: 新代码应附带单元或集成测试，便于 Cursor 与 CI 做回归
-globs: backend/**/*.cs, backend.Tests/**/*.cs
-alwaysApply: false
+alwaysApply: true
 ---
-
 # 自动化测试约定
 
 ## 1. 新加的纯逻辑应附带单元测试

@@ -25,7 +25,7 @@ public sealed class ClawhubSkillPlugin
     }
 
     [KernelFunction("run_clawhub_script")]
-    [Description("运行 Clawhub 可执行技能中的脚本。当技能需要执行 scripts 目录下的 node 脚本时使用。scriptName 为脚本名不含扩展名（如 search、extract），arguments 为空格分隔的参数字符串。")]
+    [Description("运行位置：后端服务所在机器的 Node 进程（技能目录 scripts/ 下）。运行 Clawhub 可执行技能中的脚本。scriptName 为脚本名不含扩展名（如 search、extract），arguments 为空格分隔的参数字符串。")]
     public async Task<string> RunClawhubScriptAsync(
         [Description("技能 ID，与 SKILL.md 中 name 一致，如 tavily")] string skillId,
         [Description("脚本名（不含扩展名），如 search 或 extract")] string scriptName,

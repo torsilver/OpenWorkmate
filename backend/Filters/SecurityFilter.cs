@@ -11,20 +11,14 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
     private readonly ILogger<SecurityFilter> _logger;
     private readonly ConfigService _configService;
     private readonly HitlManager _hitlManager;
+    private readonly SessionManager _sessionManager;
 
-    private static readonly string[] DefaultAllowedCommands = {
-        "dir", "echo", "type", "ping", "systeminfo", "ipconfig"
-    };
-
-    private static readonly string[] DefaultAllowedScriptIds = {
-        "scroll_to_top", "scroll_to_bottom", "get_visible_text", "get_page_title"
-    };
-
-    public SecurityFilter(ILogger<SecurityFilter> logger, ConfigService configService, HitlManager hitlManager)
+    public SecurityFilter(ILogger<SecurityFilter> logger, ConfigService configService, HitlManager hitlManager, SessionManager sessionManager)
     {
         _logger = logger;
         _configService = configService;
         _hitlManager = hitlManager;
+        _sessionManager = sessionManager;
     }
 
     public async Task OnFunctionInvocationAsync(
@@ -35,21 +29,29 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
 
         if (functionName == "run_command" && context.Arguments.TryGetValue("command", out var cmdObj))
         {
-            if (_configService.Current.RunEverythingMode)
+            var sessionId = SessionContext.GetSessionId();
+            var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+            var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+            var mode = _configService.GetCliRunModeForEnd(endKey);
+
+            if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation("RunEverything 模式：放行命令 {Command}", cmdObj?.ToString());
+                _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行命令 {Command}", endKey, cmdObj?.ToString());
                 await next(context);
                 return;
             }
+
             var command = cmdObj?.ToString()?.Trim().ToLowerInvariant() ?? "";
             var cmdName = command.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-            var allowedCli = _configService.Current.AllowedCliCommands;
-            var cliList = (allowedCli != null && allowedCli.Count > 0) ? (IEnumerable<string>)allowedCli : DefaultAllowedCommands;
+            var allowedCli = _configService.GetAllowedCliCommandsForEnd(endKey);
+            var cliList = (allowedCli != null && allowedCli.Count > 0) ? allowedCli : CliScriptEndKeys.DefaultAllowedCommands;
             var cliSet = cliList.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
-            if (cmdName == null || !cliSet.Contains(cmdName))
+
+            var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
+                || (cmdName == null || !cliSet.Contains(cmdName));
+
+            if (needHitl)
             {
-                _logger.LogWarning("拦截到危险命令，发起 HITL 确认: {Command}", command);
-                var sessionId = SessionContext.GetSessionId();
                 if (string.IsNullOrEmpty(sessionId))
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -57,35 +59,44 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 var action = "执行命令: " + (cmdObj?.ToString()?.Trim() ?? command);
-                var allowed = await _hitlManager.RequestConfirmationAsync(sessionId, action);
-                if (!allowed)
+                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_command", cmdName);
+                if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
                         "用户拒绝执行或未在限定时间内确认，已取消执行。");
                     return;
                 }
                 _logger.LogInformation("用户已允许执行命令: {Command}", command);
-                await next(context);
-                return;
             }
+
+            await next(context);
+            return;
         }
 
         if (functionName == "run_page_script" && context.Arguments.TryGetValue("scriptId", out var scriptIdObj))
         {
-            if (_configService.Current.RunEverythingMode)
+            var sessionId = SessionContext.GetSessionId();
+            var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+            var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+            var mode = _configService.GetCliRunModeForEnd(endKey);
+
+            if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation("RunEverything 模式：放行页面脚本 {ScriptId}", scriptIdObj?.ToString());
+                _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行页面脚本 {ScriptId}", endKey, scriptIdObj?.ToString());
                 await next(context);
                 return;
             }
+
             var scriptId = scriptIdObj?.ToString()?.Trim();
-            var allowed = _configService.Current.AllowedPageScriptIds;
-            var list = (allowed != null && allowed.Count > 0) ? (IEnumerable<string>)allowed : DefaultAllowedScriptIds;
+            var allowedScripts = _configService.GetAllowedPageScriptIdsForEnd(endKey);
+            var list = (allowedScripts != null && allowedScripts.Count > 0) ? allowedScripts : CliScriptEndKeys.DefaultAllowedScriptIds;
             var normalized = list.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
-            if (string.IsNullOrEmpty(scriptId) || !normalized.Contains(scriptId.ToLowerInvariant()))
+
+            var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
+                || (string.IsNullOrEmpty(scriptId) || !normalized.Contains(scriptId.ToLowerInvariant()));
+
+            if (needHitl)
             {
-                _logger.LogWarning("拦截到未授权页面脚本，发起 HITL 确认: {ScriptId}", scriptId);
-                var sessionId = SessionContext.GetSessionId();
                 if (string.IsNullOrEmpty(sessionId))
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -93,17 +104,18 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 var action = "执行页面脚本: " + (scriptId ?? "");
-                var userAllowed = await _hitlManager.RequestConfirmationAsync(sessionId, action);
-                if (!userAllowed)
+                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_page_script", scriptId ?? "");
+                if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
                         "用户拒绝执行或未在限定时间内确认，已取消执行。");
                     return;
                 }
                 _logger.LogInformation("用户已允许执行页面脚本: {ScriptId}", scriptId);
-                await next(context);
-                return;
             }
+
+            await next(context);
+            return;
         }
 
         _logger.LogInformation("Invoking tool: {Name}", functionName);

@@ -27,7 +27,7 @@ public sealed class CurrentDocumentPlugin
 
         var ws = _sessionManager.Get(sessionId);
         if (ws == null)
-            return "Error: WebSocket connection not found. Please open the task pane in Word or Excel and connect first.";
+            return "Error: WebSocket connection not found. Please open the task pane in Word, Excel, or PowerPoint and connect first.";
 
         var reqId = _rpcManager.RegisterRequest(out var responseTask);
         var payload = JsonSerializer.Serialize(new WsMessage
@@ -49,7 +49,7 @@ public sealed class CurrentDocumentPlugin
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[CurrentDocument] RPC method={Method} reqId={ReqId} failed", method, reqId);
-            return "失败：" + ex.Message + "。若当前为浏览器侧边栏，请在 Word 或 Excel 中打开本助手任务窗格以使用此功能。";
+            return "失败：" + ex.Message + "。若当前为浏览器侧边栏，请在 Word、Excel 或 PowerPoint 中打开本助手任务窗格以使用此功能。";
         }
     }
 
@@ -224,8 +224,31 @@ public sealed class CurrentDocumentPlugin
         return SendRpcAsync(sessionId!, "word_search_replace", new { searchText, replaceText, replaceAll }, cancellationToken);
     }
 
+    [KernelFunction("current_ppt_slides_list")]
+    [Description("列出当前打开的 PPT 演示文稿中所有幻灯片（按播放顺序）。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlidesListAsync(
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slides_list sessionId={SessionId}", sessionId ?? "(null)");
+        return SendRpcAsync(sessionId!, "ppt_slides_list", null, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slide_read")]
+    [Description("按播放顺序读取当前演示文稿中指定幻灯片的文本。slideIndex 从 1 开始。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlideReadAsync(
+        [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slide_read sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
+        return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex }, cancellationToken);
+    }
+
     [KernelFunction("current_run_document_script")]
-    [Description("在当前文档环境中执行预定义脚本（仅 scriptId 白名单）。用于长尾或组合操作，仅 Office/WPS 任务窗格连接时可用。")]
+    [Description("运行位置：当前打开的 Office/WPS 文档环境中（任务窗格注入到文档的脚本）。执行预定义脚本，仅支持白名单内 scriptId，用于长尾或组合操作，仅 Office/WPS 任务窗格连接时可用。")]
     public Task<string> CurrentRunDocumentScriptAsync(
         [Description("预定义脚本 ID，必须在前端 DOCUMENT_SCRIPTS 注册表中存在")] string scriptId,
         [Description("可选参数，JSON 对象字符串，如 {} 或 {\"key\":\"value\"}")] string? paramsJson = null,

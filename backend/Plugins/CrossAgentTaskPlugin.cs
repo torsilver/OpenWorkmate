@@ -22,22 +22,22 @@ public sealed class CrossAgentTaskPlugin
 
     /// <summary>创建跨 Agent 任务：让目标端的 Agent 执行某任务。目标端在下次对话时会看到待办并执行。</summary>
     [KernelFunction("create_cross_agent_task")]
-    [Description("当用户要求「让 Word/Chrome/Excel/WPS 的 Agent 做某事」时调用。创建一条发给目标端的待办，目标端在下次对话时会看到并执行。targetClientType 取 office-word、chrome、office-excel、wps 之一。")]
+    [Description("当用户要求「让 Word/Chrome/Excel/WPS/PowerPoint 的 Agent 做某事」时调用。创建一条发给目标端的待办，目标端在下次对话时会看到并执行。targetClientType 取 office-word、chrome、office-excel、office-powerpoint、wps 之一。")]
     public async Task<string> CreateCrossAgentTaskAsync(
-        [Description("目标端类型：office-word（Word）、chrome（浏览器）、office-excel（Excel）、wps（WPS）")] string targetClientType,
+        [Description("目标端类型：office-word（Word）、chrome（浏览器）、office-excel（Excel）、office-powerpoint（PowerPoint）、wps（WPS）")] string targetClientType,
         [Description("要目标端执行的任务描述，清晰具体")] string description,
         [Description("可选；若指定则仅该 session 会收到，否则该 clientType 下所有在线 session 都会收到")] string? targetSessionId = null)
     {
         var fromSessionId = SessionContext.GetSessionId() ?? "";
         var tct = (targetClientType ?? "").Trim();
         if (string.IsNullOrEmpty(tct))
-            return "[无效] 请指定 targetClientType：office-word、chrome、office-excel、wps 之一。";
+            return "[无效] 请指定 targetClientType：office-word、chrome、office-excel、office-powerpoint、wps 之一。";
         var desc = (description ?? "").Trim();
         if (string.IsNullOrEmpty(desc))
             return "[无效] 任务描述不能为空。";
         var normalized = tct.ToLowerInvariant();
-        if (normalized != "office-word" && normalized != "chrome" && normalized != "office-excel" && normalized != "wps")
-            return "[无效] targetClientType 应为 office-word、chrome、office-excel、wps 之一。";
+        if (normalized != "office-word" && normalized != "chrome" && normalized != "office-excel" && normalized != "office-powerpoint" && normalized != "wps")
+            return "[无效] targetClientType 应为 office-word、chrome、office-excel、office-powerpoint、wps 之一。";
 
         try
         {

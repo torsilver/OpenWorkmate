@@ -459,8 +459,15 @@ if (ragStorageTypeEl) {
 var ragStoragePathEl = document.getElementById('ragStoragePath');
 if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveConfig);
 
-var runEverythingModeEl = document.getElementById('runEverythingMode');
-if (runEverythingModeEl) runEverythingModeEl.addEventListener('change', saveConfig);
+var CLI_SCRIPT_END_KEYS = ['chrome', 'backend', 'office', 'wps'];
+var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Office', wps: 'WPS' };
+var DEFAULT_CLI_COMMANDS = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
+var DEFAULT_PAGE_SCRIPTS = ['scroll_to_top', 'scroll_to_bottom', 'get_visible_text', 'get_page_title'];
+var CLI_RUN_MODES = [
+  { value: 'RunEverything', label: 'RunEverything（不校验、不弹确认）' },
+  { value: 'AskEverytime', label: 'AskEverytime（每次执行前确认）' },
+  { value: 'UseAllowList', label: 'UseAllowList（白名单内不弹，名单外确认）' }
+];
 
 if (document.getElementById('addMemoryBtn')) document.getElementById('addMemoryBtn').addEventListener('click', function () { openMemoryEditor(null); });
 if (document.getElementById('refreshMemoryListBtn')) document.getElementById('refreshMemoryListBtn').addEventListener('click', loadMemoryList);
@@ -701,15 +708,7 @@ async function loadConfig() {
     fullConfig = await response.json();
     const data = fullConfig;
     renderAiModelsList();
-    const ids = data.allowedPageScriptIds ?? data.AllowedPageScriptIds;
-    var scriptIdsEl = document.getElementById('allowedPageScriptIds');
-    if (scriptIdsEl) {
-      scriptIdsEl.value = Array.isArray(ids) ? ids.join('\n') : '';
-    }
-    const runEverythingEl = document.getElementById('runEverythingMode');
-    if (runEverythingEl) {
-      runEverythingEl.checked = !!(data.runEverythingMode ?? data.RunEverythingMode);
-    }
+    renderCliScriptPerEndConfig();
     const mcps = data.mcpServers ?? data.McpServers;
     renderMcpList(mcps || []);
     await loadSkillEnvSection();
@@ -749,6 +748,9 @@ async function loadConfig() {
       }
       presetEl.value = activePresetId || '';
     }
+    fillContextWindowForm(activePresetId, presets);
+    toggleContextWindowSection(!!activePresetId);
+    updatePresetRenameDeleteVisibility(activePresetId, presets);
   } catch (err) {
     console.error(err);
     var msg = err && err.message;
@@ -761,19 +763,85 @@ async function loadConfig() {
   }
 }
 
+function getPresets() {
+  var raw = fullConfig && (fullConfig.contextOptimizationPresets || fullConfig.ContextOptimizationPresets);
+  return Array.isArray(raw) ? raw : [];
+}
+
+function getActivePresetId() {
+  var el = document.getElementById('activeContextPreset');
+  return (el && el.value) ? el.value : '';
+}
+
+function fillContextWindowForm(activePresetId, presets) {
+  if (!activePresetId || !Array.isArray(presets) || presets.length === 0) return;
+  var preset = presets.find(function (p) { return (p.id || p.Id) === activePresetId; });
+  if (!preset) return;
+  var cw = preset.contextWindow || preset.ContextWindow || {};
+  function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
+  function floatVal(val, def) { var n = parseFloat(val); return isNaN(n) ? def : n; }
+  var dirEl = document.getElementById('ctxConversationHistoryDirectory');
+  var sumEnEl = document.getElementById('ctxSummarizationEnabled');
+  var sumRatioEl = document.getElementById('ctxSummarizationTriggerRatio');
+  var sumCharsEl = document.getElementById('ctxSummarizationMaxSummaryChars');
+  var truncRatioEl = document.getElementById('ctxTruncateToolArgsThresholdRatio');
+  var truncKeepEl = document.getElementById('ctxTruncateToolArgsKeepMessages');
+  var truncMaxEl = document.getElementById('ctxTruncateToolArgsMaxChars');
+  if (dirEl) dirEl.value = (cw.conversationHistoryDirectory ?? cw.ConversationHistoryDirectory) ?? '';
+  if (sumEnEl) sumEnEl.checked = !!(cw.summarizationEnabled ?? cw.SummarizationEnabled);
+  if (sumRatioEl) sumRatioEl.value = (cw.summarizationTriggerRatio ?? cw.SummarizationTriggerRatio) ?? 0.9;
+  if (sumCharsEl) sumCharsEl.value = (cw.summarizationMaxSummaryChars ?? cw.SummarizationMaxSummaryChars) ?? 500;
+  if (truncRatioEl) truncRatioEl.value = (cw.truncateToolArgsThresholdRatio ?? cw.TruncateToolArgsThresholdRatio) ?? 0;
+  if (truncKeepEl) truncKeepEl.value = (cw.truncateToolArgsKeepMessages ?? cw.TruncateToolArgsKeepMessages) ?? 10;
+  if (truncMaxEl) truncMaxEl.value = (cw.truncateToolArgsMaxChars ?? cw.TruncateToolArgsMaxChars) ?? 2000;
+}
+
+function collectContextWindowFromForm() {
+  var dirEl = document.getElementById('ctxConversationHistoryDirectory');
+  var sumEnEl = document.getElementById('ctxSummarizationEnabled');
+  var sumRatioEl = document.getElementById('ctxSummarizationTriggerRatio');
+  var sumCharsEl = document.getElementById('ctxSummarizationMaxSummaryChars');
+  var truncRatioEl = document.getElementById('ctxTruncateToolArgsThresholdRatio');
+  var truncKeepEl = document.getElementById('ctxTruncateToolArgsKeepMessages');
+  var truncMaxEl = document.getElementById('ctxTruncateToolArgsMaxChars');
+  if (!sumRatioEl) return null;
+  function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
+  function floatVal(val, def) { var n = parseFloat(val); return isNaN(n) ? def : n; }
+  return {
+    conversationHistoryDirectory: (dirEl && dirEl.value.trim()) || null,
+    summarizationEnabled: !!(sumEnEl && sumEnEl.checked),
+    summarizationTriggerRatio: floatVal(sumRatioEl.value, 0.9),
+    summarizationMaxSummaryChars: num(sumCharsEl ? sumCharsEl.value : '', 500),
+    truncateToolArgsThresholdRatio: floatVal(truncRatioEl ? truncRatioEl.value : '', 0),
+    truncateToolArgsKeepMessages: num(truncKeepEl ? truncKeepEl.value : '', 10),
+    truncateToolArgsMaxChars: num(truncMaxEl ? truncMaxEl.value : '', 2000)
+  };
+}
+
+function toggleContextWindowSection(show) {
+  var section = document.getElementById('contextWindowSection');
+  if (section) section.style.display = show ? 'block' : 'none';
+}
+
+function updatePresetRenameDeleteVisibility(activePresetId, presets) {
+  var renameBtn = document.getElementById('renameContextPresetBtn');
+  var deleteBtn = document.getElementById('deleteContextPresetBtn');
+  if (!renameBtn || !deleteBtn) return;
+  if (!activePresetId || !Array.isArray(presets) || presets.length === 0) {
+    renameBtn.style.display = 'none';
+    deleteBtn.style.display = 'none';
+    return;
+  }
+  renameBtn.style.display = 'inline-block';
+  var id = (activePresetId || '').toLowerCase();
+  var isBuiltIn = id === 'internal-64k' || id === 'kimi-k25';
+  deleteBtn.style.display = isBuiltIn ? 'none' : 'inline-block';
+}
+
 async function saveConfig() {
   try {
     setSaveConfigButtonsState(true, '保存中…');
-    var scriptIdsEl = document.getElementById('allowedPageScriptIds');
-    const allowedPageScriptIds = (scriptIdsEl && scriptIdsEl.value)
-      ? scriptIdsEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
-      : [];
-    var allowedCliCommands = [];
-    var cliTa = document.getElementById('allowedCliCommands');
-    if (cliTa && cliTa.value) allowedCliCommands = cliTa.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-    else allowedCliCommands = getAllowedCliCommands();
-    const runEverythingEl = document.getElementById('runEverythingMode');
-    const runEverythingMode = runEverythingEl ? runEverythingEl.checked : !!(fullConfig && (fullConfig.runEverythingMode ?? fullConfig.RunEverythingMode));
+    var perEnd = collectCliScriptPerEndPayload();
     const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
     var aiModelsToSave = (aiModelsCache && aiModelsCache.length) ? aiModelsCache : (fullConfig.aiModels || fullConfig.AiModels || []);
     var activeEntry = aiModelsToSave.find(function (m) { return (m.id || m.Id) === activeId; });
@@ -810,6 +878,11 @@ async function saveConfig() {
       var activePreset = contextOptimizationPresets.find(function (p) { return (p.id || p.Id) === activeContextPresetId; });
       if (activePreset) {
         activePreset.planConfirmation = activePreset.PlanConfirmation = planConfirmationPayload;
+        var ctxPayload = collectContextWindowFromForm();
+        if (ctxPayload) {
+          var existing = activePreset.contextWindow || activePreset.ContextWindow || {};
+          activePreset.contextWindow = activePreset.ContextWindow = Object.assign({}, existing, ctxPayload);
+        }
       }
     }
     const payload = {
@@ -819,10 +892,10 @@ async function saveConfig() {
       tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
       skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
-      allowedPageScriptIds: allowedPageScriptIds,
-      allowedCliCommands: allowedCliCommands,
+      cliRunModeByClient: perEnd.cliRunModeByClient,
+      allowedCliCommandsByClient: perEnd.allowedCliCommandsByClient,
+      allowedPageScriptIdsByClient: perEnd.allowedPageScriptIdsByClient,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
-      runEverythingMode: runEverythingMode,
       embeddingModels: embeddingModelsToSave,
       activeEmbeddingModelId: activeEmbeddingModelId || undefined,
       ragStorageType: ragType,
@@ -840,7 +913,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, allowedPageScriptIds: payload.allowedPageScriptIds, allowedCliCommands: payload.allowedCliCommands, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, runEverythingMode: payload.runEverythingMode, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -897,7 +970,81 @@ if (newContextPresetBtn) {
 }
 
 var activeContextPresetEl = document.getElementById('activeContextPreset');
-if (activeContextPresetEl) activeContextPresetEl.addEventListener('change', saveConfig);
+if (activeContextPresetEl) {
+  activeContextPresetEl.addEventListener('change', function () {
+    var presets = getPresets();
+    var activeId = getActivePresetId();
+    fillContextWindowForm(activeId, presets);
+    toggleContextWindowSection(!!activeId);
+    updatePresetRenameDeleteVisibility(activeId, presets);
+    saveConfig();
+  });
+}
+['ctxConversationHistoryDirectory', 'ctxSummarizationTriggerRatio', 'ctxSummarizationMaxSummaryChars', 'ctxTruncateToolArgsThresholdRatio', 'ctxTruncateToolArgsKeepMessages', 'ctxTruncateToolArgsMaxChars'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('input', debouncedSaveConfig);
+});
+var ctxSummarizationEnabledEl = document.getElementById('ctxSummarizationEnabled');
+if (ctxSummarizationEnabledEl) ctxSummarizationEnabledEl.addEventListener('change', debouncedSaveConfig);
+
+var renameContextPresetBtn = document.getElementById('renameContextPresetBtn');
+if (renameContextPresetBtn) {
+  renameContextPresetBtn.addEventListener('click', function () {
+    var activeId = getActivePresetId();
+    var presets = getPresets();
+    if (!activeId || !presets.length) return;
+    var preset = presets.find(function (p) { return (p.id || p.Id) === activeId; });
+    if (!preset) return;
+    var currentName = preset.displayName || preset.DisplayName || activeId;
+    var newName = prompt('重命名预设', currentName);
+    if (newName == null || (newName = (newName || '').trim()) === '') return;
+    preset.displayName = preset.DisplayName = newName;
+    var presetEl = document.getElementById('activeContextPreset');
+    if (presetEl) {
+      var opts = presetEl.querySelectorAll('option');
+      for (var i = 0; i < opts.length; i++) { if (opts[i].value === activeId) { opts[i].textContent = newName; break; } }
+    }
+    saveConfig();
+  });
+}
+var deleteContextPresetBtn = document.getElementById('deleteContextPresetBtn');
+if (deleteContextPresetBtn) {
+  deleteContextPresetBtn.addEventListener('click', function () {
+    var activeId = getActivePresetId();
+    var presets = getPresets();
+    if (!activeId || !presets.length) return;
+    var id = (activeId || '').toLowerCase();
+    if (id === 'internal-64k' || id === 'kimi-k25') return;
+    if (!confirm('确定删除该预设？')) return;
+    var next = presets.filter(function (p) { return (p.id || p.Id) !== activeId; });
+    fullConfig = fullConfig || {};
+    fullConfig.contextOptimizationPresets = fullConfig.ContextOptimizationPresets = next;
+    if (next.length > 0) {
+      var firstId = next[0].id || next[0].Id || '';
+      fullConfig.activeContextPresetId = fullConfig.ActiveContextPresetId = firstId;
+    } else {
+      fullConfig.activeContextPresetId = fullConfig.ActiveContextPresetId = '';
+    }
+    var presetEl = document.getElementById('activeContextPreset');
+    if (presetEl) {
+      presetEl.innerHTML = '<option value="">-- 请选择 --</option>';
+      next.forEach(function (p) {
+        var oid = p.id ?? p.Id ?? '';
+        var name = p.displayName ?? p.DisplayName ?? oid;
+        var opt = document.createElement('option');
+        opt.value = oid;
+        opt.textContent = name;
+        presetEl.appendChild(opt);
+      });
+      presetEl.value = fullConfig.activeContextPresetId || '';
+    }
+    fillContextWindowForm(fullConfig.activeContextPresetId || '', next);
+    toggleContextWindowSection(next.length > 0);
+    updatePresetRenameDeleteVisibility(fullConfig.activeContextPresetId || '', next);
+    saveConfig();
+  });
+}
+
 var autoExecuteMaxStepsEl = document.getElementById('autoExecuteMaxSteps');
 if (autoExecuteMaxStepsEl) autoExecuteMaxStepsEl.addEventListener('input', debouncedSaveConfig);
 var requireConfirmForSensitiveToolsEl = document.getElementById('requireConfirmForSensitiveTools');
@@ -1178,6 +1325,85 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
+function renderCliScriptPerEndConfig() {
+  var container = document.getElementById('cliScriptPerEndConfig');
+  if (!container) return;
+  var modeByClient = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) ? (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) : {};
+  var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
+  var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
+  var html = '';
+  CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
+    var label = CLI_SCRIPT_END_LABELS[endKey] || endKey;
+    var mode = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
+    var cliList = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey] : [];
+    var scriptList = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey] : [];
+    var cliSet = cliList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+    var scriptSet = scriptList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+    var extraCli = cliList.filter(function (c) { return DEFAULT_CLI_COMMANDS.indexOf((c || '').toLowerCase()) < 0; }).join('\n');
+    var extraScript = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; }).join('\n');
+    html += '<div class="skill-card" style="margin-bottom:16px;" data-cli-script-end="' + escapeAttr(endKey) + '">';
+    html += '<div class="skill-header"><div class="skill-title">' + escapeHtml(label) + '</div></div>';
+    html += '<div class="form-group" style="margin-top:8px;"><label style="display:block;margin-bottom:6px;">运行模式</label><select class="cli-run-mode-select" data-end="' + escapeAttr(endKey) + '" style="min-width:220px;">';
+    CLI_RUN_MODES.forEach(function (opt) {
+      html += '<option value="' + escapeAttr(opt.value) + '"' + (mode === opt.value ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="cli-allowlist-section" data-end="' + escapeAttr(endKey) + '" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (mode !== 'UseAllowList' ? ' display:none;' : '') + '">';
+    html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p><div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px;">';
+    DEFAULT_CLI_COMMANDS.forEach(function (cmd) {
+      var checked = cliSet.indexOf(cmd.toLowerCase()) >= 0 ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="cli-default-cb" data-end="' + escapeAttr(endKey) + '" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span>' + escapeHtml(cmd) + '</span></label>';
+    });
+    html += '</div><textarea class="cli-extra-ta" data-end="' + escapeAttr(endKey) + '" placeholder="额外命令，每行一个" style="min-height:48px;width:100%;margin-bottom:12px;">' + escapeHtml(extraCli) + '</textarea>';
+    html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p><div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px;">';
+    DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
+      var checked = scriptSet.indexOf(sid.toLowerCase()) >= 0 ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-end="' + escapeAttr(endKey) + '" data-script="' + escapeAttr(sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
+    });
+    html += '</div><textarea class="script-extra-ta" data-end="' + escapeAttr(endKey) + '" placeholder="额外 scriptId，每行一个" style="min-height:48px;width:100%;">' + escapeHtml(extraScript) + '</textarea></div></div>';
+  });
+  container.innerHTML = html;
+  container.querySelectorAll('.cli-run-mode-select').forEach(function (el) {
+    el.addEventListener('change', function () {
+      var end = this.getAttribute('data-end');
+      var section = container.querySelector('.cli-allowlist-section[data-end="' + end + '"]');
+      if (section) section.style.display = this.value === 'UseAllowList' ? '' : 'none';
+      debouncedSaveConfig();
+    });
+  });
+  container.querySelectorAll('.cli-default-cb, .script-default-cb').forEach(function (el) { el.addEventListener('change', debouncedSaveConfig); });
+  container.querySelectorAll('.cli-extra-ta, .script-extra-ta').forEach(function (el) { el.addEventListener('input', debouncedSaveConfig); });
+}
+
+function collectCliScriptPerEndPayload() {
+  var cliRunModeByClient = {};
+  var allowedCliCommandsByClient = {};
+  var allowedPageScriptIdsByClient = {};
+  var container = document.getElementById('cliScriptPerEndConfig');
+  if (!container) return { cliRunModeByClient: cliRunModeByClient, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
+  CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
+    var modeEl = container.querySelector('.cli-run-mode-select[data-end="' + endKey + '"]');
+    cliRunModeByClient[endKey] = (modeEl && modeEl.value) ? modeEl.value : 'UseAllowList';
+    var cliList = [];
+    container.querySelectorAll('.cli-default-cb[data-end="' + endKey + '"]:checked').forEach(function (cb) {
+      var cmd = cb.getAttribute('data-cmd');
+      if (cmd) cliList.push(cmd);
+    });
+    var extraCliEl = container.querySelector('.cli-extra-ta[data-end="' + endKey + '"]');
+    if (extraCliEl && extraCliEl.value) cliList = cliList.concat(extraCliEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean));
+    allowedCliCommandsByClient[endKey] = cliList;
+    var scriptList = [];
+    container.querySelectorAll('.script-default-cb[data-end="' + endKey + '"]:checked').forEach(function (cb) {
+      var script = cb.getAttribute('data-script');
+      if (script) scriptList.push(script);
+    });
+    var extraScriptEl = container.querySelector('.script-extra-ta[data-end="' + endKey + '"]');
+    if (extraScriptEl && extraScriptEl.value) scriptList = scriptList.concat(extraScriptEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean));
+    allowedPageScriptIdsByClient[endKey] = scriptList;
+  });
+  return { cliRunModeByClient: cliRunModeByClient, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
+}
+
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
   loadConfig();
@@ -1200,12 +1426,6 @@ async function loadBuiltinTools() {
       el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">暂无内置插件</div>';
       return;
     }
-    var scriptIds = (fullConfig && (fullConfig.allowedPageScriptIds || fullConfig.AllowedPageScriptIds)) || [];
-    var scriptIdsText = Array.isArray(scriptIds) ? scriptIds.join('\n') : '';
-    var scriptIdsEscaped = escapeHtml(scriptIdsText);
-    var cliCommands = (fullConfig && (fullConfig.allowedCliCommands || fullConfig.AllowedCliCommands)) || [];
-    var cliCommandsText = Array.isArray(cliCommands) ? cliCommands.join('\n') : '';
-    var cliCommandsEscaped = escapeHtml(cliCommandsText);
     el.innerHTML = list.map(p => {
       const id = (p.id || p.Id || p.name || p.Name || '').toLowerCase();
       const name = p.name || p.Name || p.id || p.Id || '';
@@ -1213,12 +1433,6 @@ async function loadBuiltinTools() {
       const disabled = disabledSet.indexOf(id) >= 0;
       const idAttr = escapeAttr(id);
       var cardBody = `<div class="skill-header"><div class="skill-title">${escapeHtml(name)}${disabled ? ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>' : ''}</div><div><button type="button" class="btn-secondary builtin-toggle-btn" style="padding:4px 12px;font-size:12px;">${disabled ? '启用' : '停用'}</button></div></div><div class="skill-desc">${escapeHtml(desc)}</div>`;
-      if (id === 'browser') {
-        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedPageScriptIds">页面脚本白名单 (run_page_script)</label><textarea id="allowedPageScriptIds" placeholder="scroll_to_top&#10;scroll_to_bottom&#10;get_visible_text&#10;get_page_title" style="min-height:72px;">${scriptIdsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个 scriptId，仅允许列表内的脚本被 AI 执行。留空则使用默认列表。修改后会自动保存。</div></div>`;
-      }
-      if (id === 'cli') {
-        cardBody += `<div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"><label for="allowedCliCommands">命令白名单 (run_command)</label><textarea id="allowedCliCommands" placeholder="dir&#10;echo&#10;type&#10;ping&#10;systeminfo&#10;ipconfig" style="min-height:72px;">${cliCommandsEscaped}</textarea><div class="help-text" style="margin-top:4px;">每行一个命令名（如 dir、echo、type），仅允许列表内的命令被 AI 执行。留空则使用默认列表。修改后会自动保存。</div></div>`;
-      }
       return `<div class="skill-card builtin-card" style="opacity:0.95;" data-builtin-id="${idAttr}">${cardBody}</div>`;
     }).join('');
     el.querySelectorAll('.builtin-toggle-btn').forEach(function (btn) {
@@ -1238,10 +1452,6 @@ async function loadBuiltinTools() {
         _saveFullConfig().then(function () { loadBuiltinTools(); });
       });
     });
-    var scriptTa = document.getElementById('allowedPageScriptIds');
-    if (scriptTa) scriptTa.addEventListener('input', debouncedSaveConfig);
-    var cliTa = document.getElementById('allowedCliCommands');
-    if (cliTa) cliTa.addEventListener('input', debouncedSaveConfig);
   } catch (e) {
     console.warn('loadBuiltinTools failed', e);
     el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">无法加载内置插件列表（请确认后端已启动且已更新至最新版本）。</div>';

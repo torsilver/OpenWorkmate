@@ -444,12 +444,11 @@
 
     <!-- MCP 管理 -->
     <div id="tab-mcp" class="tab-content">
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认</h3>
-      <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-        <input type="checkbox" id="runEverythingMode" style="width: auto; margin: 0;">
-        <label for="runEverythingMode" style="margin: 0; font-weight: 500;">RunEverything 模式（全部放行）</label>
+      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
+      <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。</p>
+      <div id="cliScriptPerEndConfig">
+        <!-- 四端（Chrome / 后台 / Office / WPS）模式与白名单由 JS 注入 -->
       </div>
-      <p class="help-text" style="margin-top: -8px; margin-bottom: 20px;">开启后，所有对话下 CLI 命令与页面脚本不再校验白名单、不弹确认，直接执行。请仅在可信环境使用。</p>
 
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">内置能力（自带的 MCP）</h3>
       <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置，无需配置即可使用。</p>
@@ -577,10 +576,47 @@ postgresql://localhost/mydb"></textarea>
       <p class="help-text" style="margin-bottom: 12px;">选择上下文优化预设（如公司内部 64K、Kimi K2.5），或新建自定义预设。切换后会话/上下文/计划确认参数将随之生效。</p>
       <div class="form-group">
         <label for="activeContextPreset">当前优化预设</label>
-        <select id="activeContextPreset" style="padding: 6px 10px; border-radius: 6px; min-width: 200px;">
-          <option value="">-- 请选择 --</option>
-        </select>
-        <button type="button" id="newContextPresetBtn" class="btn-secondary" style="margin-left: 8px;">新建预设</button>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <select id="activeContextPreset" style="padding: 6px 10px; border-radius: 6px; min-width: 200px;">
+            <option value="">-- 请选择 --</option>
+          </select>
+          <button type="button" id="newContextPresetBtn" class="btn-secondary">新建预设</button>
+          <button type="button" id="renameContextPresetBtn" class="btn-secondary" style="display: none;">重命名</button>
+          <button type="button" id="deleteContextPresetBtn" class="btn-danger" style="display: none;">删除预设</button>
+        </div>
+      </div>
+
+      <div id="contextWindowSection" style="display: none; margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fafafa;">
+        <h3 style="margin: 0 0 12px; font-size: 14px; color: var(--text-secondary);">上下文窗口（当前预设）</h3>
+        <p class="help-text" style="margin-bottom: 12px;">仅当已选择「当前优化预设」时可编辑；保存后写入该预设的 contextWindow。</p>
+        <div class="form-group">
+          <label for="ctxConversationHistoryDirectory">摘要落盘目录（可选，空则用默认路径）</label>
+          <input type="text" id="ctxConversationHistoryDirectory" placeholder="留空使用默认">
+        </div>
+        <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="ctxSummarizationEnabled" style="width: auto; margin: 0;">
+          <label for="ctxSummarizationEnabled" style="margin: 0;">启用自动摘要</label>
+        </div>
+        <div class="form-group">
+          <label for="ctxSummarizationTriggerRatio">摘要触发比例（0–1）</label>
+          <input type="number" id="ctxSummarizationTriggerRatio" min="0" max="1" step="0.1" placeholder="0.9" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxSummarizationMaxSummaryChars">摘要最大字符数</label>
+          <input type="number" id="ctxSummarizationMaxSummaryChars" min="100" placeholder="500" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxTruncateToolArgsThresholdRatio">大内容截断触发比例（0–1，0=关闭）</label>
+          <input type="number" id="ctxTruncateToolArgsThresholdRatio" min="0" max="1" step="0.1" placeholder="0" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxTruncateToolArgsKeepMessages">截断保留最近消息数</label>
+          <input type="number" id="ctxTruncateToolArgsKeepMessages" min="0" placeholder="10" style="width: 80px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxTruncateToolArgsMaxChars">单条消息截断最大字符</label>
+          <input type="number" id="ctxTruncateToolArgsMaxChars" min="100" placeholder="2000" style="width: 100px;">
+        </div>
       </div>
 
       <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">计划确认规则</h3>

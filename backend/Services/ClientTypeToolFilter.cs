@@ -12,6 +12,8 @@ public static class ClientTypeToolFilter
         if (string.IsNullOrEmpty(pluginName)) return false;
         return PluginComparer.Equals(pluginName, "Tavily")
             || PluginComparer.Equals(pluginName, "Memory")
+            || PluginComparer.Equals(pluginName, "Context")
+            || PluginComparer.Equals(pluginName, "Subagent")
             || PluginComparer.Equals(pluginName, "CrossAgentTask")
             || PluginComparer.Equals(pluginName, "ClawhubSkill")
             || PluginComparer.Equals(pluginName, "AccurateData")
@@ -42,6 +44,12 @@ public static class ClientTypeToolFilter
     private static bool IsCurrentDocumentScriptFunction(string functionName)
     {
         return PluginComparer.Equals(functionName, "current_run_document_script");
+    }
+
+    private static bool IsCurrentDocumentPptFunction(string functionName)
+    {
+        return PluginComparer.Equals(functionName, "current_ppt_slides_list")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_read");
     }
 
     /// <summary>判断该 (Plugin, Function) 是否允许暴露给给定 clientType 的会话。</summary>
@@ -75,11 +83,19 @@ public static class ClientTypeToolFilter
             return false;
         }
 
+        if (PluginComparer.Equals(ct, "office-powerpoint"))
+        {
+            if (IsCommonPlugin(pluginName)) return true;
+            if (PluginComparer.Equals(pluginName, "CurrentDocument"))
+                return IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+            return false;
+        }
+
         if (PluginComparer.Equals(ct, "wps"))
         {
             if (IsCommonPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
-                return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+                return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
             return false;
         }
 

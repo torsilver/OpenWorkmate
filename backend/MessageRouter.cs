@@ -90,6 +90,11 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Allowed { get; set; }
 
+    /// <summary>HITL confirm_response: 是否同时加入当前端白名单并执行。</summary>
+    [JsonPropertyName("addToAllowList")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AddToAllowList { get; set; }
+
     // 工具调用状态（tool_invocation_start / tool_invocation_end）
     [JsonPropertyName("plugin")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -152,7 +157,7 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Path { get; set; }
 
-    /// <summary>plan_created 时：创建该计划的端（chrome | office-word | office-excel | wps）。</summary>
+    /// <summary>plan_created 时：创建该计划的端（chrome | office-word | office-excel | office-powerpoint | wps）。</summary>
     [JsonPropertyName("createdBy")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CreatedBy { get; set; }
@@ -304,6 +309,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(AttachmentDto))]
 [JsonSerializable(typeof(List<AttachmentDto>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, List<string>>))]
 [JsonSerializable(typeof(TestAiRequest))]
 [JsonSerializable(typeof(TestEmbeddingRequest))]
 [JsonSerializable(typeof(RagIngestRequest))]

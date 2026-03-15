@@ -472,6 +472,82 @@
         sendRes(null, "WPS 表格 RPC 需根据 WPS 开放平台 API 实现。");
       } else if (method === "excel_read_formulas" || method === "excel_write_formulas") {
         sendRes(null, "WPS 表格公式 RPC 需根据 WPS 开放平台 API 实现。");
+      } else if (method === "ppt_slides_list") {
+        try {
+          var app = window.wps.Application || window.wps;
+          var pres = app.ActivePresentation;
+          if (!pres) {
+            sendRes(null, "当前不是 WPS 演示文档，无法执行 ppt_slides_list。请在 WPS 演示中打开文稿后再试。");
+            return;
+          }
+          var slides = pres.Slides;
+          if (!slides) {
+            sendRes("演示文稿中无幻灯片。", null);
+            return;
+          }
+          var count = slides.Count;
+          if (typeof count !== "number") count = (count != null && count.value !== undefined) ? count.value : 0;
+          var out = "共 " + count + " 张幻灯片（按播放顺序）：\n";
+          for (var idx = 0; idx < count; idx++) {
+            var slide = slides.Item(idx + 1);
+            var preview = "(无文本)";
+            if (slide && slide.Shapes && slide.Shapes.Count > 0) {
+              var parts = [];
+              for (var si = 0; si < slide.Shapes.Count; si++) {
+                var sh = slide.Shapes.Item(si + 1);
+                if (sh && sh.TextFrame && sh.TextFrame.TextRange && sh.TextFrame.TextRange.Text) {
+                  var t = String(sh.TextFrame.TextRange.Text).slice(0, 80);
+                  if (t.length === 80) t += "...";
+                  parts.push(t);
+                }
+              }
+              if (parts.length > 0) preview = parts.join(" ");
+            }
+            out += "  " + (idx + 1) + ". " + preview + "\n";
+          }
+          sendRes(out.trim(), null);
+        } catch (e) {
+          sendRes(null, "当前不是 WPS 演示文档或 API 不可用，无法执行 ppt_slides_list：" + (e && e.message ? e.message : String(e)));
+        }
+      } else if (method === "ppt_slide_read") {
+        try {
+          var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1;
+          if (slideIndex < 1) {
+            sendRes("[错误] slideIndex 必须大于等于 1。", null);
+            return;
+          }
+          var app = window.wps.Application || window.wps;
+          var pres = app.ActivePresentation;
+          if (!pres) {
+            sendRes(null, "当前不是 WPS 演示文档，无法执行 ppt_slide_read。请在 WPS 演示中打开文稿后再试。");
+            return;
+          }
+          var slides = pres.Slides;
+          if (!slides) {
+            sendRes(null, "演示文稿中无幻灯片。");
+            return;
+          }
+          var count = slides.Count;
+          if (typeof count !== "number") count = (count != null && count.value !== undefined) ? count.value : 0;
+          if (slideIndex > count) {
+            sendRes("[错误] 幻灯片序号 " + slideIndex + " 超出范围，当前共 " + count + " 张。", null);
+            return;
+          }
+          var slide = slides.Item(slideIndex);
+          var parts = [];
+          if (slide && slide.Shapes && slide.Shapes.Count > 0) {
+            for (var i = 0; i < slide.Shapes.Count; i++) {
+              var sh = slide.Shapes.Item(i + 1);
+              if (sh && sh.TextFrame && sh.TextFrame.TextRange && sh.TextFrame.TextRange.Text) {
+                parts.push(String(sh.TextFrame.TextRange.Text));
+              }
+            }
+          }
+          var text = "[幻灯片 " + slideIndex + "]\n" + (parts.length > 0 ? parts.join(" ").trim() : "(无文本)");
+          sendRes(text, null);
+        } catch (e) {
+          sendRes(null, "当前不是 WPS 演示文档或 API 不可用，无法执行 ppt_slide_read：" + (e && e.message ? e.message : String(e)));
+        }
       } else {
         sendRes(null, "Method not supported in this client: " + method);
       }
@@ -485,25 +561,29 @@
   var $hitlOverlay = document.getElementById("hitl-overlay");
   var $hitlAction = document.getElementById("hitl-action");
   var $hitlAllowBtn = document.getElementById("hitl-allow-btn");
+  var $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
   var $hitlDenyBtn = document.getElementById("hitl-deny-btn");
 
   function handleConfirmRequest(msg) {
     var requestId = msg.id || msg.requestId;
     var action = msg.content || msg.action || "未知操作";
+    var hitlKind = msg.hitlKind;
     if (!requestId) return;
     pendingConfirmId = requestId;
     if ($hitlAction) $hitlAction.textContent = action;
+    if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "run_page_script") ? "" : "none";
     if ($hitlOverlay) { $hitlOverlay.style.display = "flex"; $hitlOverlay.setAttribute("aria-hidden", "false"); }
   }
 
-  function sendConfirmResponse(id, allowed) {
+  function sendConfirmResponse(id, allowed, addToAllowList) {
     if (!id) return;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed }));
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed, addToAllowList: !!addToAllowList }));
     pendingConfirmId = null;
     if ($hitlOverlay) { $hitlOverlay.style.display = "none"; $hitlOverlay.setAttribute("aria-hidden", "true"); }
   }
 
-  if ($hitlAllowBtn) $hitlAllowBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true); });
+  if ($hitlAllowBtn) $hitlAllowBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, false); });
+  if ($hitlAddToListBtn) $hitlAddToListBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, true); });
   if ($hitlDenyBtn) $hitlDenyBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, false); });
 
   function handleSend() {

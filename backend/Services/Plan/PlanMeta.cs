@@ -20,7 +20,7 @@ public class PlanMeta
     [JsonPropertyName("updatedAt")]
     public DateTimeOffset UpdatedAt { get; set; }
 
-    /// <summary>创建该计划的端：chrome | office-word | office-excel | wps。</summary>
+    /// <summary>创建该计划的端：chrome | office-word | office-excel | office-powerpoint | wps。</summary>
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = "";
 

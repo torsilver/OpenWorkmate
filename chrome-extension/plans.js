@@ -75,6 +75,8 @@
           $executeHint.textContent = "该计划在 Word 中创建，请在 Word 任务窗格中执行。";
         } else if (createdBy === "office-excel") {
           $executeHint.textContent = "该计划在 Excel 中创建，请在 Excel 任务窗格中执行。";
+        } else if (createdBy === "office-powerpoint") {
+          $executeHint.textContent = "该计划在 PowerPoint 中创建，请在 PowerPoint 任务窗格中执行。";
         } else if (createdBy === "wps") {
           $executeHint.textContent = "该计划在 WPS 中创建，请在 WPS 任务窗格中执行。";
         } else {
@@ -204,6 +206,8 @@
           $executeHint.textContent = "该计划在 Word 中创建，请在 Word 任务窗格中执行。";
         } else if (createdBy === "office-excel") {
           $executeHint.textContent = "该计划在 Excel 中创建，请在 Excel 任务窗格中执行。";
+        } else if (createdBy === "office-powerpoint") {
+          $executeHint.textContent = "该计划在 PowerPoint 中创建，请在 PowerPoint 任务窗格中执行。";
         } else if (createdBy === "wps") {
           $executeHint.textContent = "该计划在 WPS 中创建，请在 WPS 任务窗格中执行。";
         } else {

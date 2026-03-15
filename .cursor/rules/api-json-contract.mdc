@@ -1,9 +1,6 @@
 ---
-description: 后端 API 与前端 JSON 约定及错误返回方式，避免“像前端问题”的 400
-globs: backend/**/*.cs
-alwaysApply: false
+alwaysApply: true
 ---
-
 # 后端 API：JSON 契约与错误返回
 
 ## 1. 前后端 JSON 字段命名必须一致
@@ -13,6 +10,7 @@ alwaysApply: false
 - **必须**对“前端会调用的”接口使用与前端一致的命名：
   - 使用项目内已有的 `JsonCtx`（已配置 `PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase`）做反序列化；
   - 或使用 `JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }`。
+- **含嵌套类型的 DTO**（如 `AppConfig` 含 `embeddingModels[]`）：若用 JsonCtx 源生成器反序列化时嵌套字段（如 `endpoint`）未正确映射，应改用反射 + CamelCase 的 `JsonSerializerOptions` 做反序列化，保证整棵对象树与前端 camelCase 一致。本项目对 `AppConfig` 的「从文件加载」与「POST /api/config」均使用 `ConfigService.AppConfigDeserializeOptions`。
 - 新增 DTO 若会被前端 POST/GET 使用，**必须**在 `JsonCtx` 中注册 `[JsonSerializable(typeof(YourDto))]`，并用 `JsonCtx.Default.YourDto` 做反序列化，不要用无参数的 `JsonSerializer.DeserializeAsync<T>(stream)`。
 
 ```csharp

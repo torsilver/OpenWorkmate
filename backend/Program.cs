@@ -47,6 +47,7 @@ try
     });
     builder.Services.AddSingleton<IMemoryStoreService, MemoryStoreService>();
     builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
+    builder.Services.AddSingleton<IToolIndexService, ToolIndexService>();
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
@@ -187,7 +188,8 @@ app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenA
 app.MapGet("/api/config", (ConfigService config) => Results.Json(config.Current, JsonCtx.Default.AppConfig));
 app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
 {
-    var newConfig = await JsonSerializer.DeserializeAsync<AppConfig>(ctx.Request.Body, JsonCtx.Default.AppConfig);
+    // 与前端 camelCase 一致，使用与 LoadConfig 相同的反序列化选项（含 embeddingModels[].endpoint）
+    var newConfig = await JsonSerializer.DeserializeAsync<AppConfig>(ctx.Request.Body, ConfigService.AppConfigDeserializeOptions);
     if (newConfig != null)
     {
         config.SaveConfig(newConfig);
@@ -315,13 +317,16 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
-        new() { Id = "CurrentDocument", Name = "CurrentDocument", Description = "当前打开的 Word/Excel 文档（任务窗格连接时）：正文/选区/表格/查找替换、Excel 区域/公式/工作表、预定义脚本" },
+        new() { Id = "Ppt", Name = "Ppt", Description = "读写 PPT 演示文稿" },
+        new() { Id = "CurrentDocument", Name = "CurrentDocument", Description = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：正文/选区/表格/查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本" },
         new() { Id = "Tavily", Name = "Tavily", Description = "Tavily 网页搜索与 URL 正文提取（需配置 TAVILY_API_KEY）" },
         new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
         new() { Id = "Memory", Name = "Memory", Description = "长期记忆：保存与检索用户偏好、关键事实（需配置 Embedding 模型）" }
     };
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);
 });
+app.MapGet("/api/config/default-allowed-cli", () => Results.Json(CliScriptEndKeys.DefaultAllowedCommands));
+app.MapGet("/api/config/default-allowed-page-scripts", () => Results.Json(CliScriptEndKeys.DefaultAllowedScriptIds));
 app.MapGet("/api/skills", (SkillService skills) => Results.Json(skills.GetAllSkills(), JsonCtx.Default.ListSkillDefinition));
 app.MapPost("/api/skills", async (HttpContext ctx, SkillService skills) =>
 {
@@ -666,8 +671,9 @@ static async Task HandleSession(
             case "confirm_response":
                 if (incoming.Id != null)
                 {
-                    logger.LogDebug("[{SessionId}] HITL confirm_response id={ReqId} allowed={Allowed}", sessionId, incoming.Id, incoming.Allowed);
-                    hitlManager.HandleResponse(incoming.Id, incoming.Allowed ?? false);
+                    var addToAllowList = incoming.AddToAllowList ?? false;
+                    logger.LogDebug("[{SessionId}] HITL confirm_response id={ReqId} allowed={Allowed} addToAllowList={Add}", sessionId, incoming.Id, incoming.Allowed, addToAllowList);
+                    hitlManager.HandleResponse(incoming.Id, incoming.Allowed ?? false, addToAllowList);
                 }
                 break;
             case "get_debug_history":
@@ -701,9 +707,12 @@ static async Task HandleChatStream(
     {
         string prompt = incoming.Content ?? "";
 
-        await foreach (var chunk in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, ct))
+        await foreach (var item in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, ct))
         {
-            await SendJson(ws, new WsMessage { Type = "stream_chunk", Content = chunk });
+            if (item.IsWarning)
+                await SendJson(ws, new WsMessage { Type = "stream_warning", Content = item.Content });
+            else
+                await SendJson(ws, new WsMessage { Type = "stream_chunk", Content = item.Content });
         }
     }
     catch (OperationCanceledException)

@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -16,6 +17,8 @@ public class AiConfig
     public List<string> AlwaysIncludePlugins { get; set; } = new();
     /// <summary>为 true 时使用两阶段工具选择（一阶段选子类、二阶段选函数）；为 false 时退化为单阶段选插件。null 视为 true。</summary>
     public bool? ToolSelectionTwoStage { get; set; } = true;
+    /// <summary>为 true 时先按用户输入在工具向量库中检索，结果足够好则直接用检索到的工具，否则回退到两轮选子类。默认 false。需已配置 Embedding。</summary>
+    public bool ToolSelectionVectorFirst { get; set; }
 }
 
 /// <summary>多模型列表中的单条：支持 OpenAI / Azure / Ollama / Anthropic。</summary>
@@ -106,6 +109,14 @@ public class ContextWindowConfig
     public int SummarizationMaxSummaryChars { get; set; } = 500;
     public bool ContextLengthRetryEnabled { get; set; } = true;
     public int ContextLengthRetryMaxTurns { get; set; } = 10;
+    /// <summary>摘要时被压缩的对话历史落盘目录；为空时使用与 PlansDirectory 同级的 ConversationHistory，若仍无法解析则使用 %LocalAppData%/OfficeCopilot/ConversationHistory。</summary>
+    public string? ConversationHistoryDirectory { get; set; }
+    /// <summary>旧消息中大内容截断：当历史 token 占比超过此比例时，对「保留窗口」之外的旧消息做内容截断。0 表示禁用。建议低于 SummarizationTriggerRatio（如 0.7）。</summary>
+    public double TruncateToolArgsThresholdRatio { get; set; }
+    /// <summary>大内容截断时保留的最近消息条数（不含 system），此范围内的消息不截断。</summary>
+    public int TruncateToolArgsKeepMessages { get; set; } = 10;
+    /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
+    public int TruncateToolArgsMaxChars { get; set; } = 2000;
 }
 
 /// <summary>上下文优化预设：一组 ContextWindow + Session + PlanConfirmation，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
@@ -154,14 +165,14 @@ public class AppConfig
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
     public string ActiveModelId { get; set; } = "";
     public List<McpServerConfig> McpServers { get; set; } = new();
-    /// <summary>MCP 工具 run_page_script 允许执行的脚本 ID 白名单；空则使用默认列表。</summary>
-    public List<string> AllowedPageScriptIds { get; set; } = new();
-    /// <summary>CLI 工具 run_command 允许执行的命令白名单（每项为命令名，如 dir、echo、type）；空则使用默认列表。</summary>
-    public List<string> AllowedCliCommands { get; set; } = new();
+    /// <summary>按端（chrome/backend/office/wps）CLI 与页面脚本运行模式：RunEverything | AskEverytime | UseAllowList。未配置的端默认 UseAllowList。</summary>
+    public Dictionary<string, string> CliRunModeByClient { get; set; } = new();
+    /// <summary>按端命令白名单（每项为命令名，如 dir、echo、type）；空则使用默认列表。</summary>
+    public Dictionary<string, List<string>> AllowedCliCommandsByClient { get; set; } = new();
+    /// <summary>按端页面脚本 ID 白名单；空则使用默认列表。</summary>
+    public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
     /// <summary>已停用的内置插件 ID 列表（如 Browser、File、CLI、Excel、Word），这些插件不会注册到 Kernel。</summary>
     public List<string> DisabledBuiltInPlugins { get; set; } = new();
-    /// <summary>RunEverything 模式：为 true 时所有会话下 run_command / run_page_script 不校验白名单、不发起 HITL，直接放行。</summary>
-    public bool RunEverythingMode { get; set; }
     /// <summary>Tavily API Key，用于网页搜索技能；也可通过环境变量 TAVILY_API_KEY 提供。</summary>
     public string TavilyApiKey { get; set; } = "";
     /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY、OPENAI_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取，若无则从系统环境变量读取。可在设置页或 user-config.json 中配置。</summary>
@@ -183,8 +194,39 @@ public class AppConfig
     public string? ScheduledTasksDirectory { get; set; }
 }
 
+/// <summary>四端键名：chrome、backend、office、wps。</summary>
+public static class CliScriptEndKeys
+{
+    public const string Chrome = "chrome";
+    public const string Backend = "backend";
+    public const string Office = "office";
+    public const string Wps = "wps";
+
+    public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
+    public static readonly string[] DefaultAllowedScriptIds = { "scroll_to_top", "scroll_to_bottom", "get_visible_text", "get_page_title" };
+
+    /// <summary>将 clientType 解析为四端之一。</summary>
+    public static string ResolveEndKey(string? clientType)
+    {
+        var ct = (clientType ?? "").Trim();
+        if (string.IsNullOrEmpty(ct)) return Backend;
+        if (string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase)) return Chrome;
+        if (ct.StartsWith("office-", StringComparison.OrdinalIgnoreCase)) return Office;
+        if (string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase)) return Wps;
+        return Backend;
+    }
+}
+
 public sealed class ConfigService
 {
+    /// <summary>与前端 camelCase 一致，用于从文件或 POST body 反序列化 AppConfig（含嵌套 embeddingModels[].endpoint）。</summary>
+    public static readonly JsonSerializerOptions AppConfigDeserializeOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
     private readonly string _configPath;
     private AppConfig _currentConfig;
     private readonly ILogger<ConfigService> _logger;
@@ -208,6 +250,63 @@ public sealed class ConfigService
 
     public AppConfig Current => _currentConfig;
 
+    /// <summary>获取指定端的 CLI/脚本运行模式，未配置时默认 UseAllowList。</summary>
+    public string GetCliRunModeForEnd(string endKey)
+    {
+        var mode = _currentConfig.CliRunModeByClient?.GetValueOrDefault(endKey)?.Trim();
+        return string.IsNullOrEmpty(mode) ? "UseAllowList" : mode;
+    }
+
+    /// <summary>获取指定端的命令白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
+    public IReadOnlyList<string>? GetAllowedCliCommandsForEnd(string endKey)
+    {
+        if (_currentConfig.AllowedCliCommandsByClient == null) return null;
+        if (!_currentConfig.AllowedCliCommandsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
+            return null;
+        return list;
+    }
+
+    /// <summary>获取指定端的页面脚本白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
+    public IReadOnlyList<string>? GetAllowedPageScriptIdsForEnd(string endKey)
+    {
+        if (_currentConfig.AllowedPageScriptIdsByClient == null) return null;
+        if (!_currentConfig.AllowedPageScriptIdsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
+            return null;
+        return list;
+    }
+
+    /// <summary>将命令名加入指定端白名单并持久化。</summary>
+    public void AddAllowedCliCommandForEnd(string endKey, string commandName)
+    {
+        if (string.IsNullOrWhiteSpace(commandName)) return;
+        var key = commandName.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            _currentConfig.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
+            if (!_currentConfig.AllowedCliCommandsByClient.TryGetValue(endKey, out var list) || list == null)
+                _currentConfig.AllowedCliCommandsByClient[endKey] = list = new List<string>();
+            if (list.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
+            list.Add(key);
+            SaveConfig(_currentConfig);
+        }
+    }
+
+    /// <summary>将 scriptId 加入指定端白名单并持久化。</summary>
+    public void AddAllowedPageScriptIdForEnd(string endKey, string scriptId)
+    {
+        if (string.IsNullOrWhiteSpace(scriptId)) return;
+        var key = scriptId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            _currentConfig.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
+            if (!_currentConfig.AllowedPageScriptIdsByClient.TryGetValue(endKey, out var list) || list == null)
+                _currentConfig.AllowedPageScriptIdsByClient[endKey] = list = new List<string>();
+            if (list.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
+            list.Add(key);
+            SaveConfig(_currentConfig);
+        }
+    }
+
     /// <summary>获取当前选中的 Embedding 配置条目；未配置或未选中时返回 null。</summary>
     public EmbeddingModelEntry? GetActiveEmbeddingEntry()
     {
@@ -223,13 +322,17 @@ public sealed class ConfigService
             try
             {
                 var json = File.ReadAllText(_configPath);
-                var config = JsonSerializer.Deserialize<AppConfig>(json, JsonCtx.Default.AppConfig);
+                var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigDeserializeOptions);
                 if (config != null && config.AI != null)
                 {
+                    PatchEmbeddingEndpointsFromRawJson(json, config);
                     _logger.LogInformation("Loaded user config from {Path}", _configPath);
                     if (string.IsNullOrWhiteSpace(config.TavilyApiKey))
                         config.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
                     config.SkillEnv ??= new Dictionary<string, string>();
+                    config.CliRunModeByClient ??= new Dictionary<string, string>();
+                    config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
+                    config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
                     config.AiModels ??= new List<AiModelEntry>();
                     config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
                     config.Session ??= new SessionConfig();
@@ -237,7 +340,13 @@ public sealed class ConfigService
                     config.PlanConfirmation ??= new PlanConfirmationConfig();
                     config.ContextOptimizationPresets ??= new List<ContextOptimizationPreset>();
                     if (config.ContextOptimizationPresets.Count == 0)
-                        config.ContextOptimizationPresets.AddRange(GetBuiltInPresets());
+                    {
+                        var fromConfig = LoadPresetsFromConfiguration(defaultConfig);
+                        if (fromConfig != null && fromConfig.Count > 0)
+                            config.ContextOptimizationPresets.AddRange(fromConfig);
+                        else
+                            config.ContextOptimizationPresets.AddRange(GetBuiltInPresets());
+                    }
                     ApplyActivePresetIfSet(config);
                     MigrateLegacyAiIfNeeded(config);
                     return config;
@@ -263,7 +372,10 @@ public sealed class ConfigService
         defaultConfig.GetSection("ContextWindow").Bind(appConfig.ContextWindow);
         appConfig.PlanConfirmation = new PlanConfirmationConfig();
         defaultConfig.GetSection("PlanConfirmation").Bind(appConfig.PlanConfirmation);
-        appConfig.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
+        var presetsFromConfig = LoadPresetsFromConfiguration(defaultConfig);
+        appConfig.ContextOptimizationPresets = (presetsFromConfig != null && presetsFromConfig.Count > 0)
+            ? new List<ContextOptimizationPreset>(presetsFromConfig)
+            : new List<ContextOptimizationPreset>(GetBuiltInPresets());
         if (string.IsNullOrWhiteSpace(appConfig.ActiveContextPresetId))
             appConfig.ActiveContextPresetId = "internal-64k";
         ApplyActivePresetIfSet(appConfig);
@@ -274,6 +386,71 @@ public sealed class ConfigService
         appConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
         MigrateLegacyAiIfNeeded(appConfig);
         return appConfig;
+    }
+
+    /// <summary>从原始 JSON 补全 embeddingModels 中缺失的 Endpoint，避免反序列化未正确映射 endpoint 时丢失。</summary>
+    private static void PatchEmbeddingEndpointsFromRawJson(string json, AppConfig config)
+    {
+        if (config.EmbeddingModels == null || config.EmbeddingModels.Count == 0) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            // 兼容 camelCase 与 PascalCase（文件可能来自不同保存路径）
+            if (!doc.RootElement.TryGetProperty("embeddingModels", out var arr) && !doc.RootElement.TryGetProperty("EmbeddingModels", out arr))
+                return;
+            if (arr.ValueKind != JsonValueKind.Array) return;
+            var list = config.EmbeddingModels;
+            for (var i = 0; i < list.Count && i < arr.GetArrayLength(); i++)
+            {
+                var entry = list[i];
+                if (!string.IsNullOrWhiteSpace(entry.Endpoint)) continue;
+                var el = arr[i];
+                if (!el.TryGetProperty("endpoint", out var ep)) el.TryGetProperty("Endpoint", out ep);
+                if (ep.ValueKind == JsonValueKind.String && ep.GetString() is { } s && !string.IsNullOrWhiteSpace(s))
+                    entry.Endpoint = s;
+            }
+        }
+        catch { /* 补全失败则保持原样 */ }
+    }
+
+    /// <summary>保存时若新数据中某条 Embedding 的 Endpoint 为空，则从当前配置同 Id 条目保留，避免被覆盖丢失。</summary>
+    private static void PreserveEmbeddingEndpointsFromCurrent(List<EmbeddingModelEntry> newList, List<EmbeddingModelEntry>? currentList)
+    {
+        if (currentList == null || currentList.Count == 0) return;
+        foreach (var entry in newList)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.Endpoint)) continue;
+            var id = (entry.Id ?? "").Trim();
+            if (string.IsNullOrEmpty(id)) continue;
+            var current = currentList.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+            if (current != null && !string.IsNullOrWhiteSpace(current.Endpoint))
+                entry.Endpoint = current.Endpoint;
+        }
+    }
+
+    /// <summary>从 IConfiguration 的 ContextOptimizationPresets 节点加载预设列表；若节点为空或绑定失败则返回 null。</summary>
+    private static List<ContextOptimizationPreset>? LoadPresetsFromConfiguration(IConfiguration defaultConfig)
+    {
+        var section = defaultConfig.GetSection("ContextOptimizationPresets");
+        if (section == null || !section.GetChildren().Any()) return null;
+        var list = new List<ContextOptimizationPreset>();
+        foreach (var child in section.GetChildren())
+        {
+            var preset = new ContextOptimizationPreset();
+            try
+            {
+                child.Bind(preset);
+                if (preset.ContextWindow == null) preset.ContextWindow = new ContextWindowConfig();
+                if (preset.Session == null) preset.Session = new SessionConfig();
+                if (preset.PlanConfirmation == null) preset.PlanConfirmation = new PlanConfirmationConfig();
+                list.Add(preset);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return list.Count > 0 ? list : null;
     }
 
     /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）。</summary>
@@ -301,7 +478,11 @@ public sealed class ConfigService
                     SummarizationTriggerRatio = 0.9,
                     SummarizationMaxSummaryChars = 500,
                     ContextLengthRetryEnabled = true,
-                    ContextLengthRetryMaxTurns = 10
+                    ContextLengthRetryMaxTurns = 10,
+                    ConversationHistoryDirectory = null,
+                    TruncateToolArgsThresholdRatio = 0,
+                    TruncateToolArgsKeepMessages = 10,
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
                 PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
@@ -326,7 +507,11 @@ public sealed class ConfigService
                     SummarizationTriggerRatio = 0.9,
                     SummarizationMaxSummaryChars = 500,
                     ContextLengthRetryEnabled = true,
-                    ContextLengthRetryMaxTurns = 15
+                    ContextLengthRetryMaxTurns = 15,
+                    ConversationHistoryDirectory = null,
+                    TruncateToolArgsThresholdRatio = 0,
+                    TruncateToolArgsKeepMessages = 10,
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
                 PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
@@ -364,7 +549,11 @@ public sealed class ConfigService
             SummarizationTriggerRatio = preset.ContextWindow.SummarizationTriggerRatio,
             SummarizationMaxSummaryChars = preset.ContextWindow.SummarizationMaxSummaryChars,
             ContextLengthRetryEnabled = preset.ContextWindow.ContextLengthRetryEnabled,
-            ContextLengthRetryMaxTurns = preset.ContextWindow.ContextLengthRetryMaxTurns
+            ContextLengthRetryMaxTurns = preset.ContextWindow.ContextLengthRetryMaxTurns,
+            ConversationHistoryDirectory = preset.ContextWindow.ConversationHistoryDirectory,
+            TruncateToolArgsThresholdRatio = preset.ContextWindow.TruncateToolArgsThresholdRatio,
+            TruncateToolArgsKeepMessages = preset.ContextWindow.TruncateToolArgsKeepMessages,
+            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars
         };
         config.PlanConfirmation = new PlanConfirmationConfig
         {
@@ -412,7 +601,12 @@ public sealed class ConfigService
                 if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
                 if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();
+                if (newConfig.CliRunModeByClient == null) newConfig.CliRunModeByClient = _currentConfig.CliRunModeByClient ?? new Dictionary<string, string>();
+                if (newConfig.AllowedCliCommandsByClient == null) newConfig.AllowedCliCommandsByClient = _currentConfig.AllowedCliCommandsByClient ?? new Dictionary<string, List<string>>();
+                if (newConfig.AllowedPageScriptIdsByClient == null) newConfig.AllowedPageScriptIdsByClient = _currentConfig.AllowedPageScriptIdsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.EmbeddingModels == null) newConfig.EmbeddingModels = _currentConfig.EmbeddingModels ?? new List<EmbeddingModelEntry>();
+                else
+                    PreserveEmbeddingEndpointsFromCurrent(newConfig.EmbeddingModels, _currentConfig.EmbeddingModels);
                 if (newConfig.ActiveEmbeddingModelId == null) newConfig.ActiveEmbeddingModelId = _currentConfig.ActiveEmbeddingModelId;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))

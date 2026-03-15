@@ -31,13 +31,14 @@ public sealed class ChatService : IDisposable
     private readonly SkillService _skillService;
     private readonly McpClientManager _mcpManager;
     private readonly IToolSelector _toolSelector;
+    private readonly IToolIndexService _toolIndex;
     private readonly IServiceProvider _serviceProvider;
     private readonly IKernelAccessor _kernelAccessor;
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -45,6 +46,7 @@ public sealed class ChatService : IDisposable
         _skillService = skillService;
         _mcpManager = mcpManager;
         _toolSelector = toolSelector;
+        _toolIndex = toolIndex;
         _serviceProvider = serviceProvider;
         _kernelAccessor = kernelAccessor;
         _embeddingProvider = embeddingProvider;
@@ -208,9 +210,18 @@ public sealed class ChatService : IDisposable
             try
             {
                 if (embUri != null)
-                    builder.AddOpenAITextEmbeddingGeneration(embModelId, embApiKey, embUri.ToString(), "Embedding", httpClient);
+                {
+                    // SK 该重载第 3 参数为 orgId 非 endpoint，请求会发往 api.openai.com；用 Handler 将请求重写到配置的 endpoint
+                    var redirectHandler = new EmbeddingEndpointRedirectHandler(embUri.ToString());
+                    redirectHandler.InnerHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>());
+                    var embHttpClient = new HttpClient(redirectHandler);
+                    builder.AddOpenAITextEmbeddingGeneration(embModelId, embApiKey, (string?)null, "Embedding", embHttpClient);
+                    _logger.LogInformation("Embedding registered: Id={EmbId}, Endpoint={Endpoint}", activeEmb.Id, embUri.ToString());
+                }
                 else
-                    builder.AddOpenAITextEmbeddingGeneration(embModelId, embApiKey, (string?)null, "Embedding", httpClient);
+                {
+                    _logger.LogWarning("Embedding 未配置 Endpoint，已跳过注册（避免误用默认 OpenAI 地址）。请在设置中为该条填写 Endpoint 并保存。Id={EmbId}", activeEmb.Id);
+                }
             }
 #pragma warning restore CS0618
             catch (Exception ex)
@@ -230,12 +241,12 @@ public sealed class ChatService : IDisposable
 
         // 注册安全拦截器（含 HITL：拦截时发确认请求，用户允许则继续执行）
         var hitlManager = _serviceProvider.GetRequiredService<HitlManager>();
-        var securityFilter = new SecurityFilter(_loggerFactory.CreateLogger<SecurityFilter>(), _configService, hitlManager);
+        var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
+        var securityFilter = new SecurityFilter(_loggerFactory.CreateLogger<SecurityFilter>(), _configService, hitlManager, sessionManager);
         newKernel.FunctionInvocationFilters.Add(securityFilter);
         // 注入当前会话 ID，供 BrowserPlugin 等插件在工具调用时使用
         newKernel.FunctionInvocationFilters.Add(new SessionContextFilter(_loggerFactory.CreateLogger<SessionContextFilter>()));
         // 工具调用状态对前端可见：推送 tool_invocation_start / tool_invocation_end
-        var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
         newKernel.FunctionInvocationFilters.Add(new ToolStatusFilter(sessionManager, _loggerFactory.CreateLogger<ToolStatusFilter>()));
 
         // 已停用的内置插件 ID（不区分大小写）
@@ -254,6 +265,8 @@ public sealed class ChatService : IDisposable
             var wordPluginLogger = _loggerFactory.CreateLogger<WordPlugin>();
             newKernel.Plugins.AddFromObject(new WordPlugin(wordPluginLogger), "Word");
         }
+        if (!disabledBuiltIn.Contains("ppt"))
+            newKernel.Plugins.AddFromObject(new PptPlugin(), "Ppt");
 
         var rpcManager = _serviceProvider.GetRequiredService<RpcManager>();
         var screenshotCache = _serviceProvider.GetRequiredService<ScreenshotCacheService>();
@@ -292,6 +305,12 @@ public sealed class ChatService : IDisposable
             var memorySvc = _serviceProvider.GetRequiredService<IMemoryStoreService>();
             newKernel.Plugins.AddFromObject(new MemoryPlugin(memorySvc, sessionManager, _loggerFactory.CreateLogger<MemoryPlugin>()), "Memory");
         }
+
+        if (!disabledBuiltIn.Contains("context"))
+            newKernel.Plugins.AddFromObject(new CompactConversationPlugin(this), "Context");
+
+        if (!disabledBuiltIn.Contains("subagent"))
+            newKernel.Plugins.AddFromObject(new SubagentPlugin(this), "Subagent");
 
         if (!disabledBuiltIn.Contains("crossagenttask"))
         {
@@ -410,37 +429,37 @@ public sealed class ChatService : IDisposable
         return state.History;
     }
 
-    public async IAsyncEnumerable<string> StreamChatAsync(
+    public async IAsyncEnumerable<StreamItem> StreamChatAsync(
         string sessionId,
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, ct))
-            yield return chunk;
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, ct))
+            yield return item;
     }
 
-    public async IAsyncEnumerable<string> StreamChatAsync(
+    public async IAsyncEnumerable<StreamItem> StreamChatAsync(
         string sessionId,
         string userMessage,
         IReadOnlyList<AttachmentDto>? attachments,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, ct))
-            yield return chunk;
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, ct))
+            yield return item;
     }
 
-    public async IAsyncEnumerable<string> StreamChatAsync(
+    public async IAsyncEnumerable<StreamItem> StreamChatAsync(
         string sessionId,
         string userMessage,
         IReadOnlyList<AttachmentDto>? attachments,
         string? knowledgeBaseId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, ct))
-            yield return chunk;
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, ct))
+            yield return item;
     }
 
-    public async IAsyncEnumerable<string> StreamChatAsync(
+    public async IAsyncEnumerable<StreamItem> StreamChatAsync(
         string sessionId,
         string userMessage,
         IReadOnlyList<AttachmentDto>? attachments,
@@ -486,8 +505,37 @@ public sealed class ChatService : IDisposable
 
             TrimHistory(state.History);
 
-            // 摘要压缩：当历史 token 接近预算且启用时，将最旧若干轮压缩为一段摘要
             var ctxForSummary = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+
+            // 旧消息大内容截断：在低于摘要阈值时对「保留窗口」外的消息做内容截断，减轻上下文
+            if (ctxForSummary.TruncateToolArgsThresholdRatio > 0 && ctxForSummary.TruncateToolArgsMaxChars > 0)
+            {
+                var budget = GetEffectiveMaxContextTokens() - ctxForSummary.ReservedSystemTokens - ctxForSummary.ReservedToolsTokens - ctxForSummary.ReservedOutputTokens;
+                if (budget > 0)
+                {
+                    var totalTokens = 0;
+                    for (var i = 0; i < state.History.Count; i++)
+                        totalTokens += TokenEstimator.EstimateTokens(state.History[i].Content ?? "", ctxForSummary);
+                    if (totalTokens >= (int)(budget * ctxForSummary.TruncateToolArgsThresholdRatio))
+                    {
+                        var keep = Math.Max(0, ctxForSummary.TruncateToolArgsKeepMessages);
+                        var maxChars = Math.Max(100, ctxForSummary.TruncateToolArgsMaxChars);
+                        var truncateSuffix = "…(已截断)";
+                        var oldEndIndex = state.History.Count - keep - 1;
+                        for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
+                        {
+                            var msg = state.History[i];
+                            var content = msg.Content ?? "";
+                            if (content.Length <= maxChars) continue;
+                            var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
+                            state.History.RemoveAt(i);
+                            state.History.Insert(i, new ChatMessageContent(msg.Role, truncated));
+                        }
+                    }
+                }
+            }
+
+            // 摘要压缩：当历史 token 接近预算且启用时，将最旧若干轮压缩为一段摘要
             if (ctxForSummary.SummarizationEnabled && state.History.Count > 5)
             {
                 var budget = GetEffectiveMaxContextTokens() - ctxForSummary.ReservedSystemTokens - ctxForSummary.ReservedToolsTokens - ctxForSummary.ReservedOutputTokens;
@@ -511,6 +559,7 @@ public sealed class ChatService : IDisposable
             }
 
             // 阶段 3：长期记忆自动注入（本 session 优先 + 共享区 top-K，带来源标记；条数与总长走配置）
+            var warnings = new List<string>();
             var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
             if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
             {
@@ -538,6 +587,7 @@ public sealed class ChatService : IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[{SessionId}] Memory search failed, continuing without injection.", sessionId);
+                    warnings.Add("记忆检索失败：" + ErrorMessageHelper.GetFriendlyMessage(ex) + " 当前对话未注入长期记忆。");
                 }
             }
 
@@ -559,8 +609,12 @@ public sealed class ChatService : IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[{SessionId}] Knowledge base search failed for {KbId}.", sessionId, knowledgeBaseId);
+                    warnings.Add("知识库检索失败：" + ErrorMessageHelper.GetFriendlyMessage(ex));
                 }
             }
+
+            foreach (var w in warnings)
+                yield return new StreamItem(IsWarning: true, Content: w);
 
             // 跨 Agent 待办注入：拉取发给本端的任务，注入到 system
             var taskStore = _serviceProvider.GetService<ICrossAgentTaskStore>();
@@ -637,6 +691,8 @@ public sealed class ChatService : IDisposable
 
             var aiConfig = _configService.Current.AI;
             var useTwoStage = aiConfig?.ToolSelectionTwoStage != false;
+            var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
+            var clientType = sessionManager.GetClientType(sessionId);
             IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
             IReadOnlyList<string>? selectedNames = null;
             if (!isPlanMode)
@@ -646,7 +702,20 @@ public sealed class ChatService : IDisposable
                     var recentHistory = state.History.Count > 1 ? state.History : null;
                     if (useTwoStage)
                     {
-                        selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                        var vectorFirst = aiConfig?.ToolSelectionVectorFirst == true && _embeddingProvider.IsConfigured;
+                        if (vectorFirst)
+                        {
+                            var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
+                            await _toolIndex.BuildIndexAsync(kernel, ct).ConfigureAwait(false);
+                            var (vectorResults, goodEnough) = await _toolIndex.SearchToolsAsync(userPrompt, clientType, topK: 20, minScore: 0.7, minCount: 1, ct).ConfigureAwait(false);
+                            if (goodEnough && vectorResults.Count > 0)
+                            {
+                                selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorResults, aiConfig!, kernel);
+                                _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
+                            }
+                        }
+                        if (selectedPairs == null)
+                            selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                     }
                     else
                     {
@@ -661,9 +730,6 @@ public sealed class ChatService : IDisposable
                     selectedNames = null;
                 }
             }
-
-            var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
-            var clientType = sessionManager.GetClientType(sessionId);
             IReadOnlyList<KernelFunction>? selectedFunctions;
             if (isPlanMode)
             {
@@ -744,7 +810,7 @@ public sealed class ChatService : IDisposable
             }
 
             foreach (var text in collectedChunks)
-                yield return text;
+                yield return new StreamItem(IsWarning: false, Content: text);
 
             state.History.AddAssistantMessage(fullResponse.ToString());
             _logger.LogInformation("[{SessionId}] Turn completed, turns={Turns}",
@@ -753,13 +819,22 @@ public sealed class ChatService : IDisposable
         finally { }
     }
 
-    /// <summary>将最旧若干轮（最多 6 轮）压缩为一段摘要并替换为一条消息。</summary>
+    /// <summary>将最旧若干轮（最多 6 轮）压缩为一段摘要并替换为一条消息；若配置了落盘目录则先将被压缩的原文追加写入会话历史文件。</summary>
     private async Task TrySummarizeOldTurnsAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, CancellationToken ct)
+    {
+        var dir = GetConversationHistoryDirectory(ctx);
+        var (didCompact, turns) = await SummarizeOldTurnsCoreAsync(history, kernel, chatService, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        if (didCompact)
+            _logger.LogDebug("[{SessionId}] Summarized {Turns} turns into one block.", sessionId, turns);
+    }
+
+    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换历史。返回是否执行了压缩及被压缩的轮数。offloadDirectory 为空则不落盘。</summary>
+    private static async Task<(bool DidCompact, int TurnsSummarized)> SummarizeOldTurnsCoreAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
     {
         const int maxTurnsToSummarize = 6;
         var toTake = Math.Min(maxTurnsToSummarize * 2, history.Count - 1);
         if (toTake < 4)
-            return;
+            return (false, 0);
         var sb = new System.Text.StringBuilder();
         for (var i = 1; i <= toTake && i < history.Count; i++)
         {
@@ -770,7 +845,23 @@ public sealed class ChatService : IDisposable
         }
         var input = sb.ToString().Trim();
         if (input.Length == 0)
-            return;
+            return (false, 0);
+
+        var dir = offloadDirectory;
+        if (!string.IsNullOrEmpty(dir))
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var safeName = string.Join("_", (sessionId ?? "").Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+                if (string.IsNullOrEmpty(safeName)) safeName = "session";
+                var path = Path.Combine(dir, safeName + ".md");
+                var section = $"\n\n## Summarized at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z\n\n{input}\n\n";
+                await File.AppendAllTextAsync(path, section, ct).ConfigureAwait(false);
+            }
+            catch { /* offload best-effort */ }
+        }
+
         var maxChars = Math.Max(100, Math.Min(ctx.SummarizationMaxSummaryChars, 2000));
         var systemPrompt = $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。";
         var summaryHistory = new ChatHistory(systemPrompt);
@@ -784,13 +875,112 @@ public sealed class ChatService : IDisposable
         }
         var summary = summaryBuilder.ToString().Trim();
         if (string.IsNullOrEmpty(summary))
-            return;
+            return (false, 0);
         if (summary.Length > ctx.SummarizationMaxSummaryChars)
             summary = summary.AsSpan(0, ctx.SummarizationMaxSummaryChars).ToString() + "…";
         for (var i = 0; i < toTake; i++)
             history.RemoveAt(1);
         history.Insert(1, new ChatMessageContent(AuthorRole.User, "[此前对话摘要]\n" + summary));
-        _logger.LogDebug("[{SessionId}] Summarized {Turns} turns into one block ({Len} chars).", sessionId, toTake / 2, summary.Length);
+        return (true, toTake / 2);
+    }
+
+    /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
+    public async Task<string> RunSubtaskAsync(string sessionId, string taskDescription, string? constraints, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return "[错误] 无当前会话，无法执行子任务。";
+        if (string.IsNullOrWhiteSpace(taskDescription))
+            return "[错误] 子任务描述不能为空。";
+        var kernel = _kernelAccessor.Kernel;
+        if (kernel == null)
+            return "[错误] 内核未就绪。";
+        var chat = kernel.Services.GetKeyedService<IChatCompletionService>(_kernelAccessor.ActiveModelId)
+            ?? kernel.Services.GetService<IChatCompletionService>();
+        if (chat == null)
+            return "[错误] 未找到对话服务。";
+        var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
+        var clientType = sessionManager.GetClientType(sessionId);
+        var allowedFunctions = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+        if (allowedFunctions.Count == 0)
+            return "[错误] 当前端无可用的工具集，无法执行子任务。";
+
+        var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。";
+        var userContent = (taskDescription ?? "").Trim();
+        if (!string.IsNullOrWhiteSpace(constraints))
+            userContent += "\n\n约束：" + constraints.Trim();
+        var subHistory = new ChatHistory(systemPrompt);
+        subHistory.AddUserMessage(userContent);
+
+        var settings = new OpenAIPromptExecutionSettings
+        {
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(allowedFunctions),
+            MaxTokens = 4096
+        };
+        var fullResponse = new System.Text.StringBuilder();
+        try
+        {
+            await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, ct).ConfigureAwait(false))
+            {
+                if (chunk.Content is { Length: > 0 } text)
+                    fullResponse.Append(text);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[RunSubtask] SessionId={SessionId} task failed", sessionId);
+            return $"[子任务执行失败] {ex.Message}";
+        }
+        var result = fullResponse.ToString().Trim();
+        return string.IsNullOrEmpty(result) ? "[子任务未返回文本结果]" : result;
+    }
+
+    /// <summary>供 compact_conversation 工具调用：主动压缩当前会话的最旧若干轮为摘要。返回可展示给模型的结果文案。</summary>
+    public async Task<string> CompactConversationAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return "[错误] 无当前会话，无法压缩。";
+        if (!_sessions.TryGetValue(sessionId, out var state))
+            return "[错误] 会话不存在或已过期。";
+        var ctx = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+        var kernel = _kernelAccessor.Kernel;
+        if (kernel == null)
+            return "[错误] 内核未就绪。";
+        var chat = kernel.Services.GetKeyedService<IChatCompletionService>(_kernelAccessor.ActiveModelId)
+            ?? kernel.Services.GetService<IChatCompletionService>();
+        if (chat == null)
+            return "[错误] 未找到对话服务。";
+        var dir = GetConversationHistoryDirectory(ctx);
+        var (didCompact, turns) = await SummarizeOldTurnsCoreAsync(state.History, kernel, chat, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        if (didCompact)
+            return $"[已压缩] 已将最近 {turns} 轮对话合并为一段摘要，上下文已释放。";
+        if (state.History.Count <= 3)
+            return "[无需压缩] 当前对话轮次较少，无需压缩。";
+        return "[未压缩] 当前对话轮次或内容不足，未执行压缩。";
+    }
+
+    /// <summary>解析摘要落盘目录：优先 ContextWindow.ConversationHistoryDirectory，否则与 PlansDirectory 同级的 ConversationHistory，再否则 %LocalAppData%/OfficeCopilot/ConversationHistory。</summary>
+    private string? GetConversationHistoryDirectory(ContextWindowConfig ctx)
+    {
+        var dir = (ctx.ConversationHistoryDirectory ?? "").Trim();
+        if (dir.Length > 0)
+        {
+            dir = Environment.ExpandEnvironmentVariables(dir);
+            if (!Path.IsPathRooted(dir))
+                dir = Path.Combine(AppContext.BaseDirectory, dir);
+            return dir;
+        }
+        var plansDir = (_configService.Current.PlansDirectory ?? "").Trim();
+        if (plansDir.Length > 0)
+        {
+            plansDir = Environment.ExpandEnvironmentVariables(plansDir);
+            if (!Path.IsPathRooted(plansDir))
+                plansDir = Path.Combine(AppContext.BaseDirectory, plansDir);
+            var parent = Path.GetDirectoryName(plansDir);
+            if (!string.IsNullOrEmpty(parent))
+                return Path.Combine(parent, "ConversationHistory");
+        }
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return string.IsNullOrEmpty(appData) ? null : Path.Combine(appData, "OfficeCopilot", "ConversationHistory");
     }
 
     private static bool IsContextLengthError(Exception ex)
@@ -869,7 +1059,7 @@ public sealed class ChatService : IDisposable
         }
     }
 
-    /// <summary>按 clientType 解析本轮暴露给模型的工具：过滤 selectedPairs/selectedNames，或使用该端全量允许的函数。Office/WPS 端在阶段二始终追加 current_run_document_script 作为保底工具（不参与阶段一子类选择）。</summary>
+    /// <summary>按 clientType 解析本轮暴露给模型的工具：过滤 selectedPairs/selectedNames，或使用该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script；Chrome 追加 run_page_script；所有端追加 run_command（均不参与阶段一子类选择）。</summary>
     private static IReadOnlyList<KernelFunction>? ResolveFunctionsByClientType(
         Kernel kernel,
         bool useTwoStage,
@@ -908,17 +1098,39 @@ public sealed class ChatService : IDisposable
                 result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
         }
 
-        // Office/WPS 端：阶段二始终追加 current_run_document_script 作为保底工具，不参与阶段一子类选择
-        if (result != null && IsOfficeOrWpsClient(clientType) &&
-            kernel.Plugins.TryGetFunction("CurrentDocument", "current_run_document_script", out var fallback) && fallback != null)
+        // 保底工具追加（顺序：Office/WPS 文档脚本 → Chrome 页面脚本 → 所有端 CLI）
+        if (result != null)
         {
-            if (!result.Any(f => string.Equals(f.Name, "current_run_document_script", StringComparison.OrdinalIgnoreCase)))
+            // 1. Office/WPS 端：始终追加 current_run_document_script，不参与阶段一子类选择
+            if (IsOfficeOrWpsClient(clientType) &&
+                kernel.Plugins.TryGetFunction("CurrentDocument", "current_run_document_script", out var docScript) && docScript != null &&
+                !result.Any(f => string.Equals(f.Name, "current_run_document_script", StringComparison.OrdinalIgnoreCase)))
             {
-                var withFallback = new List<KernelFunction>(result) { fallback };
-                return withFallback;
+                result = new List<KernelFunction>(result) { docScript };
+            }
+
+            // 2. Chrome 端：始终追加 run_page_script 作为页面内脚本兜底
+            if (IsChromeClient(clientType) &&
+                kernel.Plugins.TryGetFunction("Browser", "run_page_script", out var pageScript) && pageScript != null &&
+                !result.Any(f => string.Equals(f.Name, "run_page_script", StringComparison.OrdinalIgnoreCase)))
+            {
+                result = new List<KernelFunction>(result) { pageScript };
+            }
+
+            // 3. 所有端：始终追加 run_command 作为本机命令兜底
+            if (kernel.Plugins.TryGetFunction("CLI", "run_command", out var cliRun) && cliRun != null &&
+                !result.Any(f => string.Equals(f.Name, "run_command", StringComparison.OrdinalIgnoreCase)))
+            {
+                result = new List<KernelFunction>(result) { cliRun };
             }
         }
         return result;
+    }
+
+    private static bool IsChromeClient(string? clientType)
+    {
+        var ct = (clientType ?? "").Trim();
+        return string.IsNullOrEmpty(ct) || string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>按 clientType 返回本端 Agent 身份说明，用于追加到 system 提示（计划第四节：每端身份写清）。</summary>
@@ -934,6 +1146,8 @@ public sealed class ChatService : IDisposable
             return "你是 Excel 侧助手，负责当前打开的 Excel 工作簿；网页相关操作请由用户在浏览器侧边栏端完成。";
         if (string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase))
             return "你是 WPS 侧助手，负责当前打开的 WPS 文档；网页相关操作请由用户在浏览器侧边栏端完成。";
+        if (string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase))
+            return "你是 PowerPoint 侧助手，负责当前打开的 PowerPoint 演示文稿；网页相关操作请由用户在浏览器侧边栏端完成。";
         return "";
     }
 
@@ -943,6 +1157,7 @@ public sealed class ChatService : IDisposable
         var ct = clientType.Trim();
         return string.Equals(ct, "office-word", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1022,6 +1237,47 @@ public sealed class ChatService : IDisposable
                 functions.Add(func);
         }
         return functions;
+    }
+
+    /// <summary>向量检索用：截断并拼接最近一条历史，与两轮选择一致。</summary>
+    private static string BuildToolSelectionUserPrompt(string userMessage, ChatHistory? recentHistory)
+    {
+        var userPrompt = (userMessage ?? "").Trim();
+        if (userPrompt.Length > 1000)
+            userPrompt = userPrompt[..1000] + "...";
+        if (recentHistory != null && recentHistory.Count > 0)
+        {
+            var lastContent = recentHistory[^1].Content ?? "";
+            if (lastContent.Length > 0 && lastContent.Length < 500)
+                userPrompt = userPrompt + "\n[上一条] " + lastContent;
+        }
+        return userPrompt;
+    }
+
+    /// <summary>将向量检索结果与 AlwaysIncludePlugins 合并，与 ToolSelectionService 两轮路径语义一致。</summary>
+    private static IReadOnlyList<(string PluginName, string FunctionName)> MergeVectorResultsWithAlwaysInclude(
+        IReadOnlyList<(string PluginName, string FunctionName)> fromVector,
+        AiConfig ai,
+        Kernel kernel)
+    {
+        var result = new HashSet<(string, string)>(fromVector, new PluginFunctionComparer());
+        var alwaysPlugins = ai.AlwaysIncludePlugins ?? new List<string>();
+        var alwaysSet = new HashSet<string>(alwaysPlugins.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
+        foreach (var plugin in kernel.Plugins)
+        {
+            if (!alwaysSet.Contains(plugin.Name)) continue;
+            foreach (KernelFunction func in plugin)
+                result.Add((plugin.Name, func.Name));
+        }
+        return result.ToList();
+    }
+
+    private sealed class PluginFunctionComparer : IEqualityComparer<(string Plugin, string Function)>
+    {
+        public bool Equals((string Plugin, string Function) x, (string Plugin, string Function) y) =>
+            string.Equals(x.Plugin, y.Plugin, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Function, y.Function, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode((string Plugin, string Function) obj) =>
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
     }
 
     private void CleanupExpiredSessions(object? _)

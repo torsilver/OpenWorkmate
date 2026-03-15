@@ -7,7 +7,7 @@
   const RECONNECT_BASE_MS = 1000;
   const RECONNECT_MAX_MS = 16000;
 
-  let OFFICE_CLIENT_TYPE = "office"; // set after Office.onReady to office-word | office-excel
+  let OFFICE_CLIENT_TYPE = "office"; // set after Office.onReady to office-word | office-excel | office-powerpoint
 
   const $messages = document.getElementById("messages");
   const $input = document.getElementById("input");
@@ -566,6 +566,74 @@
         } else {
           throw new Error("Method not supported in Excel: " + method);
         }
+      } else if (OFFICE_CLIENT_TYPE === "office-powerpoint") {
+        if (method === "ppt_slides_list") {
+          await PowerPoint.run(function (context) {
+            var countResult = context.presentation.slides.getCount();
+            return context.sync().then(function () {
+              var n = countResult.value;
+              var slideRefs = [];
+              for (var i = 0; i < n; i++) {
+                slideRefs.push(context.presentation.slides.getItemAt(i));
+              }
+              for (var j = 0; j < slideRefs.length; j++) {
+                slideRefs[j].load("shapes/items/textFrame/textRange/text");
+              }
+              return context.sync().then(function () {
+                var out = "共 " + n + " 张幻灯片（按播放顺序）：\n";
+                for (var k = 0; k < slideRefs.length; k++) {
+                  var s = slideRefs[k];
+                  var preview = "(无文本)";
+                  if (s.shapes && s.shapes.items && s.shapes.items.length > 0) {
+                    var parts = [];
+                    for (var t = 0; t < s.shapes.items.length; t++) {
+                      var sh = s.shapes.items[t];
+                      if (sh.textFrame && sh.textFrame.textRange && typeof sh.textFrame.textRange.text === "string") {
+                        var txt = sh.textFrame.textRange.text.slice(0, 80);
+                        if (txt.length === 80) txt += "...";
+                        parts.push(txt);
+                      }
+                    }
+                    if (parts.length > 0) preview = parts.join(" ");
+                  }
+                  out += "  " + (k + 1) + ". " + preview + "\n";
+                }
+                return out.trim();
+              });
+            });
+          }).then(function (text) { result = text; });
+        } else if (method === "ppt_slide_read") {
+          var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1;
+          if (slideIndex < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (slideIndex > countResult.value) {
+                  result = "[错误] 幻灯片序号 " + slideIndex + " 超出范围，当前共 " + countResult.value + " 张。";
+                  return Promise.resolve();
+                }
+                var slide = context.presentation.slides.getItemAt(slideIndex - 1);
+                slide.load("shapes/items/textFrame/textRange/text");
+                return context.sync().then(function () {
+                  var parts = [];
+                  if (slide.shapes && slide.shapes.items) {
+                    for (var i = 0; i < slide.shapes.items.length; i++) {
+                      var sh = slide.shapes.items[i];
+                      if (sh.textFrame && sh.textFrame.textRange && typeof sh.textFrame.textRange.text === "string") {
+                        parts.push(sh.textFrame.textRange.text);
+                      }
+                    }
+                  }
+                  result = "[幻灯片 " + slideIndex + "]\n" + (parts.length > 0 ? parts.join(" ").trim() : "(无文本)");
+                });
+              });
+            });
+          }
+        } else {
+          throw new Error("Method not supported in PowerPoint: " + method);
+        }
       } else {
         throw new Error("Method not supported in this client: " + method);
       }
@@ -585,24 +653,27 @@
   const $hitlOverlay = document.getElementById("hitl-overlay");
   const $hitlAction = document.getElementById("hitl-action");
   const $hitlAllowBtn = document.getElementById("hitl-allow-btn");
+  const $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
   const $hitlDenyBtn = document.getElementById("hitl-deny-btn");
 
   function handleConfirmRequest(msg) {
     const requestId = msg.id || msg.requestId;
     const action = msg.content || msg.action || "未知操作";
+    const hitlKind = msg.hitlKind;
     if (!requestId) return;
     pendingConfirmId = requestId;
     if ($hitlAction) $hitlAction.textContent = action;
+    if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "run_page_script") ? "" : "none";
     if ($hitlOverlay) {
       $hitlOverlay.style.display = "flex";
       $hitlOverlay.setAttribute("aria-hidden", "false");
     }
   }
 
-  function sendConfirmResponse(id, allowed) {
+  function sendConfirmResponse(id, allowed, addToAllowList) {
     if (!id) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed }));
+      ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed, addToAllowList: !!addToAllowList }));
     }
     pendingConfirmId = null;
     if ($hitlOverlay) {
@@ -611,7 +682,8 @@
     }
   }
 
-  if ($hitlAllowBtn) $hitlAllowBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true); });
+  if ($hitlAllowBtn) $hitlAllowBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, false); });
+  if ($hitlAddToListBtn) $hitlAddToListBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, true, true); });
   if ($hitlDenyBtn) $hitlDenyBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, false); });
 
   function handleSend() {
@@ -662,6 +734,7 @@
       var host = Office.context.host;
       if (host === Office.HostType.Word) OFFICE_CLIENT_TYPE = "office-word";
       else if (host === Office.HostType.Excel) OFFICE_CLIENT_TYPE = "office-excel";
+      else if (typeof Office.HostType.PowerPoint !== "undefined" && host === Office.HostType.PowerPoint) OFFICE_CLIENT_TYPE = "office-powerpoint";
     }
     connect();
   }

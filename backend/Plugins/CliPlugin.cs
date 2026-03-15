@@ -10,7 +10,7 @@ public sealed class CliPlugin
     private const int MaxOutputLength = 8_000;
 
     [KernelFunction("run_command")]
-    [Description("在用户的 Windows 电脑上执行一条 CMD 命令并返回输出。适用于查看文件列表、查看系统信息、执行脚本等场景。注意：禁止执行删除、格式化等危险操作。")]
+    [Description("运行位置：用户本机（后端服务所在机器）的 CMD。在用户 Windows 电脑上执行一条 CMD 命令并返回输出，适用于查看文件列表、系统信息、执行脚本等。当没有更合适的专用工具时可用作兜底。禁止执行删除、格式化等危险操作。")]
     public async Task<string> RunCommandAsync(
         [Description("要执行的 CMD 命令，例如 dir D:\\、echo hello、type file.txt")] string command,
         [Description("超时时间（毫秒），默认 30000")] int timeoutMs = DefaultTimeoutMs)

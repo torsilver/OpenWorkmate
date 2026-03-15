@@ -364,6 +364,17 @@ html, body {
   color: var(--danger);
 }
 
+/* 流式回复中的服务端警告（如记忆/知识库检索失败） */
+.msg--stream-warning {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.12);
+  color: #eab308;
+}
+
 /* ===== Debug Panel ===== */
 .debug-panel {
   display: flex;

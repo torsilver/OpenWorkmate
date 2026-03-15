@@ -40,4 +40,17 @@ public static class OpenXmlHelpers
             return true;
         errorMessage = "[错误] 仅支持 .docx 或 .docm 文件。"; return false;
     }
+
+    /// <summary>仅允许 .pptx / .pptm；.ppt 返回明确错误。</summary>
+    public static bool ValidatePptExtension(string filePath, out string? errorMessage)
+    {
+        errorMessage = null;
+        var ext = Path.GetExtension(filePath ?? "");
+        if (string.IsNullOrEmpty(ext)) { errorMessage = "[错误] 文件无扩展名，需要 .pptx 或 .pptm。"; return false; }
+        if (ext.Equals(".ppt", StringComparison.OrdinalIgnoreCase))
+        { errorMessage = "[错误] 暂不支持 .ppt 格式，请将文件另存为 .pptx 或 .pptm 后重试。"; return false; }
+        if (ext.Equals(".pptx", StringComparison.OrdinalIgnoreCase) || ext.Equals(".pptm", StringComparison.OrdinalIgnoreCase))
+            return true;
+        errorMessage = "[错误] 仅支持 .pptx 或 .pptm 文件。"; return false;
+    }
 }
