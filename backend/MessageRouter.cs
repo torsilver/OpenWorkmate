@@ -6,48 +6,6 @@ using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>
-/// Routes incoming messages and produces responses.
-/// Phase 1: simple echo. Phase 2+: forwards to Semantic Kernel.
-/// </summary>
-public static class MessageRouter
-{
-    public static string Process(string sessionId, string raw)
-    {
-        WsMessage? incoming;
-        try
-        {
-            incoming = JsonSerializer.Deserialize<WsMessage>(raw);
-        }
-        catch
-        {
-            incoming = new WsMessage { Type = "text", Content = raw };
-        }
-
-        if (incoming is null || string.IsNullOrEmpty(incoming.Content))
-            return Serialize(new WsMessage
-            {
-                Type = "error",
-                Content = "Empty message."
-            });
-
-        return incoming.Type switch
-        {
-            "ping" => Serialize(new WsMessage { Type = "pong", Content = "pong" }),
-            _ => Serialize(new WsMessage
-            {
-                Type = "echo",
-                Content = incoming.Content,
-                SessionId = sessionId,
-                Timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds()
-            })
-        };
-    }
-
-    private static string Serialize(WsMessage msg) =>
-        JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-}
-
 public class WsMessage
 {
     [JsonPropertyName("type")]
@@ -296,6 +254,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(List<AiModelEntry>))]
 [JsonSerializable(typeof(EmbeddingModelEntry))]
 [JsonSerializable(typeof(List<EmbeddingModelEntry>))]
+[JsonSerializable(typeof(SpeechToTextConfig))]
 [JsonSerializable(typeof(SkillDefinition))]
 [JsonSerializable(typeof(List<SkillDefinition>))]
 [JsonSerializable(typeof(McpServerConfig))]

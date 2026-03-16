@@ -22,6 +22,7 @@ try
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
 
+    builder.Services.AddHttpClient();
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
@@ -52,7 +53,11 @@ try
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
+    builder.Services.AddSingleton<AttachmentCacheService>();
+    builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
+    builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
+    builder.Services.AddSingleton<ContextManager>();
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {
@@ -171,7 +176,8 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
         var hitlManager = app.Services.GetRequiredService<HitlManager>();
         var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
-        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, streamCancelService, app.Logger);
+        var attachmentCache = app.Services.GetRequiredService<AttachmentCacheService>();
+        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, streamCancelService, attachmentCache, app.Logger);
     }
     finally
     {
@@ -313,7 +319,9 @@ app.MapGet("/api/tools/builtin", () =>
     var builtIn = new List<BuiltInPluginInfo>
     {
         new() { Id = "Browser", Name = "Browser", Description = "网页高亮、截图、运行页面脚本、整页截图等" },
-        new() { Id = "File", Name = "File", Description = "保存截图到下载文件夹" },
+        new() { Id = "File", Name = "File", Description = "附件路径解析、保存截图到下载文件夹" },
+        new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（Whisper）：将音频文件转成文字，供整理成文档等" },
+        new() { Id = "MCP_OCR", Name = "MCP_OCR", Description = "内置 OCR：从图片中提取文字，供整理成文档等（需在模型设置中配置 OCR）" },
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
@@ -327,6 +335,39 @@ app.MapGet("/api/tools/builtin", () =>
 });
 app.MapGet("/api/config/default-allowed-cli", () => Results.Json(CliScriptEndKeys.DefaultAllowedCommands));
 app.MapGet("/api/config/default-allowed-page-scripts", () => Results.Json(CliScriptEndKeys.DefaultAllowedScriptIds));
+app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transcribeService, ILogger<Program> logger) =>
+{
+    if (!ctx.Request.HasFormContentType)
+    {
+        return Results.Json(new { ok = false, message = "请使用 multipart/form-data 上传音频文件，表单字段名为 file。" }, statusCode: 400);
+    }
+    var form = await ctx.Request.ReadFormAsync();
+    var file = form.Files.GetFile("file");
+    if (file == null || file.Length == 0)
+    {
+        return Results.Json(new { ok = false, message = "未收到音频文件或文件为空，请选择文件后上传（表单字段 file）。" }, statusCode: 400);
+    }
+    const long whisperLimit = 25 * 1024 * 1024; // 25 MB
+    if (file.Length > whisperLimit)
+    {
+        return Results.Json(new { ok = false, message = "单文件超过 25MB 限制，请使用更短的音频或先分片后再试。" }, statusCode: 413);
+    }
+    try
+    {
+        await using var stream = file.OpenReadStream();
+        var text = await transcribeService.TranscribeAsync(stream, file.ContentType, null, ctx.RequestAborted);
+        return Results.Json(new { ok = true, text });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Json(new { ok = false, message = ex.Message }, statusCode: ex.Message.Contains("未配置") ? 400 : 502);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Transcribe exception");
+        return Results.Json(new { ok = false, message = "语音转写失败: " + ex.Message }, statusCode: 502);
+    }
+});
 app.MapGet("/api/skills", (SkillService skills) => Results.Json(skills.GetAllSkills(), JsonCtx.Default.ListSkillDefinition));
 app.MapPost("/api/skills", async (HttpContext ctx, SkillService skills) =>
 {
@@ -600,7 +641,7 @@ finally
 
 static async Task HandleSession(
     WebSocket ws, string sessionId, SessionManager sessions,
-    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var buffer = new byte[4096];
 
@@ -686,7 +727,7 @@ static async Task HandleSession(
                 break;
             default:
                 // 不 await，避免阻塞消息循环；否则工具发 rpc_request 后无法在同一连接上收到 rpc_response，导致超时
-                _ = HandleChatStream(ws, sessionId, incoming, chatService, streamCancelService, logger);
+                _ = HandleChatStream(ws, sessionId, incoming, chatService, streamCancelService, attachmentCache, logger);
                 break;
         }
     }
@@ -694,7 +735,7 @@ static async Task HandleSession(
 
 static async Task HandleChatStream(
     WebSocket ws, string sessionId, WsMessage incoming,
-    ChatService chatService, StreamCancelService streamCancelService, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
     logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
@@ -703,11 +744,32 @@ static async Task HandleChatStream(
     var ct = streamCancelService.CreateForSession(sessionId);
     SessionContext.SetSessionId(sessionId);
     logger.LogDebug("[{SessionId}] SessionContext.SetSessionId({Sid})", sessionId, sessionId);
+
+    // 将附件存为引用，只把 attachment:guid 写入对话，避免 base64 占满上下文
+    List<string>? attachmentRefs = null;
+    if (incoming.Attachments is { Count: > 0 })
+    {
+        attachmentRefs = new List<string>();
+        foreach (var att in incoming.Attachments)
+        {
+            if (string.IsNullOrWhiteSpace(att.Data)) continue;
+            try
+            {
+                var refId = attachmentCache.StoreFromBase64(att.Data, att.MimeType);
+                attachmentRefs.Add(refId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[{SessionId}] Failed to store attachment, skipping", sessionId);
+            }
+        }
+    }
+
     try
     {
         string prompt = incoming.Content ?? "";
 
-        await foreach (var item in chatService.StreamChatAsync(sessionId, prompt, incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, ct))
+        await foreach (var item in chatService.StreamChatAsync(sessionId, prompt, attachmentRefs?.Count > 0 ? null : incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, attachmentRefs, ct))
         {
             if (item.IsWarning)
                 await SendJson(ws, new WsMessage { Type = "stream_warning", Content = item.Content });

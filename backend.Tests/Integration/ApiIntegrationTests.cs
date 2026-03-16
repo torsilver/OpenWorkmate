@@ -23,7 +23,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["RagStorageType"] = "",
+                    ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
                     ["ScheduledTasksDirectory"] = "",
                 });
@@ -130,5 +130,68 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var root = doc.RootElement;
         if (response.StatusCode == HttpStatusCode.OK && root.TryGetProperty("ok", out var ok) && ok.GetBoolean())
             Assert.True(root.TryGetProperty("items", out _));
+    }
+
+    [Fact]
+    public async Task PostTranscribe_NoFormContentType_Returns400_WithMessage()
+    {
+        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/transcribe", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(root.TryGetProperty("message", out var msg));
+        Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
+    }
+
+    [Fact]
+    public async Task PostTranscribe_FormWithoutFile_ReturnsError_WithMessage()
+    {
+        using var form = new MultipartFormDataContent();
+        var response = await _client.PostAsync("/api/transcribe", form);
+        Assert.False(response.IsSuccessStatusCode, "Expected 4xx/5xx for request without file");
+        var body = await response.Content.ReadAsStringAsync();
+        if (body.TrimStart().StartsWith("{"))
+        {
+            var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            Assert.True(root.TryGetProperty("ok", out var ok));
+            Assert.False(ok.GetBoolean());
+            Assert.True(root.TryGetProperty("message", out var msg));
+            Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
+        }
+    }
+
+    [Fact]
+    public async Task PostConfig_ValidBody_Returns200()
+    {
+        var body = new { ai = new { } };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config", content);
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSkills_Returns200_WithArray()
+    {
+        var response = await _client.GetAsync("/api/skills");
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        var list = JsonDocument.Parse(json).RootElement;
+        Assert.Equal(JsonValueKind.Array, list.ValueKind);
+    }
+
+    [Fact]
+    public async Task GetAccurateData_Returns200_WithArray()
+    {
+        var response = await _client.GetAsync("/api/accurate-data");
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        var list = JsonDocument.Parse(json).RootElement;
+        Assert.Equal(JsonValueKind.Array, list.ValueKind);
     }
 }

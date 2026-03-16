@@ -212,42 +212,80 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
     }
 
-    private static void SetShapeText(Shape shape, string text)
+    private static void SetShapeText(Shape shape, string text, int defaultFontSizeHundredths = 1800)
     {
         var tb = shape.TextBody;
         if (tb == null) return;
         tb.RemoveAllChildren<A.Paragraph>();
-        tb.AppendChild(new A.Paragraph(
-            new A.Run(
-                new A.Text { Text = text ?? "" })));
+        var lines = (text ?? "").Split('\n');
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimEnd();
+            if (string.IsNullOrEmpty(trimmed)) { tb.AppendChild(new A.Paragraph()); continue; }
+
+            var isBullet = trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal);
+            var content = isBullet ? trimmed[2..].TrimStart() : trimmed;
+
+            var runProps = new A.RunProperties { Language = "zh-CN", FontSize = defaultFontSizeHundredths };
+            runProps.Append(new A.LatinFont { Typeface = "Calibri" });
+            runProps.Append(new A.EastAsianFont { Typeface = "微软雅黑" });
+
+            var para = new A.Paragraph(new A.Run(runProps, new A.Text { Text = content }));
+            if (isBullet)
+            {
+                var pPr = new A.ParagraphProperties { Level = 0 };
+                pPr.Append(new A.BulletFont { Typeface = "Arial" });
+                pPr.Append(new A.CharacterBullet { Char = "•" });
+                para.InsertAt(pPr, 0);
+            }
+            tb.AppendChild(para);
+        }
+        if (tb.Elements<A.Paragraph>().Count() == 0)
+            tb.AppendChild(new A.Paragraph());
     }
 
+    // Standard 16:9 slide dimensions: 12192000 x 6858000 EMU (25.4cm x 19.05cm)
     private static Shape CreateTitleShape(uint id, string titleText)
     {
+        var runProps = new A.RunProperties { Language = "zh-CN", FontSize = 2800, Bold = true };
+        runProps.Append(new A.LatinFont { Typeface = "Calibri" });
+        runProps.Append(new A.EastAsianFont { Typeface = "微软雅黑" });
+
         return new Shape(
             new NonVisualShapeProperties(
                 new NonVisualDrawingProperties { Id = id, Name = "Title 1" },
                 new NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
                 new ApplicationNonVisualDrawingProperties(new PlaceholderShape { Type = PlaceholderValues.Title })),
-            new ShapeProperties(),
+            new ShapeProperties(
+                new A.Transform2D(
+                    new A.Offset { X = 457200, Y = 274638 },
+                    new A.Extents { Cx = 8229600, Cy = 1143000 })),
             new A.TextBody(
-                new A.BodyProperties(),
+                new A.BodyProperties { Anchor = A.TextAnchoringTypeValues.Center },
                 new A.ListStyle(),
-                new A.Paragraph(new A.Run(new A.Text { Text = titleText }))));
+                new A.Paragraph(
+                    new A.ParagraphProperties { Alignment = A.TextAlignmentTypeValues.Center },
+                    new A.Run(runProps, new A.Text { Text = titleText }))));
     }
 
     private static Shape CreateBodyShape(uint id, string bodyText)
     {
-        return new Shape(
+        var bodyShape = new Shape(
             new NonVisualShapeProperties(
                 new NonVisualDrawingProperties { Id = id, Name = "Content Placeholder 1" },
                 new NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
                 new ApplicationNonVisualDrawingProperties(new PlaceholderShape { Type = PlaceholderValues.Body, Index = 1 })),
-            new ShapeProperties(),
+            new ShapeProperties(
+                new A.Transform2D(
+                    new A.Offset { X = 457200, Y = 1600200 },
+                    new A.Extents { Cx = 8229600, Cy = 4525963 })),
             new A.TextBody(
                 new A.BodyProperties(),
                 new A.ListStyle(),
-                new A.Paragraph(new A.Run(new A.Text { Text = bodyText }))));
+                new A.Paragraph()));
+
+        SetShapeText(bodyShape, bodyText, 1800);
+        return bodyShape;
     }
 
     private static string GetSlideTextSummary(OpenXmlElement? slide, int maxChars)

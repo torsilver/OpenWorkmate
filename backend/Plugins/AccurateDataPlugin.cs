@@ -13,6 +13,8 @@ public sealed class AccurateDataPlugin
 {
     private readonly ConfigService _configService;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false };
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _writeLocks = new(StringComparer.OrdinalIgnoreCase);
+    private const int MaxContentChars = 100_000;
 
     public AccurateDataPlugin(ConfigService configService)
     {
@@ -67,7 +69,7 @@ public sealed class AccurateDataPlugin
     }
 
     [KernelFunction("accurate_data_write")]
-    [Description("Write or overwrite one accurate data entry. Use when you need to persist data for later exact retrieval. id: unique key (alphanumeric, dash, underscore). format: 'md' or 'json' (default md).")]
+    [Description("Write or overwrite one accurate data entry. Use when you need to persist data for later exact retrieval. id: unique key (alphanumeric, dash, underscore). format: 'md' or 'json' (default md). Max content size: 100,000 chars.")]
     public async Task<string> AccurateDataWriteAsync(
         [Description("Unique identifier for this entry (e.g. task_summary, report_20240314)")] string id,
         [Description("Content to store (Markdown or JSON text)")] string content,
@@ -77,13 +79,24 @@ public sealed class AccurateDataPlugin
         var safeId = SanitizeId(id);
         if (string.IsNullOrEmpty(safeId))
             return "[Error] id is required and must contain only letters, digits, underscore, or hyphen.";
-        var path = GetFilePath(safeId, format);
-        EnsurePathInRoot(path);
-        await File.WriteAllTextAsync(path, content ?? "", cancellationToken).ConfigureAwait(false);
-        var metaPath = Path.Combine(GetRootDirectory(), safeId + ".meta.json");
-        var meta = new { updatedAt = DateTime.UtcNow.ToString("O") };
-        await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, JsonOptions), cancellationToken).ConfigureAwait(false);
-        return $"[OK] Saved accurate data: id={safeId}, format={format}.";
+        if ((content?.Length ?? 0) > MaxContentChars)
+            return $"[Error] Content too large ({content!.Length} chars). Maximum is {MaxContentChars} chars.";
+        var writeLock = _writeLocks.GetOrAdd(safeId, _ => new SemaphoreSlim(1, 1));
+        await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var path = GetFilePath(safeId, format);
+            EnsurePathInRoot(path);
+            await File.WriteAllTextAsync(path, content ?? "", cancellationToken).ConfigureAwait(false);
+            var metaPath = Path.Combine(GetRootDirectory(), safeId + ".meta.json");
+            var meta = new { updatedAt = DateTime.UtcNow.ToString("O") };
+            await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, JsonOptions), cancellationToken).ConfigureAwait(false);
+            return $"[OK] Saved accurate data: id={safeId}, format={format}.";
+        }
+        finally
+        {
+            writeLock.Release();
+        }
     }
 
     [KernelFunction("accurate_data_read")]

@@ -21,8 +21,6 @@ public sealed class ChatService : IDisposable
     private Kernel _kernel = null!;
     /// <summary>当前选中的模型 Id，用于按 key 解析 IChatCompletionService。</summary>
     private string _activeModelId = "";
-    private readonly int _maxTurns;
-    private readonly int _timeoutMinutes;
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
     private readonly Timer _cleanupTimer;
     private readonly ILogger<ChatService> _logger;
@@ -53,8 +51,6 @@ public sealed class ChatService : IDisposable
         _planStore = planStore;
 
         var session = configService.Current.Session ?? new SessionConfig();
-        _maxTurns = session.MaxHistoryTurns;
-        _timeoutMinutes = session.TimeoutMinutes;
         var cleanupInterval = session.CleanupIntervalMinutes;
 
         RebuildKernelAsync().GetAwaiter().GetResult();
@@ -270,12 +266,25 @@ public sealed class ChatService : IDisposable
 
         var rpcManager = _serviceProvider.GetRequiredService<RpcManager>();
         var screenshotCache = _serviceProvider.GetRequiredService<ScreenshotCacheService>();
+        var attachmentCache = _serviceProvider.GetRequiredService<AttachmentCacheService>();
         var browserPluginLogger = _loggerFactory.CreateLogger<BrowserPlugin>();
         var filePluginLogger = _loggerFactory.CreateLogger<FilePlugin>();
         if (!disabledBuiltIn.Contains("browser"))
             newKernel.Plugins.AddFromObject(new BrowserPlugin(sessionManager, rpcManager, screenshotCache, browserPluginLogger), "Browser");
         if (!disabledBuiltIn.Contains("file"))
-            newKernel.Plugins.AddFromObject(new FilePlugin(screenshotCache, filePluginLogger), "File");
+            newKernel.Plugins.AddFromObject(new FilePlugin(screenshotCache, attachmentCache, filePluginLogger), "File");
+        if (!disabledBuiltIn.Contains("mcp_stt"))
+        {
+            var transcribeService = _serviceProvider.GetRequiredService<ITranscribeService>();
+            var sttPluginLogger = _loggerFactory.CreateLogger<SttPlugin>();
+            newKernel.Plugins.AddFromObject(new SttPlugin(transcribeService, sttPluginLogger), "MCP_STT");
+        }
+        if (!disabledBuiltIn.Contains("mcp_ocr"))
+        {
+            var ocrService = _serviceProvider.GetRequiredService<IOcrService>();
+            var ocrPluginLogger = _loggerFactory.CreateLogger<OcrPlugin>();
+            newKernel.Plugins.AddFromObject(new OcrPlugin(ocrService, ocrPluginLogger), "MCP_OCR");
+        }
 
         if (!disabledBuiltIn.Contains("currentdocument"))
         {
@@ -403,6 +412,21 @@ public sealed class ChatService : IDisposable
 
         _logger.LogInformation("Kernel rebuilt. ActiveModel: {ActiveId}, Plugins: {Count}, UserSkills: {SkillCount}, MCPs: {McpCount}",
             _activeModelId, _kernel.Plugins.Count, skillCount, mcpCount);
+
+        _ = BuildToolIndexInBackgroundAsync(newKernel);
+    }
+
+    /// <summary>后台静默维护工具向量索引，不阻塞请求；Kernel/插件变更后由 RebuildKernelAsync 触发。</summary>
+    private async Task BuildToolIndexInBackgroundAsync(Kernel kernel)
+    {
+        try
+        {
+            await _toolIndex.BuildIndexAsync(kernel).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Tool index background build failed.");
+        }
     }
 
     /// <summary>按当前选中的模型 Id 解析 IChatCompletionService，若无则回退到默认。</summary>
@@ -434,7 +458,7 @@ public sealed class ChatService : IDisposable
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, null, ct))
             yield return item;
     }
 
@@ -444,7 +468,7 @@ public sealed class ChatService : IDisposable
         IReadOnlyList<AttachmentDto>? attachments,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, null, ct))
             yield return item;
     }
 
@@ -455,7 +479,7 @@ public sealed class ChatService : IDisposable
         string? knowledgeBaseId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, null, ct))
             yield return item;
     }
 
@@ -467,6 +491,7 @@ public sealed class ChatService : IDisposable
         string? mode,
         string? planId,
         int? planCurrentStepIndex = null,
+        IReadOnlyList<string>? attachmentRefs = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         Kernel kernel;
@@ -486,7 +511,15 @@ public sealed class ChatService : IDisposable
         // SessionContext 已在 Program.HandleChatStream 中按当前请求设置，供 Filter/Plugin 使用
         try
         {
-            if (attachments is { Count: > 0 })
+            if (attachmentRefs is { Count: > 0 })
+            {
+                // 仅将引用写入对话，不把 base64/ImageContent 放入上下文；模型通过工具（如 get_attachment_path、OCR）按 ref 在客户机处理
+                var refList = string.Join(", ", attachmentRefs);
+                var messageText = "用户附带了 [" + refList + "]。"
+                    + (string.IsNullOrWhiteSpace(userMessage) ? "" : " 用户说：" + userMessage);
+                state.History.AddUserMessage(messageText);
+            }
+            else if (attachments is { Count: > 0 })
             {
                 var items = new ChatMessageContentItemCollection { new TextContent(userMessage) };
                 foreach (var att in attachments)
@@ -505,55 +538,48 @@ public sealed class ChatService : IDisposable
 
             TrimHistory(state.History);
 
-            var ctxForSummary = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+            var ctxConfig = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+            var historyBudget = GetEffectiveMaxContextTokens()
+                - ctxConfig.ReservedSystemTokens
+                - ctxConfig.ReservedToolsTokens
+                - ctxConfig.ReservedOutputTokens;
 
-            // 旧消息大内容截断：在低于摘要阈值时对「保留窗口」外的消息做内容截断，减轻上下文
-            if (ctxForSummary.TruncateToolArgsThresholdRatio > 0 && ctxForSummary.TruncateToolArgsMaxChars > 0)
+            if (historyBudget > 0)
             {
-                var budget = GetEffectiveMaxContextTokens() - ctxForSummary.ReservedSystemTokens - ctxForSummary.ReservedToolsTokens - ctxForSummary.ReservedOutputTokens;
-                if (budget > 0)
+                var totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
+
+                // 摘要优先：先判断是否触发摘要（基于原始内容），避免截断后摘要质量下降
+                var summarized = false;
+                if (ctxConfig.SummarizationEnabled && state.History.Count > 5
+                    && totalTokens >= (int)(historyBudget * ctxConfig.SummarizationTriggerRatio))
                 {
-                    var totalTokens = 0;
-                    for (var i = 0; i < state.History.Count; i++)
-                        totalTokens += TokenEstimator.EstimateTokens(state.History[i].Content ?? "", ctxForSummary);
-                    if (totalTokens >= (int)(budget * ctxForSummary.TruncateToolArgsThresholdRatio))
+                    try
                     {
-                        var keep = Math.Max(0, ctxForSummary.TruncateToolArgsKeepMessages);
-                        var maxChars = Math.Max(100, ctxForSummary.TruncateToolArgsMaxChars);
-                        var truncateSuffix = "…(已截断)";
-                        var oldEndIndex = state.History.Count - keep - 1;
-                        for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
-                        {
-                            var msg = state.History[i];
-                            var content = msg.Content ?? "";
-                            if (content.Length <= maxChars) continue;
-                            var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
-                            state.History.RemoveAt(i);
-                            state.History.Insert(i, new ChatMessageContent(msg.Role, truncated));
-                        }
+                        await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxConfig, sessionId, ct).ConfigureAwait(false);
+                        totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
+                        summarized = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "[{SessionId}] Summarization failed, continuing without.", sessionId);
                     }
                 }
-            }
 
-            // 摘要压缩：当历史 token 接近预算且启用时，将最旧若干轮压缩为一段摘要
-            if (ctxForSummary.SummarizationEnabled && state.History.Count > 5)
-            {
-                var budget = GetEffectiveMaxContextTokens() - ctxForSummary.ReservedSystemTokens - ctxForSummary.ReservedToolsTokens - ctxForSummary.ReservedOutputTokens;
-                if (budget > 0)
+                // 仅在未触发摘要时执行截断，避免对已摘要内容重复处理
+                if (!summarized && ctxConfig.TruncateToolArgsThresholdRatio > 0 && ctxConfig.TruncateToolArgsMaxChars > 0
+                    && totalTokens >= (int)(historyBudget * ctxConfig.TruncateToolArgsThresholdRatio))
                 {
-                    var totalTokens = 0;
-                    for (var i = 0; i < state.History.Count; i++)
-                        totalTokens += TokenEstimator.EstimateTokens(state.History[i].Content ?? "", ctxForSummary);
-                    if (totalTokens >= (int)(budget * ctxForSummary.SummarizationTriggerRatio))
+                    var keep = Math.Max(0, ctxConfig.TruncateToolArgsKeepMessages);
+                    var maxChars = Math.Max(100, ctxConfig.TruncateToolArgsMaxChars);
+                    var truncateSuffix = "…(已截断)";
+                    var oldEndIndex = Math.Max(0, state.History.Count - keep - 1);
+                    for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
                     {
-                        try
-                        {
-                            await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxForSummary, sessionId, ct).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogDebug(ex, "[{SessionId}] Summarization failed, continuing without.", sessionId);
-                        }
+                        var msg = state.History[i];
+                        var content = msg.Content ?? "";
+                        if (content.Length <= maxChars) continue;
+                        var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
+                        state.History[i] = new ChatMessageContent(msg.Role, truncated);
                     }
                 }
             }
@@ -565,8 +591,8 @@ public sealed class ChatService : IDisposable
             {
                 try
                 {
-                    var sessionTopK = Math.Clamp(ctxForSummary.MemorySessionTopK, 1, 20);
-                    var sharedTopK = Math.Clamp(ctxForSummary.MemorySharedTopK, 1, 20);
+                    var sessionTopK = Math.Clamp(ctxConfig.MemorySessionTopK, 1, 20);
+                    var sharedTopK = Math.Clamp(ctxConfig.MemorySharedTopK, 1, 20);
                     var sessionResults = await memorySvc.SearchAsync(userMessage, sessionTopK, sessionId, ct).ConfigureAwait(false);
                     var sharedResults = await memorySvc.SearchSharedAsync(userMessage, sharedTopK, ct).ConfigureAwait(false);
                     if (sessionResults.Count > 0 || sharedResults.Count > 0)
@@ -577,8 +603,8 @@ public sealed class ChatService : IDisposable
                         if (sharedResults.Count > 0)
                             parts.Add("[来自共享记忆]\n" + string.Join("\n", sharedResults.Select(r => "- " + r.Text)));
                         var memoryBlock = string.Join("\n\n", parts);
-                        if (ctxForSummary.MemoryInjectionMaxChars > 0 && memoryBlock.Length > ctxForSummary.MemoryInjectionMaxChars)
-                            memoryBlock = memoryBlock.AsSpan(0, ctxForSummary.MemoryInjectionMaxChars).ToString() + "\n（前文已截断）";
+                        if (ctxConfig.MemoryInjectionMaxChars > 0 && memoryBlock.Length > ctxConfig.MemoryInjectionMaxChars)
+                            memoryBlock = memoryBlock.AsSpan(0, ctxConfig.MemoryInjectionMaxChars).ToString() + "\n（前文已截断）";
                         var currentSystem = state.History[0].Content ?? "";
                         state.History.RemoveAt(0);
                         state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + memoryBlock));
@@ -666,7 +692,7 @@ public sealed class ChatService : IDisposable
                         }
                         else
                         {
-                            var planMaxChars = (_configService.Current.ContextWindow ?? new ContextWindowConfig()).PlanContentMaxChars;
+                            var planMaxChars = ctxConfig.PlanContentMaxChars;
                             if (planMaxChars > 0 && planContent.Length > planMaxChars)
                                 planContent = planContent.AsSpan(0, planMaxChars).ToString() + "\n（前文已截断）";
                             currentSystem += "\n\n[当前绑定的计划]\n" + planContent;
@@ -690,44 +716,36 @@ public sealed class ChatService : IDisposable
                 sessionId, phase, state.History.Count, payloadChars);
 
             var aiConfig = _configService.Current.AI;
-            var useTwoStage = aiConfig?.ToolSelectionTwoStage != false;
             var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
             var clientType = sessionManager.GetClientType(sessionId);
             IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
-            IReadOnlyList<string>? selectedNames = null;
             if (!isPlanMode)
             {
                 try
                 {
                     var recentHistory = state.History.Count > 1 ? state.History : null;
-                    if (useTwoStage)
+                    if (_embeddingProvider.IsConfigured)
                     {
-                        var vectorFirst = aiConfig?.ToolSelectionVectorFirst == true && _embeddingProvider.IsConfigured;
-                        if (vectorFirst)
+                        var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
+                        var (vectorResults, goodEnough) = await _toolIndex.SearchToolsAsync(
+                            userPrompt, clientType,
+                            topK: ctxConfig.ToolSearchTopK,
+                            minScore: ctxConfig.ToolSearchMinScore,
+                            minCount: ctxConfig.ToolSearchMinCount,
+                            ct).ConfigureAwait(false);
+                        if (goodEnough && vectorResults.Count > 0)
                         {
-                            var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
-                            await _toolIndex.BuildIndexAsync(kernel, ct).ConfigureAwait(false);
-                            var (vectorResults, goodEnough) = await _toolIndex.SearchToolsAsync(userPrompt, clientType, topK: 20, minScore: 0.7, minCount: 1, ct).ConfigureAwait(false);
-                            if (goodEnough && vectorResults.Count > 0)
-                            {
-                                selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorResults, aiConfig!, kernel);
-                                _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
-                            }
+                            selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorResults, aiConfig ?? new AiConfig(), kernel);
+                            _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
                         }
-                        if (selectedPairs == null)
-                            selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                     }
-                    else
-                    {
-                        var availableNames = GetAvailablePluginNames(kernel);
-                        selectedNames = await _toolSelector.SelectPluginNamesAsync(userMessage, recentHistory, availableNames, ct).ConfigureAwait(false);
-                    }
+                    if (selectedPairs == null)
+                        selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
                     selectedPairs = null;
-                    selectedNames = null;
                 }
             }
             IReadOnlyList<KernelFunction>? selectedFunctions;
@@ -737,7 +755,7 @@ public sealed class ChatService : IDisposable
             }
             else
             {
-                selectedFunctions = ResolveFunctionsByClientType(kernel, useTwoStage, selectedPairs, selectedNames, clientType);
+                selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType);
                 if (planResult != null && selectedFunctions != null)
                     selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
             }
@@ -792,10 +810,10 @@ public sealed class ChatService : IDisposable
                     }
                     break;
                 }
-                catch (Exception ex) when (attempt == 0 && ctxForSummary.ContextLengthRetryEnabled && IsContextLengthError(ex))
+                catch (Exception ex) when (attempt == 0 && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
                 {
-                    _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with at most {MaxTurns} turns.", sessionId, ctxForSummary.ContextLengthRetryMaxTurns);
-                    TrimHistoryForRetry(state.History, ctxForSummary.ContextLengthRetryMaxTurns);
+                    _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
+                    TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
                     historyToUse = state.History;
                     if (!string.IsNullOrEmpty(identitySuffix) && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
                     {
@@ -900,7 +918,12 @@ public sealed class ChatService : IDisposable
             return "[错误] 未找到对话服务。";
         var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
         var clientType = sessionManager.GetClientType(sessionId);
-        var allowedFunctions = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+        var allFunctions = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+        // 排除 run_subtask（防递归）和 compact_conversation（防子代理操作主会话历史）
+        var allowedFunctions = allFunctions
+            .Where(f => !string.Equals(f.Name, "run_subtask", StringComparison.OrdinalIgnoreCase)
+                     && !string.Equals(f.Name, "compact_conversation", StringComparison.OrdinalIgnoreCase))
+            .ToList();
         if (allowedFunctions.Count == 0)
             return "[错误] 当前端无可用的工具集，无法执行子任务。";
 
@@ -917,13 +940,21 @@ public sealed class ChatService : IDisposable
             MaxTokens = 4096
         };
         var fullResponse = new System.Text.StringBuilder();
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
         try
         {
-            await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, ct).ConfigureAwait(false))
+            await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
             {
                 if (chunk.Content is { Length: > 0 } text)
                     fullResponse.Append(text);
             }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("[RunSubtask] SessionId={SessionId} timed out after 120s", sessionId);
+            var partial = fullResponse.ToString().Trim();
+            return string.IsNullOrEmpty(partial) ? "[子任务超时] 子代理执行超过 120 秒，已中止。" : $"[子任务超时] 部分结果：{partial}";
         }
         catch (Exception ex)
         {
@@ -990,12 +1021,49 @@ public sealed class ChatService : IDisposable
             || msg.Contains("too many tokens");
     }
 
-    /// <summary>为 context_length 重试裁剪历史：仅保留 system + 最近 maxTurns 轮。</summary>
-    private static void TrimHistoryForRetry(ChatHistory history, int maxTurns)
+    /// <summary>为 context_length 重试裁剪历史：先按轮数限制，再按预算减半裁剪。</summary>
+    private static void TrimHistoryForRetry(ChatHistory history, int maxTurns, ContextWindowConfig ctx)
     {
         var keepMessages = 1 + Math.Max(0, maxTurns) * 2;
         while (history.Count > keepMessages)
             history.RemoveAt(1);
+        var halfBudget = (ctx.MaxContextTokens - ctx.ReservedOutputTokens) / 2;
+        if (halfBudget <= 0) return;
+        var total = 0;
+        for (var i = 0; i < history.Count; i++)
+            total += TokenEstimator.EstimateTokens(history[i].Content ?? "", ctx);
+        while (total > halfBudget && history.Count > 3)
+        {
+            var removed = TokenEstimator.EstimateTokens(history[1].Content ?? "", ctx);
+            history.RemoveAt(1);
+            total -= removed;
+        }
+    }
+
+    /// <summary>估算整个历史的 token 总数，含 ImageContent 的视觉 token 估算。</summary>
+    private static int EstimateHistoryTokens(ChatHistory history, ContextWindowConfig ctx)
+    {
+        var total = 0;
+        for (var i = 0; i < history.Count; i++)
+            total += EstimateMessageTokens(history[i], ctx);
+        return total;
+    }
+
+    /// <summary>估算单条消息的 token 数，含 ImageContent 的视觉 token 估算。</summary>
+    private static int EstimateMessageTokens(ChatMessageContent msg, ContextWindowConfig ctx)
+    {
+        var tokens = TokenEstimator.EstimateTokens(msg.Content ?? "", ctx);
+        if (msg.Items is { Count: > 0 })
+        {
+            foreach (var item in msg.Items)
+            {
+                if (item is Microsoft.SemanticKernel.TextContent text)
+                    tokens += TokenEstimator.EstimateTokens(text.Text ?? "", ctx);
+                else if (item is Microsoft.SemanticKernel.ImageContent)
+                    tokens += TokenEstimator.EstimateImageTokens(1024, 1024);
+            }
+        }
+        return tokens;
     }
 
     /// <summary>获取当前生效的上下文 token 上限（优先使用当前模型的 ContextLength，否则用全局 ContextWindow.MaxContextTokens）。</summary>
@@ -1012,7 +1080,7 @@ public sealed class ChatService : IDisposable
     {
         var session = _configService.Current.Session ?? new SessionConfig();
         var ctx = _configService.Current.ContextWindow ?? new ContextWindowConfig();
-        var maxMessagesByTurns = 1 + _maxTurns * 2;
+        var maxMessagesByTurns = 1 + session.MaxHistoryTurns * 2;
 
         // 先按轮数上限裁（未配置 token 或未超 token 时也遵守轮数上限）
         while (history.Count > maxMessagesByTurns)
@@ -1028,30 +1096,14 @@ public sealed class ChatService : IDisposable
         if (budget <= 0)
             return;
 
-        int EstimateMessageTokens(ChatMessageContent msg)
-        {
-            var content = msg.Content ?? "";
-            if (msg.Items is { Count: > 0 })
-            {
-                foreach (var item in msg.Items)
-                {
-                    if (item is Microsoft.SemanticKernel.TextContent text)
-                        content += text.Text ?? "";
-                }
-            }
-            return TokenEstimator.EstimateTokens(content, ctx);
-        }
+        var totalTokens = EstimateHistoryTokens(history, ctx);
 
-        var totalTokens = 0;
-        for (var i = 0; i < history.Count; i++)
-            totalTokens += EstimateMessageTokens(history[i]);
-
-        var minMessagesToKeep = 1 + Math.Max(0, session.MinTurnsToKeep) * 2; // system + 至少 N 轮
+        var minMessagesToKeep = 1 + Math.Max(0, session.MinTurnsToKeep) * 2;
         while (totalTokens > budget && history.Count > minMessagesToKeep)
         {
             if (history.Count <= 2)
                 break;
-            var removed = EstimateMessageTokens(history[1]) + (history.Count > 2 ? EstimateMessageTokens(history[2]) : 0);
+            var removed = EstimateMessageTokens(history[1], ctx) + (history.Count > 2 ? EstimateMessageTokens(history[2], ctx) : 0);
             history.RemoveAt(1);
             if (history.Count > 1)
                 history.RemoveAt(1);
@@ -1059,44 +1111,21 @@ public sealed class ChatService : IDisposable
         }
     }
 
-    /// <summary>按 clientType 解析本轮暴露给模型的工具：过滤 selectedPairs/selectedNames，或使用该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script；Chrome 追加 run_page_script；所有端追加 run_command（均不参与阶段一子类选择）。</summary>
+    /// <summary>按 clientType 解析本轮暴露给模型的工具：使用 selectedPairs，或该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script；Chrome 追加 run_page_script；所有端追加 run_command。</summary>
     private static IReadOnlyList<KernelFunction>? ResolveFunctionsByClientType(
         Kernel kernel,
-        bool useTwoStage,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
-        IReadOnlyList<string>? selectedNames,
         string? clientType)
     {
         IReadOnlyList<KernelFunction>? result = null;
-        if (useTwoStage)
+        if (selectedPairs is { Count: > 0 })
         {
-            if (selectedPairs is { Count: > 0 })
-            {
-                var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType);
-                if (filtered.Count > 0)
-                    result = GetFunctionsByPluginAndFunctionNames(kernel, filtered);
-            }
-            if (result == null)
-                result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+            var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType);
+            if (filtered.Count > 0)
+                result = GetFunctionsByPluginAndFunctionNames(kernel, filtered);
         }
-        else
-        {
-            if (selectedNames is { Count: > 0 })
-            {
-                var pairs = new List<(string PluginName, string FunctionName)>();
-                foreach (var plugin in kernel.Plugins)
-                {
-                    if (!selectedNames.Contains(plugin.Name, StringComparer.OrdinalIgnoreCase)) continue;
-                    foreach (KernelFunction func in plugin)
-                        pairs.Add((plugin.Name, func.Name));
-                }
-                var filtered = ClientTypeToolFilter.Filter(pairs, clientType);
-                if (filtered.Count > 0)
-                    result = GetFunctionsByPluginAndFunctionNames(kernel, filtered);
-            }
-            if (result == null)
-                result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
-        }
+        if (result == null)
+            result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
 
         // 保底工具追加（顺序：Office/WPS 文档脚本 → Chrome 页面脚本 → 所有端 CLI）
         if (result != null)
@@ -1179,7 +1208,7 @@ public sealed class ChatService : IDisposable
         return list.Count > 0 ? list : null;
     }
 
-    /// <summary>将 Plan 插件的 get_plan、update_plan、execute_plan_step 并入已选函数列表（供按计划执行时使用）。</summary>
+    /// <summary>将 Plan 插件的 get_plan、update_plan、execute_plan_step、complete_plan 并入已选函数列表（供按计划执行时使用）。</summary>
     private static IReadOnlyList<KernelFunction> MergePlanFunctions(Kernel kernel, IReadOnlyList<KernelFunction> existing)
     {
         var set = new HashSet<string>(existing.Select(f => f.PluginName + "." + f.Name), StringComparer.OrdinalIgnoreCase);
@@ -1191,7 +1220,8 @@ public sealed class ChatService : IDisposable
             {
                 if (string.Equals(func.Name, "get_plan", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(func.Name, "update_plan", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(func.Name, "execute_plan_step", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(func.Name, "execute_plan_step", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(func.Name, "complete_plan", StringComparison.OrdinalIgnoreCase))
                 {
                     var key = plugin.Name + "." + func.Name;
                     if (!set.Contains(key)) { set.Add(key); list.Add(func); }
@@ -1282,7 +1312,8 @@ public sealed class ChatService : IDisposable
 
     private void CleanupExpiredSessions(object? _)
     {
-        var cutoff = DateTime.UtcNow.AddMinutes(-_timeoutMinutes);
+        var session = _configService.Current.Session ?? new SessionConfig();
+        var cutoff = DateTime.UtcNow.AddMinutes(-session.TimeoutMinutes);
         var expired = _sessions.Where(kv => kv.Value.LastActivity < cutoff).Select(kv => kv.Key).ToList();
 
         foreach (var id in expired)

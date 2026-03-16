@@ -2,6 +2,15 @@ const API_URL = "http://localhost:8765/api/config";
 const SKILLS_API_URL = "http://localhost:8765/api/skills";
 const BUILTIN_TOOLS_URL = "http://localhost:8765/api/tools/builtin";
 
+/** 判断是否为「无法连接后端」类错误，返回可展示给用户的文案；否则返回 null。 */
+function messageForBackendUnreachable(err) {
+  if (!err) return null;
+  var msg = (err && err.message) ? String(err.message) : '';
+  if (msg === 'Failed to fetch' || (err.name === 'TypeError' && msg && msg.indexOf('fetch') !== -1))
+    return '无法连接到本地服务（localhost:8765），请确保已启动 OfficeCopilot.Server。';
+  return null;
+}
+
 const els = {
   statusMessage: document.getElementById('statusMessage'),
   aiModelsList: document.getElementById('aiModelsList'),
@@ -184,6 +193,76 @@ function updateEmbeddingModelSummary() {
   } else {
     sum.textContent = 'Embedding 模型（未配置）';
   }
+}
+
+function getSttConfig() {
+  var raw = fullConfig && (fullConfig.speechToText || fullConfig.SpeechToText);
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function fillSttForm(data) {
+  var stt = (data && (data.speechToText || data.SpeechToText)) || getSttConfig();
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var keyEl = document.getElementById('sttEditorApiKey');
+  var langEl = document.getElementById('sttEditorLanguage');
+  if (endEl) endEl.value = (stt && (stt.endpoint || stt.Endpoint)) ? (stt.endpoint || stt.Endpoint) : '';
+  if (keyEl) keyEl.value = (stt && (stt.apiKey || stt.ApiKey)) ? (stt.apiKey || stt.ApiKey) : '';
+  if (langEl) langEl.value = (stt && (stt.language || stt.Language)) ? (stt.language || stt.Language) : '';
+  updateSttModelSummary();
+}
+
+function collectSttForm() {
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var keyEl = document.getElementById('sttEditorApiKey');
+  var langEl = document.getElementById('sttEditorLanguage');
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value && keyEl.value.trim()) || '';
+  var language = (langEl && langEl.value && langEl.value.trim()) || null;
+  if (!endpoint && !apiKey && !language) return null;
+  return { endpoint: endpoint || 'https://api.openai.com/v1', apiKey: apiKey, language: language || undefined };
+}
+
+function updateSttModelSummary() {
+  var sum = document.getElementById('sttModelSummary');
+  if (!sum) return;
+  var stt = getSttConfig();
+  var hasConfig = stt && (stt.endpoint || stt.Endpoint) && (stt.apiKey || stt.ApiKey);
+  sum.textContent = hasConfig ? '语音转文字 (STT) 模型（已配置）' : '语音转文字 (STT) 模型';
+}
+
+function getOcrConfig() {
+  var raw = fullConfig && (fullConfig.ocr || fullConfig.Ocr);
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function fillOcrForm(data) {
+  var ocr = (data && (data.ocr || data.Ocr)) || getOcrConfig();
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var keyEl = document.getElementById('ocrEditorApiKey');
+  var langEl = document.getElementById('ocrEditorLanguage');
+  if (endEl) endEl.value = (ocr && (ocr.endpoint || ocr.Endpoint)) ? (ocr.endpoint || ocr.Endpoint) : '';
+  if (keyEl) keyEl.value = (ocr && (ocr.apiKey || ocr.ApiKey)) ? (ocr.apiKey || ocr.ApiKey) : '';
+  if (langEl) langEl.value = (ocr && (ocr.language || ocr.Language)) ? (ocr.language || ocr.Language) : '';
+  updateOcrModelSummary();
+}
+
+function collectOcrForm() {
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var keyEl = document.getElementById('ocrEditorApiKey');
+  var langEl = document.getElementById('ocrEditorLanguage');
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value && keyEl.value.trim()) || '';
+  var language = (langEl && langEl.value && langEl.value.trim()) || null;
+  if (!endpoint && !apiKey && !language) return null;
+  return { endpoint: endpoint, apiKey: apiKey, language: language || undefined };
+}
+
+function updateOcrModelSummary() {
+  var sum = document.getElementById('ocrModelSummary');
+  if (!sum) return;
+  var ocr = getOcrConfig();
+  var hasConfig = ocr && (ocr.endpoint || ocr.Endpoint) && (ocr.apiKey || ocr.ApiKey);
+  sum.textContent = hasConfig ? 'OCR 模型（已配置）' : 'OCR 模型';
 }
 
 var editingEmbeddingId = null;
@@ -448,6 +527,9 @@ if (document.getElementById('addEmbeddingModelBtn')) document.getElementById('ad
 if (document.getElementById('closeEmbeddingEditorBtn')) document.getElementById('closeEmbeddingEditorBtn').addEventListener('click', closeEmbeddingEditor);
 if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('saveEmbeddingModelBtn').addEventListener('click', saveEmbeddingFromEditor);
 
+if (document.getElementById('saveSttModelBtn')) document.getElementById('saveSttModelBtn').addEventListener('click', function () { saveConfig(); });
+if (document.getElementById('saveOcrModelBtn')) document.getElementById('saveOcrModelBtn').addEventListener('click', function () { saveConfig(); });
+
 var ragStorageTypeEl = document.getElementById('ragStorageType');
 if (ragStorageTypeEl) {
   ragStorageTypeEl.addEventListener('change', function () {
@@ -461,6 +543,7 @@ if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveC
 
 var CLI_SCRIPT_END_KEYS = ['chrome', 'backend', 'office', 'wps'];
 var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Office', wps: 'WPS' };
+var currentCliScriptEnd = 'chrome';
 var DEFAULT_CLI_COMMANDS = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
 var DEFAULT_PAGE_SCRIPTS = ['scroll_to_top', 'scroll_to_bottom', 'get_visible_text', 'get_page_title'];
 var CLI_RUN_MODES = [
@@ -714,12 +797,14 @@ async function loadConfig() {
     await loadSkillEnvSection();
     await loadBuiltinTools();
     renderEmbeddingModelsList();
-    var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Memory';
+    fillSttForm(data);
+    fillOcrForm(data);
+    var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Sqlite';
     var ragPath = data.ragStoragePath ?? data.RagStoragePath ?? '';
     var rtEl = document.getElementById('ragStorageType');
     var rpEl = document.getElementById('ragStoragePath');
     var rpGroup = document.getElementById('ragStoragePathGroup');
-    if (rtEl) rtEl.value = ragType || 'Memory';
+    if (rtEl) rtEl.value = ragType || 'Sqlite';
     if (rpEl) rpEl.value = ragPath || '';
     if (rpGroup) rpGroup.style.display = (ragType === 'Sqlite') ? 'block' : 'none';
     var pc = data.planConfirmation ?? data.PlanConfirmation;
@@ -749,15 +834,16 @@ async function loadConfig() {
       presetEl.value = activePresetId || '';
     }
     fillContextWindowForm(activePresetId, presets);
+    fillSessionForm(activePresetId, presets);
     toggleContextWindowSection(!!activePresetId);
+    toggleSessionSection(!!activePresetId);
     updatePresetRenameDeleteVisibility(activePresetId, presets);
   } catch (err) {
-    console.error(err);
-    var msg = err && err.message;
-    if (msg === 'Failed to fetch' || (err && err.name === 'TypeError' && msg && msg.indexOf('fetch') !== -1)) {
-      msg = '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe';
-    }
-    alert(msg || '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe');
+    var friendly = messageForBackendUnreachable(err);
+    if (friendly) console.warn(friendly);
+    else console.error(err);
+    var msg = friendly || (err && err.message) || '无法连接到本地服务，请确保已启动 OfficeCopilot.Server。';
+    alert(msg);
   } finally {
     setSaveConfigButtonsState(false, '');
   }
@@ -787,6 +873,30 @@ function fillContextWindowForm(activePresetId, presets) {
   var truncRatioEl = document.getElementById('ctxTruncateToolArgsThresholdRatio');
   var truncKeepEl = document.getElementById('ctxTruncateToolArgsKeepMessages');
   var truncMaxEl = document.getElementById('ctxTruncateToolArgsMaxChars');
+  var maxCtxEl = document.getElementById('ctxMaxContextTokens');
+  var resSysEl = document.getElementById('ctxReservedSystemTokens');
+  var resToolsEl = document.getElementById('ctxReservedToolsTokens');
+  var resOutEl = document.getElementById('ctxReservedOutputTokens');
+  var planCharsEl = document.getElementById('ctxPlanContentMaxChars');
+  var memInjEl = document.getElementById('ctxMemoryInjectionMaxChars');
+  var memSessEl = document.getElementById('ctxMemorySessionTopK');
+  var memSharedEl = document.getElementById('ctxMemorySharedTopK');
+  var tokenEstEl = document.getElementById('ctxTokenEstimation');
+  var charsPerEl = document.getElementById('ctxCharsPerToken');
+  var retryEnEl = document.getElementById('ctxContextLengthRetryEnabled');
+  var retryTurnsEl = document.getElementById('ctxContextLengthRetryMaxTurns');
+  if (maxCtxEl) maxCtxEl.value = (cw.maxContextTokens ?? cw.MaxContextTokens ?? 64000);
+  if (resSysEl) resSysEl.value = (cw.reservedSystemTokens ?? cw.ReservedSystemTokens ?? 12000);
+  if (resToolsEl) resToolsEl.value = (cw.reservedToolsTokens ?? cw.ReservedToolsTokens ?? 12000);
+  if (resOutEl) resOutEl.value = (cw.reservedOutputTokens ?? cw.ReservedOutputTokens ?? 4096);
+  if (planCharsEl) planCharsEl.value = (cw.planContentMaxChars ?? cw.PlanContentMaxChars ?? 16000);
+  if (memInjEl) memInjEl.value = (cw.memoryInjectionMaxChars ?? cw.MemoryInjectionMaxChars ?? 4000);
+  if (memSessEl) memSessEl.value = (cw.memorySessionTopK ?? cw.MemorySessionTopK ?? 5);
+  if (memSharedEl) memSharedEl.value = (cw.memorySharedTopK ?? cw.MemorySharedTopK ?? 3);
+  if (tokenEstEl) tokenEstEl.value = (cw.tokenEstimation ?? cw.TokenEstimation ?? 'CharsRatio');
+  if (charsPerEl) charsPerEl.value = (cw.charsPerToken ?? cw.CharsPerToken ?? 2);
+  if (retryEnEl) retryEnEl.checked = (cw.contextLengthRetryEnabled ?? cw.ContextLengthRetryEnabled ?? true);
+  if (retryTurnsEl) retryTurnsEl.value = (cw.contextLengthRetryMaxTurns ?? cw.ContextLengthRetryMaxTurns ?? 10);
   if (dirEl) dirEl.value = (cw.conversationHistoryDirectory ?? cw.ConversationHistoryDirectory) ?? '';
   if (sumEnEl) sumEnEl.checked = !!(cw.summarizationEnabled ?? cw.SummarizationEnabled);
   if (sumRatioEl) sumRatioEl.value = (cw.summarizationTriggerRatio ?? cw.SummarizationTriggerRatio) ?? 0.9;
@@ -794,6 +904,36 @@ function fillContextWindowForm(activePresetId, presets) {
   if (truncRatioEl) truncRatioEl.value = (cw.truncateToolArgsThresholdRatio ?? cw.TruncateToolArgsThresholdRatio) ?? 0;
   if (truncKeepEl) truncKeepEl.value = (cw.truncateToolArgsKeepMessages ?? cw.TruncateToolArgsKeepMessages) ?? 10;
   if (truncMaxEl) truncMaxEl.value = (cw.truncateToolArgsMaxChars ?? cw.TruncateToolArgsMaxChars) ?? 2000;
+}
+
+function fillSessionForm(activePresetId, presets) {
+  if (!activePresetId || !Array.isArray(presets) || presets.length === 0) return;
+  var preset = presets.find(function (p) { return (p.id || p.Id) === activePresetId; });
+  if (!preset) return;
+  var sess = preset.session || preset.Session || {};
+  function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
+  var maxTurnsEl = document.getElementById('sessionMaxHistoryTurns');
+  var minTurnsEl = document.getElementById('sessionMinTurnsToKeep');
+  var timeoutEl = document.getElementById('sessionTimeoutMinutes');
+  var cleanupEl = document.getElementById('sessionCleanupIntervalMinutes');
+  if (maxTurnsEl) maxTurnsEl.value = (sess.maxHistoryTurns ?? sess.MaxHistoryTurns ?? 80);
+  if (minTurnsEl) minTurnsEl.value = (sess.minTurnsToKeep ?? sess.MinTurnsToKeep ?? 8);
+  if (timeoutEl) timeoutEl.value = (sess.timeoutMinutes ?? sess.TimeoutMinutes ?? 30);
+  if (cleanupEl) cleanupEl.value = (sess.cleanupIntervalMinutes ?? sess.CleanupIntervalMinutes ?? 5);
+}
+
+function collectSessionFromForm() {
+  var maxTurnsEl = document.getElementById('sessionMaxHistoryTurns');
+  var minTurnsEl = document.getElementById('sessionMinTurnsToKeep');
+  var timeoutEl = document.getElementById('sessionTimeoutMinutes');
+  var cleanupEl = document.getElementById('sessionCleanupIntervalMinutes');
+  function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
+  return {
+    maxHistoryTurns: num(maxTurnsEl && maxTurnsEl.value ? maxTurnsEl.value : '', 80),
+    minTurnsToKeep: num(minTurnsEl && minTurnsEl.value ? minTurnsEl.value : '', 8),
+    timeoutMinutes: num(timeoutEl && timeoutEl.value ? timeoutEl.value : '', 30),
+    cleanupIntervalMinutes: num(cleanupEl && cleanupEl.value ? cleanupEl.value : '', 5)
+  };
 }
 
 function collectContextWindowFromForm() {
@@ -804,13 +944,36 @@ function collectContextWindowFromForm() {
   var truncRatioEl = document.getElementById('ctxTruncateToolArgsThresholdRatio');
   var truncKeepEl = document.getElementById('ctxTruncateToolArgsKeepMessages');
   var truncMaxEl = document.getElementById('ctxTruncateToolArgsMaxChars');
-  if (!sumRatioEl) return null;
   function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
   function floatVal(val, def) { var n = parseFloat(val); return isNaN(n) ? def : n; }
+  var maxCtxEl = document.getElementById('ctxMaxContextTokens');
+  var resSysEl = document.getElementById('ctxReservedSystemTokens');
+  var resToolsEl = document.getElementById('ctxReservedToolsTokens');
+  var resOutEl = document.getElementById('ctxReservedOutputTokens');
+  var planCharsEl = document.getElementById('ctxPlanContentMaxChars');
+  var memInjEl = document.getElementById('ctxMemoryInjectionMaxChars');
+  var memSessEl = document.getElementById('ctxMemorySessionTopK');
+  var memSharedEl = document.getElementById('ctxMemorySharedTopK');
+  var tokenEstEl = document.getElementById('ctxTokenEstimation');
+  var charsPerEl = document.getElementById('ctxCharsPerToken');
+  var retryEnEl = document.getElementById('ctxContextLengthRetryEnabled');
+  var retryTurnsEl = document.getElementById('ctxContextLengthRetryMaxTurns');
   return {
+    maxContextTokens: num(maxCtxEl && maxCtxEl.value ? maxCtxEl.value : '', 64000),
+    reservedSystemTokens: num(resSysEl && resSysEl.value ? resSysEl.value : '', 12000),
+    reservedToolsTokens: num(resToolsEl && resToolsEl.value ? resToolsEl.value : '', 12000),
+    reservedOutputTokens: num(resOutEl && resOutEl.value ? resOutEl.value : '', 4096),
+    planContentMaxChars: num(planCharsEl && planCharsEl.value ? planCharsEl.value : '', 16000),
+    memoryInjectionMaxChars: num(memInjEl && memInjEl.value ? memInjEl.value : '', 4000),
+    memorySessionTopK: num(memSessEl && memSessEl.value ? memSessEl.value : '', 5),
+    memorySharedTopK: num(memSharedEl && memSharedEl.value ? memSharedEl.value : '', 3),
+    tokenEstimation: (tokenEstEl && tokenEstEl.value) ? tokenEstEl.value : 'CharsRatio',
+    charsPerToken: num(charsPerEl && charsPerEl.value ? charsPerEl.value : '', 2),
+    contextLengthRetryEnabled: !!(retryEnEl && retryEnEl.checked),
+    contextLengthRetryMaxTurns: num(retryTurnsEl && retryTurnsEl.value ? retryTurnsEl.value : '', 10),
     conversationHistoryDirectory: (dirEl && dirEl.value.trim()) || null,
     summarizationEnabled: !!(sumEnEl && sumEnEl.checked),
-    summarizationTriggerRatio: floatVal(sumRatioEl.value, 0.9),
+    summarizationTriggerRatio: floatVal(sumRatioEl ? sumRatioEl.value : '', 0.9),
     summarizationMaxSummaryChars: num(sumCharsEl ? sumCharsEl.value : '', 500),
     truncateToolArgsThresholdRatio: floatVal(truncRatioEl ? truncRatioEl.value : '', 0),
     truncateToolArgsKeepMessages: num(truncKeepEl ? truncKeepEl.value : '', 10),
@@ -820,6 +983,11 @@ function collectContextWindowFromForm() {
 
 function toggleContextWindowSection(show) {
   var section = document.getElementById('contextWindowSection');
+  if (section) section.style.display = show ? 'block' : 'none';
+}
+
+function toggleSessionSection(show) {
+  var section = document.getElementById('sessionSection');
   if (section) section.style.display = show ? 'block' : 'none';
 }
 
@@ -861,7 +1029,7 @@ async function saveConfig() {
     var activeEmbeddingModelId = (fullConfig && (fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) || '';
     var ragTypeEl = document.getElementById('ragStorageType');
     var ragPathEl = document.getElementById('ragStoragePath');
-    var ragType = ragTypeEl ? ragTypeEl.value : 'Memory';
+    var ragType = ragTypeEl ? ragTypeEl.value : 'Sqlite';
     var ragPath = ragPathEl ? ragPathEl.value : '';
     var aeEl = document.getElementById('autoExecuteMaxSteps');
     var rcEl = document.getElementById('requireConfirmForSensitiveTools');
@@ -878,6 +1046,8 @@ async function saveConfig() {
       var activePreset = contextOptimizationPresets.find(function (p) { return (p.id || p.Id) === activeContextPresetId; });
       if (activePreset) {
         activePreset.planConfirmation = activePreset.PlanConfirmation = planConfirmationPayload;
+        var sessPayload = collectSessionFromForm();
+        activePreset.session = activePreset.Session = sessPayload;
         var ctxPayload = collectContextWindowFromForm();
         if (ctxPayload) {
           var existing = activePreset.contextWindow || activePreset.ContextWindow || {};
@@ -885,6 +1055,8 @@ async function saveConfig() {
         }
       }
     }
+    var sttToSave = collectSttForm();
+    var ocrToSave = collectOcrForm();
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -898,6 +1070,8 @@ async function saveConfig() {
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       embeddingModels: embeddingModelsToSave,
       activeEmbeddingModelId: activeEmbeddingModelId || undefined,
+      speechToText: sttToSave || undefined,
+      ocr: ocrToSave || undefined,
       ragStorageType: ragType,
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
       planConfirmation: planConfirmationPayload,
@@ -913,7 +1087,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, speechToText: payload.speechToText, ocr: payload.ocr, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -925,12 +1099,11 @@ async function saveConfig() {
     }, 2000);
     await loadConfig();
   } catch (err) {
-    console.error(err);
-    var saveErrMsg = err && err.message;
-    if (saveErrMsg === 'Failed to fetch' || (err && err.name === 'TypeError' && saveErrMsg && saveErrMsg.indexOf('fetch') !== -1)) {
-      saveErrMsg = '无法连接到本地服务，请确保已启动 OfficeCopilot.Server.exe';
-    }
-    alert(saveErrMsg || '保存失败，请检查服务状态。');
+    var friendly = messageForBackendUnreachable(err);
+    var saveErrMsg = friendly || (err && err.message) || '保存失败，请检查服务状态。';
+    if (friendly) console.warn(friendly);
+    else console.error(err);
+    alert(saveErrMsg);
   } finally {
     setSaveConfigButtonsState(false, '');
   }
@@ -975,17 +1148,21 @@ if (activeContextPresetEl) {
     var presets = getPresets();
     var activeId = getActivePresetId();
     fillContextWindowForm(activeId, presets);
+    fillSessionForm(activeId, presets);
     toggleContextWindowSection(!!activeId);
+    toggleSessionSection(!!activeId);
     updatePresetRenameDeleteVisibility(activeId, presets);
     saveConfig();
   });
 }
-['ctxConversationHistoryDirectory', 'ctxSummarizationTriggerRatio', 'ctxSummarizationMaxSummaryChars', 'ctxTruncateToolArgsThresholdRatio', 'ctxTruncateToolArgsKeepMessages', 'ctxTruncateToolArgsMaxChars'].forEach(function (id) {
+['ctxConversationHistoryDirectory', 'ctxSummarizationTriggerRatio', 'ctxSummarizationMaxSummaryChars', 'ctxTruncateToolArgsThresholdRatio', 'ctxTruncateToolArgsKeepMessages', 'ctxTruncateToolArgsMaxChars', 'ctxMaxContextTokens', 'ctxReservedSystemTokens', 'ctxReservedToolsTokens', 'ctxReservedOutputTokens', 'ctxPlanContentMaxChars', 'ctxMemoryInjectionMaxChars', 'ctxMemorySessionTopK', 'ctxMemorySharedTopK', 'ctxTokenEstimation', 'ctxCharsPerToken', 'ctxContextLengthRetryMaxTurns', 'sessionMaxHistoryTurns', 'sessionMinTurnsToKeep', 'sessionTimeoutMinutes', 'sessionCleanupIntervalMinutes'].forEach(function (id) {
   var el = document.getElementById(id);
   if (el) el.addEventListener('input', debouncedSaveConfig);
 });
 var ctxSummarizationEnabledEl = document.getElementById('ctxSummarizationEnabled');
 if (ctxSummarizationEnabledEl) ctxSummarizationEnabledEl.addEventListener('change', debouncedSaveConfig);
+var ctxContextLengthRetryEnabledEl = document.getElementById('ctxContextLengthRetryEnabled');
+if (ctxContextLengthRetryEnabledEl) ctxContextLengthRetryEnabledEl.addEventListener('change', debouncedSaveConfig);
 
 var renameContextPresetBtn = document.getElementById('renameContextPresetBtn');
 if (renameContextPresetBtn) {
@@ -1039,7 +1216,9 @@ if (deleteContextPresetBtn) {
       presetEl.value = fullConfig.activeContextPresetId || '';
     }
     fillContextWindowForm(fullConfig.activeContextPresetId || '', next);
+    fillSessionForm(fullConfig.activeContextPresetId || '', next);
     toggleContextWindowSection(next.length > 0);
+    toggleSessionSection(next.length > 0);
     updatePresetRenameDeleteVisibility(fullConfig.activeContextPresetId || '', next);
     saveConfig();
   });
@@ -1139,10 +1318,12 @@ async function loadSkills() {
       alert('无法加载技能列表，请确保后端已启动。');
     }
   } catch (err) {
-    console.error('Failed to load skills', err);
+    var friendly = messageForBackendUnreachable(err);
+    if (friendly) console.warn(friendly);
+    else console.error('Failed to load skills', err);
     currentSkills = [];
     renderSkills();
-    alert('无法加载技能列表，请确保后端已启动。');
+    alert(friendly || '无法加载技能列表，请确保后端已启动。');
   }
 }
 
@@ -1326,53 +1507,135 @@ function escapeHtml(unsafe) {
 }
 
 function renderCliScriptPerEndConfig() {
-  var container = document.getElementById('cliScriptPerEndConfig');
-  if (!container) return;
+  var tabsContainer = document.getElementById('cliScriptEndTabs');
+  var contentContainer = document.getElementById('cliScriptPerEndConfig');
+  if (!tabsContainer || !contentContainer) return;
   var modeByClient = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) ? (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) : {};
   var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
   var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
-  var html = '';
-  CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
-    var label = CLI_SCRIPT_END_LABELS[endKey] || endKey;
-    var mode = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
-    var cliList = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey] : [];
-    var scriptList = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey] : [];
-    var cliSet = cliList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
-    var scriptSet = scriptList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
-    var extraCli = cliList.filter(function (c) { return DEFAULT_CLI_COMMANDS.indexOf((c || '').toLowerCase()) < 0; }).join('\n');
-    var extraScript = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; }).join('\n');
-    html += '<div class="skill-card" style="margin-bottom:16px;" data-cli-script-end="' + escapeAttr(endKey) + '">';
-    html += '<div class="skill-header"><div class="skill-title">' + escapeHtml(label) + '</div></div>';
-    html += '<div class="form-group" style="margin-top:8px;"><label style="display:block;margin-bottom:6px;">运行模式</label><select class="cli-run-mode-select" data-end="' + escapeAttr(endKey) + '" style="min-width:220px;">';
-    CLI_RUN_MODES.forEach(function (opt) {
-      html += '<option value="' + escapeAttr(opt.value) + '"' + (mode === opt.value ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
+  var endKey = currentCliScriptEnd;
+  var mode = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
+  var cliList = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey] : [];
+  var scriptList = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey] : [];
+  var cliSet = cliList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+  var scriptSet = scriptList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+  var userCliList = cliList.filter(function (c) { return DEFAULT_CLI_COMMANDS.indexOf((c || '').toLowerCase()) < 0; });
+  var userScriptList = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; });
+
+  tabsContainer.innerHTML = CLI_SCRIPT_END_KEYS.map(function (k) {
+    var label = CLI_SCRIPT_END_LABELS[k] || k;
+    var active = k === endKey ? ' active' : '';
+    return '<button type="button" class="cli-script-end-tab' + active + '" data-end="' + escapeAttr(k) + '">' + escapeHtml(label) + '</button>';
+  }).join('');
+  tabsContainer.querySelectorAll('.cli-script-end-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentCliScriptEnd = this.getAttribute('data-end') || 'chrome';
+      renderCliScriptPerEndConfig();
     });
-    html += '</select></div>';
-    html += '<div class="cli-allowlist-section" data-end="' + escapeAttr(endKey) + '" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (mode !== 'UseAllowList' ? ' display:none;' : '') + '">';
-    html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p><div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px;">';
-    DEFAULT_CLI_COMMANDS.forEach(function (cmd) {
-      var checked = cliSet.indexOf(cmd.toLowerCase()) >= 0 ? ' checked' : '';
-      html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="cli-default-cb" data-end="' + escapeAttr(endKey) + '" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span>' + escapeHtml(cmd) + '</span></label>';
-    });
-    html += '</div><textarea class="cli-extra-ta" data-end="' + escapeAttr(endKey) + '" placeholder="额外命令，每行一个" style="min-height:48px;width:100%;margin-bottom:12px;">' + escapeHtml(extraCli) + '</textarea>';
-    html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p><div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px;">';
-    DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
-      var checked = scriptSet.indexOf(sid.toLowerCase()) >= 0 ? ' checked' : '';
-      html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-end="' + escapeAttr(endKey) + '" data-script="' + escapeAttr(sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
-    });
-    html += '</div><textarea class="script-extra-ta" data-end="' + escapeAttr(endKey) + '" placeholder="额外 scriptId，每行一个" style="min-height:48px;width:100%;">' + escapeHtml(extraScript) + '</textarea></div></div>';
   });
-  container.innerHTML = html;
-  container.querySelectorAll('.cli-run-mode-select').forEach(function (el) {
-    el.addEventListener('change', function () {
-      var end = this.getAttribute('data-end');
-      var section = container.querySelector('.cli-allowlist-section[data-end="' + end + '"]');
-      if (section) section.style.display = this.value === 'UseAllowList' ? '' : 'none';
+
+  var showAllowlist = mode === 'UseAllowList';
+  var html = '<div class="skill-card" style="margin-bottom:16px;" data-cli-script-end="' + escapeAttr(endKey) + '">';
+  html += '<div class="form-group" style="margin-top:8px;"><label style="display:block;margin-bottom:6px;">运行模式</label><select class="cli-run-mode-select" data-end="' + escapeAttr(endKey) + '" style="min-width:220px;">';
+  CLI_RUN_MODES.forEach(function (opt) {
+    html += '<option value="' + escapeAttr(opt.value) + '"' + (mode === opt.value ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
+  });
+  html += '</select></div>';
+  html += '<div class="cli-allowlist-section" data-end="' + escapeAttr(endKey) + '" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (showAllowlist ? '' : ' display:none;') + '">';
+  html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p>';
+  html += '<div class="cli-allowlist-list" style="margin-bottom:12px;">';
+  DEFAULT_CLI_COMMANDS.forEach(function (cmd) {
+    var checked = cliSet.indexOf(cmd.toLowerCase()) >= 0 ? ' checked' : '';
+    html += '<label class="cli-allowlist-row cli-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="cli-default-cb" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span>' + escapeHtml(cmd) + '</span></label>';
+  });
+  html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
+  userCliList.forEach(function (cmd) {
+    var checked = cliSet.indexOf((cmd || '').toLowerCase()) >= 0 ? ' checked' : '';
+    html += '<div class="cli-allowlist-row cli-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
+  });
+  html += '</div><div style="display:flex;gap:8px;margin-bottom:16px;"><input type="text" class="cli-add-input" placeholder="添加命令名" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary cli-add-btn">添加命令</button></div>';
+  html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p>';
+  html += '<div class="script-allowlist-list" style="margin-bottom:12px;">';
+  DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
+    var checked = scriptSet.indexOf(sid.toLowerCase()) >= 0 ? ' checked' : '';
+    html += '<label class="script-allowlist-row script-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-script="' + escapeAttr(sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
+  });
+  html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
+  userScriptList.forEach(function (sid) {
+    var checked = scriptSet.indexOf((sid || '').toLowerCase()) >= 0 ? ' checked' : '';
+    html += '<div class="script-allowlist-row script-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '"' + checked + '><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
+  });
+  html += '</div><div style="display:flex;gap:8px;"><input type="text" class="script-add-input" placeholder="添加 scriptId" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary script-add-btn">添加脚本</button></div></div></div>';
+  contentContainer.innerHTML = html;
+
+  contentContainer.querySelector('.cli-run-mode-select').addEventListener('change', function () {
+    var section = contentContainer.querySelector('.cli-allowlist-section');
+    if (section) section.style.display = this.value === 'UseAllowList' ? '' : 'none';
+    debouncedSaveConfig();
+  });
+  contentContainer.querySelectorAll('.cli-default-cb, .script-default-cb, .cli-user-cb, .script-user-cb').forEach(function (el) { el.addEventListener('change', debouncedSaveConfig); });
+  contentContainer.querySelectorAll('.cli-user-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = btn.closest('.cli-user-row');
+      if (row) row.remove();
       debouncedSaveConfig();
     });
   });
-  container.querySelectorAll('.cli-default-cb, .script-default-cb').forEach(function (el) { el.addEventListener('change', debouncedSaveConfig); });
-  container.querySelectorAll('.cli-extra-ta, .script-extra-ta').forEach(function (el) { el.addEventListener('input', debouncedSaveConfig); });
+  contentContainer.querySelectorAll('.script-user-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = btn.closest('.script-user-row');
+      if (row) row.remove();
+      debouncedSaveConfig();
+    });
+  });
+  var cliAddBtn = contentContainer.querySelector('.cli-add-btn');
+  var cliAddInput = contentContainer.querySelector('.cli-add-input');
+  var cliListEl = contentContainer.querySelector('.cli-allowlist-list');
+  if (cliAddBtn && cliAddInput && cliListEl) {
+    cliAddBtn.addEventListener('click', function () {
+      var cmd = (cliAddInput.value || '').trim();
+      if (!cmd) return;
+      var cmdLower = cmd.toLowerCase();
+      var already = false;
+      contentContainer.querySelectorAll('.cli-user-row .cli-user-cmd').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === cmdLower) already = true; });
+      if (already) return;
+      var div = document.createElement('div');
+      div.className = 'cli-allowlist-row cli-user-row';
+      div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
+      div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '" checked><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
+      var hr = cliListEl.querySelector('hr');
+      if (hr && hr.nextSibling) cliListEl.insertBefore(div, hr.nextSibling);
+      else cliListEl.appendChild(div);
+      div.querySelector('.cli-user-cb').addEventListener('change', debouncedSaveConfig);
+      div.querySelector('.cli-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
+      cliAddInput.value = '';
+      debouncedSaveConfig();
+    });
+  }
+  var scriptAddBtn = contentContainer.querySelector('.script-add-btn');
+  var scriptAddInput = contentContainer.querySelector('.script-add-input');
+  var scriptListEl = contentContainer.querySelector('.script-allowlist-list');
+  if (scriptAddBtn && scriptAddInput && scriptListEl) {
+    scriptAddBtn.addEventListener('click', function () {
+      var sid = (scriptAddInput.value || '').trim();
+      if (!sid) return;
+      var sidLower = sid.toLowerCase();
+      var already = false;
+      contentContainer.querySelectorAll('.script-user-row .script-user-id').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === sidLower) already = true; });
+      if (already) return;
+      var div = document.createElement('div');
+      div.className = 'script-allowlist-row script-user-row';
+      div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
+      div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '" checked><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
+      var hr = scriptListEl.querySelector('hr');
+      if (hr && hr.nextSibling) scriptListEl.insertBefore(div, hr.nextSibling);
+      else scriptListEl.appendChild(div);
+      div.querySelector('.script-user-cb').addEventListener('change', debouncedSaveConfig);
+      div.querySelector('.script-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
+      scriptAddInput.value = '';
+      debouncedSaveConfig();
+    });
+  }
 }
 
 function collectCliScriptPerEndPayload() {
@@ -1380,25 +1643,43 @@ function collectCliScriptPerEndPayload() {
   var allowedCliCommandsByClient = {};
   var allowedPageScriptIdsByClient = {};
   var container = document.getElementById('cliScriptPerEndConfig');
-  if (!container) return { cliRunModeByClient: cliRunModeByClient, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
+  var modeByClient = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) ? (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) : {};
+  var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
+  var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
   CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
+    if (endKey !== currentCliScriptEnd) {
+      cliRunModeByClient[endKey] = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
+      allowedCliCommandsByClient[endKey] = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey].slice() : [];
+      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey].slice() : [];
+      return;
+    }
+    if (!container) {
+      cliRunModeByClient[endKey] = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
+      allowedCliCommandsByClient[endKey] = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey].slice() : [];
+      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey].slice() : [];
+      return;
+    }
     var modeEl = container.querySelector('.cli-run-mode-select[data-end="' + endKey + '"]');
     cliRunModeByClient[endKey] = (modeEl && modeEl.value) ? modeEl.value : 'UseAllowList';
     var cliList = [];
-    container.querySelectorAll('.cli-default-cb[data-end="' + endKey + '"]:checked').forEach(function (cb) {
+    container.querySelectorAll('.cli-default-cb:checked').forEach(function (cb) {
       var cmd = cb.getAttribute('data-cmd');
       if (cmd) cliList.push(cmd);
     });
-    var extraCliEl = container.querySelector('.cli-extra-ta[data-end="' + endKey + '"]');
-    if (extraCliEl && extraCliEl.value) cliList = cliList.concat(extraCliEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean));
+    container.querySelectorAll('.cli-user-row .cli-user-cb:checked').forEach(function (cb) {
+      var cmd = (cb.getAttribute('data-cmd') || '').trim();
+      if (cmd) cliList.push(cmd);
+    });
     allowedCliCommandsByClient[endKey] = cliList;
     var scriptList = [];
-    container.querySelectorAll('.script-default-cb[data-end="' + endKey + '"]:checked').forEach(function (cb) {
+    container.querySelectorAll('.script-default-cb:checked').forEach(function (cb) {
       var script = cb.getAttribute('data-script');
       if (script) scriptList.push(script);
     });
-    var extraScriptEl = container.querySelector('.script-extra-ta[data-end="' + endKey + '"]');
-    if (extraScriptEl && extraScriptEl.value) scriptList = scriptList.concat(extraScriptEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean));
+    container.querySelectorAll('.script-user-row .script-user-cb:checked').forEach(function (cb) {
+      var script = (cb.getAttribute('data-script') || '').trim();
+      if (script) scriptList.push(script);
+    });
     allowedPageScriptIdsByClient[endKey] = scriptList;
   });
   return { cliRunModeByClient: cliRunModeByClient, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
@@ -1453,8 +1734,10 @@ async function loadBuiltinTools() {
       });
     });
   } catch (e) {
-    console.warn('loadBuiltinTools failed', e);
-    el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">无法加载内置插件列表（请确认后端已启动且已更新至最新版本）。</div>';
+    var friendly = messageForBackendUnreachable(e);
+    if (friendly) console.warn(friendly);
+    else console.warn('loadBuiltinTools failed', e);
+    el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">' + (friendly || '无法加载内置插件列表（请确认后端已启动且已更新至最新版本）。') + '</div>';
   }
 }
 
@@ -1544,6 +1827,13 @@ const SALES_DB_MCP_PRESET = {
   args: ['run', '--project', 'sales-db-mcp/SalesDbMcp.csproj']
 };
 
+const OCR_MCP_PRESET = {
+  id: 'ocr-mcp',
+  name: 'OCR',
+  command: 'uvx',
+  args: ['mcp-ocr']
+};
+
 document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () => {
   if (!fullConfig) {
     alert('请先等待配置加载完成。');
@@ -1557,6 +1847,23 @@ document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () =
   }
   if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
   fullConfig.mcpServers.push({ ...SALES_DB_MCP_PRESET });
+  await _saveFullConfig();
+  renderMcpList(getMcpServers());
+});
+
+document.getElementById('addOcrMcpBtn').addEventListener('click', async () => {
+  if (!fullConfig) {
+    alert('请先等待配置加载完成。');
+    return;
+  }
+  const list = getMcpServers();
+  const exists = list.some(s => (s.id || s.Id) === OCR_MCP_PRESET.id);
+  if (exists) {
+    window.editMcp(OCR_MCP_PRESET.id);
+    return;
+  }
+  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
+  fullConfig.mcpServers.push({ ...OCR_MCP_PRESET });
   await _saveFullConfig();
   renderMcpList(getMcpServers());
 });

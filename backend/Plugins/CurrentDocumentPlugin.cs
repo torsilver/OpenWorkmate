@@ -54,15 +54,16 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_word_insert_text")]
-    [Description("在当前打开的 Word 文档末尾插入一段文字。仅当用户从 Word 任务窗格连接时可用。")]
+    [Description("在当前打开的 Word 文档末尾插入一段文字。可选 style 参数指定段落样式（如 Heading1、Heading2、Normal、Title）。仅当用户从 Word 任务窗格连接时可用。")]
     public Task<string> CurrentWordInsertTextAsync(
         [Description("要插入的正文内容")] string text,
+        [Description("可选段落样式：Heading1、Heading2、Heading3、Normal、Title、Subtitle")] string? style = null,
         KernelArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
-        _logger.LogInformation("[CurrentDocument] current_word_insert_text sessionId={SessionId}", sessionId ?? "(null)");
-        return SendRpcAsync(sessionId!, "word_insert_text", new { text }, cancellationToken);
+        _logger.LogInformation("[CurrentDocument] current_word_insert_text sessionId={SessionId} style={Style}", sessionId ?? "(null)", style ?? "(none)");
+        return SendRpcAsync(sessionId!, "word_insert_text", new { text, style }, cancellationToken);
     }
 
     [KernelFunction("current_word_read_body")]

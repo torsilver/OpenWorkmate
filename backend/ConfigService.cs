@@ -12,13 +12,9 @@ public class AiConfig
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
-    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。";
+    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 中请用 Markdown 格式：以 # / ## / ### 开头的段落会自动变为对应级别标题，以 - 开头的段落会自动变为列表项，其余为正文段落（自动带首行缩进和专业排版）。创建 PPT 时，bodyText 中用换行分段，以 - 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。";
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
-    /// <summary>为 true 时使用两阶段工具选择（一阶段选子类、二阶段选函数）；为 false 时退化为单阶段选插件。null 视为 true。</summary>
-    public bool? ToolSelectionTwoStage { get; set; } = true;
-    /// <summary>为 true 时先按用户输入在工具向量库中检索，结果足够好则直接用检索到的工具，否则回退到两轮选子类。默认 false。需已配置 Embedding。</summary>
-    public bool ToolSelectionVectorFirst { get; set; }
 }
 
 /// <summary>多模型列表中的单条：支持 OpenAI / Azure / Ollama / Anthropic。</summary>
@@ -117,6 +113,13 @@ public class ContextWindowConfig
     public int TruncateToolArgsKeepMessages { get; set; } = 10;
     /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
     public int TruncateToolArgsMaxChars { get; set; } = 2000;
+
+    /// <summary>工具向量检索：返回最多 topK 个结果。</summary>
+    public int ToolSearchTopK { get; set; } = 20;
+    /// <summary>工具向量检索：最高分 >= 此值时认为结果可用。</summary>
+    public double ToolSearchMinScore { get; set; } = 0.7;
+    /// <summary>工具向量检索：至少命中此数量才算 goodEnough。</summary>
+    public int ToolSearchMinCount { get; set; } = 1;
 }
 
 /// <summary>上下文优化预设：一组 ContextWindow + Session + PlanConfirmation，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
@@ -145,6 +148,26 @@ public class TestEmbeddingRequest
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
     public string? ModelId { get; set; }
+}
+
+/// <summary>语音转文字（STT）配置，用于 POST /api/transcribe；不配置时使用当前 AI 模型的 endpoint/apiKey 调用 Whisper。</summary>
+public class SpeechToTextConfig
+{
+    public string Endpoint { get; set; } = "https://api.openai.com/v1";
+    public string ApiKey { get; set; } = "";
+    /// <summary>可选语言代码，如 zh、en；空则自动检测。</summary>
+    public string? Language { get; set; }
+    /// <summary>长音频分片时长（分钟），超过 25MB 时按此分片后逐段调用；默认 2。</summary>
+    public int ChunkMinutes { get; set; } = 2;
+}
+
+/// <summary>OCR 配置，用于内置 MCP_OCR 工具；调用远程 OCR API（如 Azure Document Intelligence 或兼容接口）。</summary>
+public class OcrConfig
+{
+    public string Endpoint { get; set; } = "";
+    public string ApiKey { get; set; } = "";
+    /// <summary>可选语言或模型标识，视具体 API 而定。</summary>
+    public string? Language { get; set; }
 }
 
 public class AppConfig
@@ -183,7 +206,7 @@ public class AppConfig
     /// <summary>当前使用的 Embedding 模型 Id，对应 EmbeddingModels 中某条的 Id；为空或不在列表中则视为未配置。</summary>
     public string? ActiveEmbeddingModelId { get; set; }
     /// <summary>向量存储类型：Memory = 内存，Sqlite = 本地 db 文件。</summary>
-    public string RagStorageType { get; set; } = "Memory";
+    public string RagStorageType { get; set; } = "Sqlite";
     /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OfficeCopilot/rag.db。</summary>
     public string? RagStoragePath { get; set; }
     /// <summary>计划存储目录（.plan.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/Plans。</summary>
@@ -192,6 +215,10 @@ public class AppConfig
     public string? AccurateDataDirectory { get; set; }
     /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
     public string? ScheduledTasksDirectory { get; set; }
+    /// <summary>语音转文字（Whisper）配置；为空时使用当前 AI 模型的 endpoint/apiKey。</summary>
+    public SpeechToTextConfig? SpeechToText { get; set; }
+    /// <summary>OCR 配置；为空时 MCP_OCR 工具不可用。</summary>
+    public OcrConfig? Ocr { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>
@@ -482,7 +509,10 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000
+                    TruncateToolArgsMaxChars = 2000,
+                    ToolSearchTopK = 20,
+                    ToolSearchMinScore = 0.7,
+                    ToolSearchMinCount = 1
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
                 PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
@@ -511,7 +541,10 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000
+                    TruncateToolArgsMaxChars = 2000,
+                    ToolSearchTopK = 20,
+                    ToolSearchMinScore = 0.7,
+                    ToolSearchMinCount = 1
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
                 PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
@@ -553,7 +586,10 @@ public sealed class ConfigService
             ConversationHistoryDirectory = preset.ContextWindow.ConversationHistoryDirectory,
             TruncateToolArgsThresholdRatio = preset.ContextWindow.TruncateToolArgsThresholdRatio,
             TruncateToolArgsKeepMessages = preset.ContextWindow.TruncateToolArgsKeepMessages,
-            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars
+            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars,
+            ToolSearchTopK = preset.ContextWindow.ToolSearchTopK,
+            ToolSearchMinScore = preset.ContextWindow.ToolSearchMinScore,
+            ToolSearchMinCount = preset.ContextWindow.ToolSearchMinCount
         };
         config.PlanConfirmation = new PlanConfirmationConfig
         {
@@ -608,6 +644,8 @@ public sealed class ConfigService
                 else
                     PreserveEmbeddingEndpointsFromCurrent(newConfig.EmbeddingModels, _currentConfig.EmbeddingModels);
                 if (newConfig.ActiveEmbeddingModelId == null) newConfig.ActiveEmbeddingModelId = _currentConfig.ActiveEmbeddingModelId;
+                if (newConfig.SpeechToText == null) newConfig.SpeechToText = _currentConfig.SpeechToText;
+                if (newConfig.Ocr == null) newConfig.Ocr = _currentConfig.Ocr;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {

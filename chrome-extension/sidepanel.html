@@ -17,6 +17,7 @@
         <p id="current-page-label" class="header-subtitle" title="当前页面">(无)</p>
       </div>
       <div class="header-controls">
+        <button id="new-chat-btn" title="新建对话" style="background:none; border:none; cursor:pointer; font-size:16px;">💬</button>
         <button id="toggle-debug-btn" title="Toggle Debug" style="background:none; border:none; cursor:pointer; font-size:16px;">🐛</button>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
@@ -56,7 +57,9 @@
     <footer class="input-area">
       <div class="mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
         <span style="font-size:12px; color:var(--text-secondary, #94a3b8);">当前计划：</span>
-        <span id="current-plan-label" style="font-size:11px; color:var(--text-secondary, #94a3b8); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="当前计划">无</span>
+        <span id="current-plan-label" class="plan-label-clickable" style="font-size:11px; color:var(--accent, #60a5fa); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;" title="点击查看计划">无</span>
+        <span id="plan-step-indicator" style="font-size:11px; color:var(--text-secondary, #94a3b8); display:none;"></span>
+        <button id="cancel-plan-btn" type="button" title="取消计划" style="background:none; border:none; cursor:pointer; font-size:12px; color:var(--text-secondary, #94a3b8); display:none; padding:0 2px;">✕</button>
       </div>
       <div id="attachments-preview" class="attachments-preview" style="display: none;"></div>
       <div class="input-row">
@@ -64,6 +67,20 @@
         <button id="attach-btn" class="attach-btn" type="button" title="附加图片">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <button id="voice-btn" class="attach-btn voice-btn" type="button" title="语音输入">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <button id="meeting-btn" class="attach-btn meeting-btn" type="button" title="会议监听">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
         </button>
         <textarea
@@ -87,6 +104,16 @@
         </button>
       </div>
     </footer>
+
+    <div id="meeting-panel" class="meeting-panel" style="display: none;">
+      <div class="meeting-header">
+        <span class="meeting-pulse"></span>
+        <span id="meeting-timer">00:00</span>
+        <span style="flex:1;"></span>
+        <button id="meeting-stop-btn" class="meeting-stop-btn" type="button">结束并总结</button>
+      </div>
+      <div id="meeting-preview" class="meeting-preview"></div>
+    </div>
 
     <div id="hitl-overlay" class="hitl-overlay" style="display: none;" aria-hidden="true">
       <div class="hitl-card">

@@ -59,23 +59,30 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             var success = !IsToolResultFailure(content);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex);
 
-            // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页（仅当工具结果视为成功时）
+            // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页
             if (success && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
                     var fullResult = context.Result?.GetValue<string>() ?? "";
+                    // 从 KernelArguments 中取 goal 作为标题回退
+                    var goalFallback = "";
+                    if (context.Arguments?.TryGetValue("goal", out var goalObj) == true)
+                        goalFallback = goalObj?.ToString()?.Trim() ?? "";
+
                     var planIdMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"planId=([a-zA-Z0-9]+)");
-                    var titleMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"标题[：:]\s*([^。\n]+)");
                     if (planIdMatch.Success)
                     {
+                        var planId = planIdMatch.Groups[1].Value;
+                        var titleMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"标题[：:]\s*([^。\n]+)");
+                        var title = titleMatch.Success ? titleMatch.Groups[1].Value.Trim() : goalFallback;
                         var createdBy = _sessionManager.GetClientType(sessionId);
                         var requiresConfirm = fullResult.Contains("需用户确认", StringComparison.Ordinal);
                         var planCreated = new WsMessage
                         {
                             Type = "plan_created",
-                            PlanId = planIdMatch.Groups[1].Value,
-                            Title = titleMatch.Success ? titleMatch.Groups[1].Value.Trim() : null,
+                            PlanId = planId,
+                            Title = string.IsNullOrEmpty(title) ? planId : title,
                             Path = null,
                             CreatedBy = createdBy,
                             RequiresUserConfirmation = requiresConfirm

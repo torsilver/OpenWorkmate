@@ -33,6 +33,7 @@ public sealed class SqliteCrossAgentTaskStore : ICrossAgentTaskStore
                         target_session_id TEXT,
                         description TEXT NOT NULL,
                         status TEXT NOT NULL DEFAULT 'pending',
+                        claimed_by TEXT,
                         result_summary TEXT,
                         created_at INTEGER NOT NULL,
                         completed_at INTEGER
@@ -42,6 +43,14 @@ public sealed class SqliteCrossAgentTaskStore : ICrossAgentTaskStore
                     """;
                 cmd.ExecuteNonQuery();
             }
+            // migrate: add claimed_by column if missing
+            try
+            {
+                using var alter = conn.CreateCommand();
+                alter.CommandText = "ALTER TABLE cross_agent_tasks ADD COLUMN claimed_by TEXT";
+                alter.ExecuteNonQuery();
+            }
+            catch { /* column already exists */ }
             _initialized = true;
         }
     }
@@ -83,20 +92,34 @@ public sealed class SqliteCrossAgentTaskStore : ICrossAgentTaskStore
         var list = new List<CrossAgentTaskItem>();
         if (string.IsNullOrWhiteSpace(sessionId) && string.IsNullOrWhiteSpace(clientType))
             return list;
+        var sid = sessionId ?? "";
+        var tct = clientType?.Trim() ?? "";
         using var conn = new SqliteConnection(_connectionString);
         conn.Open();
-        // 匹配：指定了 target_session_id 则精确匹配 session；否则按 target_client_type 匹配
-        var sql = """
-            SELECT id, from_session_id, target_client_type, target_session_id, description, status, result_summary, created_at, completed_at
-            FROM cross_agent_tasks WHERE status = 'pending' AND (
-                (target_session_id IS NOT NULL AND target_session_id = $tsid)
-                OR (target_session_id IS NULL AND target_client_type = $tct)
-            ) ORDER BY created_at ASC
-            """;
+
+        // Atomic claim: UPDATE unclaimed matching tasks to claimed_by = this session, then SELECT them
+        using (var claimCmd = conn.CreateCommand())
+        {
+            claimCmd.CommandText = """
+                UPDATE cross_agent_tasks SET claimed_by = $sid
+                WHERE status = 'pending' AND (claimed_by IS NULL OR claimed_by = '') AND (
+                    (target_session_id IS NOT NULL AND target_session_id = $tsid)
+                    OR (target_session_id IS NULL AND target_client_type = $tct)
+                )
+                """;
+            claimCmd.Parameters.AddWithValue("$sid", sid);
+            claimCmd.Parameters.AddWithValue("$tsid", sid);
+            claimCmd.Parameters.AddWithValue("$tct", tct);
+            await claimCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        cmd.Parameters.AddWithValue("$tsid", (object?)sessionId ?? "");
-        cmd.Parameters.AddWithValue("$tct", (object?)clientType?.Trim() ?? "");
+        cmd.CommandText = """
+            SELECT id, from_session_id, target_client_type, target_session_id, description, status, result_summary, created_at, completed_at
+            FROM cross_agent_tasks WHERE status = 'pending' AND claimed_by = $sid
+            ORDER BY created_at ASC
+            """;
+        cmd.Parameters.AddWithValue("$sid", sid);
         using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await r.ReadAsync(ct).ConfigureAwait(false))
         {

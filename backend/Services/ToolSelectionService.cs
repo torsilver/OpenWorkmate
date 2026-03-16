@@ -60,6 +60,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["CrossAgentTask"] = "跨端派发任务：让 Word/Chrome/Excel/WPS/PowerPoint 端的 Agent 执行某任务；或标记本端已完成的任务",
         ["Context"] = "对话上下文管理：在换任务或已总结完后主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或会产出大量中间结果的任务交给子代理，仅收回最终总结",
+        ["AccurateData"] = "准确数据临时存盘：保存结构化数据到磁盘以减少上下文占用，需要时按 id 精确取回",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> (插件名, 函数名) 列表；仅内置固定子类，技能/外部由 Kernel 动态收集。</summary>
@@ -122,6 +123,7 @@ public sealed class ToolSelectionService : IToolSelector
             ["CrossAgentTask"] = new List<(string, string)> { ("CrossAgentTask", "create_cross_agent_task"), ("CrossAgentTask", "complete_cross_agent_task") },
             ["Context"] = new List<(string, string)> { ("Context", "compact_conversation") },
             ["Subagent"] = new List<(string, string)> { ("Subagent", "run_subtask") },
+            ["AccurateData"] = new List<(string, string)> { ("AccurateData", "accurate_data_write"), ("AccurateData", "accurate_data_read"), ("AccurateData", "accurate_data_list"), ("AccurateData", "accurate_data_delete") },
         };
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
@@ -212,17 +214,22 @@ public sealed class ToolSelectionService : IToolSelector
         return list;
     }
 
-    /// <summary>构建一阶段可选的子类列表（仅包含在 Kernel 中至少有一个函数的子类）；含动态 技能/外部。</summary>
+    /// <summary>构建一阶段可选的子类列表（仅包含在 Kernel 中至少有一个函数的子类）；含动态 技能/外部；自动为未映射的插件生成子类。</summary>
     private static List<(string Id, string Description)> BuildSubcategoryListFromKernel(Kernel kernel, List<(string Plugin, string Function)> allFunctions)
     {
         var presentSet = new HashSet<(string, string)>(allFunctions, new PluginFunctionComparer());
         var result = new List<(string, string)>();
+        var coveredPlugins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var kv in SubcategoryToFunctions)
         {
             var hasAny = kv.Value.Any(pf => presentSet.Contains((pf.Plugin, pf.Function)));
             if (hasAny && SubcategoryDescriptions.TryGetValue(kv.Key, out var desc))
+            {
                 result.Add((kv.Key, desc));
+                foreach (var pf in kv.Value)
+                    coveredPlugins.Add(pf.Plugin);
+            }
         }
 
         var skillPlugins = kernel.Plugins.Where(p => string.Equals(p.Name, "ClawhubSkill", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -230,6 +237,8 @@ public sealed class ToolSelectionService : IToolSelector
         {
             if (SubcategoryDescriptions.TryGetValue("技能", out var skillDesc))
                 result.Add(("技能", skillDesc));
+            foreach (var p in skillPlugins)
+                coveredPlugins.Add(p.Name);
         }
 
         var mcpPlugins = kernel.Plugins.Where(p => p.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -237,6 +246,23 @@ public sealed class ToolSelectionService : IToolSelector
         {
             if (SubcategoryDescriptions.TryGetValue("外部", out var extDesc))
                 result.Add(("外部", extDesc));
+            foreach (var p in mcpPlugins)
+                coveredPlugins.Add(p.Name);
+        }
+
+        // Auto-discover plugins not covered by hardcoded mappings
+        foreach (var plugin in kernel.Plugins)
+        {
+            if (coveredPlugins.Contains(plugin.Name)) continue;
+            var funcCount = plugin.Count();
+            if (funcCount == 0) continue;
+            var autoId = $"Auto_{plugin.Name}";
+            var firstFunc = plugin.FirstOrDefault();
+            var descHint = firstFunc?.Description;
+            var autoDesc = !string.IsNullOrWhiteSpace(descHint)
+                ? $"{plugin.Name}: {descHint}"
+                : $"{plugin.Name} 插件（{funcCount} 个工具）";
+            result.Add((autoId, autoDesc));
         }
 
         return result;
@@ -369,6 +395,20 @@ public sealed class ToolSelectionService : IToolSelector
                 foreach (var plugin in kernel.Plugins)
                 {
                     if (!plugin.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    foreach (KernelFunction f in plugin)
+                        result.Add((plugin.Name, f.Name));
+                }
+                continue;
+            }
+
+            // Auto-discovered plugins
+            if (id.StartsWith("Auto_", StringComparison.OrdinalIgnoreCase))
+            {
+                var pluginName = id["Auto_".Length..];
+                foreach (var plugin in kernel.Plugins)
+                {
+                    if (!string.Equals(plugin.Name, pluginName, StringComparison.OrdinalIgnoreCase))
                         continue;
                     foreach (KernelFunction f in plugin)
                         result.Add((plugin.Name, f.Name));

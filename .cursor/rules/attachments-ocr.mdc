@@ -1,0 +1,19 @@
+---
+description: 用户附带图片与 OCR 转文档的约定
+globs: 
+alwaysApply: true
+---
+
+# 附件引用与图片转文档
+
+## 附件不占上下文
+
+用户从侧栏附带图片发送时，后端会将图片存为临时文件并只在对话中写入 **引用**（如 `attachment:abc123`），不会把 base64 塞进上下文。历史中用户消息形如：「用户附带了 [attachment:xxx, attachment:yyy]。 用户说：请把这些图整理成文档。」
+
+## 处理「把图片整理成文档」时
+
+1. **取路径**：对每个 `attachment:xxx` 调用 **File** 插件的 **get_attachment_path**，传入该引用，得到本机临时文件路径。
+2. **OCR**：若已配置 **OCR MCP**，调用其工具（如 `perform_ocr`）并传入上一步得到的路径，取得识别出的文本。
+3. **组文档**：根据 OCR 返回的文本，用主模型整理、分段或生成 Markdown/Word（可配合 File、Word 等插件落盘）。
+
+不要尝试把图片数据或 base64 传给模型；仅通过工具链「get_attachment_path → OCR 工具」得到文本再继续。

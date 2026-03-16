@@ -87,10 +87,33 @@ public sealed class CrossAgentTaskPlugin
 
         try
         {
+            // 先读取任务信息以获取发起方 sessionId
+            var task = await _store.GetAsync(id).ConfigureAwait(false);
             var ok = await _store.UpdateStatusAsync(id, st, resultSummary?.Trim()).ConfigureAwait(false);
             if (!ok)
                 return "[未找到] 未找到该任务或已更新。";
             _logger?.LogInformation("complete_cross_agent_task: id={Id} status={Status}", id, st);
+
+            // 向发起方推送完成通知
+            if (task != null && !string.IsNullOrEmpty(task.FromSessionId))
+            {
+                try
+                {
+                    var callbackPayload = JsonSerializer.Serialize(new
+                    {
+                        type = "cross_agent_task_completed",
+                        taskId = id,
+                        status = st,
+                        resultSummary = resultSummary?.Trim() ?? ""
+                    });
+                    await _sessionManager.SendToAsync(task.FromSessionId, callbackPayload).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogDebug(ex, "Callback to originator session {SessionId} failed", task.FromSessionId);
+                }
+            }
+
             return st == "done" ? "[已完成] 任务已标记为完成。" : "[已标记] 任务已标记为失败。";
         }
         catch (Exception ex)

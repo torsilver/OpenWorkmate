@@ -78,6 +78,23 @@
       display: block;
     }
 
+    .cli-script-end-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .cli-script-end-tab {
+      padding: 8px 16px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .cli-script-end-tab:hover { background: #e2e8f0; }
+    .cli-script-end-tab.active {
+      background: var(--bg-panel);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
     .form-group {
       margin-bottom: 16px;
     }
@@ -374,11 +391,61 @@
         </div>
       </details>
 
+      <details id="sttModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <summary id="sttModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">语音转文字 (STT) 模型</summary>
+        <div style="margin-top: 12px;">
+          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字（如 Whisper API）。与对话大模型独立配置；不配置时将回退使用当前 AI 模型的 endpoint/apiKey。</p>
+          <div id="sttModelEditor" class="skill-card">
+            <div class="form-group">
+              <label for="sttEditorEndpoint">接口地址 (Endpoint)</label>
+              <input type="text" id="sttEditorEndpoint" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+              <label for="sttEditorApiKey">API Key</label>
+              <input type="password" id="sttEditorApiKey" placeholder="sk-...">
+            </div>
+            <div class="form-group">
+              <label for="sttEditorLanguage">语言代码（可选，如 zh、en；留空自动检测）</label>
+              <input type="text" id="sttEditorLanguage" placeholder="留空则自动检测">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" id="saveSttModelBtn" class="btn-primary">保存</button>
+              <span class="help-text" style="margin-left: 8px;">修改后点击保存，与其它配置一起写入后端。</span>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details id="ocrModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <summary id="ocrModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">OCR 模型</summary>
+        <div style="margin-top: 12px;">
+          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具从图片提取文字（内置 MCP_OCR）。与对话大模型独立配置；不配置则 MCP_OCR 工具不可用。</p>
+          <div id="ocrModelEditor" class="skill-card">
+            <div class="form-group">
+              <label for="ocrEditorEndpoint">接口地址 (Endpoint)</label>
+              <input type="text" id="ocrEditorEndpoint" placeholder="如 Azure Document Intelligence 或兼容接口 URL">
+            </div>
+            <div class="form-group">
+              <label for="ocrEditorApiKey">API Key</label>
+              <input type="password" id="ocrEditorApiKey" placeholder="API Key">
+            </div>
+            <div class="form-group">
+              <label for="ocrEditorLanguage">语言/模型（可选，视具体 API）</label>
+              <input type="text" id="ocrEditorLanguage" placeholder="可选">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" id="saveOcrModelBtn" class="btn-primary">保存</button>
+              <span class="help-text" style="margin-left: 8px;">修改后点击保存，与其它配置一起写入后端。</span>
+            </div>
+          </div>
+        </div>
+      </details>
+
       <div id="ragStorageSection" style="margin-top: 16px;">
         <label style="font-size: 13px; color: var(--text-secondary);">向量存储</label>
         <select id="ragStorageType" style="margin-top: 4px; padding: 6px 10px; border-radius: 6px;">
-          <option value="Memory">内存（进程重启后清空）</option>
-          <option value="Sqlite">SQLite 文件（持久化）</option>
+          <option value="Sqlite" selected>SQLite 文件（持久化）</option>
+          <option value="Memory">内存（仅测试/临时，进程重启后清空）</option>
         </select>
         <div id="ragStoragePathGroup" style="display: none; margin-top: 8px;">
           <label for="ragStoragePath">数据库路径</label>
@@ -446,8 +513,11 @@
     <div id="tab-mcp" class="tab-content">
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
       <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。</p>
+      <div id="cliScriptEndTabs" class="cli-script-end-tabs">
+        <!-- 端 Tab：Chrome | 后台 | Office | WPS 由 JS 注入 -->
+      </div>
       <div id="cliScriptPerEndConfig">
-        <!-- 四端（Chrome / 后台 / Office / WPS）模式与白名单由 JS 注入 -->
+        <!-- 当前选中端的模式与白名单由 JS 注入 -->
       </div>
 
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">内置能力（自带的 MCP）</h3>
@@ -467,6 +537,14 @@
         </div>
         <div class="skill-desc">只读查询销售用 SQL Server；连接串在 MCP 自身 appsettings 或环境变量 SALES_DB_CONNECTION_STRING 中配置。</div>
         <p class="help-text" style="margin-top: 8px;">添加后可在下方列表中编辑「启动参数」，将项目路径改为本机路径（如 <code>D:\CodeBase\_Taskly\sales-db-mcp\SalesDbMcp.csproj</code>），除非后端从仓库根目录启动。</p>
+      </div>
+      <div class="skill-card" style="margin-bottom: 12px;">
+        <div class="skill-header">
+          <div class="skill-title">OCR MCP（图片转文字）</div>
+          <button type="button" id="addOcrMcpBtn" class="btn-secondary" style="padding: 6px 14px;">添加 OCR MCP</button>
+        </div>
+        <div class="skill-desc">从图片中提取文字，供主模型整理成文档。用户附带图片发送时，对话中只会出现 <code>attachment:xxx</code> 引用；请先调用 File 插件的 <code>get_attachment_path</code> 取得本机路径，再调用 OCR 工具的 <code>perform_ocr</code>（或等价）传入该路径，将识别结果文本返回后由主模型组文档。</div>
+        <p class="help-text" style="margin-top: 8px;">需本机已安装 Tesseract。预设使用 <code>uvx mcp-ocr</code>（需 Python/uv）；若用 npx 可改为 command: npx，args: -y, mcp-server-ocr（视实际包名调整）。</p>
       </div>
       <div class="skill-card" style="margin-bottom: 12px;">
         <div class="skill-header">
@@ -586,9 +664,85 @@ postgresql://localhost/mydb"></textarea>
         </div>
       </div>
 
+      <div id="sessionSection" style="display: none; margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fafafa;">
+        <h3 style="margin: 0 0 12px; font-size: 14px; color: var(--text-secondary);">会话（当前预设）</h3>
+        <p class="help-text" style="margin-bottom: 12px;">仅当已选择「当前优化预设」时可编辑；保存后写入该预设的 session，修改后无需重启服务即可生效。</p>
+        <div class="form-group">
+          <label for="sessionMaxHistoryTurns">历史最大轮数</label>
+          <input type="number" id="sessionMaxHistoryTurns" min="1" placeholder="80" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="sessionMinTurnsToKeep">至少保留轮数</label>
+          <input type="number" id="sessionMinTurnsToKeep" min="0" placeholder="8" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="sessionTimeoutMinutes">会话超时（分钟）</label>
+          <input type="number" id="sessionTimeoutMinutes" min="1" placeholder="30" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="sessionCleanupIntervalMinutes">清理间隔（分钟）</label>
+          <input type="number" id="sessionCleanupIntervalMinutes" min="1" placeholder="5" style="width: 100px;">
+        </div>
+      </div>
+
       <div id="contextWindowSection" style="display: none; margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fafafa;">
         <h3 style="margin: 0 0 12px; font-size: 14px; color: var(--text-secondary);">上下文窗口（当前预设）</h3>
         <p class="help-text" style="margin-bottom: 12px;">仅当已选择「当前优化预设」时可编辑；保存后写入该预设的 contextWindow。</p>
+        <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">上下文容量</h4>
+        <div class="form-group">
+          <label for="ctxMaxContextTokens">最大上下文 Token 数</label>
+          <input type="number" id="ctxMaxContextTokens" min="1000" placeholder="64000" style="width: 120px;">
+        </div>
+        <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">预留与记忆</h4>
+        <div class="form-group">
+          <label for="ctxReservedSystemTokens">预留系统 Token</label>
+          <input type="number" id="ctxReservedSystemTokens" min="0" placeholder="12000" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxReservedToolsTokens">预留工具 Token</label>
+          <input type="number" id="ctxReservedToolsTokens" min="0" placeholder="12000" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxReservedOutputTokens">预留输出 Token</label>
+          <input type="number" id="ctxReservedOutputTokens" min="0" placeholder="4096" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxPlanContentMaxChars">计划内容最大字符数</label>
+          <input type="number" id="ctxPlanContentMaxChars" min="1000" placeholder="16000" style="width: 120px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxMemoryInjectionMaxChars">记忆注入最大字符数</label>
+          <input type="number" id="ctxMemoryInjectionMaxChars" min="0" placeholder="4000" style="width: 100px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxMemorySessionTopK">会话记忆 TopK</label>
+          <input type="number" id="ctxMemorySessionTopK" min="0" placeholder="5" style="width: 80px;">
+        </div>
+        <div class="form-group">
+          <label for="ctxMemorySharedTopK">共享记忆 TopK</label>
+          <input type="number" id="ctxMemorySharedTopK" min="0" placeholder="3" style="width: 80px;">
+        </div>
+        <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">Token 估算</h4>
+        <div class="form-group">
+          <label for="ctxTokenEstimation">Token 估算方式</label>
+          <select id="ctxTokenEstimation" style="padding: 6px 10px; border-radius: 6px; min-width: 140px;">
+            <option value="CharsRatio">CharsRatio</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="ctxCharsPerToken">每 Token 约字符数</label>
+          <input type="number" id="ctxCharsPerToken" min="1" placeholder="2" style="width: 80px;">
+        </div>
+        <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">超长重试</h4>
+        <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="ctxContextLengthRetryEnabled" style="width: auto; margin: 0;">
+          <label for="ctxContextLengthRetryEnabled" style="margin: 0;">启用上下文超长重试</label>
+        </div>
+        <div class="form-group">
+          <label for="ctxContextLengthRetryMaxTurns">超长重试最大轮数</label>
+          <input type="number" id="ctxContextLengthRetryMaxTurns" min="0" placeholder="10" style="width: 80px;">
+        </div>
+        <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">摘要与截断</h4>
         <div class="form-group">
           <label for="ctxConversationHistoryDirectory">摘要落盘目录（可选，空则用默认路径）</label>
           <input type="text" id="ctxConversationHistoryDirectory" placeholder="留空使用默认">

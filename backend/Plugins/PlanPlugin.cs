@@ -125,16 +125,12 @@ public sealed class PlanPlugin
     }
 
     [KernelFunction("execute_plan_step")]
-    [Description("读取计划中指定步骤的内容并执行该步骤（调用现有工具完成）。stepIndex 从 1 开始。")]
+    [Description("读取计划中指定步骤的内容并返回给你执行。stepIndex 从 1 开始。请在拿到步骤内容后使用你的工具完成该步骤。")]
     public async Task<string> ExecutePlanStepAsync(
         [Description("计划 ID")] string planId,
         [Description("步骤序号，从 1 开始")] int stepIndex = 1,
         CancellationToken ct = default)
     {
-        var kernel = _kernelAccessor.Kernel;
-        if (kernel == null)
-            return "[Plan 插件] 内核未就绪。";
-
         var result = await _store.GetAsync(planId, ct).ConfigureAwait(false);
         if (result == null)
             return $"[未找到计划] planId={planId}";
@@ -142,36 +138,35 @@ public sealed class PlanPlugin
         if (string.IsNullOrWhiteSpace(stepContent))
             return $"[计划步骤不存在] 步骤 {stepIndex} 未找到或为空。";
 
-        var chat = kernel.Services.GetKeyedService<IChatCompletionService>(_kernelAccessor.ActiveModelId)
-            ?? kernel.Services.GetService<IChatCompletionService>();
-        if (chat == null)
-            return "[Plan 插件] 未找到对话服务。";
+        var totalSteps = PlanStepParser.ParsePlanSteps(result.Value.Content).Count;
 
-        var systemPrompt = "你正在按计划执行。请根据下面给出的「当前步骤」描述，使用可用工具完成该步骤。只完成这一步，不要提前做后续步骤。完成后简要说明做了什么。";
-        var history = new ChatHistory(systemPrompt);
-        history.AddUserMessage($"当前步骤（第 {stepIndex} 步）：\n\n{stepContent}");
+        // 更新 PlanMeta.Status
+        var meta = result.Value.Meta;
+        if (string.Equals(meta.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            meta.Status = "in_progress";
+            meta.UpdatedAt = DateTimeOffset.UtcNow;
+            await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
+        }
 
-        var settings = new OpenAIPromptExecutionSettings
-        {
-            MaxTokens = 4000,
-            Temperature = 0.2f,
-            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
-        };
-        var sb = new System.Text.StringBuilder();
-        try
-        {
-            await foreach (var msg in chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).ConfigureAwait(false))
-            {
-                if (msg.Content is { Length: > 0 } text)
-                    sb.Append(text);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "execute_plan_step: step={Step} failed", stepIndex);
-            return $"[执行步骤失败] {ex.Message}";
-        }
-        return sb.ToString().Trim();
+        return $"[计划步骤 {stepIndex}/{totalSteps}] 请使用你的工具完成以下步骤，完成后简要说明做了什么：\n\n{stepContent}";
+    }
+
+    [KernelFunction("complete_plan")]
+    [Description("将计划标记为已完成。在全部步骤执行完毕后调用。")]
+    public async Task<string> CompletePlanAsync(
+        [Description("计划 ID")] string planId,
+        CancellationToken ct = default)
+    {
+        var result = await _store.GetAsync(planId, ct).ConfigureAwait(false);
+        if (result == null)
+            return $"[未找到计划] planId={planId}";
+        var meta = result.Value.Meta;
+        meta.Status = "done";
+        meta.UpdatedAt = DateTimeOffset.UtcNow;
+        await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
+        _logger.LogInformation("complete_plan: planId={PlanId}", planId);
+        return "[计划已完成]";
     }
 
     /// <summary>根据后台配置规则计算该计划是否需要用户确认后再执行。</summary>

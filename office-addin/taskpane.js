@@ -432,9 +432,22 @@
       } else if (OFFICE_CLIENT_TYPE === "office-word") {
         if (method === "word_insert_text") {
           const text = params.text != null ? String(params.text) : "";
+          const style = params.style || null;
           await Word.run(function (context) {
             const body = context.document.body;
-            body.insertParagraph(text, "End");
+            const para = body.insertParagraph(text, "End");
+            if (style) {
+              var styleMap = {
+                "heading1": Word.BuiltInStyleName.heading1,
+                "heading2": Word.BuiltInStyleName.heading2,
+                "heading3": Word.BuiltInStyleName.heading3,
+                "normal": Word.BuiltInStyleName.normal,
+                "title": Word.BuiltInStyleName.title,
+                "subtitle": Word.BuiltInStyleName.subtitle
+              };
+              var builtIn = styleMap[(style || "").toLowerCase()];
+              if (builtIn) para.styleBuiltIn = builtIn;
+            }
             return context.sync();
           });
           result = "成功：已在当前 Word 文档末尾插入内容。";
@@ -464,7 +477,11 @@
           const insertLocation = params.insertLocation || "End";
           await Word.run(function (context) {
             const body = context.document.body;
-            body.insertTable(rowCount, columnCount, insertLocation, values || null);
+            const table = body.insertTable(rowCount, columnCount, insertLocation, values || null);
+            try {
+              table.styleBuiltIn = Word.BuiltInStyleName.gridTable4_Accent1;
+              table.headerRowCount = 1;
+            } catch (e) { /* style may not be available in all versions */ }
             return context.sync();
           });
           result = "成功：已在文档中插入 " + rowCount + "×" + columnCount + " 表格。";

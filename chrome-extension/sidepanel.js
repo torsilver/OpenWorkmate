@@ -12,6 +12,7 @@ const $stopBtn = document.getElementById("stop-btn");
 const $attachBtn = document.getElementById("attach-btn");
 const $fileInput = document.getElementById("file-input");
 const $attachmentsPreview = document.getElementById("attachments-preview");
+const $voiceBtn = document.getElementById("voice-btn");
 const $status = document.getElementById("status");
 const $settingsBtn = document.getElementById("settings-btn");
 const $currentPlanLabel = document.getElementById("current-plan-label");
@@ -20,6 +21,15 @@ const $planChecklistWrap = document.getElementById("plan-checklist-wrap");
 const $planChecklistList = document.getElementById("plan-checklist-list");
 const $planChecklistSummary = document.getElementById("plan-checklist-summary");
 
+const $newChatBtn = document.getElementById("new-chat-btn");
+const $cancelPlanBtn = document.getElementById("cancel-plan-btn");
+const $planStepIndicator = document.getElementById("plan-step-indicator");
+const $meetingBtn = document.getElementById("meeting-btn");
+const $meetingPanel = document.getElementById("meeting-panel");
+const $meetingTimer = document.getElementById("meeting-timer");
+const $meetingStopBtn = document.getElementById("meeting-stop-btn");
+const $meetingPreview = document.getElementById("meeting-preview");
+
 const STORAGE_PLAN_ID = "copilot_plan_id";
 const STORAGE_PLAN_TITLE = "copilot_plan_title";
 const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
@@ -27,6 +37,19 @@ const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
 if ($settingsBtn) {
   $settingsBtn.addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
+  });
+}
+
+// ───── New conversation ─────
+if ($newChatBtn) {
+  $newChatBtn.addEventListener("click", () => {
+    sessionStorage.removeItem("copilot_session_id");
+    setCurrentPlan(null, null);
+    $messages.innerHTML = '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。</p></div>';
+    attachments.length = 0;
+    if ($attachmentsPreview) { $attachmentsPreview.innerHTML = ""; $attachmentsPreview.style.display = "none"; }
+    if (ws) { ws.close(); ws = null; }
+    connect();
   });
 }
 
@@ -79,7 +102,39 @@ function setCurrentPlan(planId, title) {
     if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
   }
   if ($currentPlanLabel) $currentPlanLabel.textContent = title || planId || "无";
-  if ($currentPlanLabel) $currentPlanLabel.title = planId ? `计划: ${title || planId}` : "当前计划";
+  if ($currentPlanLabel) $currentPlanLabel.title = planId ? `点击查看计划: ${title || planId}` : "当前计划";
+  if ($cancelPlanBtn) $cancelPlanBtn.style.display = planId ? "inline" : "none";
+  updatePlanStepIndicator();
+}
+
+function updatePlanStepIndicator() {
+  if (!$planStepIndicator) return;
+  const planId = getCurrentPlanId();
+  if (!planId || planChecklistSteps.length === 0) {
+    $planStepIndicator.style.display = "none";
+    return;
+  }
+  const step = getPlanCurrentStepIndex();
+  const total = planChecklistSteps.length;
+  $planStepIndicator.textContent = `(${step}/${total})`;
+  $planStepIndicator.style.display = "inline";
+}
+
+if ($currentPlanLabel) {
+  $currentPlanLabel.addEventListener("click", () => {
+    const planId = getCurrentPlanId();
+    if (!planId) return;
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      chrome.tabs.create({ url: `plans.html?id=${planId}` });
+    }
+  });
+}
+
+if ($cancelPlanBtn) {
+  $cancelPlanBtn.addEventListener("click", () => {
+    setCurrentPlan(null, null);
+    addSystemMessage("已取消当前计划绑定");
+  });
 }
 
 function getPlanCurrentStepIndex() {
@@ -125,6 +180,7 @@ async function ensurePlanChecklistLoaded(planId) {
     planChecklistStatus = {};
     planChecklistSteps.forEach(s => { planChecklistStatus[s.index] = "pending"; });
     renderPlanChecklist();
+    updatePlanStepIndicator();
   } catch (e) {
     console.warn("Failed to load plan for checklist", e);
   }
@@ -234,6 +290,7 @@ let ws = null;
 let sessionId = null;
 let reconnectDelay = RECONNECT_BASE_MS;
 let reconnectTimer = null;
+let reconnectAttempts = 0;
 /** 断线时未发出去的消息，重连后按顺序自动重发 */
 let pendingMessages = [];
 /** 计划页触发执行、侧边栏加载时尚未连接，连接后自动发执行请求 */
@@ -346,7 +403,8 @@ function connect() {
 
   ws.addEventListener("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
-    setStatus(true);
+    reconnectAttempts = 0;
+    setStatus("connected");
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
     const pageTitle = await getActiveTabTitle();
@@ -371,7 +429,7 @@ function connect() {
   ws.addEventListener("close", () => {
     const wasStreaming = !!streamingBubble;
     ws = null;
-    setStatus(false);
+    setStatus("disconnected");
     finalizeStream();
     if (wasStreaming) addBotMessage("连接已断开，请检查网络或稍后重试", true);
     debugLog("WS", "closed", "recv");
@@ -386,6 +444,11 @@ function connect() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
+  reconnectAttempts++;
+  setStatus("reconnecting");
+  if (reconnectAttempts >= 3) {
+    setStatus("failed");
+  }
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
@@ -436,6 +499,7 @@ let currentRoundToolBlocks = [];   // 本轮的每个工具块 <details>
 let currentToolEndIndex = 0;
 
 function beginStream() {
+  removeThinkingIndicator();
   const welcome = $messages.querySelector(".welcome");
   if (welcome) welcome.remove();
 
@@ -483,20 +547,28 @@ function appendStreamWarning(text) {
   if ($messages) $messages.scrollTop = $messages.scrollHeight;
 }
 
+let _streamRenderPending = false;
+let _streamRenderRafId = null;
+
 function appendStreamChunk(text) {
   if (!streamingBubble) {
     beginStream();
   }
   currentBotMessageRaw += text;
-  
-  // Try to render markdown during streaming, but it might be incomplete
-  if (typeof marked !== 'undefined') {
-    streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-  } else {
-    streamingBubble.textContent = currentBotMessageRaw;
-  }
-  
-  $messages.scrollTop = $messages.scrollHeight;
+
+  if (_streamRenderPending) return;
+  _streamRenderPending = true;
+  _streamRenderRafId = requestAnimationFrame(() => {
+    _streamRenderPending = false;
+    _streamRenderRafId = null;
+    if (!streamingBubble) return;
+    if (typeof marked !== 'undefined') {
+      streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
+    } else {
+      streamingBubble.textContent = currentBotMessageRaw;
+    }
+    $messages.scrollTop = $messages.scrollHeight;
+  });
 }
 
 function finalizeStream() {
@@ -598,6 +670,9 @@ function handleMessage(raw) {
     case "tool_invocation_end": {
       if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
         updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
+        if (msg.success === true) {
+          setPlanCurrentStepIndex(msg.planStepIndex + 1);
+        }
       }
       const block = currentRoundToolBlocks[currentToolEndIndex];
       if (block) {
@@ -645,6 +720,7 @@ function handleMessage(raw) {
       break;
 
     case "error":
+      removeThinkingIndicator();
       finalizeStream();
       addBotMessage((msg.content && String(msg.content).trim()) || "请求失败，请稍后重试", true);
       break;
@@ -1144,6 +1220,8 @@ function addSystemMessage(text) {
   appendMsg("msg--system", text);
 }
 
+const MAX_VISIBLE_MESSAGES = 100;
+
 function appendMsg(cls, text) {
   const welcome = $messages.querySelector(".welcome");
   if (welcome) welcome.remove();
@@ -1153,13 +1231,43 @@ function appendMsg(cls, text) {
   div.textContent = text;
   $messages.appendChild(div);
   $messages.scrollTop = $messages.scrollHeight;
+  trimOldMessages();
   return div;
 }
 
-function setStatus(connected) {
-  $status.className = connected ? "status status--connected" : "status status--disconnected";
+function trimOldMessages() {
+  const msgs = $messages.querySelectorAll(".msg");
+  if (msgs.length <= MAX_VISIBLE_MESSAGES) return;
+  const existing = $messages.querySelector(".msg--collapsed-notice");
+  if (existing) existing.remove();
+  const toRemove = msgs.length - MAX_VISIBLE_MESSAGES;
+  for (let i = 0; i < toRemove; i++) {
+    msgs[i].remove();
+  }
+  const notice = document.createElement("div");
+  notice.className = "msg msg--collapsed-notice msg--system";
+  notice.textContent = `(${toRemove} 条早期消息已折叠)`;
+  $messages.prepend(notice);
+}
+
+function setStatus(state) {
+  if (state === true) state = "connected";
+  if (state === false) state = "disconnected";
+  const map = {
+    connected: { cls: "status status--connected", text: "已连接" },
+    disconnected: { cls: "status status--disconnected", text: "未连接" },
+    reconnecting: { cls: "status status--reconnecting", text: "正在重连…" },
+    failed: { cls: "status status--disconnected", text: "无法连接" }
+  };
+  const s = map[state] || map.disconnected;
+  $status.className = s.cls;
   const $text = $status.querySelector(".status-text");
-  if ($text) $text.textContent = connected ? "已连接" : "未连接";
+  if ($text) $text.textContent = s.text;
+  if (state === "failed") {
+    $status.title = "无法连接到后台服务，请确认 OfficeCopilot.Server 已启动";
+  } else {
+    $status.title = "连接状态";
+  }
 }
 
 function setInputEnabled(enabled) {
@@ -1204,12 +1312,26 @@ async function handleSend() {
   addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
 
   send(text, attachmentsPayload);
+  showThinkingIndicator();
 
   $input.value = "";
   $input.style.height = "auto";
   attachments.length = 0;
   renderAttachmentsPreview();
   $input.focus();
+}
+
+let thinkingBubble = null;
+function showThinkingIndicator() {
+  removeThinkingIndicator();
+  thinkingBubble = document.createElement("div");
+  thinkingBubble.className = "msg msg--bot msg--thinking";
+  thinkingBubble.textContent = "正在思考";
+  $messages.appendChild(thinkingBubble);
+  $messages.scrollTop = $messages.scrollHeight;
+}
+function removeThinkingIndicator() {
+  if (thinkingBubble) { thinkingBubble.remove(); thinkingBubble = null; }
 }
 
 // ───── Attachments (images) ─────
@@ -1275,6 +1397,68 @@ if ($attachBtn && $fileInput) {
   });
 }
 
+// ───── 语音输入（Web Speech API）─────
+(function initVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition || !$voiceBtn || !$input) return;
+
+  let recognition = null;
+  let isListening = false;
+
+  function setListening(flag) {
+    isListening = flag;
+    if ($voiceBtn) $voiceBtn.classList.toggle("recording", flag);
+  }
+
+  $voiceBtn.addEventListener("click", () => {
+    if (isListening) {
+      if (recognition) recognition.stop();
+      setListening(false);
+      return;
+    }
+
+    try {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "zh-CN";
+
+      recognition.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) continue;
+          const transcript = e.results[i][0].transcript;
+          if (!transcript) continue;
+          const cur = $input.value || "";
+          $input.value = (cur ? cur + " " : "") + transcript;
+        }
+      };
+
+      recognition.onerror = (e) => {
+        setListening(false);
+        const msg = e.error === "not-allowed"
+          ? "语音输入被拒绝（请允许麦克风权限）。"
+          : e.error === "no-speech"
+            ? "未检测到语音，已停止。"
+            : e.error === "network"
+              ? "网络错误，请检查后重试。"
+              : "语音识别错误：" + (e.error || "未知");
+        if ($status) $status.textContent = msg;
+        else alert(msg);
+      };
+
+      recognition.onend = () => setListening(false);
+
+      recognition.start();
+      setListening(true);
+      if ($status) $status.textContent = "正在听… 再次点击麦克风可停止";
+    } catch (err) {
+      const msg = "无法启动语音识别：" + (err && err.message ? err.message : String(err));
+      if ($status) $status.textContent = msg;
+      else alert(msg);
+    }
+  });
+})();
+
 $input.addEventListener("paste", (e) => {
   const items = e.clipboardData?.items;
   if (!items) return;
@@ -1332,6 +1516,145 @@ $input.addEventListener("input", () => {
   $input.style.height = "auto";
   $input.style.height = Math.min($input.scrollHeight, 120) + "px";
 });
+
+// ───── Meeting Listener ─────
+
+(function initMeetingListener() {
+  if (!$meetingBtn || !$meetingPanel || !$meetingStopBtn) return;
+
+  let mediaRecorder = null;
+  let audioStream = null;
+  let meetingTranscript = "";
+  let meetingStartTime = null;
+  let timerInterval = null;
+  let chunkInterval = null;
+  let isProcessing = false;
+
+  function formatTime(ms) {
+    const s = Math.floor(ms / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return mm + ":" + ss;
+  }
+
+  function updateTimer() {
+    if (!meetingStartTime) return;
+    $meetingTimer.textContent = formatTime(Date.now() - meetingStartTime);
+  }
+
+  async function transcribeChunk(blob) {
+    const formData = new FormData();
+    formData.append("file", blob, "chunk.webm");
+    try {
+      const res = await fetch(API_BASE + "/api/transcribe", { method: "POST", body: formData });
+      if (!res.ok) return "";
+      const data = await res.json();
+      return (data.ok !== false && data.text) ? data.text : "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function startMeeting() {
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      addBotMessage("无法访问麦克风：" + (err.message || "权限被拒绝"), true);
+      return;
+    }
+
+    meetingTranscript = "";
+    meetingStartTime = Date.now();
+    $meetingPanel.style.display = "block";
+    $meetingPreview.textContent = "";
+    $meetingBtn.classList.add("active");
+    timerInterval = setInterval(updateTimer, 1000);
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+    mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+
+    mediaRecorder.ondataavailable = async (e) => {
+      if (e.data.size === 0) return;
+      const text = await transcribeChunk(e.data);
+      if (text) {
+        meetingTranscript += (meetingTranscript ? "\n" : "") + text;
+        $meetingPreview.textContent = meetingTranscript.slice(-500);
+        $meetingPreview.scrollTop = $meetingPreview.scrollHeight;
+      }
+    };
+
+    mediaRecorder.start();
+    chunkInterval = setInterval(() => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.requestData();
+      }
+    }, 30000);
+
+    addSystemMessage("会议监听已开始，每 30 秒自动转录一次");
+  }
+
+  async function stopMeeting() {
+    if (isProcessing) return;
+    isProcessing = true;
+    $meetingStopBtn.disabled = true;
+    $meetingStopBtn.textContent = "处理中…";
+
+    if (chunkInterval) { clearInterval(chunkInterval); chunkInterval = null; }
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      await new Promise(resolve => {
+        mediaRecorder.onstop = resolve;
+        mediaRecorder.requestData();
+        setTimeout(() => mediaRecorder.stop(), 200);
+      });
+      await new Promise(r => setTimeout(r, 500));
+    }
+
+    if (audioStream) {
+      audioStream.getTracks().forEach(t => t.stop());
+      audioStream = null;
+    }
+
+    $meetingPanel.style.display = "none";
+    $meetingBtn.classList.remove("active");
+    $meetingStopBtn.disabled = false;
+    $meetingStopBtn.textContent = "结束并总结";
+    isProcessing = false;
+
+    if (!meetingTranscript.trim()) {
+      addSystemMessage("会议监听已结束，未识别到语音内容");
+      return;
+    }
+
+    const duration = meetingStartTime ? formatTime(Date.now() - meetingStartTime) : "??:??";
+    meetingStartTime = null;
+
+    const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "").replace(/(\d{8})(\d{4})/, "$1_$2");
+    const dataId = "meeting_" + timestamp;
+
+    addSystemMessage("会议监听已结束（" + duration + "），正在生成会议纪要…");
+
+    if (meetingTranscript.length > 3000) {
+      const saveMsg = `请先使用 accurate_data_write 将以下会议录音文本保存（id=${dataId}），然后基于该内容生成会议纪要（包括会议主题、讨论要点、决议和待办事项）。\n\n录音文本：\n${meetingTranscript}`;
+      send(saveMsg);
+    } else {
+      send("请根据以下会议录音内容生成会议纪要，包括会议主题、讨论要点、决议和待办事项：\n\n" + meetingTranscript);
+    }
+  }
+
+  $meetingBtn.addEventListener("click", () => {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      stopMeeting();
+    } else {
+      startMeeting();
+    }
+  });
+
+  $meetingStopBtn.addEventListener("click", () => {
+    stopMeeting();
+  });
+})();
 
 // ───── Boot ─────
 

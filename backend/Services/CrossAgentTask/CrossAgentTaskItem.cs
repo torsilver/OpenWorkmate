@@ -14,6 +14,8 @@ public sealed class CrossAgentTaskItem
     public string Description { get; set; } = "";
     /// <summary>pending | done | failed。</summary>
     public string Status { get; set; } = "pending";
+    /// <summary>领取该任务的 sessionId；非空表示已被领取，其他 session 不应再执行。</summary>
+    public string? ClaimedBy { get; set; }
     /// <summary>执行完成后可写入的结果摘要。</summary>
     public string? ResultSummary { get; set; }
     public DateTime CreatedAt { get; set; }

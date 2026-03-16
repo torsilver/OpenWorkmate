@@ -9,12 +9,28 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class FilePlugin
 {
     private readonly ScreenshotCacheService _screenshotCache;
+    private readonly AttachmentCacheService _attachmentCache;
     private readonly ILogger<FilePlugin> _logger;
 
-    public FilePlugin(ScreenshotCacheService screenshotCache, ILogger<FilePlugin> logger)
+    public FilePlugin(ScreenshotCacheService screenshotCache, AttachmentCacheService attachmentCache, ILogger<FilePlugin> logger)
     {
         _screenshotCache = screenshotCache;
+        _attachmentCache = attachmentCache;
         _logger = logger;
+    }
+
+    [KernelFunction("get_attachment_path")]
+    [Description("Returns the local file path for a user attachment reference (e.g. attachment:xxx). Use this when you need to pass the file to another tool (e.g. OCR) that accepts a path. Returns empty or error message if the reference is invalid or expired.")]
+    public string GetAttachmentPath(
+        [Description("The attachment reference from the user message, e.g. attachment:abc123")] string attachmentRef)
+    {
+        var path = _attachmentCache.GetPath(attachmentRef);
+        if (string.IsNullOrEmpty(path))
+        {
+            _logger.LogWarning("[File] get_attachment_path ref not found or expired: {Ref}", attachmentRef);
+            return "失败：附件引用无效或已过期（约 30 分钟有效），请让用户重新发送图片。";
+        }
+        return path;
     }
 
     [KernelFunction("save_screenshot_to_downloads")]

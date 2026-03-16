@@ -117,11 +117,11 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_document_create")]
-    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。")]
+    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。paragraphs 中可用 Markdown 约定：以 # / ## / ### 开头的行自动变为标题，以 - 或 * 开头的行自动变为列表项，其余为正文段落。")]
     public string WordDocumentCreate(
         [Description("Word 文件完整路径")] string filePath,
         [Description("文档标题")] string title,
-        [Description("段落内容，用 | 分隔多个段落")] string paragraphs)
+        [Description("段落内容，用 | 分隔多个段落。支持 Markdown：# 标题、- 列表")] string paragraphs)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
@@ -135,16 +135,27 @@ public sealed class WordPlugin
             var docType = isDocm ? WordprocessingDocumentType.MacroEnabledDocument : WordprocessingDocumentType.Document;
             using var doc = WordprocessingDocument.Create(filePath, docType);
             var mainPart = doc.AddMainDocumentPart();
+            AddDefaultStyles(mainPart);
             mainPart.Document = new Document(new Body());
             var body = mainPart.Document.Body!;
+
+            // Title paragraph with Heading1 style
             body.Append(new Paragraph(
                 new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }),
-                new Run(new RunProperties(new Bold(), new FontSize { Val = "36" }), new Text(title))));
+                new Run(new Text(title))));
+
+            // Parse each paragraph with Markdown conventions
             foreach (var part in paragraphs.Split('|', StringSplitOptions.TrimEntries))
             {
                 if (string.IsNullOrEmpty(part)) continue;
-                body.Append(new Paragraph(new Run(new Text(part))));
+                body.Append(ParseMarkdownParagraph(part));
             }
+
+            // A4 page setup with standard margins
+            body.Append(new SectionProperties(
+                new PageSize { Width = 11906, Height = 16838, Orient = PageOrientationValues.Portrait },
+                new PageMargin { Top = 1440, Right = 1800U, Bottom = 1440, Left = 1800U, Header = 720U, Footer = 720U }));
+
             mainPart.Document.Save();
             return $"已创建文档: {filePath}（标题: {title}）";
         }
@@ -153,6 +164,136 @@ public sealed class WordPlugin
             _logger?.LogWarning(ex, "[Word] word_document_create failed path={Path}", filePath);
             return $"[错误] 创建失败: {ex.Message}";
         }
+    }
+
+    private static void AddDefaultStyles(MainDocumentPart mainPart)
+    {
+        var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+        var styles = new Styles();
+
+        // Default run properties for the document
+        var docDefaults = new DocDefaults(
+            new RunPropertiesDefault(new RunPropertiesBaseStyle(
+                new RunFonts { Ascii = "Calibri", HighAnsi = "Calibri", EastAsia = "微软雅黑", ComplexScript = "Calibri" },
+                new FontSize { Val = "21" }, // 10.5pt
+                new FontSizeComplexScript { Val = "21" },
+                new Languages { Val = "en-US", EastAsia = "zh-CN" })),
+            new ParagraphPropertiesDefault(new ParagraphPropertiesBaseStyle(
+                new SpacingBetweenLines { After = "160", Line = "360", LineRule = LineSpacingRuleValues.Auto }))); // 段后 8pt, 1.5 倍行距
+        styles.Append(docDefaults);
+
+        // Normal style
+        styles.Append(new Style(
+            new StyleName { Val = "Normal" },
+            new PrimaryStyle(),
+            new StyleParagraphProperties(
+                new SpacingBetweenLines { After = "160", Line = "360", LineRule = LineSpacingRuleValues.Auto }))
+        { Type = StyleValues.Paragraph, StyleId = "Normal", Default = true });
+
+        // Heading 1
+        styles.Append(new Style(
+            new StyleName { Val = "heading 1" },
+            new BasedOn { Val = "Normal" },
+            new NextParagraphStyle { Val = "Normal" },
+            new PrimaryStyle(),
+            new StyleRunProperties(
+                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
+                new Bold(),
+                new FontSize { Val = "44" }, // 22pt
+                new Color { Val = "1F3864" }),
+            new StyleParagraphProperties(
+                new SpacingBetweenLines { Before = "360", After = "120" },
+                new KeepNext()))
+        { Type = StyleValues.Paragraph, StyleId = "Heading1" });
+
+        // Heading 2
+        styles.Append(new Style(
+            new StyleName { Val = "heading 2" },
+            new BasedOn { Val = "Normal" },
+            new NextParagraphStyle { Val = "Normal" },
+            new PrimaryStyle(),
+            new StyleRunProperties(
+                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
+                new Bold(),
+                new FontSize { Val = "32" }, // 16pt
+                new Color { Val = "2E75B6" }),
+            new StyleParagraphProperties(
+                new SpacingBetweenLines { Before = "240", After = "80" },
+                new KeepNext()))
+        { Type = StyleValues.Paragraph, StyleId = "Heading2" });
+
+        // Heading 3
+        styles.Append(new Style(
+            new StyleName { Val = "heading 3" },
+            new BasedOn { Val = "Normal" },
+            new NextParagraphStyle { Val = "Normal" },
+            new PrimaryStyle(),
+            new StyleRunProperties(
+                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
+                new Bold(),
+                new FontSize { Val = "28" }, // 14pt
+                new Color { Val = "404040" }),
+            new StyleParagraphProperties(
+                new SpacingBetweenLines { Before = "200", After = "80" },
+                new KeepNext()))
+        { Type = StyleValues.Paragraph, StyleId = "Heading3" });
+
+        // List Paragraph style
+        styles.Append(new Style(
+            new StyleName { Val = "List Paragraph" },
+            new BasedOn { Val = "Normal" },
+            new PrimaryStyle(),
+            new StyleParagraphProperties(
+                new Indentation { Left = "720" },
+                new SpacingBetweenLines { After = "80" }))
+        { Type = StyleValues.Paragraph, StyleId = "ListParagraph" });
+
+        stylesPart.Styles = styles;
+        stylesPart.Styles.Save();
+    }
+
+    private static Paragraph ParseMarkdownParagraph(string text)
+    {
+        // Heading detection: # / ## / ###
+        if (text.StartsWith("### ", StringComparison.Ordinal))
+        {
+            var content = text[4..].Trim();
+            return new Paragraph(
+                new ParagraphProperties(new ParagraphStyleId { Val = "Heading3" }),
+                new Run(new Text(content)));
+        }
+        if (text.StartsWith("## ", StringComparison.Ordinal))
+        {
+            var content = text[3..].Trim();
+            return new Paragraph(
+                new ParagraphProperties(new ParagraphStyleId { Val = "Heading2" }),
+                new Run(new Text(content)));
+        }
+        if (text.StartsWith("# ", StringComparison.Ordinal))
+        {
+            var content = text[2..].Trim();
+            return new Paragraph(
+                new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }),
+                new Run(new Text(content)));
+        }
+
+        // Bullet list: - or *
+        if (text.StartsWith("- ", StringComparison.Ordinal) || text.StartsWith("* ", StringComparison.Ordinal))
+        {
+            var content = text[2..].Trim();
+            var pPr = new ParagraphProperties(
+                new ParagraphStyleId { Val = "ListParagraph" },
+                new NumberingProperties(
+                    new NumberingLevelReference { Val = 0 },
+                    new NumberingId { Val = 1 }));
+            return new Paragraph(pPr, new Run(new Text(content)));
+        }
+
+        // Normal paragraph with 2-char first line indent
+        var normalPPr = new ParagraphProperties(
+            new ParagraphStyleId { Val = "Normal" },
+            new Indentation { FirstLine = "420" }); // ~2 chars at 10.5pt
+        return new Paragraph(normalPPr, new Run(new Text(text)));
     }
 
     [KernelFunction("word_find_replace")]
@@ -261,7 +402,7 @@ public sealed class WordPlugin
                 if (bold.HasValue) { if (bold.Value) rPr.Bold = new Bold(); else rPr.Bold?.Remove(); }
                 if (italic.HasValue) { if (italic.Value) rPr.Italic = new Italic(); else rPr.Italic?.Remove(); }
                 if (fontSize > 0) rPr.FontSize = new FontSize { Val = (fontSize * 2).ToString() };
-                if (!string.IsNullOrWhiteSpace(fontName)) rPr.RunFonts = new RunFonts { Ascii = fontName!.Trim() };
+                if (!string.IsNullOrWhiteSpace(fontName)) rPr.RunFonts = new RunFonts { Ascii = fontName!.Trim(), HighAnsi = fontName.Trim(), EastAsia = fontName.Trim() };
                 if (!string.IsNullOrWhiteSpace(colorHex) && colorHex!.Trim().Length >= 6)
                     rPr.Color = new Color { Val = colorHex.Trim().StartsWith("#") ? colorHex.Trim()[1..].Length > 6 ? colorHex.Trim()[1..7] : colorHex.Trim()[1..] : colorHex.Trim().Length > 6 ? colorHex.Trim()[..6] : colorHex.Trim() };
             }
