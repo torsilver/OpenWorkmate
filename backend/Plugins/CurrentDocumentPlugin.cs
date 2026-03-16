@@ -247,6 +247,46 @@ public sealed class CurrentDocumentPlugin
         return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex }, cancellationToken);
     }
 
+    [KernelFunction("current_ppt_slide_write")]
+    [Description("向当前演示文稿中指定幻灯片的标题或正文占位符写入文本。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlideWriteAsync(
+        [Description("幻灯片序号，从 1 开始")] int slideIndex,
+        [Description("占位符类型：title 或 body")] string placeholderType,
+        [Description("要写入的文本")] string text,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slide_write sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
+        return SendRpcAsync(sessionId!, "ppt_slide_write", new { slideIndex, placeholderType, text }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slide_insert")]
+    [Description("在当前演示文稿中插入新幻灯片。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlideInsertAsync(
+        [Description("插入位置：1 表示在第 1 页后插入，0 表示插入到最前；不传则插入到末尾")] int? position = null,
+        [Description("新幻灯片标题文本")] string titleText = "",
+        [Description("新幻灯片正文文本")] string bodyText = "",
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slide_insert sessionId={SessionId} position={Position}", sessionId ?? "(null)", position);
+        return SendRpcAsync(sessionId!, "ppt_slide_insert", new { position, titleText, bodyText }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slide_delete")]
+    [Description("删除当前演示文稿中指定序号的幻灯片。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlideDeleteAsync(
+        [Description("要删除的幻灯片序号，从 1 开始")] int slideIndex,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slide_delete sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
+        return SendRpcAsync(sessionId!, "ppt_slide_delete", new { slideIndex }, cancellationToken);
+    }
+
     [KernelFunction("current_run_document_script")]
     [Description("运行位置：当前打开的 Office/WPS 文档环境中（任务窗格注入到文档的脚本）。执行预定义脚本，仅支持白名单内 scriptId，用于长尾或组合操作，仅 Office/WPS 任务窗格连接时可用。")]
     public Task<string> CurrentRunDocumentScriptAsync(

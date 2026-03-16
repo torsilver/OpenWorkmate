@@ -54,8 +54,9 @@ public sealed class ToolSelectionService : IToolSelector
         ["外部"] = "MCP 工具",
         ["CurrentDocument-Word"] = "当前文档 Word（任务窗格）：读正文/选区、插段落/表格、查找替换",
         ["CurrentDocument-Excel"] = "当前文档 Excel（任务窗格）：读/写区域、列工作表、UsedRange、读/写公式",
-        ["CurrentDocument-Ppt"] = "当前文档 PPT（任务窗格）：列幻灯片、读指定幻灯片文本",
+        ["CurrentDocument-Ppt"] = "当前文档 PPT（任务窗格）：列幻灯片、读/写指定幻灯片、插入/删除幻灯片",
         ["Ppt-获取信息"] = "列出幻灯片、读取指定幻灯片文本",
+        ["Ppt-编辑内容"] = "写幻灯片标题/正文、插入新幻灯片、删除幻灯片",
         ["CrossAgentTask"] = "跨端派发任务：让 Word/Chrome/Excel/WPS/PowerPoint 端的 Agent 执行某任务；或标记本端已完成的任务",
         ["Context"] = "对话上下文管理：在换任务或已总结完后主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或会产出大量中间结果的任务交给子代理，仅收回最终总结",
@@ -113,9 +114,11 @@ public sealed class ToolSelectionService : IToolSelector
             },
             ["CurrentDocument-Ppt"] = new List<(string, string)>
             {
-                ("CurrentDocument", "current_ppt_slides_list"), ("CurrentDocument", "current_ppt_slide_read")
+                ("CurrentDocument", "current_ppt_slides_list"), ("CurrentDocument", "current_ppt_slide_read"),
+                ("CurrentDocument", "current_ppt_slide_write"), ("CurrentDocument", "current_ppt_slide_insert"), ("CurrentDocument", "current_ppt_slide_delete")
             },
             ["Ppt-获取信息"] = new List<(string, string)> { ("Ppt", "ppt_slides_list"), ("Ppt", "ppt_slide_read") },
+            ["Ppt-编辑内容"] = new List<(string, string)> { ("Ppt", "ppt_slide_write"), ("Ppt", "ppt_slide_insert"), ("Ppt", "ppt_slide_delete") },
             ["CrossAgentTask"] = new List<(string, string)> { ("CrossAgentTask", "create_cross_agent_task"), ("CrossAgentTask", "complete_cross_agent_task") },
             ["Context"] = new List<(string, string)> { ("Context", "compact_conversation") },
             ["Subagent"] = new List<(string, string)> { ("Subagent", "run_subtask") },
@@ -312,7 +315,7 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。读 PPT 文件或当前演示文稿幻灯片→Ppt-获取信息 或 CurrentDocument-Ppt。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。读 PPT 或当前演示文稿幻灯片→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删 PPT 幻灯片→Ppt-编辑内容 或 CurrentDocument-Ppt。");
         return string.Join("\n", lines);
     }
 

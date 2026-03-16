@@ -631,6 +631,74 @@
               });
             });
           }
+        } else if (method === "ppt_slide_write") {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          var placeholderType = (params.placeholderType || "title").toString().trim().toLowerCase();
+          var text = (params.text != null ? params.text : "").toString();
+          if (slideIndex < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (slideIndex > countResult.value) {
+                  result = "[错误] 幻灯片序号 " + slideIndex + " 超出范围。";
+                  return Promise.resolve();
+                }
+                var slide = context.presentation.slides.getItemAt(slideIndex - 1);
+                slide.load("shapes/items/textFrame/textRange/text");
+                return context.sync().then(function () {
+                  var items = slide.shapes && slide.shapes.items ? slide.shapes.items : [];
+                  var idx = placeholderType === "body" ? 1 : 0;
+                  var shape = items[idx] || items[0];
+                  if (!shape || !shape.textFrame || !shape.textFrame.textRange) {
+                    result = "[错误] 未找到可写入的占位符。";
+                    return Promise.resolve();
+                  }
+                  shape.textFrame.textRange.text = text;
+                  return context.sync().then(function () { result = "成功：已写入幻灯片占位符。"; });
+                });
+              });
+            });
+          }
+        } else if (method === "ppt_slide_insert") {
+          var position = params.position != null ? parseInt(params.position, 10) : null;
+          var titleText = (params.titleText != null ? params.titleText : "").toString();
+          var bodyText = (params.bodyText != null ? params.bodyText : "").toString();
+          await PowerPoint.run(function (context) {
+            context.presentation.slides.add();
+            return context.sync().then(function () {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                var newSlide = context.presentation.slides.getItemAt(countResult.value - 1);
+                newSlide.load("shapes/items/textFrame/textRange/text");
+                return context.sync().then(function () {
+                  var items = newSlide.shapes && newSlide.shapes.items ? newSlide.shapes.items : [];
+                  if (items[0] && items[0].textFrame && items[0].textFrame.textRange) items[0].textFrame.textRange.text = titleText;
+                  if (items[1] && items[1].textFrame && items[1].textFrame.textRange) items[1].textFrame.textRange.text = bodyText;
+                  return context.sync().then(function () { result = "成功：已插入新幻灯片。"; });
+                });
+              });
+            });
+          });
+        } else if (method === "ppt_slide_delete") {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 0;
+          if (slideIndex < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (slideIndex > countResult.value) {
+                  result = "[错误] 幻灯片序号 " + slideIndex + " 超出范围。";
+                  return Promise.resolve();
+                }
+                var slide = context.presentation.slides.getItemAt(slideIndex - 1);
+                slide.delete();
+                return context.sync().then(function () { result = "成功：已删除该幻灯片。"; });
+              });
+            });
+          }
         } else {
           throw new Error("Method not supported in PowerPoint: " + method);
         }

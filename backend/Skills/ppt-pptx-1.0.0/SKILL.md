@@ -2,13 +2,13 @@
 name: PPT / Pptx
 slug: ppt-pptx
 version: 1.0.1
-description: Read PowerPoint presentation slides (file path or current document). Use correct slide order via SlideIdList; support .pptx and .pptm.
+description: Read and write PowerPoint presentation slides (file path or current document). List, read, write title/body, insert, and delete slides. Use correct slide order via SlideIdList; support .pptx and .pptm.
 metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 ---
 
 ## When to Use
 
-User needs to read or list slides from a PowerPoint file (.pptx, .pptm) or from the **current** presentation when in Office PowerPoint or WPS 演示 task pane. Use file-path tools (Ppt plugin) in Chrome; use CurrentDocument current_ppt_* when in PowerPoint/WPS 演示.
+User needs to read, write, insert, or delete slides in a PowerPoint file (.pptx, .pptm) or in the **current** presentation when in Office PowerPoint or WPS 演示 task pane. Use file-path tools (Ppt plugin) in Chrome; use CurrentDocument current_ppt_* when in PowerPoint/WPS 演示.
 
 ## Structure
 
@@ -18,10 +18,10 @@ User needs to read or list slides from a PowerPoint file (.pptx, .pptm) or from 
 
 ## File vs Current Document
 
-| Client        | List/read slides from file     | List/read current presentation   |
+| Client        | File path (Chrome/backend)     | Current presentation (task pane) |
 |---------------|--------------------------------|-----------------------------------|
-| Chrome        | `ppt_slides_list`, `ppt_slide_read` (file path) | Not available                     |
-| Office PPT    | Not exposed                    | `current_ppt_slides_list`, `current_ppt_slide_read` |
+| Chrome        | `ppt_slides_list`, `ppt_slide_read`, `ppt_slide_write`, `ppt_slide_insert`, `ppt_slide_delete` | Not available |
+| Office PPT    | Not exposed                    | `current_ppt_slides_list`, `current_ppt_slide_read`, `current_ppt_slide_write`, `current_ppt_slide_insert`, `current_ppt_slide_delete` |
 | WPS 演示      | Not exposed                    | Same current_ppt_* RPC            |
 
 ## Format Limits

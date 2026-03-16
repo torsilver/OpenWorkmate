@@ -49,7 +49,10 @@ public static class ClientTypeToolFilter
     private static bool IsCurrentDocumentPptFunction(string functionName)
     {
         return PluginComparer.Equals(functionName, "current_ppt_slides_list")
-            || PluginComparer.Equals(functionName, "current_ppt_slide_read");
+            || PluginComparer.Equals(functionName, "current_ppt_slide_read")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_write")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_insert")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_delete");
     }
 
     /// <summary>判断该 (Plugin, Function) 是否允许暴露给给定 clientType 的会话。</summary>

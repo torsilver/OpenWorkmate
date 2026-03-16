@@ -548,6 +548,98 @@
         } catch (e) {
           sendRes(null, "当前不是 WPS 演示文档或 API 不可用，无法执行 ppt_slide_read：" + (e && e.message ? e.message : String(e)));
         }
+      } else if (method === "ppt_slide_write") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          var placeholderType = (params.placeholderType || "title").toString().trim().toLowerCase();
+          var text = (params.text != null ? params.text : "").toString();
+          if (slideIndex < 1) {
+            sendRes("[错误] slideIndex 必须大于等于 1。", null);
+            return;
+          }
+          var app = window.wps.Application || window.wps;
+          var pres = app.ActivePresentation;
+          if (!pres || !pres.Slides) {
+            sendRes(null, "当前不是 WPS 演示文档，无法执行 ppt_slide_write。");
+            return;
+          }
+          var count = typeof pres.Slides.Count === "number" ? pres.Slides.Count : (pres.Slides.Count && pres.Slides.Count.value !== undefined ? pres.Slides.Count.value : 0);
+          if (slideIndex > count) {
+            sendRes("[错误] 幻灯片序号 " + slideIndex + " 超出范围。", null);
+            return;
+          }
+          var slide = pres.Slides.Item(slideIndex);
+          if (!slide || !slide.Shapes || slide.Shapes.Count < 1) {
+            sendRes("[错误] 未找到可写入的占位符。", null);
+            return;
+          }
+          var idx = placeholderType === "body" ? 2 : 1;
+          var shape = slide.Shapes.Item(idx) || slide.Shapes.Item(1);
+          if (!shape || !shape.TextFrame || !shape.TextFrame.TextRange) {
+            sendRes("[错误] 未找到可写入的占位符。", null);
+            return;
+          }
+          shape.TextFrame.TextRange.Text = text;
+          sendRes("成功：已写入幻灯片占位符。", null);
+        } catch (e) {
+          sendRes(null, "ppt_slide_write 失败：" + (e && e.message ? e.message : String(e)));
+        }
+      } else if (method === "ppt_slide_insert") {
+        try {
+          var position = params.position != null ? parseInt(params.position, 10) : null;
+          var titleText = (params.titleText != null ? params.titleText : "").toString();
+          var bodyText = (params.bodyText != null ? params.bodyText : "").toString();
+          var app = window.wps.Application || window.wps;
+          var pres = app.ActivePresentation;
+          if (!pres || !pres.Slides) {
+            sendRes(null, "当前不是 WPS 演示文档，无法执行 ppt_slide_insert。");
+            return;
+          }
+          if (position != null && position < 0) position = null;
+          pres.Slides.AddSlide(position != null ? position : -1);
+          var count = typeof pres.Slides.Count === "number" ? pres.Slides.Count : (pres.Slides.Count && pres.Slides.Count.value !== undefined ? pres.Slides.Count.value : 0);
+          var newSlide = pres.Slides.Item(count);
+          if (newSlide && newSlide.Shapes) {
+            if (newSlide.Shapes.Count >= 1 && newSlide.Shapes.Item(1).TextFrame && newSlide.Shapes.Item(1).TextFrame.TextRange) {
+              newSlide.Shapes.Item(1).TextFrame.TextRange.Text = titleText;
+            }
+            if (newSlide.Shapes.Count >= 2 && newSlide.Shapes.Item(2).TextFrame && newSlide.Shapes.Item(2).TextFrame.TextRange) {
+              newSlide.Shapes.Item(2).TextFrame.TextRange.Text = bodyText;
+            }
+          }
+          sendRes("成功：已插入新幻灯片。", null);
+        } catch (e) {
+          sendRes(null, "ppt_slide_insert 失败：" + (e && e.message ? e.message : String(e)));
+        }
+      } else if (method === "ppt_slide_delete") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 0;
+          if (slideIndex < 1) {
+            sendRes("[错误] slideIndex 必须大于等于 1。", null);
+            return;
+          }
+          var app = window.wps.Application || window.wps;
+          var pres = app.ActivePresentation;
+          if (!pres || !pres.Slides) {
+            sendRes(null, "当前不是 WPS 演示文档，无法执行 ppt_slide_delete。");
+            return;
+          }
+          var count = typeof pres.Slides.Count === "number" ? pres.Slides.Count : (pres.Slides.Count && pres.Slides.Count.value !== undefined ? pres.Slides.Count.value : 0);
+          if (slideIndex > count) {
+            sendRes("[错误] 幻灯片序号 " + slideIndex + " 超出范围。", null);
+            return;
+          }
+          var slide = pres.Slides.Item(slideIndex);
+          if (slide && typeof slide.Delete === "function") {
+            slide.Delete();
+          } else {
+            sendRes(null, "当前 WPS 版本不支持删除幻灯片。");
+            return;
+          }
+          sendRes("成功：已删除该幻灯片。", null);
+        } catch (e) {
+          sendRes(null, "ppt_slide_delete 失败：" + (e && e.message ? e.message : String(e)));
+        }
       } else {
         sendRes(null, "Method not supported in this client: " + method);
       }
