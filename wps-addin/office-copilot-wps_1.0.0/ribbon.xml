@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<customUI xmlns="http://schemas.openxmlformats.org/officeDocument/2006/customui" onLoad="OnRibbonLoad">
+  <ribbon>
+    <tabs>
+      <tab id="tab_office_copilot" label="Office Copilot">
+        <group id="grp_copilot" label="AI 助手">
+          <button id="btn_open_taskpane" label="打开 Copilot" size="large" onAction="OpenTaskPane" supertip="打开 AI 侧边栏，与后台对话并操作当前文档"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

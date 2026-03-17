@@ -274,6 +274,8 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(new BrowserPlugin(sessionManager, rpcManager, screenshotCache, browserPluginLogger), "Browser");
         if (!disabledBuiltIn.Contains("file"))
             newKernel.Plugins.AddFromObject(new FilePlugin(screenshotCache, attachmentCache, filePluginLogger), "File");
+        if (!disabledBuiltIn.Contains("system"))
+            newKernel.Plugins.AddFromObject(new SystemPlugin(), "System");
         if (!disabledBuiltIn.Contains("mcp_stt"))
         {
             var transcribeService = _serviceProvider.GetRequiredService<ITranscribeService>();

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  若将本加载项复制到 jsaddons 后 WPS 未自动识别，可在 jsaddons 目录下
+  编辑或创建 jsplugins.xml，加入下面一行（与已有 jsplugin 并列）。
+  注意：url 为本地路径时，指向加载项所在文件夹（名称必须为 加载项名_版本号）。
+-->
+<jsplugins>
+  <jsplugin name="Office Copilot" type="wps" url="file:///%AppData%/kingsoft/wps/jsaddons/office-copilot-wps_1.0.0/" version="1.0.0" />
+  <jsplugin name="Office Copilot" type="et" url="file:///%AppData%/kingsoft/wps/jsaddons/office-copilot-wps_1.0.0/" version="1.0.0" />
+</jsplugins>

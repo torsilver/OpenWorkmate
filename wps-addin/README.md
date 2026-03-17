@@ -21,7 +21,13 @@
 - `taskpane.css`：样式，与 office-addin 共用风格。
 - `taskpane.js`：WebSocket 连接（带 `clientType=wps`）、消息处理、RPC 处理（通过 `window.wps` 实现 word_insert_text、word_read_body、excel_read_range、excel_write_range 等，需在 WPS 环境中运行）。
 
+## 打包与安装
+
+- **可安装包**：本目录下的 `office-copilot-wps_1.0.0` 可直接复制到 `%appdata%\kingsoft\wps\jsaddons` 使用，详见 [安装指导.md](安装指导.md)。
+- **更新后重新打包**：若修改了 `index.html`、`taskpane.css`、`taskpane.js`，在本目录执行 `.\scripts\pack.ps1` 可同步到 `office-copilot-wps_1.0.0`，再按安装指导复制到 jsaddons 即可更新插件。
+
 ## 连接参数
 
 - WebSocket：`ws://localhost:8765/ws?sessionId=xxx&token=xxx&clientType=wps`
 - 配置请在 Chrome 扩展中完成，本端不提供设置页。
+

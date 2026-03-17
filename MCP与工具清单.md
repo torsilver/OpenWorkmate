@@ -38,9 +38,16 @@
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `get_attachment_path` | 根据用户消息中的附件引用（如 attachment:xxx）返回本机临时文件路径，供 OCR 等需要路径的工具使用；引用无效或过期时返回错误提示。 |
+| `get_file_size` | 获取指定本地文件的字节数与人类可读大小。**作用**：在决定是否将文件内容纳入 AI 上下文、或选用读文件/OCR/STT 等工具前，先判断文件大小，避免大文件占满上下文或盲目读取。路径可来自 get_attachment_path。 |
 | `save_screenshot_to_downloads` | 将整页截图保存到用户下载文件夹；需传入由 capture_full_page 返回的截图引用，可选指定不含扩展名的文件名。 |
 
-### 3. MCP_STT（语音转文字，内置）
+### 3. System（系统）
+
+| 工具名 | 中文介绍 |
+|--------|----------|
+| `get_current_time` | 获取当前日期与时间（UTC 与本地）。**作用**：用户问「今天几号」「现在几点」「本周一」等时间相关问题时调用，使回答基于真实当前时间而非训练数据或幻觉日期。 |
+
+### 4. MCP_STT（语音转文字，内置）
 
 以 MCP 风格命名的内置插件，供主模型按需调用；需在「模型设置」中配置语音转文字（如 Whisper）或回退使用当前 AI 模型 endpoint/apiKey。
 
@@ -48,7 +55,7 @@
 |--------|----------|
 | `transcribe_audio` | 将指定路径的音频文件转成文字；支持 mp3、wav、m4a、webm 等，单文件不超过 25MB；可选 language 参数（如 zh、en），留空自动检测。 |
 
-### 4. MCP_OCR（图片转文字，内置）
+### 5. MCP_OCR（图片转文字，内置）
 
 以 MCP 风格命名的内置插件，供主模型按需调用；需在「模型设置」中配置 OCR 模型的接口地址与 API Key，不配置则此工具不可用。
 
@@ -56,13 +63,13 @@
 |--------|----------|
 | `ocr_image` | 从指定路径的图片文件中提取文字；支持 png、jpg、jpeg、gif、bmp、webp、tiff 等，单文件不超过 20MB；路径可来自 get_attachment_path。 |
 
-### 5. CLI（命令行）
+### 6. CLI（命令行）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `run_command` | 在用户本机（后端所在机器）的 CMD 中执行一条命令并返回输出，适用于查看文件列表、系统信息、执行脚本等；禁止执行删除、格式化等危险操作，仅支持白名单内命令。 |
 
-### 6. Excel
+### 7. Excel
 
 | 工具名 | 中文介绍 |
 |--------|----------|
@@ -88,7 +95,7 @@
 | `excel_sheet_remove` | 按名称删除工作表。 |
 | `excel_charts_list` | 列出工作簿中各工作表中的图表。 |
 
-### 7. Word
+### 8. Word
 
 | 工具名 | 中文介绍 |
 |--------|----------|
@@ -117,7 +124,7 @@
 | `word_sections_list` | 列出文档中的节（SectionProperties 数量）。 |
 | `word_hyperlink_insert` | 在指定段落插入超链接文本。 |
 
-### 8. Ppt（PPT）
+### 9. Ppt（PPT）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
@@ -127,7 +134,7 @@
 | `ppt_slide_insert` | 在指定位置插入新幻灯片（可选标题与正文文本）；position 从 1 开始，0 表示插入到最前。 |
 | `ppt_slide_delete` | 按播放顺序删除指定幻灯片；slideIndex 从 1 开始。 |
 
-### 9. CurrentDocument（当前文档，任务窗格）
+### 10. CurrentDocument（当前文档，任务窗格）
 
 仅在用户从 Word/Excel/PowerPoint/WPS 任务窗格连接时可用。
 
@@ -151,7 +158,7 @@
 | `current_ppt_slide_delete` | 删除当前演示文稿中指定序号的幻灯片（slideIndex 从 1 开始）。 |
 | `current_run_document_script` | 在当前打开的 Office/WPS 文档环境中执行预定义脚本（仅支持白名单内 scriptId）。 |
 
-### 10. Tavily
+### 11. Tavily
 
 需配置 TAVILY_API_KEY。  
 
@@ -160,13 +167,13 @@
 | `tavily_search` | 使用 Tavily API 进行网页搜索，返回简洁相关结果，适合 AI 摘要；适用于查实时信息、新闻或网络资料。 |
 | `tavily_extract` | 从指定 URL 提取正文内容，适用于需要阅读网页全文时。 |
 
-### 11. ClawhubSkill（Clawhub 可执行技能）
+### 12. ClawhubSkill（Clawhub 可执行技能）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `run_clawhub_script` | 在后端所在机器的 Node 进程中运行 Clawhub 可执行技能目录 scripts/ 下的脚本；scriptName 为脚本名（不含扩展名），arguments 为空格分隔的参数字符串。 |
 
-### 12. Memory（长期记忆）
+### 13. Memory（长期记忆）
 
 需配置 Embedding 模型。  
 
@@ -175,7 +182,7 @@
 | `save_memory` | 将用户或对话中的一条重要信息保存为长期记忆，便于后续检索；saveToShared 为 true 时写入共享记忆，其他端（如 Word/Chrome）也可检索到。 |
 | `search_memory` | 根据查询从长期记忆中检索相关条目（本会话 + 共享记忆），返回与当前问题最相关的记忆列表，结果会标明来自本会话或共享。 |
 
-### 13. AccurateData（准确数据）
+### 14. AccurateData（准确数据）
 
 以文件形式持久化与按 id 读取规范数据，目录由设置中「准确数据目录」或配置 AccurateDataDirectory 指定。  
 
@@ -186,7 +193,7 @@
 | `accurate_data_list` | 列出准确数据条目，可按 id 前缀过滤并限制数量，返回每条 id 与格式。 |
 | `accurate_data_delete` | 按 id 删除一条准确数据（同时删除内容与 meta）。 |
 
-### 14. ScheduledTask（定时任务）
+### 15. ScheduledTask（定时任务）
 
 供 AI 创建与管理定时任务（.task.md + meta）；到点后由后台将任务内容发给 AI 执行。目录由「定时任务目录」或配置 ScheduledTasksDirectory 指定。  
 
@@ -198,26 +205,26 @@
 | `scheduled_task_update` | 更新定时任务；可选参数不传则保持原值。 |
 | `scheduled_task_delete` | 删除定时任务（移除 .task.md 与 .meta.json）。 |
 
-### 15. Context（上下文压缩）
+### 16. Context（上下文压缩）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `compact_conversation` | 当对话较长且要开始全新任务、或已给出最终结论不再需要此前详细内容时，可调用此工具压缩对话，将较早轮次合并为摘要以释放上下文。 |
 
-### 16. Subagent（子代理）
+### 17. Subagent（子代理）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `run_subtask` | 将相对独立、多步骤或会产出大量中间结果的任务交给子代理；子代理在隔离上下文中完成并只返回最终总结，主对话仅收到该总结；taskDescription 需写清要完成的具体目标。 |
 
-### 17. CrossAgentTask（跨端任务）
+### 18. CrossAgentTask（跨端任务）
 
 | 工具名 | 中文介绍 |
 |--------|----------|
 | `create_cross_agent_task` | 当用户要求「让 Word/Chrome/Excel/WPS/PowerPoint 的 Agent 做某事」时调用；创建一条发给目标端的待办，目标端在下次对话时会看到并执行；targetClientType 取 office-word、chrome、office-excel、office-powerpoint、wps 之一。 |
 | `complete_cross_agent_task` | 当本端完成了一条来自其他端的待办任务后调用，将任务标记为 done 或 failed，并可选写入结果摘要。 |
 
-### 18. Plan（计划）
+### 19. Plan（计划）
 
 | 工具名 | 中文介绍 |
 |--------|----------|

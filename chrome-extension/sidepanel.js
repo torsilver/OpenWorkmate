@@ -1282,7 +1282,7 @@ function addUserMessage(text) {
   appendMsg("msg--user", text);
 }
 
-function addBotMessage(text, isError = false) {
+function addBotMessage(text, isError = false, actionButton = null) {
   const div = appendMsg("msg--bot" + (isError ? " msg--error" : ""), "");
   const displayText = isError ? (text ? `⚠️ ${text}` : "⚠️ 请求失败") : text;
   if (typeof marked !== 'undefined') {
@@ -1306,6 +1306,14 @@ function addBotMessage(text, isError = false) {
     }
   } else {
     div.textContent = displayText;
+  }
+  if (isError && actionButton && actionButton.label && typeof actionButton.onClick === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'msg-action-btn';
+    btn.textContent = actionButton.label;
+    btn.addEventListener('click', actionButton.onClick);
+    div.appendChild(btn);
   }
 }
 
@@ -1652,7 +1660,24 @@ $input.addEventListener("input", () => {
     try {
       audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      addBotMessage("无法访问麦克风：" + (err.message || "权限被拒绝"), true);
+      const msg = (err && String(err.message || "")).toLowerCase();
+      const name = (err && err.name) || "";
+      let userMessage;
+      if (name === "NotAllowedError") {
+        if (msg.includes("dismissed") || msg.includes("closed")) {
+          userMessage = "无法使用麦克风：您关闭了权限窗口或未选择允许。请再次点击「会议监听」，在浏览器弹窗中选择「允许」。";
+        } else {
+          userMessage = "无法使用麦克风：权限被拒绝。请在浏览器地址栏左侧点击锁/图标，将麦克风权限改为「允许」后重试。";
+        }
+      } else if (name === "NotFoundError") {
+        userMessage = "无法使用麦克风：未检测到麦克风设备。";
+      } else if (name === "NotReadableError" || name === "AbortError") {
+        userMessage = "无法使用麦克风：设备被占用或不可用，请关闭其他使用麦克风的应用后重试。";
+      } else {
+        userMessage = "无法使用麦克风：权限被拒绝或设备不可用，请检查浏览器设置后重试。";
+      }
+      const openOptions = () => { if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage(); };
+      addBotMessage(userMessage, true, { label: "打开扩展设置", onClick: openOptions });
       return;
     }
 

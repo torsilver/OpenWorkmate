@@ -319,7 +319,8 @@ app.MapGet("/api/tools/builtin", () =>
     var builtIn = new List<BuiltInPluginInfo>
     {
         new() { Id = "Browser", Name = "Browser", Description = "网页高亮、截图、运行页面脚本、整页截图等" },
-        new() { Id = "File", Name = "File", Description = "附件路径解析、保存截图到下载文件夹" },
+        new() { Id = "File", Name = "File", Description = "附件路径解析、文件大小查询、保存截图到下载文件夹" },
+        new() { Id = "System", Name = "System", Description = "当前时间等系统信息，用于回答用户关于日期、时间的问题" },
         new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（Whisper）：将音频文件转成文字，供整理成文档等" },
         new() { Id = "MCP_OCR", Name = "MCP_OCR", Description = "内置 OCR：从图片中提取文字，供整理成文档等（需在模型设置中配置 OCR）" },
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },

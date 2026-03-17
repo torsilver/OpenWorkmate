@@ -33,6 +33,50 @@ public sealed class FilePlugin
         return path;
     }
 
+    [KernelFunction("get_file_size")]
+    [Description("Get the size of a file in bytes and human-readable form. Use when you need to decide whether to include file content in context or which tool to use (e.g. OCR, STT, or read in chunks). Path can be from get_attachment_path or a local file path. Returns size or an error message if the file does not exist or is not accessible.")]
+    public string GetFileSize(
+        [Description("Full local path to the file (e.g. from get_attachment_path or C:\\temp\\doc.pdf)")] string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return "失败：请提供文件路径。";
+        var path = filePath.Trim();
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (!File.Exists(fullPath))
+            {
+                _logger.LogWarning("[File] get_file_size file not found: {Path}", fullPath);
+                return "失败：文件不存在或路径不可访问（" + fullPath + "）。";
+            }
+            var fi = new FileInfo(fullPath);
+            if (fi.Attributes.HasFlag(FileAttributes.Directory))
+                return "失败：路径指向的是目录而非文件，请指定具体文件路径。";
+            var bytes = fi.Length;
+            var readable = FormatByteSize(bytes);
+            return $"{bytes} ({readable})";
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "[File] get_file_size access denied: {Path}", path);
+            return "失败：无权限访问该文件（" + ex.Message + "）。";
+        }
+        catch (Exception ex) when (ex is ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            _logger.LogWarning(ex, "[File] get_file_size invalid path: {Path}", path);
+            return "失败：路径无效或不可访问（" + ex.Message + "）。";
+        }
+    }
+
+    private static string FormatByteSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        var i = 0;
+        var v = (double)bytes;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return i == 0 ? $"{v} {units[i]}" : $"{v:F2} {units[i]}";
+    }
+
     [KernelFunction("save_screenshot_to_downloads")]
     [Description("Saves a screenshot (previously captured via capture_full_page) to the user's Downloads folder. Pass the screenshot reference returned by capture_full_page as the first argument; optional second argument is the filename without extension.")]
     public string SaveScreenshotToDownloads(

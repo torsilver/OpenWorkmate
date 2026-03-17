@@ -25,12 +25,13 @@ public sealed class ToolSelectionService : IToolSelector
         ["Word"] = "读写 Word 文档",
         ["Ppt"] = "读写 PPT 演示文稿",
         ["Browser"] = "网页截图、高亮、页面脚本",
-        ["File"] = "保存文件、下载",
+        ["File"] = "附件路径、文件大小、保存截图到下载",
         ["Tavily"] = "网页搜索、查资料",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["CurrentDocument"] = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：插入/读正文、选区、表格、查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本",
         ["Context"] = "对话上下文管理：主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或耗上下文的子任务交给子代理执行，仅收回最终总结",
+        ["System"] = "当前日期与时间，用于回答今天几号、现在几点等时间相关问题",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> 描述；内置子类（不含动态 技能/外部）。</summary>
@@ -45,7 +46,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["Word-修改样式"] = "段落格式、文字格式",
         ["Browser-截图与页面"] = "整页截图、页面脚本",
         ["Browser-高亮与笔记"] = "高亮、浮动笔记",
-        ["File"] = "保存、下载、截图落盘",
+        ["File"] = "附件路径解析、文件大小查询、截图保存到下载",
         ["CLI"] = "执行 CMD 命令",
         ["Tavily-搜索"] = "网页搜索",
         ["Tavily-提取"] = "URL 内容提取",
@@ -61,6 +62,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["Context"] = "对话上下文管理：在换任务或已总结完后主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或会产出大量中间结果的任务交给子代理，仅收回最终总结",
         ["AccurateData"] = "准确数据临时存盘：保存结构化数据到磁盘以减少上下文占用，需要时按 id 精确取回",
+        ["System"] = "当前日期与时间：回答用户问今天几号、现在几点、本周/本月等时间相关问题时使用",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> (插件名, 函数名) 列表；仅内置固定子类，技能/外部由 Kernel 动态收集。</summary>
@@ -96,7 +98,7 @@ public sealed class ToolSelectionService : IToolSelector
             ["Word-修改样式"] = new List<(string, string)> { ("Word", "word_paragraphs_format"), ("Word", "word_text_format") },
             ["Browser-截图与页面"] = new List<(string, string)> { ("Browser", "capture_full_page"), ("Browser", "run_page_script") },
             ["Browser-高亮与笔记"] = new List<(string, string)> { ("Browser", "highlight_webpage_text"), ("Browser", "add_floating_note") },
-            ["File"] = new List<(string, string)> { ("File", "save_screenshot_to_downloads") },
+            ["File"] = new List<(string, string)> { ("File", "get_attachment_path"), ("File", "get_file_size"), ("File", "save_screenshot_to_downloads") },
             ["CLI"] = new List<(string, string)> { ("CLI", "run_command") },
             ["Tavily-搜索"] = new List<(string, string)> { ("Tavily", "tavily_search") },
             ["Tavily-提取"] = new List<(string, string)> { ("Tavily", "tavily_extract") },
@@ -124,6 +126,7 @@ public sealed class ToolSelectionService : IToolSelector
             ["Context"] = new List<(string, string)> { ("Context", "compact_conversation") },
             ["Subagent"] = new List<(string, string)> { ("Subagent", "run_subtask") },
             ["AccurateData"] = new List<(string, string)> { ("AccurateData", "accurate_data_write"), ("AccurateData", "accurate_data_read"), ("AccurateData", "accurate_data_list"), ("AccurateData", "accurate_data_delete") },
+            ["System"] = new List<(string, string)> { ("System", "get_current_time") },
         };
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
@@ -341,7 +344,7 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。读 PPT 或当前演示文稿幻灯片→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删 PPT 幻灯片→Ppt-编辑内容 或 CurrentDocument-Ppt。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。读 PPT 或当前演示文稿幻灯片→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删 PPT 幻灯片→Ppt-编辑内容 或 CurrentDocument-Ppt。用户问今天几号、现在几点→System。用户附带图片要提取文字或判断文件大小→File, MCP_OCR 或 外部。");
         return string.Join("\n", lines);
     }
 

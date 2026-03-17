@@ -363,6 +363,20 @@ html, body {
 .msg--error p {
   color: var(--danger);
 }
+.msg-action-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.msg-action-btn:hover {
+  opacity: 0.9;
+}
 
 /* 流式回复中的服务端警告（如记忆/知识库检索失败） */
 .msg--stream-warning {
