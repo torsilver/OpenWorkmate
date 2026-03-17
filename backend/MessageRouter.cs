@@ -124,6 +124,21 @@ public class WsMessage
     [JsonPropertyName("requiresUserConfirmation")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? RequiresUserConfirmation { get; set; }
+
+    /// <summary>subtask_start 时：子任务描述。</summary>
+    [JsonPropertyName("taskDescription")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TaskDescription { get; set; }
+
+    /// <summary>subtask_start 时：可选约束说明。</summary>
+    [JsonPropertyName("constraints")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Constraints { get; set; }
+
+    /// <summary>tool_invocation_start/end 时：是否属于子代理内调用，供前端归入子代理块。</summary>
+    [JsonPropertyName("isSubtask")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsSubtask { get; set; }
 }
 
 public class AttachmentDto

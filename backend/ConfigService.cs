@@ -120,6 +120,9 @@ public class ContextWindowConfig
     public double ToolSearchMinScore { get; set; } = 0.7;
     /// <summary>工具向量检索：至少命中此数量才算 goodEnough。</summary>
     public int ToolSearchMinCount { get; set; } = 1;
+
+    /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
+    public bool PassThroughContext { get; set; }
 }
 
 /// <summary>上下文优化预设：一组 ContextWindow + Session + PlanConfirmation，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
@@ -548,6 +551,39 @@ public sealed class ConfigService
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
                 PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+            },
+            new ContextOptimizationPreset
+            {
+                Id = "pass-through",
+                DisplayName = "完全依赖模型",
+                ContextWindow = new ContextWindowConfig
+                {
+                    PassThroughContext = true,
+                    MaxContextTokens = 200_000,
+                    ReservedSystemTokens = 16_000,
+                    ReservedToolsTokens = 16_000,
+                    ReservedOutputTokens = 8_192,
+                    PlanContentMaxChars = 0,
+                    MemoryInjectionMaxChars = 0,
+                    MemorySessionTopK = 0,
+                    MemorySharedTopK = 0,
+                    TokenEstimation = "CharsRatio",
+                    CharsPerToken = 2,
+                    SummarizationEnabled = false,
+                    SummarizationTriggerRatio = 0.9,
+                    SummarizationMaxSummaryChars = 500,
+                    ContextLengthRetryEnabled = false,
+                    ContextLengthRetryMaxTurns = 0,
+                    ConversationHistoryDirectory = null,
+                    TruncateToolArgsThresholdRatio = 0,
+                    TruncateToolArgsKeepMessages = 10,
+                    TruncateToolArgsMaxChars = 2000,
+                    ToolSearchTopK = 20,
+                    ToolSearchMinScore = 0.7,
+                    ToolSearchMinCount = 1
+                },
+                Session = new SessionConfig { MaxHistoryTurns = 5000, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
             }
         };
     }
@@ -568,6 +604,7 @@ public sealed class ConfigService
         };
         config.ContextWindow = new ContextWindowConfig
         {
+            PassThroughContext = preset.ContextWindow.PassThroughContext,
             MaxContextTokens = preset.ContextWindow.MaxContextTokens,
             ReservedSystemTokens = preset.ContextWindow.ReservedSystemTokens,
             ReservedToolsTokens = preset.ContextWindow.ReservedToolsTokens,

@@ -688,6 +688,14 @@ postgresql://localhost/mydb"></textarea>
       <div id="contextWindowSection" style="display: none; margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fafafa;">
         <h3 style="margin: 0 0 12px; font-size: 14px; color: var(--text-secondary);">上下文窗口（当前预设）</h3>
         <p class="help-text" style="margin-bottom: 12px;">仅当已选择「当前优化预设」时可编辑；保存后写入该预设的 contextWindow。</p>
+        <div class="form-group" style="margin-bottom: 16px; padding: 10px; background: var(--bg); border-radius: 6px;">
+          <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+            <input type="checkbox" id="ctxPassThroughContext" style="width: auto; margin: 0;">
+            <span>完全不优化（完全依赖大模型）</span>
+          </label>
+          <p class="help-text" style="margin: 6px 0 0 24px; font-size: 12px;">开启后不按 token 裁历史、不摘要、不截断工具参数、不超长重试；仅保留轮数上限。关闭后可在下方填写各项优化参数。</p>
+        </div>
+        <div id="contextWindowDetails">
         <h4 style="margin: 12px 0 8px; font-size: 13px; color: var(--text-secondary);">上下文容量</h4>
         <div class="form-group">
           <label for="ctxMaxContextTokens">最大上下文 Token 数</label>
@@ -770,6 +778,7 @@ postgresql://localhost/mydb"></textarea>
         <div class="form-group">
           <label for="ctxTruncateToolArgsMaxChars">单条消息截断最大字符</label>
           <input type="number" id="ctxTruncateToolArgsMaxChars" min="100" placeholder="2000" style="width: 100px;">
+        </div>
         </div>
       </div>
 

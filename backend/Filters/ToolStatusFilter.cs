@@ -173,7 +173,8 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             Success = success,
             Summary = summary,
             Content = content ?? "",
-            PlanStepIndex = planStepIndex
+            PlanStepIndex = planStepIndex,
+            IsSubtask = SubtaskContext.GetIsActive() ? true : null
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
         await _sessionManager.SendToAsync(sessionId, json);

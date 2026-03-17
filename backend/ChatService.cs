@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -544,7 +545,7 @@ public sealed class ChatService : IDisposable
                 - ctxConfig.ReservedToolsTokens
                 - ctxConfig.ReservedOutputTokens;
 
-            if (historyBudget > 0)
+            if (historyBudget > 0 && !ctxConfig.PassThroughContext)
             {
                 var totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
 
@@ -810,7 +811,7 @@ public sealed class ChatService : IDisposable
                     }
                     break;
                 }
-                catch (Exception ex) when (attempt == 0 && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
+                catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
                 {
                     _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
                     TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
@@ -942,27 +943,66 @@ public sealed class ChatService : IDisposable
         var fullResponse = new System.Text.StringBuilder();
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
+        SubtaskContext.SetActive(true);
         try
         {
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
+            {
+                Type = "subtask_start",
+                TaskDescription = taskDescription.Trim(),
+                Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim()
+            }).ConfigureAwait(false);
             await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
             {
                 if (chunk.Content is { Length: > 0 } text)
+                {
                     fullResponse.Append(text);
+                    await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _logger.LogWarning("[RunSubtask] SessionId={SessionId} timed out after 120s", sessionId);
             var partial = fullResponse.ToString().Trim();
-            return string.IsNullOrEmpty(partial) ? "[子任务超时] 子代理执行超过 120 秒，已中止。" : $"[子任务超时] 部分结果：{partial}";
+            var timeoutMsg = string.IsNullOrEmpty(partial) ? "[子任务超时] 子代理执行超过 120 秒，已中止。" : $"[子任务超时] 部分结果：{partial}";
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = timeoutMsg }).ConfigureAwait(false);
+            return timeoutMsg;
+        }
+        catch (OperationCanceledException)
+        {
+            const string userStopMsg = "[子任务已由用户停止]";
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = userStopMsg }).ConfigureAwait(false);
+            return userStopMsg;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[RunSubtask] SessionId={SessionId} task failed", sessionId);
-            return $"[子任务执行失败] {ex.Message}";
+            var failMsg = $"[子任务执行失败] {ex.Message}";
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = failMsg }).ConfigureAwait(false);
+            return failMsg;
+        }
+        finally
+        {
+            SubtaskContext.SetActive(false);
         }
         var result = fullResponse.ToString().Trim();
+        var endContent = string.IsNullOrEmpty(result) ? null : result;
+        await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = endContent ?? "" }).ConfigureAwait(false);
         return string.IsNullOrEmpty(result) ? "[子任务未返回文本结果]" : result;
+    }
+
+    private static async Task SendSubtaskMessageAsync(SessionManager sessionManager, string sessionId, WsMessage msg)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+            await sessionManager.SendToAsync(sessionId, json).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // 推送失败不阻塞子任务执行，仅前端收不到流式展示
+        }
     }
 
     /// <summary>供 compact_conversation 工具调用：主动压缩当前会话的最旧若干轮为摘要。返回可展示给模型的结果文案。</summary>
@@ -1087,6 +1127,9 @@ public sealed class ChatService : IDisposable
         {
             history.RemoveAt(1);
         }
+
+        if (ctx.PassThroughContext)
+            return;
 
         var maxContextTokens = GetEffectiveMaxContextTokens();
         if (maxContextTokens <= 0)

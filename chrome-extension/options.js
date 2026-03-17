@@ -866,6 +866,9 @@ function fillContextWindowForm(activePresetId, presets) {
   var cw = preset.contextWindow || preset.ContextWindow || {};
   function num(val, def) { var n = parseInt(val, 10); return isNaN(n) ? def : n; }
   function floatVal(val, def) { var n = parseFloat(val); return isNaN(n) ? def : n; }
+  var passThroughEl = document.getElementById('ctxPassThroughContext');
+  if (passThroughEl) passThroughEl.checked = !!(cw.passThroughContext ?? cw.PassThroughContext);
+  toggleContextWindowDetailsDisabled(!!(cw.passThroughContext ?? cw.PassThroughContext));
   var dirEl = document.getElementById('ctxConversationHistoryDirectory');
   var sumEnEl = document.getElementById('ctxSummarizationEnabled');
   var sumRatioEl = document.getElementById('ctxSummarizationTriggerRatio');
@@ -958,7 +961,9 @@ function collectContextWindowFromForm() {
   var charsPerEl = document.getElementById('ctxCharsPerToken');
   var retryEnEl = document.getElementById('ctxContextLengthRetryEnabled');
   var retryTurnsEl = document.getElementById('ctxContextLengthRetryMaxTurns');
+  var passThroughEl = document.getElementById('ctxPassThroughContext');
   return {
+    passThroughContext: !!(passThroughEl && passThroughEl.checked),
     maxContextTokens: num(maxCtxEl && maxCtxEl.value ? maxCtxEl.value : '', 64000),
     reservedSystemTokens: num(resSysEl && resSysEl.value ? resSysEl.value : '', 12000),
     reservedToolsTokens: num(resToolsEl && resToolsEl.value ? resToolsEl.value : '', 12000),
@@ -984,6 +989,25 @@ function collectContextWindowFromForm() {
 function toggleContextWindowSection(show) {
   var section = document.getElementById('contextWindowSection');
   if (section) section.style.display = show ? 'block' : 'none';
+}
+
+function toggleContextWindowDetailsDisabled(passThroughOn) {
+  var details = document.getElementById('contextWindowDetails');
+  if (!details) return;
+  details.style.opacity = passThroughOn ? '0.6' : '1';
+  details.style.pointerEvents = passThroughOn ? 'none' : '';
+}
+
+function setupPassThroughContextToggle() {
+  var el = document.getElementById('ctxPassThroughContext');
+  if (!el) return;
+  el.removeEventListener('change', onPassThroughContextChange);
+  el.addEventListener('change', onPassThroughContextChange);
+}
+
+function onPassThroughContextChange() {
+  var el = document.getElementById('ctxPassThroughContext');
+  toggleContextWindowDetailsDisabled(!!(el && el.checked));
 }
 
 function toggleSessionSection(show) {
@@ -1688,6 +1712,7 @@ function collectCliScriptPerEndPayload() {
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
   loadConfig();
+  setupPassThroughContextToggle();
 });
 
 // ───── MCP ─────

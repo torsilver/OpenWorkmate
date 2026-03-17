@@ -497,6 +497,12 @@ let executionLogBody = null;       // 内层 div，挂多个工具块
 let executionLogSummaryEl = null;  // 用于更新「执行过程 (N 个操作)」
 let currentRoundToolBlocks = [];   // 本轮的每个工具块 <details>
 let currentToolEndIndex = 0;
+// 子代理块：默认折叠，内含流式文本 + 子代理内工具调用
+let currentSubtaskBlock = null;
+let currentSubtaskStreamEl = null;
+let currentSubtaskToolsEl = null;
+let currentSubtaskToolBlocks = [];
+let currentSubtaskToolEndIndex = 0;
 
 function beginStream() {
   removeThinkingIndicator();
@@ -609,6 +615,11 @@ function finalizeStream() {
   executionLogSummaryEl = null;
   currentRoundToolBlocks = [];
   currentToolEndIndex = 0;
+  currentSubtaskBlock = null;
+  currentSubtaskStreamEl = null;
+  currentSubtaskToolsEl = null;
+  currentSubtaskToolBlocks = [];
+  currentSubtaskToolEndIndex = 0;
   setInputEnabled(true);
 }
 
@@ -642,6 +653,81 @@ function handleMessage(raw) {
       extractAndRenderCanvas(rawMsg);
       break;
 
+    case "subtask_start": {
+      if (!executionLogBody) beginStream();
+      if (!executionLogBody) break;
+      const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
+      const titleLen = 48;
+      const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
+      const block = document.createElement("details");
+      block.className = "subtask-block tool-call-block tool-call--running";
+      block.dataset.label = "子代理：" + summaryLabel;
+      block.open = false;
+      const sum = document.createElement("summary");
+      sum.innerHTML = `<span class="tool-status-icon">⏳</span> 子代理：${escapeHtml(summaryLabel)}`;
+      block.appendChild(sum);
+      const inner = document.createElement("div");
+      inner.className = "subtask-inner";
+      if (msg.taskDescription) {
+        const taskEl = document.createElement("div");
+        taskEl.className = "subtask-task";
+        taskEl.textContent = "任务：" + (msg.taskDescription || "").trim();
+        inner.appendChild(taskEl);
+      }
+      if (msg.constraints && String(msg.constraints).trim()) {
+        const conEl = document.createElement("div");
+        conEl.className = "subtask-constraints";
+        conEl.textContent = "约束：" + String(msg.constraints).trim();
+        inner.appendChild(conEl);
+      }
+      const streamEl = document.createElement("pre");
+      streamEl.className = "subtask-stream";
+      inner.appendChild(streamEl);
+      const toolsWrap = document.createElement("div");
+      toolsWrap.className = "subtask-tools";
+      inner.appendChild(toolsWrap);
+      block.appendChild(inner);
+      executionLogBody.appendChild(block);
+      currentSubtaskBlock = block;
+      currentSubtaskStreamEl = streamEl;
+      currentSubtaskToolsEl = toolsWrap;
+      currentSubtaskToolBlocks = [];
+      currentSubtaskToolEndIndex = 0;
+      updateExecutionLogCount();
+      break;
+    }
+
+    case "subtask_chunk": {
+      if (!currentSubtaskBlock || !currentSubtaskStreamEl) break;
+      const t = msg.content != null ? String(msg.content) : "";
+      if (t) {
+        currentSubtaskStreamEl.textContent += t;
+        if (currentSubtaskBlock.open) {
+          currentSubtaskStreamEl.scrollTop = currentSubtaskStreamEl.scrollHeight;
+        }
+      }
+      break;
+    }
+
+    case "subtask_end": {
+      if (currentSubtaskBlock) {
+        const sum = currentSubtaskBlock.querySelector("summary");
+        if (sum) sum.innerHTML = `<span class="tool-status-icon">✓</span> 子代理（已完成）`;
+        currentSubtaskBlock.classList.remove("tool-call--running");
+        currentSubtaskBlock.classList.add("tool-call--done");
+        if (msg.content && String(msg.content).trim() && currentSubtaskStreamEl) {
+          const existing = currentSubtaskStreamEl.textContent.trim();
+          if (!existing) currentSubtaskStreamEl.textContent = String(msg.content).trim();
+        }
+      }
+      currentSubtaskBlock = null;
+      currentSubtaskStreamEl = null;
+      currentSubtaskToolsEl = null;
+      currentSubtaskToolBlocks = [];
+      currentSubtaskToolEndIndex = 0;
+      break;
+    }
+
     case "tool_invocation_start": {
       if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
         const planId = getCurrentPlanId();
@@ -649,10 +735,12 @@ function handleMessage(raw) {
           ensurePlanChecklistLoaded(planId).then(() => updateChecklistStep(msg.planStepIndex, "in_progress"));
         }
       }
-      if (!executionLogBody) break;
       const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
+      const isSubtask = msg.isSubtask === true;
+      const parentBody = isSubtask ? currentSubtaskToolsEl : executionLogBody;
+      if (!parentBody) break;
       const block = document.createElement("details");
-      block.className = "tool-call-block tool-call--running";
+      block.className = "tool-call-block tool-call--running" + (isSubtask ? " subtask-tool-block" : "");
       block.dataset.label = label;
       const sum = document.createElement("summary");
       sum.innerHTML = `<span class="tool-status-icon">⏳</span> ${escapeHtml(label)}`;
@@ -660,9 +748,13 @@ function handleMessage(raw) {
       const out = document.createElement("pre");
       out.className = "tool-call-output";
       block.appendChild(out);
-      executionLogBody.appendChild(block);
-      currentRoundToolBlocks.push(block);
-      block.open = true; // 进行中时每个工具块默认展开
+      parentBody.appendChild(block);
+      if (isSubtask) {
+        currentSubtaskToolBlocks.push(block);
+      } else {
+        currentRoundToolBlocks.push(block);
+        block.open = true;
+      }
       updateExecutionLogCount();
       break;
     }
@@ -674,7 +766,8 @@ function handleMessage(raw) {
           setPlanCurrentStepIndex(msg.planStepIndex + 1);
         }
       }
-      const block = currentRoundToolBlocks[currentToolEndIndex];
+      const isSubtask = msg.isSubtask === true;
+      const block = isSubtask ? currentSubtaskToolBlocks[currentSubtaskToolEndIndex] : currentRoundToolBlocks[currentToolEndIndex];
       if (block) {
         const contentRaw = (msg.content && String(msg.content).trim()) || "";
         const looksLikeError = (c) => {
@@ -707,7 +800,7 @@ function handleMessage(raw) {
           }
         }
       }
-      currentToolEndIndex++;
+      if (isSubtask) currentSubtaskToolEndIndex++; else currentToolEndIndex++;
       break;
     }
 

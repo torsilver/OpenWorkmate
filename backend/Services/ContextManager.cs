@@ -38,6 +38,9 @@ public sealed class ContextManager
         while (history.Count > maxMessagesByTurns)
             history.RemoveAt(1);
 
+        if (ctx.PassThroughContext)
+            return;
+
         var maxContextTokens = GetEffectiveMaxContextTokens(activeEntry);
         if (maxContextTokens <= 0)
             return;
