@@ -119,6 +119,12 @@ var authToken = wsConfig["AuthToken"] ?? "";
 var allowedOrigins = wsConfig.GetSection("AllowedOrigins").Get<string[]>() ?? [];
 const string DevToken = "office-copilot-dev-token";
 var isDev = app.Environment.IsDevelopment();
+// 开发环境下始终放行 localhost，便于 wpsjs debug 等本地任务窗格连接
+if (isDev)
+{
+    var devOrigins = new[] { "http://127.0.0.1", "http://localhost" };
+    allowedOrigins = allowedOrigins.Union(devOrigins).Distinct().ToArray();
+}
 
 app.UseCors(policy => 
     policy.WithOrigins(allowedOrigins.Length > 0 ? allowedOrigins : new[] { "*" })

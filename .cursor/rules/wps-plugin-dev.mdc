@@ -1,0 +1,18 @@
+---
+description: WPS 插件开发约定（主目录、模板参考、调试命令）
+alwaysApply: true
+---
+
+# WPS 插件开发约定
+
+## 1. 目录语义
+
+- `@wps-addin-new`：我们维护的 WPS 插件开发主目录（默认以这里为准）。
+- `@HelloWps`：WPS 官方模板/示例目录，仅在需要对照示例代码或参考 API 方式时使用。
+  - 不要在 `@HelloWps` 中直接实现业务改动；优先把需要的代码复制/改写到 `@wps-addin-new`。
+
+## 2. 编译与测试方式
+
+- WPS 插件开发时，必须使用 `wpsjs debug` 来编译和测试。
+- 提交代码前，如涉及 WPS 侧关键逻辑/manifest 配置/打包入口，请优先用 `wpsjs debug` 进行验证，避免只做 `npm run dev/build`（那通常只是 Web 构建，不等价于 WPS 插件可运行状态）。
+
