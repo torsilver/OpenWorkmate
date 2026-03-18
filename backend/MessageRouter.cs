@@ -53,6 +53,11 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? AddToAllowList { get; set; }
 
+    /// <summary>ask_options_response: 单选/多轮候选项最终选择结果（stepId -> optionId）。</summary>
+    [JsonPropertyName("selections")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? Selections { get; set; }
+
     // 工具调用状态（tool_invocation_start / tool_invocation_end）
     [JsonPropertyName("plugin")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

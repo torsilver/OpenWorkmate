@@ -103,6 +103,14 @@
           </svg>
         </button>
       </div>
+
+      <div id="at-mode-panel" class="at-mode-panel" style="display:none;">
+        <div class="at-mode-filter-row">
+          <span class="at-mode-filter-hint">过滤</span>
+          <input id="at-mode-filter-input" class="at-mode-filter-input" type="text" autocomplete="off" spellcheck="false" placeholder="输入关键字...">
+        </div>
+        <div id="at-mode-list" class="at-mode-list" role="listbox" aria-label="工具/技能选择列表"></div>
+      </div>
     </footer>
 
     <div id="meeting-panel" class="meeting-panel" style="display: none;">
@@ -123,6 +131,19 @@
           <button type="button" id="hitl-allow-btn" class="hitl-btn hitl-btn--allow">允许</button>
           <button type="button" id="hitl-add-to-list-btn" class="hitl-btn hitl-btn--allow" style="display: none;">加入白名单并执行</button>
           <button type="button" id="hitl-deny-btn" class="hitl-btn hitl-btn--deny">拒绝</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ask-options-overlay" class="ask-options-overlay" style="display: none;" aria-hidden="true">
+      <div class="ask-options-card">
+        <p class="ask-options-title" id="ask-options-title"></p>
+        <p class="ask-options-prompt" id="ask-options-prompt"></p>
+        <div class="ask-options-step-indicator" id="ask-options-step-indicator"></div>
+        <div class="ask-options-question" id="ask-options-question"></div>
+        <div class="ask-options-options" id="ask-options-options" role="listbox" aria-label="候选项列表"></div>
+        <div class="ask-options-actions">
+          <button id="ask-options-confirm-btn" type="button" class="ask-options-confirm-btn">确定</button>
         </div>
       </div>
     </div>

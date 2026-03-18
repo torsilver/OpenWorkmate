@@ -336,6 +336,13 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(planPlugin, "Plan");
         }
 
+        if (!disabledBuiltIn.Contains("user_options"))
+        {
+            var userOptionsManager = _serviceProvider.GetRequiredService<UserOptionsManager>();
+            var userOptionsLogger = _loggerFactory.CreateLogger<UserOptionsPlugin>();
+            newKernel.Plugins.AddFromObject(new UserOptionsPlugin(userOptionsManager, userOptionsLogger), "UserOptions");
+        }
+
         if (!disabledBuiltIn.Contains("accuratedata"))
             newKernel.Plugins.AddFromObject(new AccurateDataPlugin(_configService), "AccurateData");
 

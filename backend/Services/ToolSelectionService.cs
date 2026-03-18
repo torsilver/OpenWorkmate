@@ -535,6 +535,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             "你是一个工具选择助手。根据用户当前消息，从下面列出的插件中选出本轮可能用到的插件名。",
             "只输出插件名，多个用英文逗号分隔；若无法判断或需要全部工具则只输出：全部。",
+            "如果用户消息中出现形如 `[TOOL:<插件名>]` 的显式 token，请把 `<插件名>` 视为必须选择的插件名（去重后只输出插件名），并优先使用它们作为本轮候选集合。",
             "可用插件："
         };
         foreach (var name in availablePluginNames)
@@ -543,7 +544,7 @@ public sealed class ToolSelectionService : IToolSelector
             var desc = PluginDescriptions.TryGetValue(name, out var d) ? d : (name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase) ? "用户技能" : name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) ? "MCP 工具" : name);
             lines.Add($"- {name}: {desc}");
         }
-        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户说「总结当前页面、生成 excel 放到下载」→ 只输出 Browser, Excel, File（或带 UserSkill_CaptureFullPageScreenshot, UserSkill_Excel___XLSX）。尽量只输出会用到的插件，不要输出 全部。");
+        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
         return string.Join("\n", lines);
     }
 

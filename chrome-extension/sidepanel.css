@@ -605,6 +605,7 @@ html, body {
   border-radius: var(--radius);
   padding: 4px 4px 4px 14px;
   transition: border-color var(--transition);
+  position: relative;
 }
 
 .input-row:focus-within {
@@ -685,6 +686,88 @@ html, body {
 
 .input-box:disabled {
   opacity: 0.5;
+}
+
+/* ===== @ Mode (tool/skill chooser) ===== */
+.at-mode-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 50;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  max-height: 320px;
+  display: none;
+}
+
+.at-mode-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.at-mode-filter-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.at-mode-filter-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.at-mode-filter-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.at-mode-list {
+  overflow-y: auto;
+  max-height: 240px;
+}
+
+.at-mode-item {
+  padding: 10px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.at-mode-item:hover {
+  background: var(--accent-dim);
+  border-color: rgba(108, 140, 255, 0.35);
+}
+.at-mode-item--active {
+  background: var(--accent-dim);
+  border-color: rgba(108, 140, 255, 0.6);
+}
+
+.at-mode-item-title {
+  font-weight: 650;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.at-mode-item-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: Consolas, Monaco, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.at-mode-empty {
+  padding: 12px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 /* ===== HITL 确认框 ===== */
@@ -833,4 +916,114 @@ html, body {
 }
 .meeting-btn.active {
   color: #ef4444;
+}
+
+/* ===== ask_options 选项确认框 ===== */
+.ask-options-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 16px;
+}
+
+.ask-options-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+}
+
+.ask-options-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.ask-options-prompt {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ask-options-step-indicator {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.ask-options-question {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-weight: 650;
+}
+
+.ask-options-options {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.ask-option-item {
+  padding: 12px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.ask-option-item:last-child {
+  border-bottom: none;
+}
+
+.ask-option-item:hover {
+  background: var(--accent-dim);
+}
+
+.ask-option-item--active {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1px rgba(108, 140, 255, 0.55);
+}
+
+.ask-option-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ask-option-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: Consolas, Monaco, monospace;
+  word-break: break-all;
+}
+
+.ask-options-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  gap: 10px;
+}
+
+.ask-options-confirm-btn {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ask-options-confirm-btn:hover {
+  opacity: 0.92;
 }

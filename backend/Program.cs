@@ -52,6 +52,7 @@ try
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
+builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
@@ -181,9 +182,10 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
         var hitlManager = app.Services.GetRequiredService<HitlManager>();
+        var userOptionsManager = app.Services.GetRequiredService<UserOptionsManager>();
         var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
         var attachmentCache = app.Services.GetRequiredService<AttachmentCacheService>();
-        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, streamCancelService, attachmentCache, app.Logger);
+        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, app.Logger);
     }
     finally
     {
@@ -648,7 +650,7 @@ finally
 
 static async Task HandleSession(
     WebSocket ws, string sessionId, SessionManager sessions,
-    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var buffer = new byte[4096];
 
@@ -689,7 +691,7 @@ static async Task HandleSession(
         }
 
         // Only require Content for message types that use it for chat (allow empty content when attachments present)
-        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "get_debug_history" or "stop" or "set_context");
+        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "ask_options_response" or "get_debug_history" or "stop" or "set_context");
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
@@ -722,6 +724,14 @@ static async Task HandleSession(
                     var addToAllowList = incoming.AddToAllowList ?? false;
                     logger.LogDebug("[{SessionId}] HITL confirm_response id={ReqId} allowed={Allowed} addToAllowList={Add}", sessionId, incoming.Id, incoming.Allowed, addToAllowList);
                     hitlManager.HandleResponse(incoming.Id, incoming.Allowed ?? false, addToAllowList);
+                }
+                break;
+            case "ask_options_response":
+                if (incoming.Id != null)
+                {
+                    userOptionsManager.HandleResponse(incoming.Id, incoming.Selections);
+                    logger.LogDebug("[{SessionId}] ask_options_response id={ReqId} stepCount={StepCount}",
+                        sessionId, incoming.Id, incoming.Selections?.Count ?? 0);
                 }
                 break;
             case "get_debug_history":

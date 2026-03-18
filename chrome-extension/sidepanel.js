@@ -284,6 +284,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const title = sessionStorage.getItem(STORAGE_PLAN_TITLE);
     if ($currentPlanLabel) $currentPlanLabel.textContent = title || planId || "无";
   }
+
+  initAtModeUI();
 });
 
 let ws = null;
@@ -297,6 +299,339 @@ let pendingMessages = [];
 let pendingExecutePlan = false;
 let streamingBubble = null;
 const attachments = []; // { mimeType, data (base64), id } for preview
+
+// ───── @ Mode (tool/skill chooser) ─────
+let atModeLoading = null;
+let atModeLoaded = false;
+let atModeCandidates = []; // { group, label, internal }
+
+function sanitizeSkillFunctionName(skillId) {
+  // Keep in sync with backend ChatService.SanitizeSkillFunctionName
+  if (!skillId) return "Skill";
+  let s = String(skillId).trim().replace(/-/g, "_").replace(/\//g, "_").replace(/ /g, "_");
+  let out = "";
+  let prevUnderscore = false;
+  for (const c of s) {
+    if ((/[A-Za-z0-9_]/).test(c)) {
+      out += c;
+      prevUnderscore = false;
+    } else if (!prevUnderscore) {
+      out += "_";
+      prevUnderscore = true;
+    }
+  }
+  out = out.replace(/^_+|_+$/g, "");
+  return out ? out : "Skill";
+}
+
+async function loadAtModeCandidates() {
+  if (atModeLoaded) return;
+  if (atModeLoading) return atModeLoading;
+  atModeLoading = (async () => {
+    try {
+      const [builtinRes, skillsRes] = await Promise.all([
+        fetch(API_BASE + "/api/tools/builtin"),
+        fetch(API_BASE + "/api/skills"),
+      ]);
+      const builtins = builtinRes.ok ? await builtinRes.json() : [];
+      const skills = skillsRes.ok ? await skillsRes.json() : [];
+
+      const builtinCandidates = (Array.isArray(builtins) ? builtins : [])
+        .map(t => ({
+          group: "Tools",
+          label: t.name || t.id || "",
+          internal: t.id || t.Id || "",
+          desc: t.description || t.Description || ""
+        }))
+        .filter(c => c.internal);
+
+      const skillCandidates = (Array.isArray(skills) ? skills : [])
+        .filter(s => (s.enabled !== false && s.Enabled !== false) && (s.promptTemplate || s.PromptTemplate || ""))
+        .map(s => {
+          const id = s.id || s.Id || "";
+          const safeName = sanitizeSkillFunctionName(id);
+          return {
+            group: "Skills",
+            label: s.name || s.Name || id,
+            internal: "UserSkill_" + safeName,
+            desc: s.description || s.Description || ""
+          };
+        });
+
+      // Basic sorting for stable UX
+      builtinCandidates.sort((a, b) => String(a.label).localeCompare(String(b.label), "zh-Hans"));
+      skillCandidates.sort((a, b) => String(a.label).localeCompare(String(b.label), "zh-Hans"));
+      atModeCandidates = [...builtinCandidates, ...skillCandidates];
+      atModeLoaded = true;
+    } catch (e) {
+      console.warn("Failed to load @ mode candidates", e);
+      atModeCandidates = [];
+      atModeLoaded = true; // don't block UI forever
+    }
+  })();
+  return atModeLoading;
+}
+
+let atModeOpen = false;
+let atModeActiveIndex = 0;
+let atTokenStart = -1; // index of '@'
+let atTokenEnd = -1; // caret index at open time (exclusive)
+
+let $atModePanel = null;
+let $atModeFilterInput = null;
+let $atModeListEl = null;
+
+function getTextareaCaret() {
+  if (!$input) return 0;
+  // selectionStart is 0-based caret offset
+  return Number($input.selectionStart || 0);
+}
+
+function isWhitespace(ch) {
+  return /\s/.test(ch);
+}
+
+function findAtTokenInTextarea() {
+  const value = $input.value || "";
+  const caret = getTextareaCaret();
+  const left = caret - 1;
+  if (left < 0) return null;
+
+  // Scan left until whitespace; keep the closest '@' within this region.
+  let i = left;
+  let lastAt = -1;
+  while (i >= 0) {
+    const ch = value[i];
+    if (isWhitespace(ch)) break;
+    if (ch === "@") lastAt = i;
+    i--;
+  }
+  if (lastAt < 0) return null;
+
+  return {
+    atIndex: lastAt,
+    caret,
+    filter: value.slice(lastAt + 1, caret)
+  };
+}
+
+function openAtMode(filter, startIdx, endIdx) {
+  if (!$atModePanel || !$atModeFilterInput || !$atModeListEl) return;
+  atModeOpen = true;
+  atTokenStart = startIdx;
+  atTokenEnd = endIdx;
+
+  $atModeFilterInput.value = filter || "";
+  $atModePanel.style.display = "block";
+  // Don't steal focus for arrow-key navigation UX; allow user to keep typing in textarea.
+  // But if user clicks on the filter input, we can still allow focus.
+  atModeActiveIndex = 0;
+  renderAtModeList($atModeFilterInput.value || "");
+}
+
+function closeAtMode() {
+  atModeOpen = false;
+  atModeActiveIndex = 0;
+  atTokenStart = -1;
+  atTokenEnd = -1;
+  if ($atModePanel) $atModePanel.style.display = "none";
+}
+
+function setAtActiveIndex(idx) {
+  const items = $atModeListEl?.querySelectorAll(".at-mode-item");
+  if (!items || items.length === 0) return;
+  const clamped = Math.max(0, Math.min(items.length - 1, idx));
+  atModeActiveIndex = clamped;
+  items.forEach((el, i) => {
+    if (i === clamped) el.classList.add("at-mode-item--active");
+    else el.classList.remove("at-mode-item--active");
+  });
+}
+
+function getCandidateDisplayParts(c) {
+  const internal = c.internal || "";
+  return {
+    title: c.label || internal || "",
+    meta: internal ? `[TOOL:${internal}]` : ""
+  };
+}
+
+function renderAtModeList(filterRaw) {
+  if (!$atModeListEl) return;
+  const filter = (filterRaw || "").trim().toLowerCase();
+  const list = atModeCandidates || [];
+  if (!list.length) {
+    $atModeListEl.innerHTML = `<div class="at-mode-empty">暂无可用工具/技能</div>`;
+    atModeActiveIndex = 0;
+    return;
+  }
+
+  const scored = [];
+  for (const c of list) {
+    const label = String(c.label || "").toLowerCase();
+    const internal = String(c.internal || "").toLowerCase();
+    const text = `${label} ${internal}`;
+    if (filter && !text.includes(filter)) continue;
+    let score = 0;
+    if (!filter) score = 1;
+    else if (label.startsWith(filter) || internal.startsWith(filter)) score = 100;
+    else if (label.includes(filter) || internal.includes(filter)) score = 50;
+    scored.push({ c, score });
+  }
+
+  scored.sort((a, b) => {
+    // Keep Tools first for UX, then score.
+    const g1 = a.c.group === "Tools" ? 0 : 1;
+    const g2 = b.c.group === "Tools" ? 0 : 1;
+    if (g1 !== g2) return g1 - g2;
+    if (b.score !== a.score) return b.score - a.score;
+    return String(a.c.label).localeCompare(String(b.c.label), "zh-Hans");
+  });
+
+  const top = scored.slice(0, 30).map(x => x.c);
+  if (!top.length) {
+    $atModeListEl.innerHTML = `<div class="at-mode-empty">无匹配结果</div>`;
+    atModeActiveIndex = 0;
+    return;
+  }
+
+  // When the list changes (filter typed), reset highlight to the first result.
+  atModeActiveIndex = 0;
+
+  $atModeListEl.innerHTML = top.map((c, idx) => {
+    const parts = getCandidateDisplayParts(c);
+    const groupTag = c.group === "Tools" ? "工具" : "技能";
+    const safeLabel = escapeHtml(parts.title);
+    const safeMeta = escapeHtml(parts.meta);
+    const activeCls = idx === atModeActiveIndex ? " at-mode-item--active" : "";
+    return `
+      <div class="at-mode-item${activeCls}" data-at-idx="${idx}" role="option" aria-selected="${idx === atModeActiveIndex ? "true" : "false"}">
+        <div class="at-mode-item-title">${safeLabel}</div>
+        <div class="at-mode-item-meta">${groupTag} · ${safeMeta}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function insertAtCandidate(candidate) {
+  if (!$input || !$atModePanel) return;
+  if (!candidate || atTokenStart < 0 || atTokenEnd < 0) return;
+
+  const value = $input.value || "";
+  const internal = candidate.internal || "";
+  const inserted = `[TOOL:${internal}]`;
+  const afterChar = value[atTokenEnd] || "";
+  const trailing = afterChar && !/\s/.test(afterChar) ? " " : "";
+
+  const newValue = value.slice(0, atTokenStart) + inserted + trailing + value.slice(atTokenEnd);
+  $input.value = newValue;
+
+  const newCaret = atTokenStart + inserted.length + trailing.length;
+  $input.setSelectionRange(newCaret, newCaret);
+  closeAtMode();
+  $input.focus();
+}
+
+async function updateAtModeFromTextarea() {
+  if (!$input) return;
+  const token = findAtTokenInTextarea();
+  if (!token) {
+    if (atModeOpen) closeAtMode();
+    return;
+  }
+
+  // Only open when the '@' is preceded by start or non-word boundary, to avoid
+  // triggering in email addresses etc. MVP: allow if previous char is whitespace/punct/start.
+  const value = $input.value || "";
+  const prev = token.atIndex > 0 ? value[token.atIndex - 1] : "";
+  const allow = token.atIndex === 0 || isWhitespace(prev) || /[.,;:!?()[\]{}]/.test(prev);
+  if (!allow) {
+    if (atModeOpen) closeAtMode();
+    return;
+  }
+
+  // Ensure candidates are ready before opening list.
+  if (!atModeLoaded) await loadAtModeCandidates();
+  openAtMode(token.filter, token.atIndex, token.caret);
+}
+
+function initAtModeUI() {
+  $atModePanel = document.getElementById("at-mode-panel");
+  $atModeFilterInput = document.getElementById("at-mode-filter-input");
+  $atModeListEl = document.getElementById("at-mode-list");
+  if (!$atModePanel || !$atModeFilterInput || !$atModeListEl) return;
+
+  // Click item to insert
+  $atModeListEl.addEventListener("mousedown", (e) => {
+    // Prevent textarea losing selection before insert.
+    e.preventDefault();
+    const item = e.target?.closest?.(".at-mode-item");
+    if (!item) return;
+    const idx = Number(item.dataset.atIdx || "0");
+    const filter = $atModeFilterInput.value || "";
+    // Re-render top list deterministically and map idx to candidate by current filter.
+    renderAtModeList(filter);
+    const currentItems = $atModeListEl.querySelectorAll(".at-mode-item");
+    if (!currentItems.length) return;
+    const pickedInternal = (currentItems[idx] || currentItems[0])?.querySelector(".at-mode-item-meta")?.textContent || "";
+    // fallback: use active index
+    const targetCandidate = atModeCandidates[0];
+    // Better: read internal from rendered meta line by querying internal token format.
+    const metaText = (currentItems[idx] || currentItems[0])?.querySelector(".at-mode-item-meta")?.textContent || "";
+    const m = metaText.match(/\[TOOL:([^\]]+)\]/);
+    const internal = m ? m[1] : "";
+    const candidate = atModeCandidates.find(c => String(c.internal) === String(internal)) || targetCandidate;
+    insertAtCandidate(candidate);
+  });
+
+  // Filter input changes (keep textarea token in sync)
+  $atModeFilterInput.addEventListener("input", () => {
+    if (!atModeOpen || atTokenStart < 0 || atTokenEnd < 0) return;
+    const newFilter = $atModeFilterInput.value || "";
+    const value = $input.value || "";
+    const tokenStart = atTokenStart + 1;
+    // Replace the old token text area with newFilter
+    const newValue = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd);
+    $input.value = newValue;
+    atTokenEnd = tokenStart + newFilter.length;
+    renderAtModeList(newFilter);
+    // Keep textarea caret at end of token for consistent insertion.
+    $input.setSelectionRange(atTokenEnd, atTokenEnd);
+  });
+
+  // Keyboard navigation inside filter input
+  $atModeFilterInput.addEventListener("keydown", (e) => {
+    if (!atModeOpen) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setAtActiveIndex(atModeActiveIndex + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setAtActiveIndex(atModeActiveIndex - 1);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      const items = $atModeListEl.querySelectorAll(".at-mode-item");
+      const active = items[atModeActiveIndex];
+      if (!active) return;
+      const metaText = active.querySelector(".at-mode-item-meta")?.textContent || "";
+      const m = metaText.match(/\[TOOL:([^\]]+)\]/);
+      const internal = m ? m[1] : "";
+      const candidate = atModeCandidates.find(c => String(c.internal) === String(internal));
+      if (candidate) insertAtCandidate(candidate);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeAtMode();
+      $input.focus();
+    }
+  });
+
+  // Keep list in sync with textarea edits
+  $input.addEventListener("keyup", () => {
+    // Ignore when user is interacting with filter input (we already update list there).
+    if (document.activeElement === $atModeFilterInput) return;
+    updateAtModeFromTextarea();
+  });
+}
 
 // ───── Session ID ─────
 
@@ -833,6 +1168,10 @@ function handleMessage(raw) {
       handleConfirmRequest(msg);
       break;
 
+    case "ask_options_request":
+      handleAskOptionsRequest(msg);
+      break;
+
     case "plan_created":
     case "plan_updated": {
       const planId = msg.planId || "";
@@ -960,6 +1299,194 @@ if ($hitlDenyBtn) {
   $hitlDenyBtn.addEventListener("click", () => {
     if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, false);
   });
+}
+
+// ───── AI candidate option chooser (multi-round) ─────
+let askOptionsOverlay = null;
+let $askOptionsTitle = null;
+let $askOptionsPrompt = null;
+let $askOptionsStepIndicator = null;
+let $askOptionsQuestion = null;
+let $askOptionsOptions = null;
+let $askOptionsConfirmBtn = null;
+
+let askOptionsRequestId = null;
+let askOptionsSteps = []; // {stepId, question, options:[{optionId,label}]}
+let askOptionsSelections = {}; // { [stepId]: optionId }
+let askOptionsCurrentStepIndex = 0;
+let askOptionsCurrentSelectedOptionId = null;
+let askOptionsBound = false;
+
+function openAskOptionsOverlay() {
+  if (!askOptionsOverlay) return;
+  askOptionsOverlay.style.display = "flex";
+  askOptionsOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeAskOptionsOverlay() {
+  if (!askOptionsOverlay) return;
+  askOptionsOverlay.style.display = "none";
+  askOptionsOverlay.setAttribute("aria-hidden", "true");
+  askOptionsRequestId = null;
+  askOptionsSteps = [];
+  askOptionsSelections = {};
+  askOptionsCurrentStepIndex = 0;
+  askOptionsCurrentSelectedOptionId = null;
+}
+
+function setAskOptionsActiveOption(optionId) {
+  askOptionsCurrentSelectedOptionId = optionId || null;
+  if (!$askOptionsOptions) return;
+  const items = $askOptionsOptions.querySelectorAll(".ask-option-item");
+  items.forEach(el => {
+    const active = el.dataset.optionId === String(optionId || "");
+    el.classList.toggle("ask-option-item--active", active);
+  });
+}
+
+function renderAskOptionsStep(idx) {
+  if (!$askOptionsTitle || !$askOptionsPrompt || !$askOptionsStepIndicator || !$askOptionsQuestion || !$askOptionsOptions) return;
+  if (!Array.isArray(askOptionsSteps) || askOptionsSteps.length === 0) return;
+  const step = askOptionsSteps[idx];
+  if (!step) return;
+
+  $askOptionsTitle.textContent = String(step.title || "") || String(askOptionsTitleCache || "请选择一个选项");
+  $askOptionsPrompt.textContent = String(askOptionsPromptCache || "");
+  $askOptionsStepIndicator.textContent = `步骤 ${idx + 1}/${askOptionsSteps.length}`;
+  $askOptionsQuestion.textContent = String(step.question || "");
+
+  const selectedOptionId = askOptionsSelections[step.stepId] || null;
+  askOptionsCurrentSelectedOptionId = selectedOptionId;
+
+  const options = Array.isArray(step.options) ? step.options : [];
+  $askOptionsOptions.innerHTML = options.map(o => {
+    const optionId = String(o.optionId ?? "");
+    const label = String(o.label ?? "");
+    const active = selectedOptionId && String(selectedOptionId) === optionId ? "ask-option-item--active" : "";
+    return `
+      <div class="ask-option-item ${active}" data-option-id="${escapeHtml(optionId)}" role="option" aria-selected="${active ? "true" : "false"}">
+        <div class="ask-option-label">${escapeHtml(label || optionId)}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+let askOptionsTitleCache = "";
+let askOptionsPromptCache = "";
+
+function ensureAskOptionsBound() {
+  if (askOptionsBound) return;
+  askOptionsBound = true;
+
+  if ($askOptionsOptions) {
+    $askOptionsOptions.addEventListener("click", (e) => {
+      const item = e.target?.closest?.(".ask-option-item");
+      if (!item) return;
+      setAskOptionsActiveOption(item.dataset.optionId);
+    });
+  }
+
+  if ($askOptionsConfirmBtn) {
+    $askOptionsConfirmBtn.addEventListener("click", () => {
+      if (!askOptionsRequestId) return;
+      if (!Array.isArray(askOptionsSteps) || askOptionsSteps.length === 0) {
+        sendAskOptionsResponse();
+        return;
+      }
+
+      const step = askOptionsSteps[askOptionsCurrentStepIndex];
+      if (!step) return;
+
+      if (!askOptionsCurrentSelectedOptionId) {
+        alert("请先选择一个选项后再点击确定。");
+        return;
+      }
+
+      askOptionsSelections[step.stepId] = String(askOptionsCurrentSelectedOptionId);
+
+      if (askOptionsCurrentStepIndex < askOptionsSteps.length - 1) {
+        askOptionsCurrentStepIndex++;
+        renderAskOptionsStep(askOptionsCurrentStepIndex);
+      } else {
+        sendAskOptionsResponse();
+      }
+    });
+  }
+}
+
+function sendAskOptionsResponse() {
+  const id = askOptionsRequestId;
+  const selections = askOptionsSelections || {};
+  if (!id) return;
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addBotMessage("连接已断开，无法提交候选项选择。", true);
+    closeAskOptionsOverlay();
+    setInputEnabled(true);
+    return;
+  }
+
+  const payload = JSON.stringify({
+    type: "ask_options_response",
+    id: id,
+    selections: selections
+  });
+  ws.send(payload);
+  debugLog("WS Send", "type=ask_options_response id=" + id + " steps=" + Object.keys(selections).length, "send");
+
+  closeAskOptionsOverlay();
+  setInputEnabled(true);
+}
+
+function handleAskOptionsRequest(msg) {
+  try {
+    if (!msg) return;
+    const id = msg.id || msg.requestId;
+    if (!id) {
+      debugLog("ask_options", "missing request id", "err");
+      return;
+    }
+
+    const steps = Array.isArray(msg.steps) ? msg.steps : [];
+    if (!steps.length) {
+      askOptionsRequestId = id;
+      askOptionsSteps = [];
+      askOptionsSelections = {};
+      askOptionsCurrentStepIndex = 0;
+      askOptionsCurrentSelectedOptionId = null;
+      closeAskOptionsOverlay();
+      sendAskOptionsResponse();
+      return;
+    }
+
+    askOptionsOverlay = document.getElementById("ask-options-overlay");
+    $askOptionsTitle = document.getElementById("ask-options-title");
+    $askOptionsPrompt = document.getElementById("ask-options-prompt");
+    $askOptionsStepIndicator = document.getElementById("ask-options-step-indicator");
+    $askOptionsQuestion = document.getElementById("ask-options-question");
+    $askOptionsOptions = document.getElementById("ask-options-options");
+    $askOptionsConfirmBtn = document.getElementById("ask-options-confirm-btn");
+
+    askOptionsRequestId = id;
+    askOptionsSteps = steps;
+    askOptionsSelections = {};
+    askOptionsCurrentStepIndex = 0;
+    askOptionsCurrentSelectedOptionId = null;
+    askOptionsTitleCache = String(msg.title || "");
+    askOptionsPromptCache = String(msg.prompt || "");
+
+    ensureAskOptionsBound();
+    openAskOptionsOverlay();
+    setInputEnabled(false);
+    if ($stopBtn) $stopBtn.style.display = "none";
+    renderAskOptionsStep(0);
+  } catch (e) {
+    console.error("ask_options_request UI error:", e);
+    debugLog("ask_options", "ui error " + (e && e.message ? e.message : String(e)), "err");
+    addBotMessage("弹出候选项选择失败，请重试。", true);
+    closeAskOptionsOverlay();
+    setInputEnabled(true);
+  }
 }
 
 async function executeInActiveTab(func, ...args) {
@@ -1607,6 +2134,35 @@ if ($stopBtn) {
 }
 
 $input.addEventListener("keydown", (e) => {
+  if (atModeOpen) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeAtMode();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setAtActiveIndex(atModeActiveIndex + 1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setAtActiveIndex(atModeActiveIndex - 1);
+      return;
+    }
+    if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+      e.preventDefault();
+      const items = $atModeListEl?.querySelectorAll(".at-mode-item");
+      const active = items ? items[atModeActiveIndex] : null;
+      if (!active) return;
+      const metaText = active.querySelector(".at-mode-item-meta")?.textContent || "";
+      const m = metaText.match(/\[TOOL:([^\]]+)\]/);
+      const internal = m ? m[1] : "";
+      const candidate = atModeCandidates.find(c => String(c.internal) === String(internal));
+      if (candidate) insertAtCandidate(candidate);
+      return;
+    }
+  }
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     handleSend();
