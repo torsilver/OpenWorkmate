@@ -541,6 +541,13 @@
 
     <!-- MCP 管理 -->
     <div id="tab-mcp" class="tab-content">
+      <div id="userScriptsSection" class="skill-card" style="margin-bottom: 20px;">
+        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">自定义页面脚本（User Scripts）</h4>
+        <p class="help-text" style="margin-bottom: 10px;">需开启「Allow User Scripts」才能在任意页面执行 AI 生成的脚本（如 run_custom_page_script）。</p>
+        <p style="font-size: 14px; margin-bottom: 8px;">状态：<span id="userScriptsStatusText">检测中…</span></p>
+        <a id="userScriptsExtensionLink" href="#" target="_blank" rel="noopener" style="font-size: 14px; color: var(--accent);">打开扩展详情页</a>
+      </div>
+
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
       <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。</p>
       <div id="cliScriptEndTabs" class="cli-script-end-tabs">

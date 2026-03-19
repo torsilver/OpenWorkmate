@@ -2,6 +2,29 @@ const API_URL = "http://localhost:8765/api/config";
 const SKILLS_API_URL = "http://localhost:8765/api/skills";
 const BUILTIN_TOOLS_URL = "http://localhost:8765/api/tools/builtin";
 
+/** User Scripts（自定义页面脚本）是否可用：需 Chrome 135+ 且在扩展详情页开启 Allow User Scripts。 */
+function isUserScriptsAvailable() {
+  try {
+    chrome.userScripts.getScripts();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 更新选项页「自定义页面脚本」区块的状态与扩展详情页链接。 */
+function updateUserScriptsSection() {
+  const statusEl = document.getElementById('userScriptsStatusText');
+  const linkEl = document.getElementById('userScriptsExtensionLink');
+  if (!statusEl) return;
+  const available = isUserScriptsAvailable();
+  statusEl.textContent = available ? '已开启' : '未开启';
+  statusEl.style.color = available ? 'var(--success)' : 'var(--danger)';
+  if (linkEl && chrome.runtime && chrome.runtime.id) {
+    linkEl.href = 'chrome://extensions?id=' + chrome.runtime.id;
+  }
+}
+
 /** 判断是否为「无法连接后端」类错误，返回可展示给用户的文案；否则返回 null。 */
 function messageForBackendUnreachable(err) {
   if (!err) return null;
@@ -69,6 +92,7 @@ els.tabs.forEach(tab => {
     }
     if (tab.dataset.target === 'tab-mcp') {
       loadBuiltinTools();
+      updateUserScriptsSection();
     }
     if (tab.dataset.target === 'tab-memory') {
       loadMemoryList();
@@ -2034,6 +2058,7 @@ function collectCliScriptPerEndPayload() {
 document.addEventListener('DOMContentLoaded', function () {
   loadConfig();
   setupPassThroughContextToggle();
+  updateUserScriptsSection();
 });
 
 // ───── MCP ─────

@@ -3,12 +3,14 @@
   "name": "Office Copilot",
   "version": "0.1.0",
   "description": "AI-powered local office automation assistant",
+  "minimum_chrome_version": "135",
   "permissions": [
     "sidePanel",
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "userScripts"
   ],
   "host_permissions": [
     "<all_urls>"

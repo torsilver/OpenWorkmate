@@ -1201,6 +1201,40 @@ function handleMessage(raw) {
   }
 }
 
+// ───── User Scripts（自定义页面脚本）─────
+function isUserScriptsAvailable() {
+  try {
+    chrome.userScripts.getScripts();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getExtensionsPageLink() {
+  return "chrome://extensions?id=" + (chrome.runtime?.id || "");
+}
+
+/** 仅通过 userScripts.execute 在指定标签页执行用户代码，返回结果字符串或抛出。 */
+async function executeCustomPageScriptViaUserScripts(scriptCode) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error("无法获取当前活动标签页。");
+  const sentinel = "\n})();\n//__END_" + Math.random().toString(36).slice(2, 10) + "__";
+  const safeCode = scriptCode.indexOf(sentinel) >= 0 ? scriptCode.split(sentinel).join("\n") : scriptCode;
+  const wrapped =
+    "(function(){ try { var __r = (function() {\n" +
+    safeCode +
+    sentinel +
+    "\nif (__r === undefined || __r === null) return ''; if (typeof __r === 'string') return __r; return JSON.stringify(__r); } catch(e) { return '[Error] ' + (e && e.message ? e.message : String(e)); } })();";
+  const results = await chrome.userScripts.execute({ target: { tabId: tab.id }, js: [{ code: wrapped }] });
+  const first = results?.[0];
+  if (first?.error) return "[Error] " + (first.error.message || String(first.error));
+  const v = first?.result;
+  if (v === undefined || v === null) return "";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
 // ───── RPC Handling ─────
 async function handleRpcRequest(msg) {
   const { id, method, params } = msg;
@@ -1228,7 +1262,16 @@ async function handleRpcRequest(msg) {
       if (typeof scriptCode !== "string" || !scriptCode.trim()) {
         throw new Error("run_custom_page_script 需要非空的 scriptCode 参数。");
       }
-      result = await executeInActiveTab(runCustomPageScriptInPage, scriptCode.trim());
+      if (!isUserScriptsAvailable()) {
+        const link = getExtensionsPageLink();
+        sendRpcResponse(
+          id,
+          null,
+          "未开启「Allow User Scripts」，无法执行自定义页面脚本。请到扩展详情页打开「Allow User Scripts」开关：" + link
+        );
+        return;
+      }
+      result = await executeCustomPageScriptViaUserScripts(scriptCode.trim());
     } else if (method === "capture_full_page") {
       result = await captureFullPage();
     } else {
@@ -1554,23 +1597,6 @@ async function captureFullPage() {
     slices++;
   }
   return { viewportHeight, images };
-}
-
-// 在页面上下文中执行 AI 提供的代码（通过 func+args 注入）。注意：部分页面的 CSP 禁止 unsafe-eval 会导致 new Function 报错。
-function runCustomPageScriptInPage(code) {
-  try {
-    var fn = new Function(code);
-    var result = fn();
-    if (result === undefined || result === null) return "";
-    if (typeof result === "string") return result;
-    return JSON.stringify(result);
-  } catch (e) {
-    var msg = e && e.message ? e.message : String(e);
-    if (msg.indexOf("Content Security Policy") >= 0 || msg.indexOf("unsafe-eval") >= 0) {
-      return "[Error] 该页面的安全策略不允许执行动态脚本（CSP 限制）。请尝试在其他页面使用，或使用预定义脚本（如 get_visible_text、get_page_title）。";
-    }
-    return "[Error] " + msg;
-  }
 }
 
 // MCP 工具 run_page_script：预定义脚本注册表，仅执行白名单内 scriptId

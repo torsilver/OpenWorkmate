@@ -783,11 +783,14 @@ html, body {
 }
 
 .hitl-card {
+  display: flex;
+  flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
   max-width: 360px;
+  max-height: min(85vh, 600px);
   width: 100%;
 }
 
@@ -798,13 +801,18 @@ html, body {
 }
 
 .hitl-action {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   color: var(--text-secondary);
   font-size: 13px;
   margin-bottom: 16px;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .hitl-buttons {
+  flex-shrink: 0;
   display: flex;
   gap: 10px;
   justify-content: flex-end;
