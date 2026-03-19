@@ -133,6 +133,16 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
                 return $"页面脚本 «{scriptId}» 参数: {paramsStr}";
             return $"页面脚本 «{scriptId}»";
         }
+        if (functionName == "run_custom_page_script" && arguments.TryGetValue("scriptCode", out var customCodeObj))
+        {
+            var code = customCodeObj?.ToString()?.Trim() ?? "";
+            return code.Length <= 80 ? $"自定义页面脚本: {code}" : $"自定义页面脚本: {code.Substring(0, 80)}...";
+        }
+        if (functionName == "current_run_custom_document_script" && arguments.TryGetValue("scriptCode", out var docCodeObj))
+        {
+            var code = docCodeObj?.ToString()?.Trim() ?? "";
+            return code.Length <= 80 ? $"自定义文档脚本: {code}" : $"自定义文档脚本: {code.Substring(0, 80)}...";
+        }
         return null;
     }
 

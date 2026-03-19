@@ -1223,6 +1223,12 @@ async function handleRpcRequest(msg) {
         try { paramsObj = paramsObj ? JSON.parse(paramsObj) : {}; } catch (_) { paramsObj = {}; }
       }
       result = await executeInActiveTab(PAGE_SCRIPTS[scriptId], paramsObj || {});
+    } else if (method === "run_custom_page_script") {
+      const scriptCode = params?.scriptCode;
+      if (typeof scriptCode !== "string" || !scriptCode.trim()) {
+        throw new Error("run_custom_page_script 需要非空的 scriptCode 参数。");
+      }
+      result = await executeInActiveTab(runCustomPageScriptInPage, scriptCode.trim());
     } else if (method === "capture_full_page") {
       result = await captureFullPage();
     } else {
@@ -1548,6 +1554,23 @@ async function captureFullPage() {
     slices++;
   }
   return { viewportHeight, images };
+}
+
+// 在页面上下文中执行 AI 提供的代码（通过 func+args 注入）。注意：部分页面的 CSP 禁止 unsafe-eval 会导致 new Function 报错。
+function runCustomPageScriptInPage(code) {
+  try {
+    var fn = new Function(code);
+    var result = fn();
+    if (result === undefined || result === null) return "";
+    if (typeof result === "string") return result;
+    return JSON.stringify(result);
+  } catch (e) {
+    var msg = e && e.message ? e.message : String(e);
+    if (msg.indexOf("Content Security Policy") >= 0 || msg.indexOf("unsafe-eval") >= 0) {
+      return "[Error] 该页面的安全策略不允许执行动态脚本（CSP 限制）。请尝试在其他页面使用，或使用预定义脚本（如 get_visible_text、get_page_title）。";
+    }
+    return "[Error] " + msg;
+  }
 }
 
 // MCP 工具 run_page_script：预定义脚本注册表，仅执行白名单内 scriptId

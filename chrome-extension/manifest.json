@@ -10,9 +10,6 @@
     "scripting",
     "tabs"
   ],
-  "optional_permissions": [
-    "microphone"
-  ],
   "host_permissions": [
     "<all_urls>"
   ],

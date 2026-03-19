@@ -20,6 +20,10 @@
     <Content Remove="Skills\**\*" />
     <Content Include="Skills\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- 预构建工具索引 DB：存在则随输出/发布一并复制，便于发布包自带内置工具向量 -->
+  <ItemGroup Condition="Exists('Data\rag.db')">
+    <Content Include="Data\rag.db" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="Data\rag.db" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="backend.Tests" />

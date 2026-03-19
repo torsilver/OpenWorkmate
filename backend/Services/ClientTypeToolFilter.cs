@@ -43,7 +43,8 @@ public static class ClientTypeToolFilter
 
     private static bool IsCurrentDocumentScriptFunction(string functionName)
     {
-        return PluginComparer.Equals(functionName, "current_run_document_script");
+        return PluginComparer.Equals(functionName, "current_run_document_script")
+            || PluginComparer.Equals(functionName, "current_run_custom_document_script");
     }
 
     private static bool IsCurrentDocumentPptFunction(string functionName)

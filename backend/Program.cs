@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +21,7 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+    var buildToolIndex = args.Contains("--build-tool-index");
     builder.Host.UseSerilog();
 
     builder.Services.AddHttpClient();
@@ -32,6 +34,13 @@ try
     builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());
     builder.Services.AddSingleton<IVectorStore>(sp =>
     {
+        if (buildToolIndex)
+        {
+            var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "Data");
+            Directory.CreateDirectory(dataDir);
+            var dbPath = Path.Combine(dataDir, "rag.db");
+            return new SqliteVectorStore("Data Source=" + dbPath);
+        }
         var config = sp.GetRequiredService<ConfigService>().Current;
         var t = (config.RagStorageType ?? "").Trim();
         var path = (config.RagStoragePath ?? "").Trim();
@@ -108,6 +117,58 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddHostedService<ScheduledTaskRunnerService>();
 
     var app = builder.Build();
+
+    if (buildToolIndex)
+    {
+        var configPath = Path.Combine(Directory.GetCurrentDirectory(), "tool-index-build.json");
+        if (!File.Exists(configPath))
+            configPath = Path.Combine(AppContext.BaseDirectory, "tool-index-build.json");
+        if (!File.Exists(configPath))
+        {
+            Log.Error("tool-index-build.json not found in current directory or app base. Create it with endpoint, apiKey, modelId (all required).");
+            Environment.Exit(1);
+        }
+        string endpoint = "", apiKey = "", modelId = "";
+        try
+        {
+            var json = await File.ReadAllTextAsync(configPath);
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            endpoint = root.TryGetProperty("endpoint", out var ep) ? ep.GetString() ?? "" : "";
+            apiKey = root.TryGetProperty("apiKey", out var ak) ? ak.GetString() ?? "" : "";
+            modelId = root.TryGetProperty("modelId", out var mi) ? mi.GetString() ?? "" : "";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to read tool-index-build.json");
+            Environment.Exit(1);
+        }
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(modelId))
+        {
+            Log.Error("tool-index-build.json must contain endpoint, apiKey, modelId (all required).");
+            Environment.Exit(1);
+        }
+        var configService = app.Services.GetRequiredService<ConfigService>();
+        var skillService = app.Services.GetRequiredService<SkillService>();
+        configService.SetMinimalConfigForToolIndexBuild(endpoint.Trim(), apiKey.Trim(), modelId.Trim());
+        skillService.SetReturnEmptySkillsForToolIndexBuild(true);
+        using (var scope = app.Services.CreateScope())
+        {
+            var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
+            await chat.RebuildKernelAsync();
+            var kernelAccessor = scope.ServiceProvider.GetRequiredService<IKernelAccessor>();
+            var kernel = kernelAccessor.Kernel;
+            if (kernel == null)
+            {
+                Log.Error("Kernel is null after RebuildKernelAsync.");
+                Environment.Exit(1);
+            }
+            var toolIndex = scope.ServiceProvider.GetRequiredService<IToolIndexService>();
+            await toolIndex.BuildIndexAsync(kernel, ToolIndexBuildMode.BuiltinOnly);
+        }
+        Log.Information("Tool index (builtin) built successfully. DB: {Path}", Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db"));
+        Environment.Exit(0);
+    }
 
 app.UseWebSockets(new WebSocketOptions
 {
@@ -318,6 +379,142 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Test Embedding exception");
+        return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
+    }
+});
+
+app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger) =>
+{
+    TestSttRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<TestSttRequest>(ctx.Request.Body, JsonCtx.Default.TestSttRequest);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test STT: request body deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、modelId、apiKey（小写驼峰）。" }, statusCode: 400);
+    }
+    if (body == null || string.IsNullOrWhiteSpace(body.Endpoint))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint。" }, statusCode: 400);
+    }
+    var endpoint = body.Endpoint.Trim().TrimEnd('/');
+    var modelId = string.IsNullOrWhiteSpace(body.ModelId) ? "whisper-1" : body.ModelId.Trim();
+    var apiKey = body.ApiKey?.Trim() ?? "";
+    if (string.IsNullOrEmpty(apiKey))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少 apiKey。" }, statusCode: 400);
+    }
+    var path = endpoint.Contains("/v1", StringComparison.OrdinalIgnoreCase) ? "/audio/transcriptions" : "/v1/audio/transcriptions";
+    var url = endpoint + path;
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+    {
+        return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+    }
+    // 最小 WAV 头（44 字节）+ 无采样，用于测试连接
+    var minimalWav = new byte[]
+    {
+        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20,
+        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x22, 0x56, 0x00, 0x00, 0x44, 0xac, 0x00, 0x00,
+        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00
+    };
+    using var content = new MultipartFormDataContent();
+    var fileContent = new StreamContent(new MemoryStream(minimalWav));
+    fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+    content.Add(fileContent, "file", "test.wav");
+    content.Add(new StringContent(modelId), "model");
+    using var http = new HttpClient();
+    http.Timeout = TimeSpan.FromSeconds(15);
+    var request = new HttpRequestMessage(HttpMethod.Post, uri);
+    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+    request.Content = content;
+    try
+    {
+        var response = await http.SendAsync(request);
+        var responseText = await response.Content.ReadAsStringAsync();
+        if (response.IsSuccessStatusCode)
+            return Results.Ok(new { ok = true, message = "连接成功，STT（Whisper 兼容）接口可用。" });
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
+        logger.LogWarning("Test STT failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test STT exception");
+        return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
+    }
+});
+
+app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> logger) =>
+{
+    TestOcrRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<TestOcrRequest>(ctx.Request.Body, JsonCtx.Default.TestOcrRequest);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test OCR: request body deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、apiKey（小写驼峰）。" }, statusCode: 400);
+    }
+    if (body == null || string.IsNullOrWhiteSpace(body.Endpoint))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint。" }, statusCode: 400);
+    }
+    var endpoint = body.Endpoint.Trim().TrimEnd('/');
+    var apiKey = body.ApiKey?.Trim() ?? "";
+    if (string.IsNullOrEmpty(apiKey))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少 apiKey。" }, statusCode: 400);
+    }
+    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+    {
+        return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+    }
+    // 最小 1x1 PNG，用于测试连接
+    var minimalPng = new byte[]
+    {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xff, 0xff, 0x3f,
+        0x00, 0x05, 0xfe, 0x02, 0xfe, 0xdc, 0xcc, 0x59, 0xe7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+        0x44, 0xae, 0x42, 0x60, 0x82
+    };
+    using var content = new MultipartFormDataContent();
+    var fileContent = new StreamContent(new MemoryStream(minimalPng));
+    fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+    content.Add(fileContent, "file", "test.png");
+    using var http = new HttpClient();
+    http.Timeout = TimeSpan.FromSeconds(15);
+    var request = new HttpRequestMessage(HttpMethod.Post, uri);
+    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+    request.Content = content;
+    try
+    {
+        var response = await http.SendAsync(request);
+        var responseText = await response.Content.ReadAsStringAsync();
+        if (response.IsSuccessStatusCode)
+            return Results.Ok(new { ok = true, message = "连接成功，OCR 接口可用。" });
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
+        logger.LogWarning("Test OCR failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test OCR exception");
         return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
     }
 });

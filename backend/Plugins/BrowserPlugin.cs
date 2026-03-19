@@ -150,6 +150,50 @@ public class BrowserPlugin
         }
     }
 
+    /// <summary>在当前标签页执行 AI 提供的 JavaScript 代码并返回结果；仅用于无预定义脚本时的兜底。需用户 HITL 确认后执行。</summary>
+    [KernelFunction("run_custom_page_script")]
+    [Description("运行位置：用户当前浏览器标签页的页面上下文中。执行 AI 提供的一段 JavaScript 代码字符串并返回执行结果（如 return document.title）。仅当没有合适预定义脚本时使用此兜底能力。执行前需用户确认。")]
+    public async Task<string> RunCustomPageScriptAsync(
+        [Description("要在页面上下文中执行的 JavaScript 代码，应包含 return 语句返回结果（如 return JSON.stringify([...document.images].map(i => i.src));）。")] string scriptCode,
+        KernelArguments? arguments = null)
+    {
+        const int MaxScriptCodeLength = 32 * 1024;
+        if (string.IsNullOrWhiteSpace(scriptCode))
+            return "失败：scriptCode 不能为空。";
+        if (scriptCode.Length > MaxScriptCodeLength)
+            return $"失败：脚本长度超过限制（最大 {MaxScriptCodeLength} 字符）。";
+
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[Browser] run_custom_page_script sessionId={SessionId} codeLen={Len}", sessionId ?? "(null)", scriptCode.Length);
+        if (string.IsNullOrEmpty(sessionId))
+            return "Error: Session ID is missing (no active chat context).";
+
+        if (_sessionManager.Get(sessionId) == null)
+            return "Error: WebSocket connection not found for this session.";
+
+        var reqId = _rpcManager.RegisterRequest(out var responseTask);
+        var msg = new WsMessage
+        {
+            Type = "rpc_request",
+            Id = reqId,
+            Method = "run_custom_page_script",
+            Params = JsonSerializer.SerializeToElement(new { scriptCode })
+        };
+        var payload = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+        await _sessionManager.SendToAsync(sessionId, payload);
+
+        try
+        {
+            var result = await responseTask;
+            var resultStr = (result?.ValueKind == System.Text.Json.JsonValueKind.String ? result.Value.GetString() : null) ?? result?.ToString();
+            return string.IsNullOrEmpty(resultStr) ? "成功：自定义页面脚本已执行。" : resultStr;
+        }
+        catch (Exception ex)
+        {
+            return "失败：执行自定义页面脚本时出错（" + ex.Message + "）。";
+        }
+    }
+
     [KernelFunction("capture_full_page")]
     [Description("Captures a full-page screenshot of the user's current browser tab. Returns a screenshot reference (e.g. screenshot:xxx) that must be passed to save_screenshot_to_downloads to save to the Downloads folder. Do not pass image data to the AI.")]
     public async Task<string> CaptureFullPageAsync(KernelArguments? arguments = null)

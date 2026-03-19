@@ -87,6 +87,66 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostConfigTestStt_MissingEndpoint_Returns400_WithMessage()
+    {
+        var body = new { apiKey = "sk-x", modelId = "whisper-1" };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-stt", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(root.TryGetProperty("message", out var msg));
+        Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
+    }
+
+    [Fact]
+    public async Task PostConfigTestStt_EmptyBody_Returns400_WithMessage()
+    {
+        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-stt", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(root.TryGetProperty("message", out var msg));
+    }
+
+    [Fact]
+    public async Task PostConfigTestOcr_MissingEndpoint_Returns400_WithMessage()
+    {
+        var body = new { apiKey = "key" };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-ocr", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(root.TryGetProperty("message", out var msg));
+        Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
+    }
+
+    [Fact]
+    public async Task PostConfigTestOcr_EmptyBody_Returns400_WithMessage()
+    {
+        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-ocr", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(root.TryGetProperty("message", out var msg));
+    }
+
+    [Fact]
     public async Task GetToolsBuiltin_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/tools/builtin");

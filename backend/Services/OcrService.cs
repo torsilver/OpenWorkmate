@@ -20,13 +20,12 @@ public sealed class OcrService : IOcrService
 
     public async Task<string> ExtractTextFromImageAsync(Stream imageStream, string? contentType, CancellationToken ct = default)
     {
-        var cfg = _configService.Current;
-        var ocr = cfg.Ocr;
-        if (ocr == null || string.IsNullOrWhiteSpace(ocr.Endpoint) || string.IsNullOrWhiteSpace(ocr.ApiKey))
+        var entry = _configService.GetActiveOcrEntry();
+        if (entry == null || string.IsNullOrWhiteSpace(entry.Endpoint) || string.IsNullOrWhiteSpace(entry.ApiKey))
             throw new InvalidOperationException("未配置 OCR。请在「模型设置」中配置 OCR 模型的接口地址与 API Key。");
 
-        var endpoint = ocr.Endpoint.Trim().TrimEnd('/');
-        var apiKey = ocr.ApiKey.Trim();
+        var endpoint = entry.Endpoint.Trim().TrimEnd('/');
+        var apiKey = entry.ApiKey.Trim();
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
             throw new InvalidOperationException("OCR 接口地址无效。");
 

@@ -429,6 +429,20 @@
         }
         result = await DOCUMENT_SCRIPTS[scriptId](scriptParams);
         if (typeof result !== "string") result = JSON.stringify(result);
+      } else if (method === "run_custom_document_script") {
+        const scriptCode = params.scriptCode;
+        if (typeof scriptCode !== "string" || !scriptCode.trim()) {
+          throw new Error("run_custom_document_script 需要非空的 scriptCode 参数。");
+        }
+        try {
+          const fn = new Function(scriptCode.trim());
+          const out = fn();
+          result = (out && typeof out.then === "function") ? await out : out;
+          if (result !== undefined && result !== null && typeof result !== "string") result = JSON.stringify(result);
+          if (result === undefined || result === null) result = "";
+        } catch (e) {
+          throw new Error(e && e.message ? e.message : String(e));
+        }
       } else if (OFFICE_CLIENT_TYPE === "office-word") {
         if (method === "word_insert_text") {
           const text = params.text != null ? String(params.text) : "";

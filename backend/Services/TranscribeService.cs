@@ -19,27 +19,13 @@ public sealed class TranscribeService : ITranscribeService
 
     public async Task<string> TranscribeAsync(Stream audioStream, string? contentType, string? language, CancellationToken ct = default)
     {
-        var cfg = _configService.Current;
-        string endpoint, apiKey;
-        if (cfg.SpeechToText != null && !string.IsNullOrWhiteSpace(cfg.SpeechToText.Endpoint) && !string.IsNullOrWhiteSpace(cfg.SpeechToText.ApiKey))
-        {
-            endpoint = cfg.SpeechToText.Endpoint.Trim().TrimEnd('/');
-            apiKey = cfg.SpeechToText.ApiKey.Trim();
-        }
-        else if (cfg.AiModels != null && cfg.AiModels.Count > 0)
-        {
-            var active = cfg.AiModels.FirstOrDefault(m => string.Equals(m.Id, cfg.ActiveModelId, StringComparison.OrdinalIgnoreCase)) ?? cfg.AiModels[0];
-            endpoint = (active.Endpoint ?? "").Trim().TrimEnd('/');
-            apiKey = (active.ApiKey ?? "").Trim();
-        }
-        else
-        {
-            endpoint = (cfg.AI?.Endpoint ?? "https://api.openai.com/v1").Trim().TrimEnd('/');
-            apiKey = (cfg.AI?.ApiKey ?? "").Trim();
-        }
+        var entry = _configService.GetActiveSttEntry();
+        if (entry == null || string.IsNullOrWhiteSpace(entry.Endpoint) || string.IsNullOrWhiteSpace(entry.ApiKey))
+            throw new InvalidOperationException("未配置语音转文字。请在设置中配置 STT 模型（Whisper 兼容接口）的 endpoint 与 API Key。");
 
-        if (string.IsNullOrEmpty(apiKey))
-            throw new InvalidOperationException("未配置语音转文字 API 密钥。请在设置中配置「语音转文字」或使用支持 Whisper 的 AI 模型 endpoint/apiKey。");
+        var endpoint = entry.Endpoint.Trim().TrimEnd('/');
+        var apiKey = entry.ApiKey.Trim();
+        var modelId = string.IsNullOrWhiteSpace(entry.ModelId) ? "whisper-1" : entry.ModelId.Trim();
 
         var url = endpoint.Contains("/v1", StringComparison.OrdinalIgnoreCase) ? endpoint + "/audio/transcriptions" : endpoint + "/v1/audio/transcriptions";
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
@@ -48,14 +34,14 @@ public sealed class TranscribeService : ITranscribeService
         string? lang = null;
         if (!string.IsNullOrWhiteSpace(language))
             lang = language.Trim();
-        else if (cfg.SpeechToText?.Language != null && !string.IsNullOrWhiteSpace(cfg.SpeechToText.Language))
-            lang = cfg.SpeechToText.Language.Trim();
+        else if (entry.Language != null && !string.IsNullOrWhiteSpace(entry.Language))
+            lang = entry.Language.Trim();
 
         using var content = new MultipartFormDataContent();
         var fileContent = new StreamContent(audioStream);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType ?? "audio/mpeg");
         content.Add(fileContent, "file", "audio");
-        content.Add(new StringContent("whisper-1"), "model");
+        content.Add(new StringContent(modelId), "model");
         if (!string.IsNullOrEmpty(lang))
             content.Add(new StringContent(lang), "language");
 

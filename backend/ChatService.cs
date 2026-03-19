@@ -31,13 +31,23 @@ public sealed class ChatService : IDisposable
     private readonly McpClientManager _mcpManager;
     private readonly IToolSelector _toolSelector;
     private readonly IToolIndexService _toolIndex;
+    private readonly IVectorStore _vectorStore;
     private readonly IServiceProvider _serviceProvider;
     private readonly IKernelAccessor _kernelAccessor;
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly object _kernelLock = new();
+    private string? _lastUserToolsSignature;
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
+    private static string GetUserToolIndexSignaturePath()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var dir = Path.Combine(appData, "OfficeCopilot");
+        try { Directory.CreateDirectory(dir); } catch { /* ignore */ }
+        return Path.Combine(dir, "tool-index-user-signature.txt");
+    }
+
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -46,6 +56,7 @@ public sealed class ChatService : IDisposable
         _mcpManager = mcpManager;
         _toolSelector = toolSelector;
         _toolIndex = toolIndex;
+        _vectorStore = vectorStore;
         _serviceProvider = serviceProvider;
         _kernelAccessor = kernelAccessor;
         _embeddingProvider = embeddingProvider;
@@ -137,7 +148,8 @@ public sealed class ChatService : IDisposable
         };
     }
 
-    private async Task RebuildKernelAsync()
+    /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）；可由 Program 在 --build-tool-index 模式下调用。</summary>
+    public async Task RebuildKernelAsync()
     {
         var config = _configService.Current;
         var entries = GetModelEntriesToRegister();
@@ -423,15 +435,46 @@ public sealed class ChatService : IDisposable
         _logger.LogInformation("Kernel rebuilt. ActiveModel: {ActiveId}, Plugins: {Count}, UserSkills: {SkillCount}, MCPs: {McpCount}",
             _activeModelId, _kernel.Plugins.Count, skillCount, mcpCount);
 
-        _ = BuildToolIndexInBackgroundAsync(newKernel);
+        var skillIds = string.Join("|", userSkills.Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.PromptTemplate)).Select(s => s.Id ?? "").OrderBy(id => id, StringComparer.Ordinal));
+        var mcpList = _configService.Current.McpServers?.Where(m => m.Enabled).Select(m => m.Name ?? "").OrderBy(n => n, StringComparer.Ordinal).ToList() ?? new List<string>();
+        var mcpNames = string.Join("|", mcpList);
+        var signature = skillIds + ";" + mcpNames;
+        var persistedSignature = ReadPersistedUserToolIndexSignature();
+        if (!string.Equals(persistedSignature, signature, StringComparison.Ordinal))
+        {
+            _lastUserToolsSignature = signature;
+            _ = BuildToolIndexInBackgroundAsync(newKernel, signature);
+        }
     }
 
-    /// <summary>后台静默维护工具向量索引，不阻塞请求；Kernel/插件变更后由 RebuildKernelAsync 触发。</summary>
-    private async Task BuildToolIndexInBackgroundAsync(Kernel kernel)
+    private static string? ReadPersistedUserToolIndexSignature()
     {
         try
         {
-            await _toolIndex.BuildIndexAsync(kernel).ConfigureAwait(false);
+            var path = GetUserToolIndexSignaturePath();
+            if (File.Exists(path))
+                return File.ReadAllText(path).Trim();
+        }
+        catch { /* ignore */ }
+        return null;
+    }
+
+    private static void WritePersistedUserToolIndexSignature(string signature)
+    {
+        try
+        {
+            File.WriteAllText(GetUserToolIndexSignaturePath(), signature ?? "");
+        }
+        catch { /* ignore */ }
+    }
+
+    /// <summary>后台静默维护用户工具向量索引，不阻塞请求；仅在 Skill 或 MCP 变更时执行，只写 tool_source=user。成功后写入 signature 以便下次启动不重复 embedding。</summary>
+    private async Task BuildToolIndexInBackgroundAsync(Kernel kernel, string signature)
+    {
+        try
+        {
+            await _toolIndex.BuildIndexAsync(kernel, ToolIndexBuildMode.UserOnly).ConfigureAwait(false);
+            WritePersistedUserToolIndexSignature(signature);
         }
         catch (Exception ex)
         {
@@ -734,7 +777,11 @@ public sealed class ChatService : IDisposable
                 try
                 {
                     var recentHistory = state.History.Count > 1 ? state.History : null;
-                    if (_embeddingProvider.IsConfigured)
+                    var embeddingConfigured = _embeddingProvider.IsConfigured;
+                    var storePersistent = _vectorStore.IsPersistent;
+                    _logger.LogInformation("[{SessionId}] ToolSelection: entry clientType={ClientType} embeddingConfigured={Emb} storePersistent={Store}.",
+                        sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
+                    if (embeddingConfigured && storePersistent)
                     {
                         var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
                         var (vectorResults, goodEnough) = await _toolIndex.SearchToolsAsync(
@@ -743,14 +790,22 @@ public sealed class ChatService : IDisposable
                             minScore: ctxConfig.ToolSearchMinScore,
                             minCount: ctxConfig.ToolSearchMinCount,
                             ct).ConfigureAwait(false);
+                        _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
+                            sessionId, vectorResults.Count, goodEnough);
                         if (goodEnough && vectorResults.Count > 0)
                         {
                             selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorResults, aiConfig ?? new AiConfig(), kernel);
+                            _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
                             _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
                         }
                     }
                     if (selectedPairs == null)
+                    {
+                        _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
                         selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                        _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
+                            sessionId, selectedPairs?.Count ?? -1);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -762,12 +817,18 @@ public sealed class ChatService : IDisposable
             if (isPlanMode)
             {
                 selectedFunctions = GetPlanOnlyFunctions(kernel);
+                _logger.LogInformation("[{SessionId}] ToolSelection: plan mode, planOnlyFunctionCount={Count}.", sessionId, selectedFunctions?.Count ?? 0);
             }
             else
             {
                 selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType);
                 if (planResult != null && selectedFunctions != null)
                     selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
+                var pairsCount = selectedPairs?.Count ?? 0;
+                var funcsCount = selectedFunctions?.Count ?? 0;
+                var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
+                _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
+                    sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
             }
 
             OpenAIPromptExecutionSettings execSettings;
@@ -777,6 +838,8 @@ public sealed class ChatService : IDisposable
                 {
                     FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(selectedFunctions)
                 };
+                _logger.LogInformation("[{SessionId}] ToolSelection: final restricted to {FunctionCount} functions clientType={ClientType}.",
+                    sessionId, selectedFunctions.Count, clientType ?? "(null)");
                 _logger.LogDebug("[{SessionId}] Tool selection: clientType={ClientType} {FunctionCount} functions",
                     sessionId, clientType ?? "(null)", selectedFunctions.Count);
             }
@@ -786,6 +849,7 @@ public sealed class ChatService : IDisposable
                 {
                     FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
                 };
+                _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
             }
 
             var fullResponse = new System.Text.StringBuilder();
@@ -1182,20 +1246,23 @@ public sealed class ChatService : IDisposable
         // 保底工具追加（顺序：Office/WPS 文档脚本 → Chrome 页面脚本 → 所有端 CLI）
         if (result != null)
         {
-            // 1. Office/WPS 端：始终追加 current_run_document_script，不参与阶段一子类选择
-            if (IsOfficeOrWpsClient(clientType) &&
-                kernel.Plugins.TryGetFunction("CurrentDocument", "current_run_document_script", out var docScript) && docScript != null &&
-                !result.Any(f => string.Equals(f.Name, "current_run_document_script", StringComparison.OrdinalIgnoreCase)))
+            // 1. Office/WPS 端：始终追加 current_run_document_script 与 current_run_custom_document_script，不参与阶段一子类选择
+            if (IsOfficeOrWpsClient(clientType))
             {
-                result = new List<KernelFunction>(result) { docScript };
+                if (kernel.Plugins.TryGetFunction("CurrentDocument", "current_run_document_script", out var docScript) && docScript != null &&
+                    !result.Any(f => string.Equals(f.Name, "current_run_document_script", StringComparison.OrdinalIgnoreCase)))
+                    result = new List<KernelFunction>(result) { docScript };
+                if (kernel.Plugins.TryGetFunction("CurrentDocument", "current_run_custom_document_script", out var customDocScript) && customDocScript != null &&
+                    !result.Any(f => string.Equals(f.Name, "current_run_custom_document_script", StringComparison.OrdinalIgnoreCase)))
+                    result = new List<KernelFunction>(result) { customDocScript };
             }
 
-            // 2. Chrome 端：始终追加 run_page_script 作为页面内脚本兜底
+            // 2. Chrome 端：兜底仅追加 run_custom_page_script（AI 生成脚本并执行）；run_page_script 为预定义脚本工具，不参与兜底
             if (IsChromeClient(clientType) &&
-                kernel.Plugins.TryGetFunction("Browser", "run_page_script", out var pageScript) && pageScript != null &&
-                !result.Any(f => string.Equals(f.Name, "run_page_script", StringComparison.OrdinalIgnoreCase)))
+                kernel.Plugins.TryGetFunction("Browser", "run_custom_page_script", out var customPageScript) && customPageScript != null &&
+                !result.Any(f => string.Equals(f.Name, "run_custom_page_script", StringComparison.OrdinalIgnoreCase)))
             {
-                result = new List<KernelFunction>(result) { pageScript };
+                result = new List<KernelFunction>(result) { customPageScript };
             }
 
             // 3. 所有端：始终追加 run_command 作为本机命令兜底

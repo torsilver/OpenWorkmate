@@ -398,8 +398,18 @@
       <details id="sttModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="sttModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">语音转文字 (STT) 模型</summary>
         <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字（如 Whisper API）。与对话大模型独立配置；不配置时将回退使用当前 AI 模型的 endpoint/apiKey。</p>
-          <div id="sttModelEditor" class="skill-card">
+          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字（Whisper 兼容接口）。与对话大模型独立配置；不配置则语音转文字不可用。点击「设为当前」即使用该模型。</p>
+          <div id="sttModelsList" class="ai-models-list"></div>
+          <button type="button" id="addSttModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 STT 模型</button>
+          <div id="sttModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
+            <div class="skill-header">
+              <span id="sttModelEditorTitle" class="skill-title">添加 STT 模型</span>
+              <button type="button" id="closeSttEditorBtn" class="btn-secondary">取消</button>
+            </div>
+            <div class="form-group">
+              <label for="sttEditorDisplayName">展示名称</label>
+              <input type="text" id="sttEditorDisplayName" placeholder="例如: OpenAI Whisper">
+            </div>
             <div class="form-group">
               <label for="sttEditorEndpoint">接口地址 (Endpoint)</label>
               <input type="text" id="sttEditorEndpoint" placeholder="https://api.openai.com/v1">
@@ -409,12 +419,17 @@
               <input type="password" id="sttEditorApiKey" placeholder="sk-...">
             </div>
             <div class="form-group">
+              <label for="sttEditorModelId">模型 ID（默认 whisper-1）</label>
+              <input type="text" id="sttEditorModelId" placeholder="whisper-1">
+            </div>
+            <div class="form-group">
               <label for="sttEditorLanguage">语言代码（可选，如 zh、en；留空自动检测）</label>
               <input type="text" id="sttEditorLanguage" placeholder="留空则自动检测">
             </div>
             <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-              <button type="button" id="saveSttModelBtn" class="btn-primary">保存</button>
-              <span class="help-text" style="margin-left: 8px;">修改后点击保存，与其它配置一起写入后端。</span>
+              <button type="button" id="testSttBtn" class="btn-secondary">测试连接</button>
+              <button type="button" id="saveSttModelBtn" class="btn-primary">完成</button>
+              <span id="testSttStatus" class="help-text" style="margin-left: 8px;"></span>
             </div>
           </div>
         </div>
@@ -423,8 +438,18 @@
       <details id="ocrModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="ocrModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">OCR 模型</summary>
         <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具从图片提取文字（内置 MCP_OCR）。与对话大模型独立配置；不配置则 MCP_OCR 工具不可用。</p>
-          <div id="ocrModelEditor" class="skill-card">
+          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具从图片提取文字（内置 MCP_OCR）。与对话大模型独立配置；不配置则 MCP_OCR 工具不可用。点击「设为当前」即使用该模型。</p>
+          <div id="ocrModelsList" class="ai-models-list"></div>
+          <button type="button" id="addOcrModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 OCR 模型</button>
+          <div id="ocrModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
+            <div class="skill-header">
+              <span id="ocrModelEditorTitle" class="skill-title">添加 OCR 模型</span>
+              <button type="button" id="closeOcrEditorBtn" class="btn-secondary">取消</button>
+            </div>
+            <div class="form-group">
+              <label for="ocrEditorDisplayName">展示名称</label>
+              <input type="text" id="ocrEditorDisplayName" placeholder="例如: Azure Document Intelligence">
+            </div>
             <div class="form-group">
               <label for="ocrEditorEndpoint">接口地址 (Endpoint)</label>
               <input type="text" id="ocrEditorEndpoint" placeholder="如 Azure Document Intelligence 或兼容接口 URL">
@@ -438,8 +463,9 @@
               <input type="text" id="ocrEditorLanguage" placeholder="可选">
             </div>
             <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-              <button type="button" id="saveOcrModelBtn" class="btn-primary">保存</button>
-              <span class="help-text" style="margin-left: 8px;">修改后点击保存，与其它配置一起写入后端。</span>
+              <button type="button" id="testOcrBtn" class="btn-secondary">测试连接</button>
+              <button type="button" id="saveOcrModelBtn" class="btn-primary">完成</button>
+              <span id="testOcrStatus" class="help-text" style="margin-left: 8px;"></span>
             </div>
           </div>
         </div>

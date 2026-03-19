@@ -7,6 +7,8 @@ public sealed class InMemoryVectorStore : IVectorStore
 {
     private readonly ConcurrentDictionary<string, StoredItem> _items = new();
 
+    public bool IsPersistent => false;
+
     private sealed class StoredItem
     {
         public string Id { get; set; } = "";
@@ -16,9 +18,10 @@ public sealed class InMemoryVectorStore : IVectorStore
         public string? Collection { get; set; }
         public DateTime CreatedAt { get; set; }
         public IReadOnlyDictionary<string, string>? Metadata { get; set; }
+        public string? ToolSource { get; set; }
     }
 
-    public Task UpsertAsync(string id, string text, float[] vector, string? sessionId, IReadOnlyDictionary<string, string>? metadata, string? collection = null, CancellationToken ct = default)
+    public Task UpsertAsync(string id, string text, float[] vector, string? sessionId, IReadOnlyDictionary<string, string>? metadata, string? collection = null, string? toolSource = null, CancellationToken ct = default)
     {
         var createdAt = _items.TryGetValue(id, out var existing) ? existing.CreatedAt : DateTime.UtcNow;
         _items[id] = new StoredItem
@@ -29,9 +32,18 @@ public sealed class InMemoryVectorStore : IVectorStore
             SessionId = sessionId,
             Collection = collection,
             CreatedAt = createdAt,
-            Metadata = metadata != null ? new Dictionary<string, string>(metadata) : null
+            Metadata = metadata != null ? new Dictionary<string, string>(metadata) : null,
+            ToolSource = toolSource
         };
         return Task.CompletedTask;
+    }
+
+    public Task<int> DeleteByToolSourceAsync(string collectionPrefixPattern, string toolSource, CancellationToken ct = default)
+    {
+        var toRemove = _items.Where(kv => kv.Value.Collection != null && kv.Value.Collection.StartsWith(collectionPrefixPattern, StringComparison.Ordinal) && string.Equals(kv.Value.ToolSource, toolSource, StringComparison.Ordinal)).Select(kv => kv.Key).ToList();
+        foreach (var id in toRemove)
+            _items.TryRemove(id, out _);
+        return Task.FromResult(toRemove.Count);
     }
 
     public Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchAsync(float[] queryVector, int topK, string? sessionIdFilter, string? collectionFilter = null, CancellationToken ct = default)

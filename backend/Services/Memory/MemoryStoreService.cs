@@ -26,7 +26,7 @@ public sealed class MemoryStoreService : IMemoryStoreService
         var meta = metadata != null ? new Dictionary<string, string>(metadata) : new Dictionary<string, string>();
         if (!string.IsNullOrEmpty(agentName))
             meta["agentName"] = agentName.Trim();
-        await _store.UpsertAsync(key, text, vector, effectiveSessionId, meta.Count > 0 ? meta : null, "memory", ct).ConfigureAwait(false);
+        await _store.UpsertAsync(key, text, vector, effectiveSessionId, meta.Count > 0 ? meta : null, "memory", null, ct).ConfigureAwait(false);
         return key;
     }
 
@@ -61,7 +61,7 @@ public sealed class MemoryStoreService : IMemoryStoreService
         if (vector == null || vector.Length == 0)
             throw new InvalidOperationException("Failed to generate embedding.");
         var coll = "kb:" + (knowledgeBaseId ?? "").Trim();
-        await _store.UpsertAsync(chunkId, text, vector, null, metadata, coll, ct).ConfigureAwait(false);
+        await _store.UpsertAsync(chunkId, text, vector, null, metadata, coll, null, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchSharedAsync(string query, int topK, CancellationToken ct = default)

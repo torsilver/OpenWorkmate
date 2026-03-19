@@ -409,6 +409,32 @@
       return;
     }
 
+    if (method === "run_custom_document_script") {
+      var scriptCode = params.scriptCode;
+      if (typeof scriptCode !== "string" || !scriptCode.trim()) {
+        sendRes(null, "run_custom_document_script 需要非空的 scriptCode 参数。");
+        return;
+      }
+      try {
+        var fn = new Function(scriptCode.trim());
+        var out = fn();
+        if (out && typeof out.then === "function") {
+          out.then(function (r) {
+            if (r !== undefined && r !== null && typeof r !== "string") r = JSON.stringify(r);
+            sendRes(r === undefined || r === null ? "" : r, null);
+          }).catch(function (err) {
+            sendRes(null, err && err.message ? err.message : String(err));
+          });
+        } else {
+          if (out !== undefined && out !== null && typeof out !== "string") out = JSON.stringify(out);
+          sendRes(out === undefined || out === null ? "" : out, null);
+        }
+      } catch (err) {
+        sendRes(null, err && err.message ? err.message : String(err));
+      }
+      return;
+    }
+
     if (!window.wps) {
       sendRes(null, "WPS API 不可用，请确保在 WPS 加载项环境中运行。");
       return;

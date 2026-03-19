@@ -524,6 +524,32 @@ export function useCopilot() {
       return
     }
 
+    if (method === 'run_custom_document_script') {
+      const scriptCode = params.scriptCode
+      if (typeof scriptCode !== 'string' || !scriptCode.trim()) {
+        sendRes(null, 'run_custom_document_script 需要非空的 scriptCode 参数。')
+        return
+      }
+      try {
+        const fn = new Function(scriptCode.trim())
+        const out = fn()
+        if (out && typeof out.then === 'function') {
+          out
+            .then((r) => {
+              const result = r !== undefined && r !== null && typeof r !== 'string' ? JSON.stringify(r) : (r === undefined || r === null ? '' : r)
+              sendRes(result, null)
+            })
+            .catch((err) => sendRes(null, err && err.message ? err.message : String(err)))
+        } else {
+          const result = out !== undefined && out !== null && typeof out !== 'string' ? JSON.stringify(out) : (out === undefined || out === null ? '' : out)
+          sendRes(result, null)
+        }
+      } catch (err) {
+        sendRes(null, err && err.message ? err.message : String(err))
+      }
+      return
+    }
+
     if (!window.wps) {
       sendRes(null, 'WPS API 不可用，请确保在 WPS 加载项环境中运行。')
       return

@@ -312,4 +312,23 @@ public sealed class CurrentDocumentPlugin
         _logger.LogInformation("[CurrentDocument] current_run_document_script sessionId={SessionId} scriptId={ScriptId}", sessionId ?? "(null)", scriptId);
         return SendRpcAsync(sessionId!, "run_document_script", new { scriptId, scriptParams }, cancellationToken);
     }
+
+    /// <summary>在当前 Office/WPS 文档环境中执行 AI 提供的脚本代码并返回结果；用作兜底。需用户 HITL 确认后执行。</summary>
+    [KernelFunction("current_run_custom_document_script")]
+    [Description("运行位置：当前打开的 Office/WPS 文档环境中。执行 AI 提供的一段脚本代码并返回结果。仅当没有合适预定义脚本时使用此兜底能力。仅 Office/WPS 任务窗格连接时可用。执行前需用户确认。")]
+    public Task<string> CurrentRunCustomDocumentScriptAsync(
+        [Description("要在文档上下文中执行的 JavaScript 代码，应包含 return 语句返回结果。")] string scriptCode,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        const int MaxScriptCodeLength = 32 * 1024;
+        if (string.IsNullOrWhiteSpace(scriptCode))
+            return Task.FromResult("失败：scriptCode 不能为空。");
+        if (scriptCode.Length > MaxScriptCodeLength)
+            return Task.FromResult($"失败：脚本长度超过限制（最大 {MaxScriptCodeLength} 字符）。");
+
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_run_custom_document_script sessionId={SessionId} codeLen={Len}", sessionId ?? "(null)", scriptCode.Length);
+        return SendRpcAsync(sessionId!, "run_custom_document_script", new { scriptCode = scriptCode.Trim() }, cancellationToken);
+    }
 }

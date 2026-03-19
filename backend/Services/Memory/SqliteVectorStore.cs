@@ -10,6 +10,8 @@ public sealed class SqliteVectorStore : IVectorStore
     private readonly object _initLock = new();
     private bool _initialized;
 
+    public bool IsPersistent => true;
+
     public SqliteVectorStore(string connectionString)
     {
         _connectionString = connectionString ?? "Data Source=:memory:";
@@ -33,12 +35,21 @@ public sealed class SqliteVectorStore : IVectorStore
                         session_id TEXT,
                         collection TEXT,
                         created_at INTEGER NOT NULL,
-                        metadata TEXT
+                        metadata TEXT,
+                        tool_source TEXT
                     );
                     CREATE INDEX IF NOT EXISTS idx_vectors_session ON vectors(session_id);
                     CREATE INDEX IF NOT EXISTS idx_vectors_collection ON vectors(collection);
                     """;
                 cmd.ExecuteNonQuery();
+                // 兼容已有库：若无 tool_source 列则添加
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('vectors') WHERE name='tool_source'";
+                var hasToolSource = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                if (!hasToolSource)
+                {
+                    cmd.CommandText = "ALTER TABLE vectors ADD COLUMN tool_source TEXT";
+                    cmd.ExecuteNonQuery();
+                }
             }
             _initialized = true;
         }
@@ -59,7 +70,7 @@ public sealed class SqliteVectorStore : IVectorStore
         return v;
     }
 
-    public Task UpsertAsync(string id, string text, float[] vector, string? sessionId, IReadOnlyDictionary<string, string>? metadata, string? collection = null, CancellationToken ct = default)
+    public Task UpsertAsync(string id, string text, float[] vector, string? sessionId, IReadOnlyDictionary<string, string>? metadata, string? collection = null, string? toolSource = null, CancellationToken ct = default)
     {
         EnsureSchema();
         var createdAt = DateTime.UtcNow;
@@ -77,10 +88,10 @@ public sealed class SqliteVectorStore : IVectorStore
                 createdAtUnix = Convert.ToInt64(existing);
         }
         cmd.CommandText = """
-            INSERT INTO vectors (id, text, vector_blob, session_id, collection, created_at, metadata)
-            VALUES ($id, $text, $blob, $sid, $coll, $at, $meta)
+            INSERT INTO vectors (id, text, vector_blob, session_id, collection, created_at, metadata, tool_source)
+            VALUES ($id, $text, $blob, $sid, $coll, $at, $meta, $ts)
             ON CONFLICT(id) DO UPDATE SET
-                text = $text, vector_blob = $blob, session_id = $sid, collection = $coll, metadata = $meta
+                text = $text, vector_blob = $blob, session_id = $sid, collection = $coll, metadata = $meta, tool_source = $ts
             """;
         cmd.Parameters.AddWithValue("$id", id);
         cmd.Parameters.AddWithValue("$text", text);
@@ -89,6 +100,7 @@ public sealed class SqliteVectorStore : IVectorStore
         cmd.Parameters.AddWithValue("$coll", (object?)collection ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$at", createdAtUnix);
         cmd.Parameters.AddWithValue("$meta", metadata != null ? System.Text.Json.JsonSerializer.Serialize(metadata) : (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$ts", (object?)toolSource ?? DBNull.Value);
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }
@@ -158,6 +170,19 @@ public sealed class SqliteVectorStore : IVectorStore
             meta = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json);
         }
         return (text, sessionId, at, meta);
+    }
+
+    public async Task<int> DeleteByToolSourceAsync(string collectionPrefixPattern, string toolSource, CancellationToken ct = default)
+    {
+        EnsureSchema();
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM vectors WHERE collection LIKE $patt AND tool_source = $ts";
+        cmd.Parameters.AddWithValue("$patt", collectionPrefixPattern + "%");
+        cmd.Parameters.AddWithValue("$ts", toolSource);
+        var n = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        return n;
     }
 
     public async Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, string? agentNameFilter = null, CancellationToken ct = default)

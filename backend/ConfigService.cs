@@ -153,6 +153,55 @@ public class TestEmbeddingRequest
     public string? ModelId { get; set; }
 }
 
+/// <summary>STT 模型列表中的单条；Whisper 兼容接口。</summary>
+public class SttModelEntry
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = "";
+    [JsonPropertyName("endpoint")]
+    public string Endpoint { get; set; } = "";
+    [JsonPropertyName("apiKey")]
+    public string ApiKey { get; set; } = "";
+    [JsonPropertyName("modelId")]
+    public string ModelId { get; set; } = "whisper-1";
+    [JsonPropertyName("language")]
+    public string? Language { get; set; }
+    [JsonPropertyName("chunkMinutes")]
+    public int ChunkMinutes { get; set; } = 2;
+}
+
+/// <summary>OCR 模型列表中的单条。</summary>
+public class OcrModelEntry
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = "";
+    [JsonPropertyName("endpoint")]
+    public string Endpoint { get; set; } = "";
+    [JsonPropertyName("apiKey")]
+    public string ApiKey { get; set; } = "";
+    [JsonPropertyName("language")]
+    public string? Language { get; set; }
+}
+
+/// <summary>测试 STT 连接时前端传入的请求体。</summary>
+public class TestSttRequest
+{
+    public string? Endpoint { get; set; }
+    public string? ApiKey { get; set; }
+    public string? ModelId { get; set; }
+}
+
+/// <summary>测试 OCR 连接时前端传入的请求体。</summary>
+public class TestOcrRequest
+{
+    public string? Endpoint { get; set; }
+    public string? ApiKey { get; set; }
+}
+
 /// <summary>语音转文字（STT）配置，用于 POST /api/transcribe；不配置时使用当前 AI 模型的 endpoint/apiKey 调用 Whisper。</summary>
 public class SpeechToTextConfig
 {
@@ -218,10 +267,18 @@ public class AppConfig
     public string? AccurateDataDirectory { get; set; }
     /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
     public string? ScheduledTasksDirectory { get; set; }
-    /// <summary>语音转文字（Whisper）配置；为空时使用当前 AI 模型的 endpoint/apiKey。</summary>
+    /// <summary>语音转文字（Whisper）配置；为空时使用当前 AI 模型的 endpoint/apiKey。已废弃，请使用 SttModels + ActiveSttModelId。</summary>
     public SpeechToTextConfig? SpeechToText { get; set; }
-    /// <summary>OCR 配置；为空时 MCP_OCR 工具不可用。</summary>
+    /// <summary>OCR 配置；为空时 MCP_OCR 工具不可用。已废弃，请使用 OcrModels + ActiveOcrModelId。</summary>
     public OcrConfig? Ocr { get; set; }
+    /// <summary>STT 模型列表；支持多条，Whisper 兼容接口。</summary>
+    public List<SttModelEntry> SttModels { get; set; } = new();
+    /// <summary>当前使用的 STT 模型 Id，对应 SttModels 中某条的 Id。</summary>
+    public string? ActiveSttModelId { get; set; }
+    /// <summary>OCR 模型列表；支持多条。</summary>
+    public List<OcrModelEntry> OcrModels { get; set; } = new();
+    /// <summary>当前使用的 OCR 模型 Id，对应 OcrModels 中某条的 Id。</summary>
+    public string? ActiveOcrModelId { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>
@@ -279,6 +336,26 @@ public sealed class ConfigService
     }
 
     public AppConfig Current => _currentConfig;
+
+    /// <summary>仅用于 --build-tool-index 模式：将当前配置替换为最小配置（仅 Embedding + 一条占位 AI 模型，无 MCP），以便只构建内置插件 Kernel 并写工具索引。</summary>
+    public void SetMinimalConfigForToolIndexBuild(string endpoint, string apiKey, string modelId)
+    {
+        var embId = "tool-index-build";
+        lock (_lock)
+        {
+            _currentConfig = new AppConfig
+            {
+                EmbeddingModels = new List<EmbeddingModelEntry>
+                {
+                    new() { Id = embId, DisplayName = "Tool index build", Source = "Remote", Endpoint = endpoint, ApiKey = apiKey, ModelId = modelId }
+                },
+                ActiveEmbeddingModelId = embId,
+                McpServers = new List<McpServerConfig>(),
+                AiModels = new List<AiModelEntry> { new() { Id = "default", Enabled = true, Endpoint = endpoint, ApiKey = apiKey, ModelId = modelId } },
+                ActiveModelId = "default"
+            };
+        }
+    }
 
     /// <summary>获取指定端的 CLI/脚本运行模式，未配置时默认 UseAllowList。</summary>
     public string GetCliRunModeForEnd(string endKey)
@@ -345,6 +422,44 @@ public sealed class ConfigService
         return _currentConfig.EmbeddingModels.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>获取当前选中的 STT 配置条目；未配置或未选中时若存在旧版 SpeechToText 则返回其等效条目，否则返回 null。</summary>
+    public SttModelEntry? GetActiveSttEntry()
+    {
+        if (_currentConfig.SttModels != null && _currentConfig.SttModels.Count > 0)
+        {
+            var id = (_currentConfig.ActiveSttModelId ?? "").Trim();
+            if (!string.IsNullOrEmpty(id))
+            {
+                var entry = _currentConfig.SttModels.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+                if (entry != null) return entry;
+            }
+            return _currentConfig.SttModels[0];
+        }
+        var legacy = _currentConfig.SpeechToText;
+        if (legacy != null && !string.IsNullOrWhiteSpace(legacy.Endpoint) && !string.IsNullOrWhiteSpace(legacy.ApiKey))
+            return new SttModelEntry { Id = "legacy", DisplayName = "语音转文字", Endpoint = legacy.Endpoint, ApiKey = legacy.ApiKey, ModelId = "whisper-1", Language = legacy.Language, ChunkMinutes = legacy.ChunkMinutes };
+        return null;
+    }
+
+    /// <summary>获取当前选中的 OCR 配置条目；未配置或未选中时若存在旧版 Ocr 则返回其等效条目，否则返回 null。</summary>
+    public OcrModelEntry? GetActiveOcrEntry()
+    {
+        if (_currentConfig.OcrModels != null && _currentConfig.OcrModels.Count > 0)
+        {
+            var id = (_currentConfig.ActiveOcrModelId ?? "").Trim();
+            if (!string.IsNullOrEmpty(id))
+            {
+                var entry = _currentConfig.OcrModels.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+                if (entry != null) return entry;
+            }
+            return _currentConfig.OcrModels[0];
+        }
+        var legacy = _currentConfig.Ocr;
+        if (legacy != null && !string.IsNullOrWhiteSpace(legacy.Endpoint) && !string.IsNullOrWhiteSpace(legacy.ApiKey))
+            return new OcrModelEntry { Id = "legacy", DisplayName = "OCR", Endpoint = legacy.Endpoint, ApiKey = legacy.ApiKey, Language = legacy.Language };
+        return null;
+    }
+
     private AppConfig LoadConfig(IConfiguration defaultConfig)
     {
         if (File.Exists(_configPath))
@@ -365,6 +480,8 @@ public sealed class ConfigService
                     config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
                     config.AiModels ??= new List<AiModelEntry>();
                     config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
+                    config.SttModels ??= new List<SttModelEntry>();
+                    config.OcrModels ??= new List<OcrModelEntry>();
                     config.Session ??= new SessionConfig();
                     config.ContextWindow ??= new ContextWindowConfig();
                     config.PlanConfirmation ??= new PlanConfirmationConfig();
@@ -379,6 +496,8 @@ public sealed class ConfigService
                     }
                     ApplyActivePresetIfSet(config);
                     MigrateLegacyAiIfNeeded(config);
+                    MigrateLegacySttIfNeeded(config);
+                    MigrateLegacyOcrIfNeeded(config);
                     return config;
                 }
                 _logger.LogWarning("User config file was empty or invalid, using default.");
@@ -414,7 +533,11 @@ public sealed class ConfigService
         appConfig.SkillEnv ??= new Dictionary<string, string>();
         appConfig.AiModels ??= new List<AiModelEntry>();
         appConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
+        appConfig.SttModels ??= new List<SttModelEntry>();
+        appConfig.OcrModels ??= new List<OcrModelEntry>();
         MigrateLegacyAiIfNeeded(appConfig);
+        MigrateLegacySttIfNeeded(appConfig);
+        MigrateLegacyOcrIfNeeded(appConfig);
         return appConfig;
     }
 
@@ -660,6 +783,50 @@ public sealed class ConfigService
         _logger.LogInformation("Migrated legacy AI config to AiModels (Id=default).");
     }
 
+    /// <summary>若 SttModels 为空且 SpeechToText 有值，则迁移为一条并设 ActiveSttModelId。</summary>
+    private void MigrateLegacySttIfNeeded(AppConfig config)
+    {
+        if (config.SttModels == null || config.SttModels.Count > 0) return;
+        var stt = config.SpeechToText;
+        if (stt == null || string.IsNullOrWhiteSpace(stt.Endpoint) || string.IsNullOrWhiteSpace(stt.ApiKey)) return;
+        config.SttModels = new List<SttModelEntry>
+        {
+            new SttModelEntry
+            {
+                Id = "stt-1",
+                DisplayName = "语音转文字",
+                Endpoint = stt.Endpoint.Trim(),
+                ApiKey = stt.ApiKey.Trim(),
+                ModelId = "whisper-1",
+                Language = stt.Language,
+                ChunkMinutes = stt.ChunkMinutes
+            }
+        };
+        config.ActiveSttModelId = "stt-1";
+        _logger.LogInformation("Migrated legacy SpeechToText to SttModels (Id=stt-1).");
+    }
+
+    /// <summary>若 OcrModels 为空且 Ocr 有值，则迁移为一条并设 ActiveOcrModelId。</summary>
+    private void MigrateLegacyOcrIfNeeded(AppConfig config)
+    {
+        if (config.OcrModels == null || config.OcrModels.Count > 0) return;
+        var ocr = config.Ocr;
+        if (ocr == null || string.IsNullOrWhiteSpace(ocr.Endpoint) || string.IsNullOrWhiteSpace(ocr.ApiKey)) return;
+        config.OcrModels = new List<OcrModelEntry>
+        {
+            new OcrModelEntry
+            {
+                Id = "ocr-1",
+                DisplayName = "OCR",
+                Endpoint = ocr.Endpoint.Trim(),
+                ApiKey = ocr.ApiKey.Trim(),
+                Language = ocr.Language
+            }
+        };
+        config.ActiveOcrModelId = "ocr-1";
+        _logger.LogInformation("Migrated legacy Ocr to OcrModels (Id=ocr-1).");
+    }
+
     public void SaveConfig(AppConfig newConfig)
     {
         lock (_lock)
@@ -681,13 +848,27 @@ public sealed class ConfigService
                 else
                     PreserveEmbeddingEndpointsFromCurrent(newConfig.EmbeddingModels, _currentConfig.EmbeddingModels);
                 if (newConfig.ActiveEmbeddingModelId == null) newConfig.ActiveEmbeddingModelId = _currentConfig.ActiveEmbeddingModelId;
-                if (newConfig.SpeechToText == null) newConfig.SpeechToText = _currentConfig.SpeechToText;
-                if (newConfig.Ocr == null) newConfig.Ocr = _currentConfig.Ocr;
+                if (newConfig.SttModels == null) newConfig.SttModels = _currentConfig.SttModels ?? new List<SttModelEntry>();
+                if (newConfig.ActiveSttModelId == null) newConfig.ActiveSttModelId = _currentConfig.ActiveSttModelId;
+                if (newConfig.OcrModels == null) newConfig.OcrModels = _currentConfig.OcrModels ?? new List<OcrModelEntry>();
+                if (newConfig.ActiveOcrModelId == null) newConfig.ActiveOcrModelId = _currentConfig.ActiveOcrModelId;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {
                     _logger.LogWarning("ActiveEmbeddingModelId \"{Id}\" not found in EmbeddingModels list, clearing.", activeEmbId);
                     newConfig.ActiveEmbeddingModelId = null;
+                }
+                var activeSttId = (newConfig.ActiveSttModelId ?? "").Trim();
+                if (!string.IsNullOrEmpty(activeSttId) && (newConfig.SttModels == null || newConfig.SttModels.All(e => (e.Id ?? "").Trim() != activeSttId)))
+                {
+                    _logger.LogWarning("ActiveSttModelId \"{Id}\" not found in SttModels list, clearing.", activeSttId);
+                    newConfig.ActiveSttModelId = null;
+                }
+                var activeOcrId = (newConfig.ActiveOcrModelId ?? "").Trim();
+                if (!string.IsNullOrEmpty(activeOcrId) && (newConfig.OcrModels == null || newConfig.OcrModels.All(e => (e.Id ?? "").Trim() != activeOcrId)))
+                {
+                    _logger.LogWarning("ActiveOcrModelId \"{Id}\" not found in OcrModels list, clearing.", activeOcrId);
+                    newConfig.ActiveOcrModelId = null;
                 }
                 // 与 JsonCtx 一致使用 CamelCase，否则下次反序列化时字段对不上
                 var options = new JsonSerializerOptions

@@ -21,6 +21,8 @@ appsettings.Development.json
 # 后端含密钥的配置不提交，使用 appsettings.Example.json 作模板
 backend/appsettings.json
 release/backend/appsettings.json
+# 内置工具索引构建用 embedding 配置（含 apiKey），勿提交
+backend/tool-index-build.json
 
 # ---- Sales DB MCP 本地配置 ----
 sales-db-mcp/appsettings.json

@@ -195,74 +195,294 @@ function updateEmbeddingModelSummary() {
   }
 }
 
-function getSttConfig() {
-  var raw = fullConfig && (fullConfig.speechToText || fullConfig.SpeechToText);
-  return raw && typeof raw === 'object' ? raw : null;
+function getSttModels() {
+  var raw = fullConfig && (fullConfig.sttModels || fullConfig.SttModels);
+  return Array.isArray(raw) ? raw : [];
 }
 
-function fillSttForm(data) {
-  var stt = (data && (data.speechToText || data.SpeechToText)) || getSttConfig();
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var keyEl = document.getElementById('sttEditorApiKey');
-  var langEl = document.getElementById('sttEditorLanguage');
-  if (endEl) endEl.value = (stt && (stt.endpoint || stt.Endpoint)) ? (stt.endpoint || stt.Endpoint) : '';
-  if (keyEl) keyEl.value = (stt && (stt.apiKey || stt.ApiKey)) ? (stt.apiKey || stt.ApiKey) : '';
-  if (langEl) langEl.value = (stt && (stt.language || stt.Language)) ? (stt.language || stt.Language) : '';
+function renderSttModelsList() {
+  var listEl = document.getElementById('sttModelsList');
+  if (!listEl) return;
+  var list = getSttModels();
+  var activeId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
+  listEl.innerHTML = list.map(function (m) {
+    var id = m.id || m.Id || '';
+    var name = m.displayName || m.DisplayName || id || '(未命名)';
+    var modelId = m.modelId || m.ModelId || 'whisper-1';
+    var isActive = (activeId && id && activeId === id);
+    var setActiveBtn = isActive ? '' : ('<button type="button" class="btn-secondary set-active-stt-btn" data-id="' + escapeAttr(id) + '">设为当前</button>');
+    return '<div class="mcp-server-row" data-stt-id="' + escapeAttr(id) + '">' +
+      '<div class="mcp-icon">S</div>' +
+      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml(modelId || '') + '</div></div>' +
+      '<div class="mcp-actions">' + setActiveBtn +
+      '<button type="button" class="btn-secondary test-stt-btn" data-id="' + escapeAttr(id) + '">测试</button>' +
+      '<button type="button" class="btn-secondary edit-stt-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
+      '<button type="button" class="btn-danger delete-stt-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
+      '<span class="stt-row-test-status help-text" style="margin-left:8px;"></span></div></div>';
+  }).join('');
+  listEl.querySelectorAll('.set-active-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { setActiveSttModel(btn.dataset.id); }); });
+  listEl.querySelectorAll('.test-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { testSttById(btn.dataset.id); }); });
+  listEl.querySelectorAll('.edit-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { openSttEditor(btn.dataset.id); }); });
+  listEl.querySelectorAll('.delete-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { deleteSttModel(btn.dataset.id); }); });
   updateSttModelSummary();
-}
-
-function collectSttForm() {
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var keyEl = document.getElementById('sttEditorApiKey');
-  var langEl = document.getElementById('sttEditorLanguage');
-  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
-  var apiKey = (keyEl && keyEl.value && keyEl.value.trim()) || '';
-  var language = (langEl && langEl.value && langEl.value.trim()) || null;
-  if (!endpoint && !apiKey && !language) return null;
-  return { endpoint: endpoint || 'https://api.openai.com/v1', apiKey: apiKey, language: language || undefined };
 }
 
 function updateSttModelSummary() {
   var sum = document.getElementById('sttModelSummary');
   if (!sum) return;
-  var stt = getSttConfig();
-  var hasConfig = stt && (stt.endpoint || stt.Endpoint) && (stt.apiKey || stt.ApiKey);
-  sum.textContent = hasConfig ? '语音转文字 (STT) 模型（已配置）' : '语音转文字 (STT) 模型';
+  var list = getSttModels();
+  var activeId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
+  var active = list.find(function (m) { return (m.id || m.Id) === activeId; });
+  if (active) {
+    var name = active.displayName || active.DisplayName || active.modelId || active.ModelId || activeId;
+    sum.textContent = '语音转文字 (STT) 模型（当前：' + name + '）';
+  } else {
+    sum.textContent = '语音转文字 (STT) 模型';
+  }
 }
 
-function getOcrConfig() {
-  var raw = fullConfig && (fullConfig.ocr || fullConfig.Ocr);
-  return raw && typeof raw === 'object' ? raw : null;
+var editingSttId = null;
+
+function openSttEditor(id) {
+  editingSttId = id || null;
+  var titleEl = document.getElementById('sttModelEditorTitle');
+  var editorEl = document.getElementById('sttModelEditor');
+  if (titleEl) titleEl.textContent = id ? '编辑 STT 模型' : '添加 STT 模型';
+  var list = getSttModels();
+  var entry = id ? list.find(function (m) { return (m.id || m.Id) === id; }) : null;
+  var dispEl = document.getElementById('sttEditorDisplayName');
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var keyEl = document.getElementById('sttEditorApiKey');
+  var modelEl = document.getElementById('sttEditorModelId');
+  var langEl = document.getElementById('sttEditorLanguage');
+  if (dispEl) dispEl.value = entry ? (entry.displayName || entry.DisplayName || '') : '';
+  if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
+  if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
+  if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || 'whisper-1') : 'whisper-1';
+  if (langEl) langEl.value = entry ? (entry.language || entry.Language || '') : '';
+  var statusEl = document.getElementById('testSttStatus');
+  if (statusEl) statusEl.textContent = '';
+  if (editorEl) editorEl.style.display = 'block';
 }
 
-function fillOcrForm(data) {
-  var ocr = (data && (data.ocr || data.Ocr)) || getOcrConfig();
-  var endEl = document.getElementById('ocrEditorEndpoint');
-  var keyEl = document.getElementById('ocrEditorApiKey');
-  var langEl = document.getElementById('ocrEditorLanguage');
-  if (endEl) endEl.value = (ocr && (ocr.endpoint || ocr.Endpoint)) ? (ocr.endpoint || ocr.Endpoint) : '';
-  if (keyEl) keyEl.value = (ocr && (ocr.apiKey || ocr.ApiKey)) ? (ocr.apiKey || ocr.ApiKey) : '';
-  if (langEl) langEl.value = (ocr && (ocr.language || ocr.Language)) ? (ocr.language || ocr.Language) : '';
-  updateOcrModelSummary();
+function closeSttEditor() {
+  editingSttId = null;
+  var editorEl = document.getElementById('sttModelEditor');
+  if (editorEl) editorEl.style.display = 'none';
 }
 
-function collectOcrForm() {
-  var endEl = document.getElementById('ocrEditorEndpoint');
-  var keyEl = document.getElementById('ocrEditorApiKey');
-  var langEl = document.getElementById('ocrEditorLanguage');
+function saveSttFromEditor() {
+  var dispEl = document.getElementById('sttEditorDisplayName');
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var keyEl = document.getElementById('sttEditorApiKey');
+  var modelEl = document.getElementById('sttEditorModelId');
+  var langEl = document.getElementById('sttEditorLanguage');
+  var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
-  var apiKey = (keyEl && keyEl.value && keyEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || 'whisper-1';
   var language = (langEl && langEl.value && langEl.value.trim()) || null;
-  if (!endpoint && !apiKey && !language) return null;
-  return { endpoint: endpoint, apiKey: apiKey, language: language || undefined };
+  if (!endpoint) {
+    alert('请填写接口地址');
+    return;
+  }
+  if (!apiKey) {
+    alert('请填写 API Key');
+    return;
+  }
+  var list = getSttModels();
+  var id = editingSttId || ('stt-' + Date.now());
+  var entry = { id: id, displayName: displayName || modelId, endpoint: endpoint, apiKey: apiKey, modelId: modelId, language: language || undefined, chunkMinutes: 2 };
+  var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingSttId; });
+  if (idx >= 0) list[idx] = entry;
+  else list.push(entry);
+  if (!fullConfig) fullConfig = {};
+  fullConfig.sttModels = fullConfig.SttModels = list;
+  if (list.length === 1 && !(fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) {
+    fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = id;
+  }
+  closeSttEditor();
+  renderSttModelsList();
+  saveConfig();
+}
+
+function setActiveSttModel(id) {
+  if (!id || !fullConfig) return;
+  fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = id;
+  renderSttModelsList();
+  saveConfig();
+}
+
+function deleteSttModel(id) {
+  if (!id || !fullConfig) return;
+  var list = getSttModels().filter(function (m) { return (m.id || m.Id) !== id; });
+  fullConfig.sttModels = fullConfig.SttModels = list;
+  if ((fullConfig.activeSttModelId || fullConfig.ActiveSttModelId) === id) {
+    fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = list.length ? (list[0].id || list[0].Id) : '';
+  }
+  if (editingSttId === id) closeSttEditor();
+  renderSttModelsList();
+  saveConfig();
+}
+
+function testSttById(id) {
+  var list = getSttModels();
+  var entry = list.find(function (m) { return (m.id || m.Id) === id; });
+  if (!entry) return;
+  var endpoint = (entry.endpoint || entry.Endpoint || '').trim();
+  var apiKey = (entry.apiKey || entry.ApiKey || '') || '';
+  var modelId = (entry.modelId || entry.ModelId || 'whisper-1').trim();
+  var listEl = document.getElementById('sttModelsList');
+  var statusEl = null;
+  if (listEl) {
+    listEl.querySelectorAll('.mcp-server-row').forEach(function (row) {
+      if (row.getAttribute('data-stt-id') === id) statusEl = row.querySelector('.stt-row-test-status');
+    });
+  }
+  doTestSttConnection(endpoint, apiKey, modelId, statusEl || undefined);
+}
+
+function getOcrModels() {
+  var raw = fullConfig && (fullConfig.ocrModels || fullConfig.OcrModels);
+  return Array.isArray(raw) ? raw : [];
+}
+
+function renderOcrModelsList() {
+  var listEl = document.getElementById('ocrModelsList');
+  if (!listEl) return;
+  var list = getOcrModels();
+  var activeId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
+  listEl.innerHTML = list.map(function (m) {
+    var id = m.id || m.Id || '';
+    var name = m.displayName || m.DisplayName || id || '(未命名)';
+    var isActive = (activeId && id && activeId === id);
+    var setActiveBtn = isActive ? '' : ('<button type="button" class="btn-secondary set-active-ocr-btn" data-id="' + escapeAttr(id) + '">设为当前</button>');
+    return '<div class="mcp-server-row" data-ocr-id="' + escapeAttr(id) + '">' +
+      '<div class="mcp-icon">O</div>' +
+      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml((m.endpoint || m.Endpoint || '').substring(0, 50)) + '</div></div>' +
+      '<div class="mcp-actions">' + setActiveBtn +
+      '<button type="button" class="btn-secondary test-ocr-btn" data-id="' + escapeAttr(id) + '">测试</button>' +
+      '<button type="button" class="btn-secondary edit-ocr-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
+      '<button type="button" class="btn-danger delete-ocr-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
+      '<span class="ocr-row-test-status help-text" style="margin-left:8px;"></span></div></div>';
+  }).join('');
+  listEl.querySelectorAll('.set-active-ocr-btn').forEach(function (btn) { btn.addEventListener('click', function () { setActiveOcrModel(btn.dataset.id); }); });
+  listEl.querySelectorAll('.test-ocr-btn').forEach(function (btn) { btn.addEventListener('click', function () { testOcrById(btn.dataset.id); }); });
+  listEl.querySelectorAll('.edit-ocr-btn').forEach(function (btn) { btn.addEventListener('click', function () { openOcrEditor(btn.dataset.id); }); });
+  listEl.querySelectorAll('.delete-ocr-btn').forEach(function (btn) { btn.addEventListener('click', function () { deleteOcrModel(btn.dataset.id); }); });
+  updateOcrModelSummary();
 }
 
 function updateOcrModelSummary() {
   var sum = document.getElementById('ocrModelSummary');
   if (!sum) return;
-  var ocr = getOcrConfig();
-  var hasConfig = ocr && (ocr.endpoint || ocr.Endpoint) && (ocr.apiKey || ocr.ApiKey);
-  sum.textContent = hasConfig ? 'OCR 模型（已配置）' : 'OCR 模型';
+  var list = getOcrModels();
+  var activeId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
+  var active = list.find(function (m) { return (m.id || m.Id) === activeId; });
+  if (active) {
+    var name = active.displayName || active.DisplayName || activeId;
+    sum.textContent = 'OCR 模型（当前：' + name + '）';
+  } else {
+    sum.textContent = 'OCR 模型';
+  }
+}
+
+var editingOcrId = null;
+
+function openOcrEditor(id) {
+  editingOcrId = id || null;
+  var titleEl = document.getElementById('ocrModelEditorTitle');
+  var editorEl = document.getElementById('ocrModelEditor');
+  if (titleEl) titleEl.textContent = id ? '编辑 OCR 模型' : '添加 OCR 模型';
+  var list = getOcrModels();
+  var entry = id ? list.find(function (m) { return (m.id || m.Id) === id; }) : null;
+  var dispEl = document.getElementById('ocrEditorDisplayName');
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var keyEl = document.getElementById('ocrEditorApiKey');
+  var langEl = document.getElementById('ocrEditorLanguage');
+  if (dispEl) dispEl.value = entry ? (entry.displayName || entry.DisplayName || '') : '';
+  if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
+  if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
+  if (langEl) langEl.value = entry ? (entry.language || entry.Language || '') : '';
+  var statusEl = document.getElementById('testOcrStatus');
+  if (statusEl) statusEl.textContent = '';
+  if (editorEl) editorEl.style.display = 'block';
+}
+
+function closeOcrEditor() {
+  editingOcrId = null;
+  var editorEl = document.getElementById('ocrModelEditor');
+  if (editorEl) editorEl.style.display = 'none';
+}
+
+function saveOcrFromEditor() {
+  var dispEl = document.getElementById('ocrEditorDisplayName');
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var keyEl = document.getElementById('ocrEditorApiKey');
+  var langEl = document.getElementById('ocrEditorLanguage');
+  var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  var language = (langEl && langEl.value && langEl.value.trim()) || null;
+  if (!endpoint) {
+    alert('请填写接口地址');
+    return;
+  }
+  if (!apiKey) {
+    alert('请填写 API Key');
+    return;
+  }
+  var list = getOcrModels();
+  var id = editingOcrId || ('ocr-' + Date.now());
+  var entry = { id: id, displayName: displayName || id, endpoint: endpoint, apiKey: apiKey, language: language || undefined };
+  var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingOcrId; });
+  if (idx >= 0) list[idx] = entry;
+  else list.push(entry);
+  if (!fullConfig) fullConfig = {};
+  fullConfig.ocrModels = fullConfig.OcrModels = list;
+  if (list.length === 1 && !(fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) {
+    fullConfig.activeOcrModelId = fullConfig.ActiveOcrModelId = id;
+  }
+  closeOcrEditor();
+  renderOcrModelsList();
+  saveConfig();
+}
+
+function setActiveOcrModel(id) {
+  if (!id || !fullConfig) return;
+  fullConfig.activeOcrModelId = fullConfig.ActiveOcrModelId = id;
+  renderOcrModelsList();
+  saveConfig();
+}
+
+function deleteOcrModel(id) {
+  if (!id || !fullConfig) return;
+  var list = getOcrModels().filter(function (m) { return (m.id || m.Id) !== id; });
+  fullConfig.ocrModels = fullConfig.OcrModels = list;
+  if ((fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId) === id) {
+    fullConfig.activeOcrModelId = fullConfig.ActiveOcrModelId = list.length ? (list[0].id || list[0].Id) : '';
+  }
+  if (editingOcrId === id) closeOcrEditor();
+  renderOcrModelsList();
+  saveConfig();
+}
+
+function testOcrById(id) {
+  var list = getOcrModels();
+  var entry = list.find(function (m) { return (m.id || m.Id) === id; });
+  if (!entry) return;
+  var endpoint = (entry.endpoint || entry.Endpoint || '').trim();
+  var apiKey = (entry.apiKey || entry.ApiKey || '') || '';
+  var listEl = document.getElementById('ocrModelsList');
+  var statusEl = null;
+  if (listEl) {
+    listEl.querySelectorAll('.mcp-server-row').forEach(function (row) {
+      if (row.getAttribute('data-ocr-id') === id) statusEl = row.querySelector('.ocr-row-test-status');
+    });
+  }
+  doTestOcrConnection(endpoint, apiKey, statusEl || undefined);
 }
 
 var editingEmbeddingId = null;
@@ -527,8 +747,105 @@ if (document.getElementById('addEmbeddingModelBtn')) document.getElementById('ad
 if (document.getElementById('closeEmbeddingEditorBtn')) document.getElementById('closeEmbeddingEditorBtn').addEventListener('click', closeEmbeddingEditor);
 if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('saveEmbeddingModelBtn').addEventListener('click', saveEmbeddingFromEditor);
 
-if (document.getElementById('saveSttModelBtn')) document.getElementById('saveSttModelBtn').addEventListener('click', function () { saveConfig(); });
-if (document.getElementById('saveOcrModelBtn')) document.getElementById('saveOcrModelBtn').addEventListener('click', function () { saveConfig(); });
+function testSttConnection() {
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var keyEl = document.getElementById('sttEditorApiKey');
+  var modelEl = document.getElementById('sttEditorModelId');
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || 'whisper-1';
+  doTestSttConnection(endpoint, apiKey, modelId);
+}
+
+async function doTestSttConnection(endpoint, apiKey, modelId, statusEl) {
+  statusEl = statusEl || document.getElementById('testSttStatus');
+  if (!statusEl) return;
+  if (!endpoint) {
+    statusEl.textContent = '请先填写接口地址';
+    statusEl.style.color = 'var(--danger, #ef4444)';
+    return;
+  }
+  if (!apiKey) {
+    statusEl.textContent = '请先填写 API Key';
+    statusEl.style.color = 'var(--danger, #ef4444)';
+    return;
+  }
+  statusEl.textContent = '测试中…';
+  statusEl.style.color = 'var(--text-secondary, #94a3b8)';
+  try {
+    var baseUrl = API_URL.replace('/api/config', '');
+    var res = await fetch(baseUrl + '/api/config/test-stt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey, modelId: modelId || 'whisper-1' })
+    });
+    var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
+    if (res.ok && data.ok) {
+      statusEl.textContent = '连接成功';
+      statusEl.style.color = 'var(--success, #22c55e)';
+    } else {
+      statusEl.textContent = data.message || '测试失败';
+      statusEl.style.color = 'var(--danger, #ef4444)';
+    }
+  } catch (e) {
+    statusEl.textContent = '请求失败: ' + (e.message || e);
+    statusEl.style.color = 'var(--danger, #ef4444)';
+  }
+}
+
+function testOcrConnection() {
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var keyEl = document.getElementById('ocrEditorApiKey');
+  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
+  var apiKey = (keyEl && keyEl.value) || '';
+  doTestOcrConnection(endpoint, apiKey);
+}
+
+async function doTestOcrConnection(endpoint, apiKey, statusEl) {
+  statusEl = statusEl || document.getElementById('testOcrStatus');
+  if (!statusEl) return;
+  if (!endpoint) {
+    statusEl.textContent = '请先填写接口地址';
+    statusEl.style.color = 'var(--danger, #ef4444)';
+    return;
+  }
+  if (!apiKey) {
+    statusEl.textContent = '请先填写 API Key';
+    statusEl.style.color = 'var(--danger, #ef4444)';
+    return;
+  }
+  statusEl.textContent = '测试中…';
+  statusEl.style.color = 'var(--text-secondary, #94a3b8)';
+  try {
+    var baseUrl = API_URL.replace('/api/config', '');
+    var res = await fetch(baseUrl + '/api/config/test-ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey })
+    });
+    var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
+    if (res.ok && data.ok) {
+      statusEl.textContent = '连接成功';
+      statusEl.style.color = 'var(--success, #22c55e)';
+    } else {
+      statusEl.textContent = data.message || '测试失败';
+      statusEl.style.color = 'var(--danger, #ef4444)';
+    }
+  } catch (e) {
+    statusEl.textContent = '请求失败: ' + (e.message || e);
+    statusEl.style.color = 'var(--danger, #ef4444)';
+  }
+}
+
+if (document.getElementById('addSttModelBtn')) document.getElementById('addSttModelBtn').addEventListener('click', function () { openSttEditor(null); });
+if (document.getElementById('closeSttEditorBtn')) document.getElementById('closeSttEditorBtn').addEventListener('click', closeSttEditor);
+if (document.getElementById('saveSttModelBtn')) document.getElementById('saveSttModelBtn').addEventListener('click', saveSttFromEditor);
+if (document.getElementById('testSttBtn')) document.getElementById('testSttBtn').addEventListener('click', testSttConnection);
+
+if (document.getElementById('addOcrModelBtn')) document.getElementById('addOcrModelBtn').addEventListener('click', function () { openOcrEditor(null); });
+if (document.getElementById('closeOcrEditorBtn')) document.getElementById('closeOcrEditorBtn').addEventListener('click', closeOcrEditor);
+if (document.getElementById('saveOcrModelBtn')) document.getElementById('saveOcrModelBtn').addEventListener('click', saveOcrFromEditor);
+if (document.getElementById('testOcrBtn')) document.getElementById('testOcrBtn').addEventListener('click', testOcrConnection);
 
 var ragStorageTypeEl = document.getElementById('ragStorageType');
 if (ragStorageTypeEl) {
@@ -797,8 +1114,8 @@ async function loadConfig() {
     await loadSkillEnvSection();
     await loadBuiltinTools();
     renderEmbeddingModelsList();
-    fillSttForm(data);
-    fillOcrForm(data);
+    renderSttModelsList();
+    renderOcrModelsList();
     var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Sqlite';
     var ragPath = data.ragStoragePath ?? data.RagStoragePath ?? '';
     var rtEl = document.getElementById('ragStorageType');
@@ -1079,8 +1396,10 @@ async function saveConfig() {
         }
       }
     }
-    var sttToSave = collectSttForm();
-    var ocrToSave = collectOcrForm();
+    var sttModelsToSave = getSttModels();
+    var activeSttModelId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
+    var ocrModelsToSave = getOcrModels();
+    var activeOcrModelId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -1094,8 +1413,10 @@ async function saveConfig() {
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       embeddingModels: embeddingModelsToSave,
       activeEmbeddingModelId: activeEmbeddingModelId || undefined,
-      speechToText: sttToSave || undefined,
-      ocr: ocrToSave || undefined,
+      sttModels: sttModelsToSave,
+      activeSttModelId: activeSttModelId || undefined,
+      ocrModels: ocrModelsToSave,
+      activeOcrModelId: activeOcrModelId || undefined,
       ragStorageType: ragType,
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
       planConfirmation: planConfirmationPayload,
@@ -1111,7 +1432,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, speechToText: payload.speechToText, ocr: payload.ocr, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';

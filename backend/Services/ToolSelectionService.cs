@@ -162,6 +162,7 @@ public sealed class ToolSelectionService : IToolSelector
         if (kernel == null)
         {
             _logger.LogDebug("ToolSelection two-stage: Kernel null, return null (use all tools).");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "Kernel null");
             return null;
         }
 
@@ -170,13 +171,18 @@ public sealed class ToolSelectionService : IToolSelector
         if (allKernelFunctions.Count == 0)
         {
             _logger.LogDebug("ToolSelection two-stage: no functions in kernel, return null.");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no functions in kernel");
             return null;
         }
 
         var subcategories = BuildSubcategoryListFromKernel(kernel, allKernelFunctions);
+        _logger.LogInformation("ToolSelection two-stage: entry pluginCount={PluginCount} totalFunctions={FuncCount} subcategoryCount={SubCount}.",
+            kernel.Plugins.Count, allKernelFunctions.Count, subcategories.Count);
+
         if (subcategories.Count == 0)
         {
             _logger.LogDebug("ToolSelection two-stage: no subcategories, return null (use all tools).");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no subcategories");
             return null;
         }
 
@@ -187,6 +193,7 @@ public sealed class ToolSelectionService : IToolSelector
         if (selectedSubcategoryIds == null)
         {
             _logger.LogDebug("ToolSelection two-stage stage1: 全部 or fallback, return null (use all tools).");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "Stage1 returned 全部 or fallback");
             return null;
         }
 
@@ -194,13 +201,17 @@ public sealed class ToolSelectionService : IToolSelector
         if (candidateFunctions.Count == 0)
         {
             _logger.LogDebug("ToolSelection two-stage: no candidate functions after stage1, return null.");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no candidate functions after stage1");
             return null;
         }
 
+        _logger.LogInformation("ToolSelection two-stage stage1: selected subcategoryIds={Ids} candidateFunctionCount={FuncCount}.",
+            string.Join(", ", selectedSubcategoryIds), candidateFunctions.Count);
         _logger.LogDebug("ToolSelection two-stage stage1 selected {SubCount} subcategories, {FuncCount} candidate functions (stage2: use these as tool set, no second LLM).", selectedSubcategoryIds.Count, candidateFunctions.Count);
 
         // 二阶段：不再单独调 LLM 选函数，直接使用选中子类下的全部函数作为本轮工具集，由主模型在对话轮中按需调用
         var merged = MergeFunctionsWithAlwaysInclude(candidateFunctions, ai, allKernelFunctions);
+        _logger.LogInformation("ToolSelection two-stage: result mergedFunctionCount={Count}.", merged.Count);
         _logger.LogDebug("ToolSelection two-stage result: {Count} functions.", merged.Count);
         return merged;
     }
