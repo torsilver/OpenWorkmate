@@ -891,6 +891,22 @@ function appendStreamWarning(text) {
 let _streamRenderPending = false;
 let _streamRenderRafId = null;
 
+/** Markdown 渲染失败时回退为纯文本，避免流式未闭合语法导致整段不显示 */
+function applyMarkedToElement(el, rawMarkdown) {
+  if (!el) return;
+  const raw = rawMarkdown != null ? String(rawMarkdown) : "";
+  if (typeof marked === "undefined") {
+    el.textContent = raw;
+    return;
+  }
+  try {
+    el.innerHTML = marked.parse(raw);
+  } catch (e) {
+    console.warn("marked.parse failed, using plain text", e);
+    el.textContent = raw;
+  }
+}
+
 function appendStreamChunk(text) {
   if (!streamingBubble) {
     beginStream();
@@ -903,11 +919,7 @@ function appendStreamChunk(text) {
     _streamRenderPending = false;
     _streamRenderRafId = null;
     if (!streamingBubble) return;
-    if (typeof marked !== 'undefined') {
-      streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-    } else {
-      streamingBubble.textContent = currentBotMessageRaw;
-    }
+    applyMarkedToElement(streamingBubble, currentBotMessageRaw);
     $messages.scrollTop = $messages.scrollHeight;
   });
 }
@@ -915,24 +927,22 @@ function appendStreamChunk(text) {
 function finalizeStream() {
   if (streamingBubble) {
     streamingBubble.classList.remove("msg--streaming");
-    if (typeof marked !== 'undefined') {
-      streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-      if (typeof mermaid !== 'undefined') {
-        const mermaidBlocks = streamingBubble.querySelectorAll('.language-mermaid');
-        mermaidBlocks.forEach((block, index) => {
-          const id = `mermaid-${Date.now()}-${index}`;
-          const code = block.textContent;
-          const container = document.createElement('div');
-          container.className = 'mermaid-container';
-          container.id = id;
-          block.parentNode.replaceWith(container);
-          mermaid.render(id + '-svg', code).then(result => {
-            container.innerHTML = result.svg;
-          }).catch(err => {
-            container.innerHTML = `<pre>Mermaid Error: ${err.message}</pre>`;
-          });
+    applyMarkedToElement(streamingBubble, currentBotMessageRaw);
+    if (typeof marked !== "undefined" && typeof mermaid !== "undefined") {
+      const mermaidBlocks = streamingBubble.querySelectorAll(".language-mermaid");
+      mermaidBlocks.forEach((block, index) => {
+        const id = `mermaid-${Date.now()}-${index}`;
+        const code = block.textContent;
+        const container = document.createElement("div");
+        container.className = "mermaid-container";
+        container.id = id;
+        block.parentNode.replaceWith(container);
+        mermaid.render(id + "-svg", code).then(result => {
+          container.innerHTML = result.svg;
+        }).catch(err => {
+          container.innerHTML = `<pre>Mermaid Error: ${err.message}</pre>`;
         });
-      }
+      });
     }
     streamingBubble = null;
     currentBotMessageRaw = "";

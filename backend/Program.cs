@@ -155,7 +155,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
         using (var scope = app.Services.CreateScope())
         {
             var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
-            await chat.RebuildKernelAsync();
+            await chat.RebuildKernelAsync(skipUserToolIndexSync: true);
             var kernelAccessor = scope.ServiceProvider.GetRequiredService<IKernelAccessor>();
             var kernel = kernelAccessor.Kernel;
             if (kernel == null)
@@ -165,8 +165,21 @@ builder.Services.AddSingleton<UserOptionsManager>();
             }
             var toolIndex = scope.ServiceProvider.GetRequiredService<IToolIndexService>();
             await toolIndex.BuildIndexAsync(kernel, ToolIndexBuildMode.BuiltinOnly);
+
+            // 阶段 2：真实用户配置 + Skills + 可连接的 MCP，用户工具索引（与运行时增量逻辑一致）
+            skillService.SetReturnEmptySkillsForToolIndexBuild(false);
+            configService.ReloadConfigFromDisk();
+            configService.ApplyToolIndexBuildEmbeddingCredentials(endpoint.Trim(), apiKey.Trim(), modelId.Trim());
+            await chat.RebuildKernelAsync(skipUserToolIndexSync: true);
+            kernel = kernelAccessor.Kernel;
+            if (kernel == null)
+            {
+                Log.Error("Kernel is null after phase-2 RebuildKernelAsync.");
+                Environment.Exit(1);
+            }
+            await toolIndex.SyncUserToolIndexAsync(kernel);
         }
-        Log.Information("Tool index (builtin) built successfully. DB: {Path}", Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db"));
+        Log.Information("Tool index built successfully (builtin + user tools). DB: {Path}", Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db"));
         Environment.Exit(0);
     }
 
@@ -383,7 +396,7 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
     }
 });
 
-app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger) =>
+app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger, IHttpClientFactory httpClientFactory) =>
 {
     TestSttRequest? body;
     try
@@ -399,6 +412,7 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
     {
         return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint。" }, statusCode: 400);
     }
+
     var endpoint = body.Endpoint.Trim().TrimEnd('/');
     var modelId = string.IsNullOrWhiteSpace(body.ModelId) ? "whisper-1" : body.ModelId.Trim();
     var apiKey = body.ApiKey?.Trim() ?? "";
@@ -406,40 +420,87 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
     {
         return Results.Json(new { ok = false, message = "请求参数无效：缺少 apiKey。" }, statusCode: 400);
     }
-    var path = endpoint.Contains("/v1", StringComparison.OrdinalIgnoreCase) ? "/audio/transcriptions" : "/v1/audio/transcriptions";
-    var url = endpoint + path;
-    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
-    {
-        return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
-    }
-    // 最小 WAV 头（44 字节）+ 无采样，用于测试连接
-    var minimalWav = new byte[]
-    {
-        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20,
-        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x22, 0x56, 0x00, 0x00, 0x44, 0xac, 0x00, 0x00,
-        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00
-    };
-    using var content = new MultipartFormDataContent();
-    var fileContent = new StreamContent(new MemoryStream(minimalWav));
-    fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-    content.Add(fileContent, "file", "test.wav");
-    content.Add(new StringContent(modelId), "model");
-    using var http = new HttpClient();
-    http.Timeout = TimeSpan.FromSeconds(15);
-    var request = new HttpRequestMessage(HttpMethod.Post, uri);
-    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
-    request.Content = content;
+
+    OfficeCopilot.Server.Services.SttUpstreamAdapter.UpstreamKind kind;
     try
     {
-        var response = await http.SendAsync(request);
-        var responseText = await response.Content.ReadAsStringAsync();
-        if (response.IsSuccessStatusCode)
+        kind = OfficeCopilot.Server.Services.SttUpstreamAdapter.ResolveMode(endpoint);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
+    }
+
+    // 最小 WAV 头（44 字节）+ 无采样，用于测试连接
+    var minimalWav = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildMinimalWavPcm16kMono(durationMs: 200);
+
+    using var http = httpClientFactory.CreateClient("STT");
+    http.Timeout = TimeSpan.FromSeconds(15);
+
+    try
+    {
+        if (kind == OfficeCopilot.Server.Services.SttUpstreamAdapter.UpstreamKind.DashScopeQwenOpenAICompatible)
+        {
+            try
+            {
+                OfficeCopilot.Server.Services.SttUpstreamAdapter.ValidateDashScopeModelId(modelId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
+            }
+
+            var urlDash = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
+            if (!Uri.TryCreate(urlDash, UriKind.Absolute, out var uriDash) || (uriDash.Scheme != "http" && uriDash.Scheme != "https"))
+            {
+                return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+            }
+
+            var dataUrl = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildAudioDataUrl(minimalWav, "audio/wav");
+            var jsonPayload = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson(modelId, dataUrl, language: null);
+            var requestDash = new HttpRequestMessage(HttpMethod.Post, uriDash);
+            requestDash.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+            requestDash.Content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await http.SendAsync(requestDash);
+            var responseText = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+                return Results.Ok(new { ok = true, message = "连接成功，STT（DashScope Qwen/OpenAI 兼容）接口可用。" });
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
+
+            logger.LogWarning("Test STT failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+            var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+            return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+        }
+
+        // Whisper 兼容
+        var urlWhisper = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildWhisperTranscriptionsUrl(endpoint);
+        if (!Uri.TryCreate(urlWhisper, UriKind.Absolute, out var uriW) || (uriW.Scheme != "http" && uriW.Scheme != "https"))
+        {
+            return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+        }
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(new MemoryStream(minimalWav));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        content.Add(fileContent, "file", "test.wav");
+        content.Add(new StringContent(modelId), "model");
+
+        var requestWhisper = new HttpRequestMessage(HttpMethod.Post, uriW);
+        requestWhisper.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+        requestWhisper.Content = content;
+
+        var responseW = await http.SendAsync(requestWhisper);
+        var responseTextW = await responseW.Content.ReadAsStringAsync();
+        if (responseW.IsSuccessStatusCode)
             return Results.Ok(new { ok = true, message = "连接成功，STT（Whisper 兼容）接口可用。" });
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        if (responseW.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
-        logger.LogWarning("Test STT failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
-        var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
-        return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+
+        logger.LogWarning("Test STT failed: {Status} {Body}", responseW.StatusCode, responseTextW.Length > 200 ? responseTextW[..200] + "..." : responseTextW);
+        var errW = responseTextW.Length > 300 ? responseTextW[..300] + "..." : responseTextW;
+        return Results.Json(new { ok = false, message = "请求失败: " + (int)responseW.StatusCode + " " + (responseW.ReasonPhrase ?? "") + (string.IsNullOrEmpty(errW) ? "" : " — " + errW) }, statusCode: 502);
     }
     catch (TaskCanceledException)
     {
@@ -462,7 +523,7 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Test OCR: request body deserialize failed");
-        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、apiKey（小写驼峰）。" }, statusCode: 400);
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、apiKey（可选 language，均为小写驼峰）。" }, statusCode: 400);
     }
     if (body == null || string.IsNullOrWhiteSpace(body.Endpoint))
     {
@@ -478,27 +539,77 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
     {
         return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
     }
-    // 最小 1x1 PNG，用于测试连接
+    // 最小 10x10 PNG，用于测试连接
     var minimalPng = new byte[]
     {
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xff, 0xff, 0x3f,
-        0x00, 0x05, 0xfe, 0x02, 0xfe, 0xdc, 0xcc, 0x59, 0xe7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-        0x44, 0xae, 0x42, 0x60, 0x82
+        0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x0a, 0x08, 0x06, 0x00, 0x00, 0x00, 0x8d, 0x32, 0xcf, 0xbd,
+        0x00, 0x00, 0x00, 0x01, 0x73, 0x52, 0x47, 0x42, 0x00, 0xae, 0xce, 0x1c, 0xe9, 0x00, 0x00, 0x00,
+        0x04, 0x67, 0x41, 0x4d, 0x41, 0x00, 0x00, 0xb1, 0x8f, 0x0b, 0xfc, 0x61, 0x05, 0x00, 0x00, 0x00, 0x09,
+        0x70, 0x48, 0x59, 0x73, 0x00, 0x00, 0x0e, 0xc3, 0x00, 0x00, 0x0e, 0xc3, 0x01, 0xc7, 0x6f, 0xa8, 0x64,
+        0x00, 0x00, 0x00, 0x17, 0x49, 0x44, 0x41, 0x54, 0x28, 0x53, 0x63, 0xf8, 0x4f, 0x24, 0x60, 0x40,
+        0x17, 0xc0, 0x05, 0x46, 0x15, 0xe2, 0x05, 0x44, 0x2b, 0x04, 0x00, 0x23, 0xfb, 0x8e, 0x80, 0x69,
+        0x85, 0x5d, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
     };
+
+    // 兼容多模态：DashScope/OpenAI-Compatible（chat/completions + image_url data URL）
+    if (endpoint.Contains("compatible-mode", StringComparison.OrdinalIgnoreCase))
+    {
+        var dataUrl = OcrUpstreamAdapter.BuildDataUrlFromImageBytes(minimalPng, "image/png");
+        // 这里的 modelId 需要和实际 DashScope 可用模型一致；language 字段可用于 qwen-* 的覆盖
+        var defaultModelId = "qwen-vl-ocr-latest";
+        var prompt = "请只输出图片中的识别文字，不要输出解释或额外格式。";
+        var requestJson = OcrUpstreamAdapter.BuildDashScopeOpenAICompatibleOcrRequestJson(
+            defaultModelId,
+            dataUrl,
+            prompt,
+            body.Language);
+
+        var chatUrl = OcrUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
+
+        using var httpClientDash = new HttpClient();
+        httpClientDash.Timeout = TimeSpan.FromSeconds(15);
+        var requestDash = new HttpRequestMessage(HttpMethod.Post, chatUrl);
+        requestDash.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+        requestDash.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await httpClientDash.SendAsync(requestDash);
+            var responseText = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+                return Results.Ok(new { ok = true, message = "连接成功，OCR 接口可用。" });
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
+
+            logger.LogWarning("Test OCR failed: {Status} {Body}", response.StatusCode,
+                responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+            var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
+            return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
+        }
+        catch (TaskCanceledException)
+        {
+            return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Test OCR exception");
+            return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
+        }
+    }
+
     using var content = new MultipartFormDataContent();
     var fileContent = new StreamContent(new MemoryStream(minimalPng));
     fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
     content.Add(fileContent, "file", "test.png");
-    using var http = new HttpClient();
-    http.Timeout = TimeSpan.FromSeconds(15);
+    using var httpClient = new HttpClient();
+    httpClient.Timeout = TimeSpan.FromSeconds(15);
     var request = new HttpRequestMessage(HttpMethod.Post, uri);
     request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
     request.Content = content;
     try
     {
-        var response = await http.SendAsync(request);
+        var response = await httpClient.SendAsync(request);
         var responseText = await response.Content.ReadAsStringAsync();
         if (response.IsSuccessStatusCode)
             return Results.Ok(new { ok = true, message = "连接成功，OCR 接口可用。" });

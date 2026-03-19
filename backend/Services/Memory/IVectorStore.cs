@@ -14,4 +14,7 @@ public interface IVectorStore
 
     /// <summary>删除指定 collection 前缀且 tool_source 匹配的向量（用于清理内置/用户工具索引）。</summary>
     Task<int> DeleteByToolSourceAsync(string collectionPrefixPattern, string toolSource, CancellationToken ct = default);
+
+    /// <summary>列出指定 collection 且 tool_source 匹配的行 id（用于工具索引孤儿删除）。</summary>
+    Task<IReadOnlyList<string>> ListIdsByCollectionAndToolSourceAsync(string collection, string toolSource, CancellationToken ct = default);
 }

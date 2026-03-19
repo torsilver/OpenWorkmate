@@ -317,7 +317,6 @@
             <label for="aiModelProvider">类型 (Provider)</label>
             <select id="aiModelProvider" name="provider">
               <option value="OpenAI">OpenAI / 兼容接口</option>
-              <option value="Azure">Azure OpenAI</option>
               <option value="Ollama">Ollama</option>
               <option value="Anthropic">Anthropic (Claude)</option>
             </select>
@@ -398,7 +397,7 @@
       <details id="sttModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="sttModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">语音转文字 (STT) 模型</summary>
         <div style="margin-top: 12px;">
-          <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字（Whisper 兼容接口）。与对话大模型独立配置；不配置则语音转文字不可用。点击「设为当前」即使用该模型。</p>
+              <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字。支持两类上游：<code>Whisper</code> 兼容 `/audio/transcriptions`，以及阿里百炼 Qwen 的 <code>compatible-mode/v1/chat/completions</code>（OpenAI 兼容，`input_audio`）。与对话大模型独立配置；不配置则语音转文字不可用。点击「设为当前」即使用该模型。</p>
           <div id="sttModelsList" class="ai-models-list"></div>
           <button type="button" id="addSttModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 STT 模型</button>
           <div id="sttModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
@@ -448,11 +447,11 @@
             </div>
             <div class="form-group">
               <label for="ocrEditorDisplayName">展示名称</label>
-              <input type="text" id="ocrEditorDisplayName" placeholder="例如: Azure Document Intelligence">
+              <input type="text" id="ocrEditorDisplayName" placeholder="例如: 通用 OCR 服务">
             </div>
             <div class="form-group">
               <label for="ocrEditorEndpoint">接口地址 (Endpoint)</label>
-              <input type="text" id="ocrEditorEndpoint" placeholder="如 Azure Document Intelligence 或兼容接口 URL">
+              <input type="text" id="ocrEditorEndpoint" placeholder="如 OCR 接口 URL 或兼容接口地址">
             </div>
             <div class="form-group">
               <label for="ocrEditorApiKey">API Key</label>

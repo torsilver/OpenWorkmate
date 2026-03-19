@@ -53,7 +53,15 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(functionName, "current_ppt_slide_read")
             || PluginComparer.Equals(functionName, "current_ppt_slide_write")
             || PluginComparer.Equals(functionName, "current_ppt_slide_insert")
-            || PluginComparer.Equals(functionName, "current_ppt_slide_delete");
+            || PluginComparer.Equals(functionName, "current_ppt_slide_delete")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_image_add")
+            || PluginComparer.Equals(functionName, "current_ppt_notes_read")
+            || PluginComparer.Equals(functionName, "current_ppt_notes_write")
+            || PluginComparer.Equals(functionName, "current_ppt_slides_reorder")
+            || PluginComparer.Equals(functionName, "current_ppt_table_create")
+            || PluginComparer.Equals(functionName, "current_ppt_table_write_cells")
+            || PluginComparer.Equals(functionName, "current_ppt_hyperlink_add")
+            || PluginComparer.Equals(functionName, "current_ppt_slide_duplicate");
     }
 
     /// <summary>判断该 (Plugin, Function) 是否允许暴露给给定 clientType 的会话。</summary>

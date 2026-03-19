@@ -635,6 +635,7 @@
           }).then(function (text) { result = text; });
         } else if (method === "ppt_slide_read") {
           var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1;
+          var includeShapeDetails = params.includeShapeDetails !== false && params.includeShapeDetails !== "false";
           if (slideIndex < 1) {
             result = "[错误] slideIndex 必须大于等于 1。";
           } else {
@@ -646,18 +647,31 @@
                   return Promise.resolve();
                 }
                 var slide = context.presentation.slides.getItemAt(slideIndex - 1);
-                slide.load("shapes/items/textFrame/textRange/text");
+                slide.load("shapes/items/name, textFrame/textRange/text");
                 return context.sync().then(function () {
                   var parts = [];
+                  var shapeLines = [];
                   if (slide.shapes && slide.shapes.items) {
                     for (var i = 0; i < slide.shapes.items.length; i++) {
                       var sh = slide.shapes.items[i];
                       if (sh.textFrame && sh.textFrame.textRange && typeof sh.textFrame.textRange.text === "string") {
-                        parts.push(sh.textFrame.textRange.text);
+                        var t = sh.textFrame.textRange.text;
+                        parts.push(t);
+                        if (includeShapeDetails) {
+                          var nm = (sh.name != null ? String(sh.name) : "");
+                          var pv = t.length > 120 ? t.slice(0, 120) + "..." : t;
+                          if (!pv) pv = "(空)";
+                          shapeLines.push("  [" + (i + 1) + "] Name=\"" + nm + "\" 预览: " + pv);
+                        }
                       }
                     }
                   }
-                  result = "[幻灯片 " + slideIndex + "]\n" + (parts.length > 0 ? parts.join(" ").trim() : "(无文本)");
+                  var body = "[幻灯片 " + slideIndex + "]\n" + (parts.length > 0 ? parts.join(" ").trim() : "(无文本)");
+                  if (includeShapeDetails) {
+                    body += "\n\n[形状列表（编号供 shapeIndex）]\n";
+                    body += (shapeLines.length > 0 ? shapeLines.join("\n") : "（本页无带文本的形状）");
+                  }
+                  result = body;
                 });
               });
             });
@@ -666,6 +680,8 @@
           var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
           var placeholderType = (params.placeholderType || "title").toString().trim().toLowerCase();
           var text = (params.text != null ? params.text : "").toString();
+          var shapeIndex = params.shapeIndex != null ? parseInt(params.shapeIndex, 10) : 0;
+          var shapeName = (params.shapeName != null ? params.shapeName : "").toString().trim();
           if (slideIndex < 1) {
             result = "[错误] slideIndex 必须大于等于 1。";
           } else {
@@ -677,17 +693,35 @@
                   return Promise.resolve();
                 }
                 var slide = context.presentation.slides.getItemAt(slideIndex - 1);
-                slide.load("shapes/items/textFrame/textRange/text");
+                slide.load("shapes/items/name, textFrame/textRange/text");
                 return context.sync().then(function () {
                   var items = slide.shapes && slide.shapes.items ? slide.shapes.items : [];
-                  var idx = placeholderType === "body" ? 1 : 0;
-                  var shape = items[idx] || items[0];
+                  var shape = null;
+                  if (shapeIndex > 0 && shapeIndex <= items.length) {
+                    var cand = items[shapeIndex - 1];
+                    if (cand && cand.textFrame && cand.textFrame.textRange) shape = cand;
+                  }
+                  if (!shape && shapeName) {
+                    for (var si = 0; si < items.length; si++) {
+                      var it = items[si];
+                      if (it.name && String(it.name).toLowerCase() === shapeName.toLowerCase() && it.textFrame && it.textFrame.textRange) {
+                        shape = it;
+                        break;
+                      }
+                    }
+                  }
+                  if (!shape) {
+                    var idx = 0;
+                    if (placeholderType === "body" || placeholderType === "subtitle") idx = 1;
+                    else if (placeholderType === "ctrtitle" || placeholderType === "centeredtitle" || placeholderType === "center") idx = 0;
+                    shape = items[idx] || items[0];
+                  }
                   if (!shape || !shape.textFrame || !shape.textFrame.textRange) {
-                    result = "[错误] 未找到可写入的占位符。";
+                    result = "[错误] 未找到可写入的形状，请用 ppt_slide_read 查看形状编号后传 shapeIndex。";
                     return Promise.resolve();
                   }
                   shape.textFrame.textRange.text = text;
-                  return context.sync().then(function () { result = "成功：已写入幻灯片占位符。"; });
+                  return context.sync().then(function () { result = "成功：已写入幻灯片文本。"; });
                 });
               });
             });
@@ -730,6 +764,21 @@
               });
             });
           }
+        } else if (
+          method === "ppt_document_create" ||
+          method === "ppt_slide_image_add" ||
+          method === "ppt_notes_read" ||
+          method === "ppt_notes_write" ||
+          method === "ppt_slides_reorder" ||
+          method === "ppt_table_create" ||
+          method === "ppt_table_write_cells" ||
+          method === "ppt_hyperlink_add" ||
+          method === "ppt_slide_duplicate"
+        ) {
+          result =
+            "[错误] 该操作在 PowerPoint 任务窗格中暂未实现（OpenXml 仅在 Chrome/后端文件路径模式）。请使用 Chrome 扩展连接同一后端，并对 .pptx 使用工具 " +
+            method +
+            "。";
         } else {
           throw new Error("Method not supported in PowerPoint: " + method);
         }

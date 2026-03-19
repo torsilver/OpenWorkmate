@@ -130,15 +130,25 @@
 | `word_sections_list` | 列出文档中的节（SectionProperties 数量）。 |
 | `word_hyperlink_insert` | 在指定段落插入超链接文本。 |
 
-### 9. Ppt（PPT）
+### 9. Ppt（PPT，Chrome/后端 OpenXml 文件路径）
+
+勿用 shell 重定向伪造 `.pptx`；新建请用 `ppt_document_create`。
 
 | 工具名 | 中文介绍 |
 |--------|----------|
-| `ppt_slides_list` | 列出 PPT 演示文稿中所有幻灯片的序号与简要信息（按播放顺序）；filePath 支持环境变量与相对路径。 |
-| `ppt_slide_read` | 按播放顺序读取指定幻灯片的文本与形状摘要；slideIndex 从 1 开始。 |
-| `ppt_slide_write` | 按播放顺序向指定幻灯片的标题或正文占位符写入文本；slideIndex 从 1 开始，placeholderType 为 title 或 body。 |
-| `ppt_slide_insert` | 在指定位置插入新幻灯片（可选标题与正文文本）；position 从 1 开始，0 表示插入到最前。 |
-| `ppt_slide_delete` | 按播放顺序删除指定幻灯片；slideIndex 从 1 开始。 |
+| `ppt_document_create` | 创建新的空白演示文稿（.pptx/.pptm），已存在则覆盖；至少 1 张幻灯片。 |
+| `ppt_slides_list` | 列出所有幻灯片序号与文本预览（SlideIdList 顺序）；filePath 支持环境变量与相对路径。 |
+| `ppt_slide_read` | 读取指定页全文；可选 `includeShapeDetails` 附加带文本形状编号列表（供 `shapeIndex`）。 |
+| `ppt_slide_write` | 写入文本：优先 `shapeIndex`/`shapeName`，否则 `placeholderType`（title/body/subtitle/ctrTitle）。 |
+| `ppt_slide_insert` | 插入新幻灯片（标题/正文占位）；`position`：0=最前，k=第 k 页之后，≥页数=末尾。 |
+| `ppt_slide_delete` | 删除指定序号幻灯片。 |
+| `ppt_slide_image_add` | 向指定页插入本地图片（PNG/JPEG 等），可设 EMU 位置与大小。 |
+| `ppt_notes_read` / `ppt_notes_write` | 读/写演讲者备注（无则创建备注页）。 |
+| `ppt_slides_reorder` | 全量重排：`newOrder` 如 `2,3,1` 表示新的播放顺序。 |
+| `ppt_table_create` | 在指定页添加简单表格（行列上限内）。 |
+| `ppt_table_write_cells` | 向该页首张表格填字：`行|行`，行内单元格用英文逗号分隔。 |
+| `ppt_hyperlink_add` | 为某文本形状首个 Run 设置外部 URL 点击链接。 |
+| `ppt_slide_duplicate` | 复制幻灯片到紧邻其后（**无嵌入图片**的页才可复制）。 |
 
 ### 10. CurrentDocument（当前文档，任务窗格）
 
@@ -158,10 +168,16 @@
 | `current_excel_read_formulas` | 读取当前 Excel 工作表中指定区域的公式。 |
 | `current_excel_write_formulas` | 向当前 Excel 工作表的指定区域写入公式（二维数组 JSON）。 |
 | `current_ppt_slides_list` | 列出当前打开的 PPT 演示文稿中所有幻灯片（按播放顺序）。 |
-| `current_ppt_slide_read` | 按播放顺序读取当前演示文稿中指定幻灯片的文本（slideIndex 从 1 开始）。 |
-| `current_ppt_slide_write` | 向当前演示文稿中指定幻灯片的标题或正文占位符写入文本（slideIndex、placeholderType、text）。 |
-| `current_ppt_slide_insert` | 在当前演示文稿中插入新幻灯片（可选 position、titleText、bodyText）。 |
-| `current_ppt_slide_delete` | 删除当前演示文稿中指定序号的幻灯片（slideIndex 从 1 开始）。 |
+| `current_ppt_slide_read` | 读取指定幻灯片文本；可选 `includeShapeDetails` 附加形状编号。 |
+| `current_ppt_slide_write` | 写入文本（slideIndex、placeholderType、text；可选 shapeIndex、shapeName）。 |
+| `current_ppt_slide_insert` | 插入新幻灯片（可选 position、titleText、bodyText）。 |
+| `current_ppt_slide_delete` | 删除指定序号的幻灯片。 |
+| `current_ppt_slide_image_add` | 插入图片（任务窗格端可能返回「请用 Chrome+文件路径」）。 |
+| `current_ppt_notes_read` / `current_ppt_notes_write` | 读/写备注（任务窗格端可能未实现）。 |
+| `current_ppt_slides_reorder` | 重排幻灯片（任务窗格端可能未实现）。 |
+| `current_ppt_table_create` / `current_ppt_table_write_cells` | 表格（任务窗格端可能未实现）。 |
+| `current_ppt_hyperlink_add` | 超链接（任务窗格端可能未实现）。 |
+| `current_ppt_slide_duplicate` | 复制幻灯片（任务窗格端可能未实现）。 |
 | `current_run_document_script` | 在当前打开的 Office/WPS 文档环境中执行预定义脚本（仅支持白名单内 scriptId）。 |
 
 ### 11. Tavily

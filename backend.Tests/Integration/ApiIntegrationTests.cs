@@ -1,10 +1,16 @@
+using System.Net.Http;
 using System.Net;
+using System.IO;
+using System;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using OfficeCopilot.Server;
 using Xunit;
 
@@ -16,6 +22,10 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 
     public ApiIntegrationTests(WebApplicationFactory<Program> factory)
     {
+        var tempUserConfigPath = Path.Combine(
+            Path.GetTempPath(),
+            "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+
         _client = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(Environments.Development);
@@ -26,7 +36,14 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                     ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
                     ["ScheduledTasksDirectory"] = "",
+                    ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
                 });
+            });
+            builder.ConfigureServices(services =>
+            {
+                // 用于拦截 /api/config/test-stt 等外部 STT 请求，避免真实调用三方接口。
+                services.AddHttpClient("STT")
+                    .ConfigurePrimaryHttpMessageHandler(() => new SttFakeHttpMessageHandler());
             });
         }).CreateClient();
     }
@@ -114,6 +131,97 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(root.TryGetProperty("ok", out var ok));
         Assert.False(ok.GetBoolean());
         Assert.True(root.TryGetProperty("message", out var msg));
+    }
+
+    [Fact]
+    public async Task PostConfigTestStt_DashScopeCompatible_ReturnsOkTrue()
+    {
+        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
+        try
+        {
+            SttFakeHttpMessageHandler.LastRequestUri = null;
+            SttFakeHttpMessageHandler.LastRequestBody = null;
+            SttFakeHttpMessageHandler.OnSendAsync = _ =>
+            {
+                var responseText = """
+                {
+                  "choices": [
+                    { "message": { "content": "识别结果" } }
+                  ]
+                }
+                """;
+                var resp = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(responseText, Encoding.UTF8, "application/json")
+                };
+                return Task.FromResult(resp);
+            };
+
+            var body = new { endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKey = "sk-x", modelId = "qwen3-asr-flash" };
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _client.PostAsync("/api/config/test-stt", content);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var json = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(json);
+            Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
+            var message = doc.RootElement.GetProperty("message").GetString() ?? "";
+            Assert.Contains("DashScope", message, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestUri);
+            Assert.EndsWith("/chat/completions", SttFakeHttpMessageHandler.LastRequestUri, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestBody);
+            using var reqDoc = JsonDocument.Parse(SttFakeHttpMessageHandler.LastRequestBody!);
+            Assert.Equal("qwen3-asr-flash", reqDoc.RootElement.GetProperty("model").GetString());
+            var messages = reqDoc.RootElement.GetProperty("messages");
+            var content0 = messages[0].GetProperty("content")[0];
+            Assert.Equal("input_audio", content0.GetProperty("type").GetString());
+        }
+        finally
+        {
+            SttFakeHttpMessageHandler.OnSendAsync = null;
+            SttFakeHttpMessageHandler.Mutex.Release();
+        }
+    }
+
+    [Fact]
+    public async Task PostConfigTestStt_DashScopeCompatible_Upstream404_ReturnsOkFalse()
+    {
+        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
+        try
+        {
+            SttFakeHttpMessageHandler.LastRequestUri = null;
+            SttFakeHttpMessageHandler.LastRequestBody = null;
+            SttFakeHttpMessageHandler.OnSendAsync = _ =>
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.NotFound)
+                {
+                    ReasonPhrase = "Not Found",
+                    Content = new StringContent("not found", Encoding.UTF8, "text/plain")
+                };
+                return Task.FromResult(resp);
+            };
+
+            var body = new { endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKey = "sk-x", modelId = "qwen3-asr-flash" };
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _client.PostAsync("/api/config/test-stt", content);
+            Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+
+            var json = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(json);
+            Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
+            var message = doc.RootElement.GetProperty("message").GetString() ?? "";
+            Assert.Contains("请求失败", message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("404", message);
+        }
+        finally
+        {
+            SttFakeHttpMessageHandler.OnSendAsync = null;
+            SttFakeHttpMessageHandler.Mutex.Release();
+        }
     }
 
     [Fact]
@@ -236,6 +344,50 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostConfig_MissingEmbeddingModels_DoesNotClearExisting()
+    {
+        var embeddingModel = new
+        {
+            id = "emb-test-1",
+            displayName = "Test Embedding",
+            source = "Remote",
+            endpoint = "https://example.com/v1",
+            apiKey = "key",
+            modelId = "text-embedding-3-small"
+        };
+
+        var initBody = new
+        {
+            ai = new { },
+            embeddingModels = new[] { embeddingModel },
+            activeEmbeddingModelId = "emb-test-1"
+        };
+        var initContent = new StringContent(JsonSerializer.Serialize(initBody), Encoding.UTF8, "application/json");
+        var initResponse = await _client.PostAsync("/api/config", initContent);
+        initResponse.EnsureSuccessStatusCode();
+
+        var secondBody = new { ai = new { } };
+        var secondContent = new StringContent(JsonSerializer.Serialize(secondBody), Encoding.UTF8, "application/json");
+        var secondResponse = await _client.PostAsync("/api/config", secondContent);
+        secondResponse.EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var json = await getResponse.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("embeddingModels", out var embeddingModels));
+        Assert.Equal(JsonValueKind.Array, embeddingModels.ValueKind);
+        Assert.Equal(1, embeddingModels.GetArrayLength());
+        Assert.True(embeddingModels[0].TryGetProperty("id", out var embId));
+        Assert.Equal("emb-test-1", embId.GetString());
+
+        Assert.True(root.TryGetProperty("activeEmbeddingModelId", out var activeEmbId));
+        Assert.Equal("emb-test-1", activeEmbId.GetString());
+    }
+
+    [Fact]
     public async Task GetSkills_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/skills");
@@ -253,5 +405,29 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var json = await response.Content.ReadAsStringAsync();
         var list = JsonDocument.Parse(json).RootElement;
         Assert.Equal(JsonValueKind.Array, list.ValueKind);
+    }
+}
+
+internal sealed class SttFakeHttpMessageHandler : HttpMessageHandler
+{
+    public static readonly SemaphoreSlim Mutex = new(1, 1);
+
+    public static Func<HttpRequestMessage, Task<HttpResponseMessage>>? OnSendAsync;
+
+    public static string? LastRequestUri;
+    public static string? LastRequestBody;
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        LastRequestUri = request.RequestUri?.ToString();
+        if (request.Content != null)
+            LastRequestBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        else
+            LastRequestBody = null;
+
+        var handler = OnSendAsync;
+        if (handler == null)
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("No fake handler") };
+        return await handler(request).ConfigureAwait(false);
     }
 }

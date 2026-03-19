@@ -54,6 +54,9 @@ Thumbs.db
 *.gguf
 backend/logs/
 
+# 本地 RAG / 工具向量 SQLite（运行时生成）
+backend/Data/
+
 # ---- 其他 ----
 *.cache
 .env

@@ -46,6 +46,16 @@ public sealed class InMemoryVectorStore : IVectorStore
         return Task.FromResult(toRemove.Count);
     }
 
+    public Task<IReadOnlyList<string>> ListIdsByCollectionAndToolSourceAsync(string collection, string toolSource, CancellationToken ct = default)
+    {
+        var ids = _items
+            .Where(kv => string.Equals(kv.Value.Collection, collection, StringComparison.Ordinal)
+                && string.Equals(kv.Value.ToolSource, toolSource, StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<string>>(ids);
+    }
+
     public Task<IReadOnlyList<(string Id, string Text, double Score)>> SearchAsync(float[] queryVector, int topK, string? sessionIdFilter, string? collectionFilter = null, CancellationToken ct = default)
     {
         var candidates = _items.Values.AsEnumerable();

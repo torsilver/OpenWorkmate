@@ -102,6 +102,63 @@ public sealed class ToolIndexService : IToolIndexService
     }
 
     /// <inheritdoc />
+    public async Task SyncUserToolIndexAsync(Kernel kernel, CancellationToken ct = default)
+    {
+        if (kernel == null || !_embedding.IsConfigured)
+        {
+            _logger.LogDebug("ToolIndex: Skip SyncUserToolIndex (kernel null or embedding not configured).");
+            return;
+        }
+        if (!_store.IsPersistent)
+        {
+            _logger.LogDebug("ToolIndex: Skip SyncUserToolIndex (store is in-memory).");
+            return;
+        }
+
+        foreach (var clientType in ClientTypes)
+        {
+            var collection = CollectionPrefix + clientType;
+            var expectedIds = new HashSet<string>(StringComparer.Ordinal);
+            var upserted = 0;
+            foreach (var plugin in kernel.Plugins)
+            {
+                if (!IsUserPlugin(plugin.Name))
+                    continue;
+                foreach (KernelFunction func in plugin)
+                {
+                    if (!ClientTypeToolFilter.IsAllowed(plugin.Name, func.Name, clientType))
+                        continue;
+                    var id = $"{collection}|{plugin.Name}|{func.Name}";
+                    expectedIds.Add(id);
+                    var text = BuildToolText(plugin.Name, func.Name, func);
+                    var existing = await _store.GetAsync(id, ct).ConfigureAwait(false);
+                    if (existing.HasValue && existing.Value.Text == text)
+                        continue;
+                    var vector = await _embedding.GenerateEmbeddingAsync(text, ct).ConfigureAwait(false);
+                    if (vector == null || vector.Length == 0)
+                        continue;
+                    await _store.UpsertAsync(id, text, vector, null, null, collection, ToolSourceUser, ct).ConfigureAwait(false);
+                    upserted++;
+                }
+            }
+
+            var storedIds = await _store.ListIdsByCollectionAndToolSourceAsync(collection, ToolSourceUser, ct).ConfigureAwait(false);
+            var removed = 0;
+            foreach (var sid in storedIds)
+            {
+                if (expectedIds.Contains(sid))
+                    continue;
+                if (await _store.DeleteAsync(sid, ct).ConfigureAwait(false))
+                    removed++;
+            }
+
+            _logger.LogInformation(
+                "ToolIndex: SyncUserToolIndex collection={Collection} upserted={Upserted} orphansRemoved={Removed}.",
+                collection, upserted, removed);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<(string PluginName, string FunctionName)> Results, bool GoodEnough)> SearchToolsAsync(
         string userQuery,
         string? clientType,

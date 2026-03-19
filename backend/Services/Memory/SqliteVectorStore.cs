@@ -185,6 +185,22 @@ public sealed class SqliteVectorStore : IVectorStore
         return n;
     }
 
+    public async Task<IReadOnlyList<string>> ListIdsByCollectionAndToolSourceAsync(string collection, string toolSource, CancellationToken ct = default)
+    {
+        EnsureSchema();
+        var list = new List<string>();
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id FROM vectors WHERE collection = $coll AND tool_source = $ts";
+        cmd.Parameters.AddWithValue("$coll", collection);
+        cmd.Parameters.AddWithValue("$ts", toolSource);
+        using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await r.ReadAsync(ct).ConfigureAwait(false))
+            list.Add(r.GetString(0));
+        return list;
+    }
+
     public async Task<IReadOnlyList<MemoryRecord>> ListAsync(string? sessionIdFilter, int skip, int take, string? collectionFilter = null, string? agentNameFilter = null, CancellationToken ct = default)
     {
         EnsureSchema();

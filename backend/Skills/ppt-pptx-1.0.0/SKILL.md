@@ -1,36 +1,56 @@
 ---
 name: PPT / Pptx
 slug: ppt-pptx
-version: 1.0.1
-description: Read and write PowerPoint presentation slides (file path or current document). List, read, write title/body, insert, and delete slides. Use correct slide order via SlideIdList; support .pptx and .pptm.
+version: 1.1.0
+description: Create and edit PowerPoint (.pptx/.pptm) via Open XML on disk (Chrome) or current deck via task pane. Includes document create, structured read/write, images, notes, reorder, tables, hyperlinks, duplicate slide.
 metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 ---
 
 ## When to Use
 
-User needs to read, write, insert, or delete slides in a PowerPoint file (.pptx, .pptm) or in the **current** presentation when in Office PowerPoint or WPS 演示 task pane. Use file-path tools (Ppt plugin) in Chrome; use CurrentDocument current_ppt_* when in PowerPoint/WPS 演示.
+User needs to **create** a new deck or **read/write** slides in a file path (.pptx, .pptm) from **Chrome** (backend OpenXml), or work on the **current** presentation from **Office PowerPoint / WPS 演示** task pane (`current_ppt_*`).
+
+- **New file on disk**: always call **`ppt_document_create`** first. Do **not** use `run_command` or shell redirection to create `.pptx` (invalid OOXML).
+- **Edit existing file**: `ppt_slide_read` with shape list → `ppt_slide_write` with `shapeIndex` or `placeholderType`.
 
 ## Structure
 
-- PPTX is a ZIP containing XML; slide order is defined by **SlideIdList** in the presentation part—do not enumerate SlideParts directly or order may be wrong.
-- Each slide has CommonSlideData with shapes; text is in `a:t` (Drawing namespace) under shapes. Extract text via `Slide.Descendants<Drawing.Text>()` or equivalent.
-- Slide index in tools is **1-based** and follows playback order (SlideIdList order).
+- Slide order = **`Presentation.SlideIdList`** order (not arbitrary part enumeration).
+- Slide index in tools is **1-based**.
+- Text lives under DrawingML `a:t` inside shapes.
 
 ## File vs Current Document
 
-| Client        | File path (Chrome/backend)     | Current presentation (task pane) |
-|---------------|--------------------------------|-----------------------------------|
-| Chrome        | `ppt_slides_list`, `ppt_slide_read`, `ppt_slide_write`, `ppt_slide_insert`, `ppt_slide_delete` | Not available |
-| Office PPT    | Not exposed                    | `current_ppt_slides_list`, `current_ppt_slide_read`, `current_ppt_slide_write`, `current_ppt_slide_insert`, `current_ppt_slide_delete` |
-| WPS 演示      | Not exposed                    | Same current_ppt_* RPC            |
+| Client | File path (backend) | Task pane |
+|--------|---------------------|-----------|
+| Chrome | Full **`Ppt`** plugin: `ppt_document_create`, list/read/write/insert/delete, image, notes, reorder, table, hyperlink, duplicate | N/A |
+| Office PPT | Not exposed | `current_ppt_*` RPC (read/write/insert/delete enhanced; OpenXml-only tools return explicit “use Chrome + filePath” from add-in) |
+| WPS 演示 | Not exposed | Same as Office for RPC surface |
+
+## Tool summary (file path)
+
+| Tool | Role |
+|------|------|
+| `ppt_document_create` | New deck; overwrites if exists |
+| `ppt_slides_list` / `ppt_slide_read` | Inspect; `includeShapeDetails` for shape indices |
+| `ppt_slide_write` | `shapeIndex` / `shapeName` / `placeholderType` (title, body, subtitle, ctrTitle) |
+| `ppt_slide_insert` | Clones anchor slide then fills title/body; `position`: 0 = first; k = after slide k; ≥ count = append. On **minimal** template (title-only layout), body text is stored as **extra paragraphs in the title shape**—`ppt_slide_read` still shows all text; use `ppt_slide_write(..., body)` only if that slide has a real body placeholder. |
+| `ppt_slide_delete` | Remove slide by index |
+| `ppt_slide_image_add` | Local image → slide |
+| `ppt_notes_read` / `ppt_notes_write` | Speaker notes |
+| `ppt_slides_reorder` | Permutation string e.g. `3,2,1` |
+| `ppt_table_create` / `ppt_table_write_cells` | Simple grid; cells `row1a,row1b\|row2a` |
+| `ppt_hyperlink_add` | Clickable URL on shape’s first run |
+| `ppt_slide_duplicate` | Clone slide after source (fails if slide has embedded images) |
 
 ## Format Limits
 
-- **PPTX / PPTM**: Open XML format; supported. Use `.pptx` or `.pptm` only.
-- **PPT**: Legacy binary format; not supported. Return a clear error asking user to save as .pptx/.pptm.
+- **PPTX / PPTM** only. **.ppt** binary → ask user to save as .pptx/.pptm.
+- Charts/SmartArt heavy edits → not supported here; use dedicated tools or scripts.
 
 ## Common Pitfalls
 
-- Assuming slide order from part enumeration—always use SlideIdList order.
-- Using 0-based slide index—tools use 1-based (slide 1 = first slide).
-- In task pane, current document is the open presentation; no file path is passed.
+- Skipping **`ppt_document_create`** then calling `ppt_slide_insert` → file missing error.
+- After `ppt_slide_insert` on a **title-only** deck, editing “body” with `ppt_slide_write` may require `shapeIndex` from `ppt_slide_read` (body merged into title box).
+- `ppt_table_write_cells`: commas inside cell text break parsing unless you avoid commas in content.
+- Duplicate slide + images → use insert + manual copy or avoid duplicate tool.

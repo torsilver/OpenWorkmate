@@ -37,15 +37,6 @@ public sealed class ChatService : IDisposable
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly object _kernelLock = new();
-    private string? _lastUserToolsSignature;
-
-    private static string GetUserToolIndexSignaturePath()
-    {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(appData, "OfficeCopilot");
-        try { Directory.CreateDirectory(dir); } catch { /* ignore */ }
-        return Path.Combine(dir, "tool-index-user-signature.txt");
-    }
 
     public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
     {
@@ -65,9 +56,9 @@ public sealed class ChatService : IDisposable
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
 
-        RebuildKernelAsync().GetAwaiter().GetResult();
-        _configService.OnConfigChanged += () => _ = RebuildKernelAsync();
-        _skillService.OnSkillsChanged += () => _ = RebuildKernelAsync();
+        RebuildKernelAsync(skipUserToolIndexSync: true).GetAwaiter().GetResult();
+        _configService.OnConfigChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
+        _skillService.OnSkillsChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
 
         _cleanupTimer = new Timer(CleanupExpiredSessions, null,
             TimeSpan.FromMinutes(cleanupInterval),
@@ -149,7 +140,8 @@ public sealed class ChatService : IDisposable
     }
 
     /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）；可由 Program 在 --build-tool-index 模式下调用。</summary>
-    public async Task RebuildKernelAsync()
+    /// <param name="skipUserToolIndexSync">为 true 时不调度用户工具向量增量同步（用于进程首次启动与预构建中间步骤）。</param>
+    public async Task RebuildKernelAsync(bool skipUserToolIndexSync = false)
     {
         var config = _configService.Current;
         var entries = GetModelEntriesToRegister();
@@ -275,7 +267,7 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(new WordPlugin(wordPluginLogger), "Word");
         }
         if (!disabledBuiltIn.Contains("ppt"))
-            newKernel.Plugins.AddFromObject(new PptPlugin(), "Ppt");
+            newKernel.Plugins.AddFromObject(new PptPlugin(_loggerFactory.CreateLogger<PptPlugin>()), "Ppt");
 
         var rpcManager = _serviceProvider.GetRequiredService<RpcManager>();
         var screenshotCache = _serviceProvider.GetRequiredService<ScreenshotCacheService>();
@@ -435,50 +427,20 @@ public sealed class ChatService : IDisposable
         _logger.LogInformation("Kernel rebuilt. ActiveModel: {ActiveId}, Plugins: {Count}, UserSkills: {SkillCount}, MCPs: {McpCount}",
             _activeModelId, _kernel.Plugins.Count, skillCount, mcpCount);
 
-        var skillIds = string.Join("|", userSkills.Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.PromptTemplate)).Select(s => s.Id ?? "").OrderBy(id => id, StringComparer.Ordinal));
-        var mcpList = _configService.Current.McpServers?.Where(m => m.Enabled).Select(m => m.Name ?? "").OrderBy(n => n, StringComparer.Ordinal).ToList() ?? new List<string>();
-        var mcpNames = string.Join("|", mcpList);
-        var signature = skillIds + ";" + mcpNames;
-        var persistedSignature = ReadPersistedUserToolIndexSignature();
-        if (!string.Equals(persistedSignature, signature, StringComparison.Ordinal))
-        {
-            _lastUserToolsSignature = signature;
-            _ = BuildToolIndexInBackgroundAsync(newKernel, signature);
-        }
+        if (!skipUserToolIndexSync)
+            _ = SyncUserToolIndexInBackgroundAsync(newKernel);
     }
 
-    private static string? ReadPersistedUserToolIndexSignature()
+    /// <summary>后台增量同步用户工具索引（配置/技能变更后）；不阻塞请求。</summary>
+    private async Task SyncUserToolIndexInBackgroundAsync(Kernel kernel)
     {
         try
         {
-            var path = GetUserToolIndexSignaturePath();
-            if (File.Exists(path))
-                return File.ReadAllText(path).Trim();
-        }
-        catch { /* ignore */ }
-        return null;
-    }
-
-    private static void WritePersistedUserToolIndexSignature(string signature)
-    {
-        try
-        {
-            File.WriteAllText(GetUserToolIndexSignaturePath(), signature ?? "");
-        }
-        catch { /* ignore */ }
-    }
-
-    /// <summary>后台静默维护用户工具向量索引，不阻塞请求；仅在 Skill 或 MCP 变更时执行，只写 tool_source=user。成功后写入 signature 以便下次启动不重复 embedding。</summary>
-    private async Task BuildToolIndexInBackgroundAsync(Kernel kernel, string signature)
-    {
-        try
-        {
-            await _toolIndex.BuildIndexAsync(kernel, ToolIndexBuildMode.UserOnly).ConfigureAwait(false);
-            WritePersistedUserToolIndexSignature(signature);
+            await _toolIndex.SyncUserToolIndexAsync(kernel).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Tool index background build failed.");
+            _logger.LogWarning(ex, "User tool index sync failed.");
         }
     }
 
@@ -831,11 +793,13 @@ public sealed class ChatService : IDisposable
                     sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
             }
 
+            var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
             OpenAIPromptExecutionSettings execSettings;
             if (selectedFunctions is { Count: > 0 })
             {
                 execSettings = new OpenAIPromptExecutionSettings
                 {
+                    MaxTokens = maxOutputTokens,
                     FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(selectedFunctions)
                 };
                 _logger.LogInformation("[{SessionId}] ToolSelection: final restricted to {FunctionCount} functions clientType={ClientType}.",
@@ -847,6 +811,7 @@ public sealed class ChatService : IDisposable
             {
                 execSettings = new OpenAIPromptExecutionSettings
                 {
+                    MaxTokens = maxOutputTokens,
                     FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
                 };
                 _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
@@ -854,18 +819,9 @@ public sealed class ChatService : IDisposable
 
             var fullResponse = new System.Text.StringBuilder();
 
-            // 按 clientType 注入本端 Agent 身份说明（计划第四节约束）
+            // 按 clientType 注入身份说明；非计划模式下追加「工具结果须在正文复述」约束
             var identitySuffix = GetClientTypeIdentitySuffix(clientType);
-            var historyToUse = state.History;
-            if (!string.IsNullOrEmpty(identitySuffix) && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
-            {
-                var sysMsg = state.History[0];
-                var newSystemText = (sysMsg.Content ?? "") + "\n\n" + identitySuffix;
-                var newHistory = new ChatHistory(newSystemText);
-                for (var i = 1; i < state.History.Count; i++)
-                    newHistory.Add(state.History[i]);
-                historyToUse = newHistory;
-            }
+            var historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
 
             var collectedChunks = new List<string>();
             for (var attempt = 0; attempt < 2; attempt++)
@@ -888,25 +844,20 @@ public sealed class ChatService : IDisposable
                 {
                     _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
                     TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
-                    historyToUse = state.History;
-                    if (!string.IsNullOrEmpty(identitySuffix) && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
-                    {
-                        var sysMsg = state.History[0];
-                        var newSystemText = (sysMsg.Content ?? "") + "\n\n" + identitySuffix;
-                        var newHistory = new ChatHistory(newSystemText);
-                        for (var i = 1; i < state.History.Count; i++)
-                            newHistory.Add(state.History[i]);
-                        historyToUse = newHistory;
-                    }
+                    historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
                 }
             }
 
             foreach (var text in collectedChunks)
                 yield return new StreamItem(IsWarning: false, Content: text);
 
-            state.History.AddAssistantMessage(fullResponse.ToString());
-            _logger.LogInformation("[{SessionId}] Turn completed, turns={Turns}",
-                sessionId, state.History.Count);
+            var assistantText = fullResponse.ToString();
+            state.History.AddAssistantMessage(assistantText);
+            var previewLen = Math.Min(200, assistantText.Length);
+            var preview = previewLen > 0 ? assistantText.AsSpan(0, previewLen).ToString().Replace('\r', ' ').Replace('\n', ' ') : "";
+            if (assistantText.Length > previewLen) preview += "…";
+            _logger.LogInformation("[{SessionId}] Turn completed, turns={Turns}, assistantChars={AssistantChars}, assistantPreview={Preview}",
+                sessionId, state.History.Count, assistantText.Length, preview);
         }
         finally { }
     }
@@ -1279,6 +1230,43 @@ public sealed class ChatService : IDisposable
     {
         var ct = (clientType ?? "").Trim();
         return string.IsNullOrEmpty(ct) || string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 非计划模式下注入：用户界面看不到工具原始返回全文，模型必须在最终回复中整理复述。
+    /// </summary>
+    private const string ToolResultEchoSystemInstruction =
+        "[工具与回答方式] 用户对话界面中看不到工具的原始返回全文（执行过程里可能仅有简短摘要）。"
+        + "凡你调用了工具并从工具结果中获得了对用户有用的文字或数据，在本轮最终回复里必须用自然语言完整整理并复述给用户；"
+        + "禁止仅用「已读取」「已完成」等占位描述而不给出实质内容。";
+
+    /// <summary>
+    /// 构建本轮流式请求用的 ChatHistory：可选追加 client 身份后缀；非计划模式再追加工具结果复述约束。
+    /// </summary>
+    private static ChatHistory BuildHistoryForStreamingTurn(ChatHistory stateHistory, string? identitySuffix, bool isPlanMode)
+    {
+        var historyToUse = stateHistory;
+        if (!string.IsNullOrEmpty(identitySuffix) && stateHistory.Count > 0 && stateHistory[0].Role == AuthorRole.System)
+        {
+            var sysMsg = stateHistory[0];
+            var newSystemText = (sysMsg.Content ?? "") + "\n\n" + identitySuffix;
+            var newHistory = new ChatHistory(newSystemText);
+            for (var i = 1; i < stateHistory.Count; i++)
+                newHistory.Add(stateHistory[i]);
+            historyToUse = newHistory;
+        }
+
+        if (!isPlanMode && historyToUse.Count > 0 && historyToUse[0].Role == AuthorRole.System)
+        {
+            var sys = historyToUse[0].Content ?? "";
+            var augmented = sys + "\n\n" + ToolResultEchoSystemInstruction;
+            var withEcho = new ChatHistory(augmented);
+            for (var i = 1; i < historyToUse.Count; i++)
+                withEcho.Add(historyToUse[i]);
+            historyToUse = withEcho;
+        }
+
+        return historyToUse;
     }
 
     /// <summary>按 clientType 返回本端 Agent 身份说明，用于追加到 system 提示（计划第四节：每端身份写清）。</summary>

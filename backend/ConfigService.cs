@@ -200,6 +200,7 @@ public class TestOcrRequest
 {
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
+    public string? Language { get; set; }
 }
 
 /// <summary>语音转文字（STT）配置，用于 POST /api/transcribe；不配置时使用当前 AI 模型的 endpoint/apiKey 调用 Whisper。</summary>
@@ -254,7 +255,7 @@ public class AppConfig
     public Dictionary<string, string> SkillEnv { get; set; } = new();
     // ----- 阶段 3：嵌入与 RAG / 记忆 -----
     /// <summary>Embedding 模型列表；支持多条，仅 Remote 远程 API。</summary>
-    public List<EmbeddingModelEntry> EmbeddingModels { get; set; } = new();
+    public List<EmbeddingModelEntry>? EmbeddingModels { get; set; }
     /// <summary>当前使用的 Embedding 模型 Id，对应 EmbeddingModels 中某条的 Id；为空或不在列表中则视为未配置。</summary>
     public string? ActiveEmbeddingModelId { get; set; }
     /// <summary>向量存储类型：Memory = 内存，Sqlite = 本地 db 文件。</summary>
@@ -317,12 +318,14 @@ public sealed class ConfigService
     private readonly string _configPath;
     private AppConfig _currentConfig;
     private readonly ILogger<ConfigService> _logger;
+    private readonly IConfiguration _defaultConfiguration;
     private readonly object _lock = new();
 
     public event Action? OnConfigChanged;
 
     public ConfigService(IConfiguration defaultConfig, ILogger<ConfigService> logger)
     {
+        _defaultConfiguration = defaultConfig;
         _logger = logger;
         // 使用用户本地应用数据目录，与运行目录无关，避免 dotnet run/clean 后配置丢失
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -330,12 +333,60 @@ public sealed class ConfigService
             appData = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? AppContext.BaseDirectory;
         var appDir = Path.Combine(appData, "OfficeCopilot");
         try { Directory.CreateDirectory(appDir); } catch { /* 无权限时后续写文件会报错 */ }
-        _configPath = Path.Combine(appDir, "user-config.json");
+
+        // 允许测试/开发环境覆盖配置落盘路径，避免互相污染本机配置。
+        // Key: OfficeCopilot:UserConfigPath
+        var configPath = Path.Combine(appDir, "user-config.json");
+        var overridePath = defaultConfig["OfficeCopilot:UserConfigPath"];
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            overridePath = Environment.ExpandEnvironmentVariables(overridePath.Trim());
+            if (Path.IsPathRooted(overridePath))
+                configPath = overridePath;
+            else
+                configPath = Path.Combine(appDir, overridePath);
+
+            var parent = Path.GetDirectoryName(configPath);
+            if (!string.IsNullOrWhiteSpace(parent))
+                try { Directory.CreateDirectory(parent); } catch { /* ignored */ }
+        }
+
+        _configPath = configPath;
         _logger.LogInformation("Config file path: {Path} (exists: {Exists})", _configPath, File.Exists(_configPath));
         _currentConfig = LoadConfig(defaultConfig);
     }
 
     public AppConfig Current => _currentConfig;
+
+    /// <summary>从磁盘重新加载 user-config.json（或回退默认），不写盘。用于 --build-tool-index 阶段 2 恢复真实 MCP/模型配置。</summary>
+    public void ReloadConfigFromDisk()
+    {
+        lock (_lock)
+        {
+            _currentConfig = LoadConfig(_defaultConfiguration);
+        }
+    }
+
+    /// <summary>在内存中临时将当前选中的 Embedding 切换为 tool-index-build.json 中的凭证（不写盘），供预构建阶段 2 调用 Embedding API。</summary>
+    public void ApplyToolIndexBuildEmbeddingCredentials(string endpoint, string apiKey, string modelId)
+    {
+        const string embId = "tool-index-build";
+        lock (_lock)
+        {
+            _currentConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
+            _currentConfig.EmbeddingModels.RemoveAll(e => string.Equals((e.Id ?? "").Trim(), embId, StringComparison.OrdinalIgnoreCase));
+            _currentConfig.EmbeddingModels.Add(new EmbeddingModelEntry
+            {
+                Id = embId,
+                DisplayName = "Tool index build",
+                Source = "Remote",
+                Endpoint = endpoint.Trim(),
+                ApiKey = apiKey.Trim(),
+                ModelId = modelId.Trim()
+            });
+            _currentConfig.ActiveEmbeddingModelId = embId;
+        }
+    }
 
     /// <summary>仅用于 --build-tool-index 模式：将当前配置替换为最小配置（仅 Embedding + 一条占位 AI 模型，无 MCP），以便只构建内置插件 Kernel 并写工具索引。</summary>
     public void SetMinimalConfigForToolIndexBuild(string endpoint, string apiKey, string modelId)

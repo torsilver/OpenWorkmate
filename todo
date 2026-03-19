@@ -41,3 +41,6 @@ AI提问模式
 写个脚本提前把内部工具embedding一下  别每次启动才embedding了 然后只有用户添加或者删除skill或者MCP工具的时候才需要embeedding
 
 我们当前有没有工具执行成功率的展示页面
+
+chrome端要不要每个页面都是一个agent
+chrome端要不要加一个读取网页源码的MCP工具

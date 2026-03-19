@@ -226,7 +226,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_slides_list")]
-    [Description("列出当前打开的 PPT 演示文稿中所有幻灯片（按播放顺序）。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    [Description("列出当前打开的 PPT 演示文稿中所有幻灯片（按播放顺序）。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。回答用户时必须引用并归纳本工具输出中的要点，勿假设用户能看到工具原始返回。")]
     public Task<string> CurrentPptSlidesListAsync(
         KernelArguments? arguments = null,
         CancellationToken cancellationToken = default)
@@ -237,29 +237,32 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_slide_read")]
-    [Description("按播放顺序读取当前演示文稿中指定幻灯片的文本。slideIndex 从 1 开始。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    [Description("按播放顺序读取当前演示文稿中指定幻灯片的文本。slideIndex 从 1 开始；includeShapeDetails 为 true 时附加形状编号列表。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。回答用户时必须引用并归纳本工具输出中的正文与要点，勿假设用户能看到工具原始返回。")]
     public Task<string> CurrentPptSlideReadAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
+        [Description("是否附加形状列表（默认 true）")] bool includeShapeDetails = true,
         KernelArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_ppt_slide_read sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
-        return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex }, cancellationToken);
+        return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex, includeShapeDetails }, cancellationToken);
     }
 
     [KernelFunction("current_ppt_slide_write")]
-    [Description("向当前演示文稿中指定幻灯片的标题或正文占位符写入文本。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    [Description("向当前演示文稿指定幻灯片写入文本：可选 shapeIndex/shapeName，或 placeholderType（title/body/subtitle/ctrTitle）。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
     public Task<string> CurrentPptSlideWriteAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex,
-        [Description("占位符类型：title 或 body")] string placeholderType,
+        [Description("占位符类型：title、body、subtitle、ctrTitle 等")] string placeholderType,
         [Description("要写入的文本")] string text,
+        [Description("可选形状编号，见 ppt_slide_read")] int shapeIndex = 0,
+        [Description("可选形状 Name")] string shapeName = "",
         KernelArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_ppt_slide_write sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
-        return SendRpcAsync(sessionId!, "ppt_slide_write", new { slideIndex, placeholderType, text }, cancellationToken);
+        return SendRpcAsync(sessionId!, "ppt_slide_write", new { slideIndex, placeholderType, text, shapeIndex, shapeName }, cancellationToken);
     }
 
     [KernelFunction("current_ppt_slide_insert")]
@@ -286,6 +289,103 @@ public sealed class CurrentDocumentPlugin
         var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_ppt_slide_delete sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
         return SendRpcAsync(sessionId!, "ppt_slide_delete", new { slideIndex }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slide_image_add")]
+    [Description("在当前演示文稿指定页插入本地图片。任务窗格端能力取决于 Office/WPS API；若不支持将返回明确说明。仅演示文稿任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlideImageAddAsync(
+        [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
+        [Description("本地图片路径")] string imagePath = "",
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_slide_image_add sessionId={SessionId}", sessionId ?? "(null)");
+        return SendRpcAsync(sessionId!, "ppt_slide_image_add", new { slideIndex, imagePath }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_notes_read")]
+    [Description("读取当前演示文稿指定幻灯片的演讲者备注。仅演示文稿任务窗格连接时可用。")]
+    public Task<string> CurrentPptNotesReadAsync(
+        [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_notes_read", new { slideIndex }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_notes_write")]
+    [Description("写入当前演示文稿指定幻灯片的演讲者备注。仅演示文稿任务窗格连接时可用。")]
+    public Task<string> CurrentPptNotesWriteAsync(
+        [Description("幻灯片序号，从 1 开始")] int slideIndex,
+        [Description("备注文本")] string text,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_notes_write", new { slideIndex, text }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slides_reorder")]
+    [Description("重排当前演示文稿全部幻灯片顺序。newOrder 如 2,3,1。任务窗格端可能不支持，将返回说明。仅演示文稿任务窗格连接时可用。")]
+    public Task<string> CurrentPptSlidesReorderAsync(
+        [Description("逗号分隔的新顺序")] string newOrder,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_slides_reorder", new { newOrder }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_table_create")]
+    [Description("在当前演示文稿指定页添加表格。任务窗格端可能不支持。仅演示文稿任务窗格连接时可用。")]
+    public Task<string> CurrentPptTableCreateAsync(
+        [Description("幻灯片序号")] int slideIndex,
+        [Description("行数")] int rows,
+        [Description("列数")] int cols,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_table_create", new { slideIndex, rows, cols }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_table_write_cells")]
+    [Description("向当前演示文稿指定页首张表格写入单元格文本（rowsCsv）。任务窗格端可能不支持。")]
+    public Task<string> CurrentPptTableWriteCellsAsync(
+        [Description("幻灯片序号")] int slideIndex,
+        [Description("如 A1,B1|A2,B2")] string rowsCsv,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_table_write_cells", new { slideIndex, rowsCsv }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_hyperlink_add")]
+    [Description("为指定页某形状文本添加超链接。任务窗格端可能不支持。")]
+    public Task<string> CurrentPptHyperlinkAddAsync(
+        [Description("幻灯片序号")] int slideIndex,
+        [Description("绝对 URL")] string url,
+        [Description("形状编号")] int shapeIndex = 1,
+        [Description("可选形状名称")] string shapeName = "",
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_hyperlink_add", new { slideIndex, url, shapeIndex, shapeName }, cancellationToken);
+    }
+
+    [KernelFunction("current_ppt_slide_duplicate")]
+    [Description("复制指定幻灯片（插入在其后）。任务窗格端可能不支持。")]
+    public Task<string> CurrentPptSlideDuplicateAsync(
+        [Description("要复制的幻灯片序号")] int slideIndex,
+        KernelArguments? arguments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
+        return SendRpcAsync(sessionId!, "ppt_slide_duplicate", new { slideIndex }, cancellationToken);
     }
 
     [KernelFunction("current_run_document_script")]

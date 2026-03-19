@@ -538,6 +538,7 @@
       } else if (method === "ppt_slide_read") {
         try {
           var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1;
+          var includeShapeDetails = params.includeShapeDetails !== false && params.includeShapeDetails !== "false";
           if (slideIndex < 1) {
             sendRes("[错误] slideIndex 必须大于等于 1。", null);
             return;
@@ -561,15 +562,27 @@
           }
           var slide = slides.Item(slideIndex);
           var parts = [];
+          var shapeLines = [];
           if (slide && slide.Shapes && slide.Shapes.Count > 0) {
             for (var i = 0; i < slide.Shapes.Count; i++) {
               var sh = slide.Shapes.Item(i + 1);
               if (sh && sh.TextFrame && sh.TextFrame.TextRange && sh.TextFrame.TextRange.Text) {
-                parts.push(String(sh.TextFrame.TextRange.Text));
+                var tx = String(sh.TextFrame.TextRange.Text);
+                parts.push(tx);
+                if (includeShapeDetails) {
+                  var nm = sh.Name != null ? String(sh.Name) : "";
+                  var pv = tx.length > 120 ? tx.slice(0, 120) + "..." : tx;
+                  if (!pv) pv = "(空)";
+                  shapeLines.push("  [" + (i + 1) + "] Name=\"" + nm + "\" 预览: " + pv);
+                }
               }
             }
           }
           var text = "[幻灯片 " + slideIndex + "]\n" + (parts.length > 0 ? parts.join(" ").trim() : "(无文本)");
+          if (includeShapeDetails) {
+            text += "\n\n[形状列表（编号供 shapeIndex）]\n";
+            text += (shapeLines.length > 0 ? shapeLines.join("\n") : "（本页无带文本的形状）");
+          }
           sendRes(text, null);
         } catch (e) {
           sendRes(null, "当前不是 WPS 演示文档或 API 不可用，无法执行 ppt_slide_read：" + (e && e.message ? e.message : String(e)));
@@ -579,6 +592,8 @@
           var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
           var placeholderType = (params.placeholderType || "title").toString().trim().toLowerCase();
           var text = (params.text != null ? params.text : "").toString();
+          var shapeIndex = params.shapeIndex != null ? parseInt(params.shapeIndex, 10) : 0;
+          var shapeName = (params.shapeName != null ? params.shapeName : "").toString().trim();
           if (slideIndex < 1) {
             sendRes("[错误] slideIndex 必须大于等于 1。", null);
             return;
@@ -596,17 +611,33 @@
           }
           var slide = pres.Slides.Item(slideIndex);
           if (!slide || !slide.Shapes || slide.Shapes.Count < 1) {
-            sendRes("[错误] 未找到可写入的占位符。", null);
+            sendRes("[错误] 未找到可写入的形状。", null);
             return;
           }
-          var idx = placeholderType === "body" ? 2 : 1;
-          var shape = slide.Shapes.Item(idx) || slide.Shapes.Item(1);
+          var shape = null;
+          if (shapeIndex > 0 && shapeIndex <= slide.Shapes.Count) {
+            var cand = slide.Shapes.Item(shapeIndex);
+            if (cand && cand.TextFrame && cand.TextFrame.TextRange) shape = cand;
+          }
+          if (!shape && shapeName) {
+            for (var si = 0; si < slide.Shapes.Count; si++) {
+              var it = slide.Shapes.Item(si + 1);
+              if (it && it.Name && String(it.Name).toLowerCase() === shapeName.toLowerCase() && it.TextFrame && it.TextFrame.TextRange) {
+                shape = it;
+                break;
+              }
+            }
+          }
+          if (!shape) {
+            var idx = placeholderType === "body" || placeholderType === "subtitle" ? 2 : 1;
+            shape = slide.Shapes.Item(idx) || slide.Shapes.Item(1);
+          }
           if (!shape || !shape.TextFrame || !shape.TextFrame.TextRange) {
-            sendRes("[错误] 未找到可写入的占位符。", null);
+            sendRes("[错误] 未找到可写入的形状，请用 ppt_slide_read 查看形状编号。", null);
             return;
           }
           shape.TextFrame.TextRange.Text = text;
-          sendRes("成功：已写入幻灯片占位符。", null);
+          sendRes("成功：已写入幻灯片文本。", null);
         } catch (e) {
           sendRes(null, "ppt_slide_write 失败：" + (e && e.message ? e.message : String(e)));
         }
@@ -666,6 +697,23 @@
         } catch (e) {
           sendRes(null, "ppt_slide_delete 失败：" + (e && e.message ? e.message : String(e)));
         }
+      } else if (
+        method === "ppt_document_create" ||
+        method === "ppt_slide_image_add" ||
+        method === "ppt_notes_read" ||
+        method === "ppt_notes_write" ||
+        method === "ppt_slides_reorder" ||
+        method === "ppt_table_create" ||
+        method === "ppt_table_write_cells" ||
+        method === "ppt_hyperlink_add" ||
+        method === "ppt_slide_duplicate"
+      ) {
+        sendRes(
+          "[错误] 该操作在 WPS 任务窗格中暂未实现（OpenXml 仅在 Chrome/后端文件路径模式）。请使用 Chrome 连接同一后端并对 .pptx 使用工具 " +
+            method +
+            "。",
+          null
+        );
       } else {
         sendRes(null, "Method not supported in this client: " + method);
       }
