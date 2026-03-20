@@ -27,7 +27,7 @@ public sealed class PlanPlugin
     }
 
     [KernelFunction("create_plan")]
-    [Description("根据用户目标生成一份实现计划（Markdown），并保存到计划库。仅在「计划模式」下使用；生成后返回 planId 供后续查看或执行。")]
+    [Description("根据用户目标生成一份实现计划（Markdown），并保存到计划库。用户可明确要求列计划；你也可在任务复杂、需多步拆解与落库执行时主动调用。生成后返回 planId 供后续查看或按步执行。")]
     public async Task<string> CreatePlanAsync(
         [Description("用户的目标或任务描述")] string goal,
         [Description("可选上下文，如当前对话摘要")] string? context = null,

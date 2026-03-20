@@ -19,7 +19,7 @@ public sealed class ToolIndexService : IToolIndexService
     {
         "CLI", "Excel", "Word", "Ppt", "Browser", "File", "System",
         "MCP_STT", "MCP_OCR", "CurrentDocument", "Tavily", "ClawhubSkill",
-        "Memory", "Context", "Subagent", "CrossAgentTask", "Plan",
+        "Memory", "Context", "Subagent", "CrossAgentTask", "Plan", "SkillAuthor",
         "UserOptions", "AccurateData", "ScheduledTask"
     };
 
@@ -159,7 +159,7 @@ public sealed class ToolIndexService : IToolIndexService
     }
 
     /// <inheritdoc />
-    public async Task<(IReadOnlyList<(string PluginName, string FunctionName)> Results, bool GoodEnough)> SearchToolsAsync(
+    public async Task<ToolSearchResult> SearchToolsAsync(
         string userQuery,
         string? clientType,
         int topK = 20,
@@ -178,29 +178,47 @@ public sealed class ToolIndexService : IToolIndexService
             _logger.LogDebug("ToolIndex: Skip search (embedding not configured or empty query).");
             var reason = !_embedding.IsConfigured ? "embedding not configured" : "query empty";
             _logger.LogInformation("ToolIndex: Skip search, reason={Reason}.", reason);
-            return (Array.Empty<(string, string)>(), false);
+            return new ToolSearchResult(Array.Empty<(string, string)>(), false, Array.Empty<(string, string, double)>());
         }
 
         var queryVector = await _embedding.GenerateEmbeddingAsync(userQuery, ct).ConfigureAwait(false);
         if (queryVector == null || queryVector.Length == 0)
-            return (Array.Empty<(string, string)>(), false);
+            return new ToolSearchResult(Array.Empty<(string, string)>(), false, Array.Empty<(string, string, double)>());
 
         var hits = await _store.SearchAsync(queryVector, Math.Clamp(topK, 1, 50), null, collection, ct).ConfigureAwait(false);
-        var results = new List<(string PluginName, string FunctionName)>();
+        var bestScoreByPair = new Dictionary<(string Plugin, string Function), double>(new PluginFunctionScoreComparer());
         var collectionPrefix = collection + "|";
         foreach (var (id, _, score) in hits)
         {
             var toolId = id.StartsWith(collectionPrefix, StringComparison.Ordinal) ? id.Substring(collectionPrefix.Length) : id;
             var pair = ParseToolId(toolId);
-            if (pair.HasValue)
-                results.Add(pair.Value);
+            if (!pair.HasValue) continue;
+            var key = (pair.Value.PluginName, pair.Value.FunctionName);
+            if (!bestScoreByPair.TryGetValue(key, out var prev) || score > prev)
+                bestScoreByPair[key] = score;
         }
 
-        var maxScore = hits.Count > 0 ? hits[0].Score : 0.0;
-        var goodEnough = results.Count >= minCount && maxScore >= minScore;
+        var scoredHits = bestScoreByPair
+            .OrderByDescending(kv => kv.Value)
+            .Select(kv => (PluginName: kv.Key.Plugin, FunctionName: kv.Key.Function, Score: kv.Value))
+            .ToList();
+        var results = scoredHits.Select(h => (h.PluginName, h.FunctionName)).ToList();
+
+        var maxScore = scoredHits.Count > 0 ? scoredHits[0].Score : 0.0;
+        var goodEnough = scoredHits.Count >= minCount && maxScore >= minScore;
         _logger.LogInformation("ToolIndex: Search result collection={Collection} resultsCount={Count} maxScore={Score:F4} goodEnough={GoodEnough} queryPreview={QueryPreview}",
-            collection, results.Count, maxScore, goodEnough, queryPreview);
-        return (results, goodEnough);
+            collection, scoredHits.Count, maxScore, goodEnough, queryPreview);
+        return new ToolSearchResult(results, goodEnough, scoredHits);
+    }
+
+    private sealed class PluginFunctionScoreComparer : IEqualityComparer<(string Plugin, string Function)>
+    {
+        public bool Equals((string Plugin, string Function) x, (string Plugin, string Function) y) =>
+            string.Equals(x.Plugin, y.Plugin, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Function, y.Function, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Plugin, string Function) obj) =>
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
     }
 
     private static string BuildToolText(string pluginName, string functionName, KernelFunction func)

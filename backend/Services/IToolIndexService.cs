@@ -2,6 +2,12 @@ using Microsoft.SemanticKernel;
 
 namespace OfficeCopilot.Server.Services;
 
+/// <summary>工具向量检索结果：去重后的命中（按分数降序）、是否足够好、带分数列表（供 agent_trace）。</summary>
+public sealed record ToolSearchResult(
+    IReadOnlyList<(string PluginName, string FunctionName)> Results,
+    bool GoodEnough,
+    IReadOnlyList<(string PluginName, string FunctionName, double Score)> ScoredHits);
+
 /// <summary>工具索引构建模式：仅内置插件、仅用户插件（UserSkill/MCP）、或全部（兼容旧用）。</summary>
 public enum ToolIndexBuildMode
 {
@@ -38,8 +44,8 @@ public interface IToolIndexService
     /// <param name="minScore">最低分数阈值，用于判定足够好</param>
     /// <param name="minCount">最少条数，用于判定足够好</param>
     /// <param name="ct">取消令牌</param>
-    /// <returns>候选列表（可能为空）；GoodEnough 表示是否满足 minCount 且最高分 ≥ minScore</returns>
-    Task<(IReadOnlyList<(string PluginName, string FunctionName)> Results, bool GoodEnough)> SearchToolsAsync(
+    /// <returns>候选列表（去重、按分数降序）；GoodEnough 表示是否满足 minCount 且最高分 ≥ minScore；ScoredHits 与 Results 顺序一致。</returns>
+    Task<ToolSearchResult> SearchToolsAsync(
         string userQuery,
         string? clientType,
         int topK = 20,

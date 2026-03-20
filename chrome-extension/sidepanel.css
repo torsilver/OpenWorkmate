@@ -277,13 +277,120 @@ html, body {
   border-color: rgba(248, 113, 113, 0.3);
 }
 
-/* 单轮回复容器（含主内容 + 可折叠执行过程） */
+/* 单轮回复容器：时间线 + 完整结论 */
 .msg--round {
   display: flex;
   flex-direction: column;
   gap: 0;
   align-self: flex-start;
   max-width: 100%;
+}
+
+.msg--agent-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.timeline-seg {
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.timeline-seg summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--text-secondary);
+}
+.timeline-seg summary::-webkit-details-marker { display: none; }
+.timeline-seg__label { font-weight: 600; margin-right: 6px; }
+.timeline-seg__tail {
+  opacity: 0.85;
+  font-weight: normal;
+  word-break: break-word;
+}
+.timeline-seg__body {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+/* 时间线内助手 Markdown 正文（与底部气泡同源渲染） */
+.timeline-seg__body--md {
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  max-height: min(70vh, 480px);
+}
+.timeline-seg--answer .timeline-seg__body--md :is(p, ul, ol, pre, h1, h2, h3, h4) {
+  margin: 0.35em 0;
+}
+.timeline-seg--answer .timeline-seg__body--md pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+}
+
+/* Agent 活动：单行尾窗口文案由 JS 写入，与正文流式无关 */
+.msg--agent-activity {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: var(--accent-dim);
+  border: 1px solid rgba(108, 140, 255, 0.25);
+  border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  direction: ltr;
+}
+
+.msg--agent-activity-collapsed {
+  margin-bottom: 6px;
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  align-self: flex-start;
+  max-width: 100%;
+}
+.msg--agent-activity-collapsed summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--text-secondary);
+}
+.msg--agent-activity-collapsed summary::-webkit-details-marker { display: none; }
+.agent-activity-full {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
 }
 
 /* 执行过程：外层折叠「执行过程 (N 个操作)」 */
@@ -466,6 +573,7 @@ html, body {
 
 /* ===== Input ===== */
 .input-area {
+  position: relative;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);

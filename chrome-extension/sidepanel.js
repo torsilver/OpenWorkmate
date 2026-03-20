@@ -297,13 +297,14 @@ let reconnectAttempts = 0;
 let pendingMessages = [];
 /** 计划页触发执行、侧边栏加载时尚未连接，连接后自动发执行请求 */
 let pendingExecutePlan = false;
-let streamingBubble = null;
 const attachments = []; // { mimeType, data (base64), id } for preview
 
 // ───── @ Mode (tool/skill chooser) ─────
 let atModeLoading = null;
 let atModeLoaded = false;
 let atModeCandidates = []; // { group, label, internal }
+/** 拉取工具/技能列表失败时的说明（展示在 @ 面板内） */
+let atModeLoadError = "";
 
 function sanitizeSkillFunctionName(skillId) {
   // Keep in sync with backend ChatService.SanitizeSkillFunctionName
@@ -328,11 +329,15 @@ async function loadAtModeCandidates() {
   if (atModeLoaded) return;
   if (atModeLoading) return atModeLoading;
   atModeLoading = (async () => {
+    atModeLoadError = "";
     try {
       const [builtinRes, skillsRes] = await Promise.all([
         fetch(API_BASE + "/api/tools/builtin"),
         fetch(API_BASE + "/api/skills"),
       ]);
+      const loadErrs = [];
+      if (!builtinRes.ok) loadErrs.push("内置工具接口 HTTP " + builtinRes.status);
+      if (!skillsRes.ok) loadErrs.push("技能接口 HTTP " + skillsRes.status);
       const builtins = builtinRes.ok ? await builtinRes.json() : [];
       const skills = skillsRes.ok ? await skillsRes.json() : [];
 
@@ -363,10 +368,27 @@ async function loadAtModeCandidates() {
       skillCandidates.sort((a, b) => String(a.label).localeCompare(String(b.label), "zh-Hans"));
       atModeCandidates = [...builtinCandidates, ...skillCandidates];
       atModeLoaded = true;
+      if (loadErrs.length) {
+        atModeLoadError =
+          "部分数据加载失败：" +
+          loadErrs.join("；") +
+          "。请确认本机后台已启动（" +
+          API_BASE +
+          "）。" +
+          (atModeCandidates.length ? " 以下为已成功加载的条目。" : "");
+      }
+      if (!atModeCandidates.length) {
+        atModeLoadError =
+          (loadErrs.length ? atModeLoadError + " " : "") + "当前没有可用的工具或技能可选。";
+      }
     } catch (e) {
       console.warn("Failed to load @ mode candidates", e);
       atModeCandidates = [];
       atModeLoaded = true; // don't block UI forever
+      atModeLoadError =
+        "无法加载工具/技能列表：" +
+        (e && e.message ? e.message : String(e)) +
+        "。请确认本机后台已启动。";
     }
   })();
   return atModeLoading;
@@ -456,12 +478,44 @@ function getCandidateDisplayParts(c) {
   };
 }
 
+function escapeHtmlAttr(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;");
+}
+
+function findAtCandidateByInternal(internal) {
+  if (internal == null || internal === "") return null;
+  return atModeCandidates.find((c) => String(c.internal) === String(internal)) || null;
+}
+
+function pickActiveAtCandidate() {
+  const items = $atModeListEl?.querySelectorAll(".at-mode-item");
+  const active = items ? items[atModeActiveIndex] : null;
+  const internal = active?.getAttribute("data-internal");
+  const c = findAtCandidateByInternal(internal);
+  if (c) insertAtCandidate(c);
+}
+
+let atModeSyncScheduled = false;
+function scheduleAtModeSync() {
+  if (atModeSyncScheduled) return;
+  atModeSyncScheduled = true;
+  queueMicrotask(() => {
+    atModeSyncScheduled = false;
+    void updateAtModeFromTextarea();
+  });
+}
+
 function renderAtModeList(filterRaw) {
   if (!$atModeListEl) return;
   const filter = (filterRaw || "").trim().toLowerCase();
   const list = atModeCandidates || [];
   if (!list.length) {
-    $atModeListEl.innerHTML = `<div class="at-mode-empty">暂无可用工具/技能</div>`;
+    const hint = atModeLoadError ? escapeHtml(atModeLoadError) : "暂无可用工具/技能";
+    $atModeListEl.innerHTML = `<div class="at-mode-empty">${hint}</div>`;
     atModeActiveIndex = 0;
     return;
   }
@@ -505,7 +559,7 @@ function renderAtModeList(filterRaw) {
     const safeMeta = escapeHtml(parts.meta);
     const activeCls = idx === atModeActiveIndex ? " at-mode-item--active" : "";
     return `
-      <div class="at-mode-item${activeCls}" data-at-idx="${idx}" role="option" aria-selected="${idx === atModeActiveIndex ? "true" : "false"}">
+      <div class="at-mode-item${activeCls}" data-at-idx="${idx}" data-internal="${escapeHtmlAttr(c.internal || "")}" role="option" aria-selected="${idx === atModeActiveIndex ? "true" : "false"}">
         <div class="at-mode-item-title">${safeLabel}</div>
         <div class="at-mode-item-meta">${groupTag} · ${safeMeta}</div>
       </div>
@@ -552,7 +606,19 @@ async function updateAtModeFromTextarea() {
 
   // Ensure candidates are ready before opening list.
   if (!atModeLoaded) await loadAtModeCandidates();
-  openAtMode(token.filter, token.atIndex, token.caret);
+
+  const filter = token.filter || "";
+  // 若 @ 区间与过滤串未变（例如仅按了方向键切换列表高亮），不要再次 openAtMode/render，
+  // 否则会重置 atModeActiveIndex，表现为「上下箭头无法切换选择」。
+  if (
+    atModeOpen &&
+    atTokenStart === token.atIndex &&
+    atTokenEnd === token.caret &&
+    ($atModeFilterInput?.value || "") === filter
+  ) {
+    return;
+  }
+  openAtMode(filter, token.atIndex, token.caret);
 }
 
 function initAtModeUI() {
@@ -567,21 +633,9 @@ function initAtModeUI() {
     e.preventDefault();
     const item = e.target?.closest?.(".at-mode-item");
     if (!item) return;
-    const idx = Number(item.dataset.atIdx || "0");
-    const filter = $atModeFilterInput.value || "";
-    // Re-render top list deterministically and map idx to candidate by current filter.
-    renderAtModeList(filter);
-    const currentItems = $atModeListEl.querySelectorAll(".at-mode-item");
-    if (!currentItems.length) return;
-    const pickedInternal = (currentItems[idx] || currentItems[0])?.querySelector(".at-mode-item-meta")?.textContent || "";
-    // fallback: use active index
-    const targetCandidate = atModeCandidates[0];
-    // Better: read internal from rendered meta line by querying internal token format.
-    const metaText = (currentItems[idx] || currentItems[0])?.querySelector(".at-mode-item-meta")?.textContent || "";
-    const m = metaText.match(/\[TOOL:([^\]]+)\]/);
-    const internal = m ? m[1] : "";
-    const candidate = atModeCandidates.find(c => String(c.internal) === String(internal)) || targetCandidate;
-    insertAtCandidate(candidate);
+    const internal = item.getAttribute("data-internal");
+    const candidate = findAtCandidateByInternal(internal);
+    if (candidate) insertAtCandidate(candidate);
   });
 
   // Filter input changes (keep textarea token in sync)
@@ -610,14 +664,7 @@ function initAtModeUI() {
       setAtActiveIndex(atModeActiveIndex - 1);
     } else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      const items = $atModeListEl.querySelectorAll(".at-mode-item");
-      const active = items[atModeActiveIndex];
-      if (!active) return;
-      const metaText = active.querySelector(".at-mode-item-meta")?.textContent || "";
-      const m = metaText.match(/\[TOOL:([^\]]+)\]/);
-      const internal = m ? m[1] : "";
-      const candidate = atModeCandidates.find(c => String(c.internal) === String(internal));
-      if (candidate) insertAtCandidate(candidate);
+      pickActiveAtCandidate();
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeAtMode();
@@ -629,7 +676,7 @@ function initAtModeUI() {
   $input.addEventListener("keyup", () => {
     // Ignore when user is interacting with filter input (we already update list there).
     if (document.activeElement === $atModeFilterInput) return;
-    updateAtModeFromTextarea();
+    void updateAtModeFromTextarea();
   });
 }
 
@@ -762,7 +809,7 @@ function connect() {
   });
 
   ws.addEventListener("close", () => {
-    const wasStreaming = !!streamingBubble;
+    const wasStreaming = !!currentRoundWrapper;
     ws = null;
     setStatus("disconnected");
     finalizeStream();
@@ -825,19 +872,161 @@ if (typeof mermaid !== 'undefined') {
 // ───── Streaming state ─────
 
 let currentBotMessageRaw = "";
-// 本轮回复的容器与可折叠「执行过程」区域（多层折叠：执行过程 → 每个工具块）
+// 本轮回复：时间线（prep / think / intent / digest / tool / subtask）+ 底部完整结论区
 let currentRoundWrapper = null;
-let executionLogSection = null;   // <details> 外层
-let executionLogBody = null;       // 内层 div，挂多个工具块
-let executionLogSummaryEl = null;  // 用于更新「执行过程 (N 个操作)」
-let currentRoundToolBlocks = [];   // 本轮的每个工具块 <details>
+let timelineRoot = null;
+let openPrepSeg = null;
+let openThinkSeg = null;
+let openDigestSeg = null;
+let openIntentSeg = null;
+/** 当前一段「助手回复」流（工具调用前会关闭并新建，保证与时间线顺序一致） */
+let openAnswerSeg = null;
+const TIMELINE_TAIL_MAX = 100;
+let currentRoundToolBlocks = [];
 let currentToolEndIndex = 0;
-// 子代理块：默认折叠，内含流式文本 + 子代理内工具调用
 let currentSubtaskBlock = null;
 let currentSubtaskStreamEl = null;
 let currentSubtaskToolsEl = null;
 let currentSubtaskToolBlocks = [];
 let currentSubtaskToolEndIndex = 0;
+
+function ensureTimeline() {
+  if (!currentRoundWrapper) return;
+  if (timelineRoot) return;
+  timelineRoot = document.createElement("div");
+  timelineRoot.className = "msg msg--agent-timeline";
+  timelineRoot.setAttribute("role", "region");
+  timelineRoot.setAttribute("aria-label", "助手处理过程");
+  currentRoundWrapper.appendChild(timelineRoot);
+}
+
+function closeOpenAnswerSegment() {
+  if (openAnswerSeg) {
+    collapseSeg({ details: openAnswerSeg.details });
+    openAnswerSeg = null;
+  }
+}
+
+/** 时间线内的 Markdown 正文段（与 prep/think/tool 同一列表，按发生顺序排列） */
+function newAnswerStreamSeg() {
+  ensureTimeline();
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--answer";
+  d.dataset.kind = "answer";
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = "助手回复";
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const body = document.createElement("div");
+  body.className = "timeline-seg__body timeline-seg__body--md";
+  d.appendChild(sum);
+  d.appendChild(body);
+  timelineRoot.appendChild(d);
+  return { details: d, body, tail, rawMd: "" };
+}
+
+function runMermaidInTimeline(root) {
+  if (!root || typeof mermaid === "undefined") return;
+  root.querySelectorAll(".timeline-seg--answer .language-mermaid").forEach((block, index) => {
+    const id = `mermaid-${Date.now()}-${index}`;
+    const code = block.textContent;
+    const container = document.createElement("div");
+    container.className = "mermaid-container";
+    container.id = id;
+    block.parentNode.replaceWith(container);
+    mermaid.render(id + "-svg", code).then((result) => {
+      container.innerHTML = result.svg;
+    }).catch((err) => {
+      container.innerHTML = `<pre>Mermaid Error: ${err.message}</pre>`;
+    });
+  });
+}
+
+function timelineTail(s, max) {
+  const t = s || "";
+  if (t.length <= max) return t;
+  return "…" + t.slice(t.length - max);
+}
+
+function newTimelineSeg(kind, titleLabel) {
+  ensureTimeline();
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--" + kind;
+  d.dataset.kind = kind;
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = titleLabel;
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const pre = document.createElement("pre");
+  pre.className = "timeline-seg__body";
+  d.appendChild(sum);
+  d.appendChild(pre);
+  timelineRoot.appendChild(d);
+  return { details: d, pre, tail };
+}
+
+function collapseSeg(ref) {
+  if (ref && ref.details) ref.details.open = false;
+}
+
+function collapseAllOpenPhases() {
+  collapseSeg(openPrepSeg);
+  openPrepSeg = null;
+  collapseSeg(openThinkSeg);
+  openThinkSeg = null;
+  collapseSeg(openDigestSeg);
+  openDigestSeg = null;
+  collapseSeg(openIntentSeg);
+  openIntentSeg = null;
+  closeOpenAnswerSegment();
+}
+
+function appendAgentStatusLine(text) {
+  const line = (text && String(text).trim()) || "";
+  if (!line) return;
+  if (!currentRoundWrapper) beginStream();
+  if (!openPrepSeg) openPrepSeg = newTimelineSeg("prep", "准备 / 状态");
+  const pre = openPrepSeg.pre;
+  if (pre.textContent) pre.textContent += "\n";
+  pre.textContent += line;
+  openPrepSeg.tail.textContent = timelineTail(pre.textContent, TIMELINE_TAIL_MAX);
+  openPrepSeg.details.title = pre.textContent;
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
+
+/** agent_trace：类目 + 标题 + 多行详情，并入「准备 / 状态」时间线 */
+function appendAgentTrace(msg) {
+  const title = ((msg.traceTitle && String(msg.traceTitle).trim()) || (msg.content && String(msg.content).trim()) || "");
+  const detail = (msg.traceDetail && String(msg.traceDetail).trim()) || "";
+  const cat = (msg.traceCategory && String(msg.traceCategory).trim()) || "trace";
+  if (!title && !detail) return;
+  let block = "[" + cat + "] " + (title || "(无标题)");
+  if (detail) block += "\n" + detail;
+  appendAgentStatusLine(block);
+}
+
+function appendReasoningChunk(text) {
+  const t = text != null ? String(text) : "";
+  if (!t) return;
+  if (!currentRoundWrapper) beginStream();
+  if (!openThinkSeg) openThinkSeg = newTimelineSeg("think", "推理");
+  openThinkSeg.pre.textContent += t;
+  openThinkSeg.tail.textContent = timelineTail(openThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+  openThinkSeg.details.title = openThinkSeg.pre.textContent;
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
 
 function beginStream() {
   removeThinkingIndicator();
@@ -846,23 +1035,12 @@ function beginStream() {
 
   currentRoundWrapper = document.createElement("div");
   currentRoundWrapper.className = "msg msg--round";
-
-  streamingBubble = document.createElement("div");
-  streamingBubble.className = "msg msg--bot msg--streaming";
-  streamingBubble.textContent = "";
-  currentRoundWrapper.appendChild(streamingBubble);
-
-  // 执行过程：进行中时展开，最终答案给出后再折叠
-  executionLogSection = document.createElement("details");
-  executionLogSection.className = "msg msg--execution-log";
-  executionLogSummaryEl = document.createElement("summary");
-  executionLogSummaryEl.textContent = "执行过程 (0 个操作)";
-  executionLogSection.appendChild(executionLogSummaryEl);
-  executionLogBody = document.createElement("div");
-  executionLogBody.className = "execution-log-body";
-  executionLogSection.appendChild(executionLogBody);
-  executionLogSection.open = false; // 有块时在 updateExecutionLogCount 里会打开
-  currentRoundWrapper.appendChild(executionLogSection);
+  timelineRoot = null;
+  openPrepSeg = null;
+  openThinkSeg = null;
+  openDigestSeg = null;
+  openIntentSeg = null;
+  openAnswerSeg = null;
 
   $messages.appendChild(currentRoundWrapper);
   currentBotMessageRaw = "";
@@ -872,9 +1050,7 @@ function beginStream() {
 }
 
 function updateExecutionLogCount() {
-  if (executionLogSummaryEl) executionLogSummaryEl.textContent = "执行过程 (" + currentRoundToolBlocks.length + " 个操作)";
-  // 进行中：有新的执行过程时保持展开
-  if (executionLogSection && currentRoundToolBlocks.length > 0) executionLogSection.open = true;
+  /* 工具块已直接挂在时间线，无需单独计数 summary */
 }
 
 function appendStreamWarning(text) {
@@ -908,56 +1084,73 @@ function applyMarkedToElement(el, rawMarkdown) {
 }
 
 function appendStreamChunk(text) {
-  if (!streamingBubble) {
-    beginStream();
-  }
-  currentBotMessageRaw += text;
+  if (!currentRoundWrapper) beginStream();
+  collapseSeg(openThinkSeg);
+  openThinkSeg = null;
+  collapseSeg(openDigestSeg);
+  openDigestSeg = null;
+  const chunk = text != null ? String(text) : "";
+  if (!chunk) return;
+  currentBotMessageRaw += chunk;
+  if (!openAnswerSeg) openAnswerSeg = newAnswerStreamSeg();
+  openAnswerSeg.rawMd += chunk;
+  openAnswerSeg.details.dataset.streamRaw = openAnswerSeg.rawMd;
 
   if (_streamRenderPending) return;
   _streamRenderPending = true;
   _streamRenderRafId = requestAnimationFrame(() => {
     _streamRenderPending = false;
     _streamRenderRafId = null;
-    if (!streamingBubble) return;
-    applyMarkedToElement(streamingBubble, currentBotMessageRaw);
-    $messages.scrollTop = $messages.scrollHeight;
+    if (!openAnswerSeg) return;
+    applyMarkedToElement(openAnswerSeg.body, openAnswerSeg.rawMd);
+    const plain = openAnswerSeg.rawMd.replace(/\s+/g, " ").trim();
+    openAnswerSeg.tail.textContent = timelineTail(plain, TIMELINE_TAIL_MAX);
+    openAnswerSeg.details.title = plain.slice(0, 200);
+    if ($messages) $messages.scrollTop = $messages.scrollHeight;
   });
 }
 
 function finalizeStream() {
-  if (streamingBubble) {
-    streamingBubble.classList.remove("msg--streaming");
-    applyMarkedToElement(streamingBubble, currentBotMessageRaw);
-    if (typeof marked !== "undefined" && typeof mermaid !== "undefined") {
-      const mermaidBlocks = streamingBubble.querySelectorAll(".language-mermaid");
-      mermaidBlocks.forEach((block, index) => {
-        const id = `mermaid-${Date.now()}-${index}`;
-        const code = block.textContent;
-        const container = document.createElement("div");
-        container.className = "mermaid-container";
-        container.id = id;
-        block.parentNode.replaceWith(container);
-        mermaid.render(id + "-svg", code).then(result => {
-          container.innerHTML = result.svg;
-        }).catch(err => {
-          container.innerHTML = `<pre>Mermaid Error: ${err.message}</pre>`;
-        });
+  const wrap = currentRoundWrapper;
+  collapseAllOpenPhases();
+  openAnswerSeg = null;
+  if (timelineRoot) {
+    timelineRoot.querySelectorAll(".timeline-seg--answer").forEach(function (el) {
+      const div = el.querySelector(".timeline-seg__body--md");
+      const raw = el.dataset.streamRaw;
+      if (div && raw != null && typeof marked !== "undefined") {
+        applyMarkedToElement(div, raw);
+      }
+    });
+    if (typeof mermaid !== "undefined") runMermaidInTimeline(timelineRoot);
+    timelineRoot.querySelectorAll("details").forEach(function (el) {
+      el.open = false;
+    });
+    const answerDetails = timelineRoot.querySelectorAll(".timeline-seg.timeline-seg--answer");
+    if (answerDetails.length) answerDetails[answerDetails.length - 1].open = true;
+    try {
+      const segs = [];
+      timelineRoot.querySelectorAll(".timeline-seg").forEach(function (el) {
+        const kind = el.dataset.kind || "";
+        const raw = el.dataset.streamRaw;
+        const pre = el.querySelector("pre.timeline-seg__body");
+        const divMd = el.querySelector(".timeline-seg__body--md");
+        let t = "";
+        if (raw != null && String(raw).length) t = String(raw);
+        else if (pre) t = pre.textContent || "";
+        else if (divMd) t = divMd.innerText || "";
+        segs.push({ kind, text: t });
       });
-    }
-    streamingBubble = null;
-    currentBotMessageRaw = "";
+      if (wrap && segs.length) wrap.dataset.timelineSegments = JSON.stringify(segs);
+    } catch (_) { /* ignore */ }
   }
-  if (executionLogSection) {
-    executionLogSection.style.display = currentRoundToolBlocks.length === 0 ? "none" : "";
-    if (currentRoundToolBlocks.length > 0) {
-      executionLogSection.open = false; // 给出最终答案后折叠「执行过程」
-      currentRoundToolBlocks.forEach(function (b) { b.open = false; });
-    }
+
+  currentBotMessageRaw = "";
+  if (currentRoundToolBlocks.length > 0) {
+    currentRoundToolBlocks.forEach(function (b) { b.open = false; });
   }
   currentRoundWrapper = null;
-  executionLogSection = null;
-  executionLogBody = null;
-  executionLogSummaryEl = null;
+  timelineRoot = null;
   currentRoundToolBlocks = [];
   currentToolEndIndex = 0;
   currentSubtaskBlock = null;
@@ -984,6 +1177,41 @@ function handleMessage(raw) {
       beginStream();
       break;
 
+    case "agent_status": {
+      const line = (msg.content && String(msg.content).trim()) || "";
+      if (line) appendAgentStatusLine(line);
+      break;
+    }
+
+    case "agent_trace":
+      appendAgentTrace(msg);
+      break;
+
+    case "reasoning_chunk":
+      appendReasoningChunk(msg.content);
+      break;
+
+    case "agent_phase": {
+      const phase = (msg.phase && String(msg.phase)) || "";
+      const c = (msg.content && String(msg.content).trim()) || "";
+      if (!c) break;
+      if (!currentRoundWrapper) beginStream();
+      if (phase === "intent") {
+        collapseAllOpenPhases();
+        openIntentSeg = newTimelineSeg("intent", "计划 / 意图");
+        openIntentSeg.pre.textContent = c;
+        openIntentSeg.tail.textContent = timelineTail(c, TIMELINE_TAIL_MAX);
+      } else if (phase === "digest") {
+        collapseSeg(openDigestSeg);
+        openDigestSeg = null;
+        openDigestSeg = newTimelineSeg("digest", "处理工具结果");
+        openDigestSeg.pre.textContent = c;
+        openDigestSeg.tail.textContent = timelineTail(c, TIMELINE_TAIL_MAX);
+      }
+      if ($messages) $messages.scrollTop = $messages.scrollHeight;
+      break;
+    }
+
     case "stream_chunk":
       appendStreamChunk(msg.content);
       break;
@@ -999,8 +1227,9 @@ function handleMessage(raw) {
       break;
 
     case "subtask_start": {
-      if (!executionLogBody) beginStream();
-      if (!executionLogBody) break;
+      if (!currentRoundWrapper) beginStream();
+      ensureTimeline();
+      if (!timelineRoot) break;
       const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
       const titleLen = 48;
       const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
@@ -1032,7 +1261,7 @@ function handleMessage(raw) {
       toolsWrap.className = "subtask-tools";
       inner.appendChild(toolsWrap);
       block.appendChild(inner);
-      executionLogBody.appendChild(block);
+      timelineRoot.appendChild(block);
       currentSubtaskBlock = block;
       currentSubtaskStreamEl = streamEl;
       currentSubtaskToolsEl = toolsWrap;
@@ -1082,7 +1311,9 @@ function handleMessage(raw) {
       }
       const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
       const isSubtask = msg.isSubtask === true;
-      const parentBody = isSubtask ? currentSubtaskToolsEl : executionLogBody;
+      collapseAllOpenPhases();
+      ensureTimeline();
+      const parentBody = isSubtask ? currentSubtaskToolsEl : timelineRoot;
       if (!parentBody) break;
       const block = document.createElement("details");
       block.className = "tool-call-block tool-call--running" + (isSubtask ? " subtask-tool-block" : "");
@@ -1975,7 +2206,7 @@ async function handleSend() {
   const text = $input.value.trim();
   const hasAttachments = attachments.length > 0;
   if (!text && !hasAttachments) return;
-  if (streamingBubble) return;
+  if (currentRoundWrapper) return;
 
   const attachmentsPayload = buildAttachmentsPayload();
 
@@ -2183,7 +2414,7 @@ $sendBtn.addEventListener("click", handleSend);
 
 if ($stopBtn) {
   $stopBtn.addEventListener("click", () => {
-    if (!streamingBubble) return;
+    if (!currentRoundWrapper) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "stop" }));
       debugLog("WS Send", "type=stop", "send");
@@ -2199,6 +2430,7 @@ $input.addEventListener("keydown", (e) => {
       closeAtMode();
       return;
     }
+    // 主输入框内用 ↑↓ 切换列表（token 未变时 updateAtModeFromTextarea 会跳过，不会重置高亮）。
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setAtActiveIndex(atModeActiveIndex + 1);
@@ -2211,14 +2443,7 @@ $input.addEventListener("keydown", (e) => {
     }
     if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
       e.preventDefault();
-      const items = $atModeListEl?.querySelectorAll(".at-mode-item");
-      const active = items ? items[atModeActiveIndex] : null;
-      if (!active) return;
-      const metaText = active.querySelector(".at-mode-item-meta")?.textContent || "";
-      const m = metaText.match(/\[TOOL:([^\]]+)\]/);
-      const internal = m ? m[1] : "";
-      const candidate = atModeCandidates.find(c => String(c.internal) === String(internal));
-      if (candidate) insertAtCandidate(candidate);
+      pickActiveAtCandidate();
       return;
     }
   }
@@ -2231,6 +2456,7 @@ $input.addEventListener("keydown", (e) => {
 $input.addEventListener("input", () => {
   $input.style.height = "auto";
   $input.style.height = Math.min($input.scrollHeight, 120) + "px";
+  scheduleAtModeSync();
 });
 
 // ───── Meeting Listener ─────

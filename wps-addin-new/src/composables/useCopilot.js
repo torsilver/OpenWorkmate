@@ -1,7 +1,7 @@
 /**
  * Office Copilot 任务窗格逻辑：WebSocket、消息列表、计划面板、RPC、HITL。
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
 
 const WS_URL = 'ws://localhost:8765/ws'
@@ -10,6 +10,13 @@ const AUTH_TOKEN = 'office-copilot-dev-token'
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 16000
 const CLIENT_TYPE = 'wps'
+const TIMELINE_TAIL_MAX = 100
+
+function formatActivityTail(log, maxChars) {
+  const s = log || ''
+  if (s.length <= maxChars) return s
+  return '…' + s.slice(s.length - maxChars)
+}
 
 function escapeHtml(unsafe) {
   if (!unsafe) return ''
@@ -24,7 +31,7 @@ function escapeHtml(unsafe) {
 export function useCopilot() {
   const connected = ref(false)
   const messages = ref([])
-  const currentRound = ref(null) // { streamContent: '', toolBlocks: [], isStreaming: true }
+  const currentRound = ref(null) // { streamContent, timelineSegments, isStreaming, ... }
   const inputText = ref('')
   const inputEnabled = ref(true)
 
@@ -103,6 +110,7 @@ export function useCopilot() {
   }
 
   function resetConversation() {
+    closeAtMode()
     // Chrome 侧边栏的“新建对话”语义：清空当前对话会话，重连 WS，并清除附件/计划绑定。
     try {
       sessionStorage.removeItem('copilot_session_id')
@@ -173,12 +181,78 @@ export function useCopilot() {
     messages.value.push({ type: 'bot', content: text, isError, html })
   }
 
+  function ensureRound() {
+    if (!currentRound.value) beginStream()
+    return currentRound.value
+  }
+
+  function collapseAllOpenPhases() {
+    const r = currentRound.value
+    if (!r) return
+    for (const k of ['openPrep', 'openThink', 'openDigest', 'openIntent', 'openAnswer']) {
+      if (r[k]) {
+        r[k].open = false
+        r[k] = null
+      }
+    }
+  }
+
+  function newTimelineSeg(kind, title) {
+    const r = ensureRound()
+    const id = ++r.nextSegId
+    const seg = { id, kind, title, body: '', tail: '', open: true, parsedHtml: '' }
+    r.timelineSegments.push(seg)
+    return seg
+  }
+
+  function appendPrepLine(text) {
+    const t = (text && String(text).trim()) || ''
+    if (!t) return
+    const r = ensureRound()
+    if (!r.openPrep) r.openPrep = newTimelineSeg('prep', '准备 / 状态')
+    const seg = r.openPrep
+    if (seg.body) seg.body += '\n'
+    seg.body += t
+    seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+  }
+
+  function appendAgentTrace(msg) {
+    const title =
+      (msg.traceTitle && String(msg.traceTitle).trim()) ||
+      (msg.content && String(msg.content).trim()) ||
+      ''
+    const detail = (msg.traceDetail && String(msg.traceDetail).trim()) || ''
+    const cat = (msg.traceCategory && String(msg.traceCategory).trim()) || 'trace'
+    if (!title && !detail) return
+    let block = `[${cat}] ${title || '(无标题)'}`
+    if (detail) block += `\n${detail}`
+    appendPrepLine(block)
+  }
+
+  function appendReasoningChunk(text) {
+    const t = text != null ? String(text) : ''
+    if (!t) return
+    const r = ensureRound()
+    if (!r.openThink) r.openThink = newTimelineSeg('think', '推理')
+    const seg = r.openThink
+    seg.body += t
+    seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+  }
+
   function beginStream() {
     removeWelcome()
     currentRound.value = {
       streamContent: '',
-      toolBlocks: [],
-      isStreaming: true
+      timelineSegments: [],
+      streamWarnings: [],
+      isStreaming: true,
+      nextSegId: 0,
+      openPrep: null,
+      openThink: null,
+      openDigest: null,
+      openIntent: null,
+      openAnswer: null,
+      toolSegQueue: []
     }
     currentToolEndIndex = 0
     inputEnabled.value = false
@@ -186,22 +260,50 @@ export function useCopilot() {
 
   function appendStreamChunk(text) {
     if (!currentRound.value) beginStream()
-    currentRound.value.streamContent += text
-    currentRound.value.parsedHtml =
-      typeof marked.parse === 'function' ? marked.parse(currentRound.value.streamContent) : currentRound.value.streamContent
+    const r = currentRound.value
+    if (r.openThink) {
+      r.openThink.open = false
+      r.openThink = null
+    }
+    if (r.openDigest) {
+      r.openDigest.open = false
+      r.openDigest = null
+    }
+    const chunk = text != null ? String(text) : ''
+    if (!chunk) return
+    r.streamContent += chunk
+    if (!r.openAnswer) {
+      r.openAnswer = newTimelineSeg('answer', '助手回复')
+    }
+    const a = r.openAnswer
+    a.body += chunk
+    a.parsedHtml =
+      typeof marked.parse === 'function' ? marked.parse(a.body) : a.body
+    a.tail = formatActivityTail(a.body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
+    r.parsedHtml =
+      typeof marked.parse === 'function' ? marked.parse(r.streamContent) : r.streamContent
   }
 
   function finalizeStream() {
     if (currentRound.value) {
       const round = currentRound.value
+      collapseAllOpenPhases()
+      round.openAnswer = null
+      round.timelineSegments.forEach((s) => {
+        s.open = false
+      })
+      const answerSegs = round.timelineSegments.filter((s) => s.kind === 'answer')
+      if (answerSegs.length) answerSegs[answerSegs.length - 1].open = true
       round.isStreaming = false
       round.parsedHtml = typeof marked.parse === 'function' ? marked.parse(round.streamContent) : round.streamContent
       removeWelcome()
+      const segs = round.timelineSegments.map((s) => ({ ...s, open: false }))
       messages.value.push({
         type: 'round',
         streamContent: round.streamContent,
         parsedHtml: round.parsedHtml,
-        toolBlocks: [...round.toolBlocks],
+        timelineSegments: segs,
+        streamWarnings: [...(round.streamWarnings || [])],
         isStreaming: false
       })
       currentRound.value = null
@@ -284,35 +386,89 @@ export function useCopilot() {
       case 'stream_start':
         beginStream()
         break
+      case 'reasoning_chunk':
+        appendReasoningChunk(msg.content)
+        break
+      case 'agent_phase': {
+        const phase = (msg.phase && String(msg.phase)) || ''
+        const c = (msg.content && String(msg.content).trim()) || ''
+        if (!c) break
+        const r = ensureRound()
+        if (phase === 'intent') {
+          collapseAllOpenPhases()
+          const seg = newTimelineSeg('intent', '计划 / 意图')
+          seg.body = c
+          seg.tail = formatActivityTail(c, TIMELINE_TAIL_MAX)
+          r.openIntent = seg
+        } else if (phase === 'digest') {
+          if (r.openDigest) {
+            r.openDigest.open = false
+            r.openDigest = null
+          }
+          const seg = newTimelineSeg('digest', '处理工具结果')
+          seg.body = c
+          seg.tail = formatActivityTail(c, TIMELINE_TAIL_MAX)
+          r.openDigest = seg
+        }
+        break
+      }
       case 'stream_chunk':
         appendStreamChunk(msg.content)
         break
       case 'stream_end':
         finalizeStream()
         break
+      case 'agent_status': {
+        const line = (msg.content && String(msg.content).trim()) || ''
+        if (line) appendPrepLine(line)
+        break
+      }
+      case 'agent_trace':
+        appendAgentTrace(msg)
+        break
+      case 'stream_warning': {
+        if (!currentRound.value) beginStream()
+        const t = (msg.content && String(msg.content).trim()) || '服务端返回了警告'
+        currentRound.value.streamWarnings.push(t)
+        break
+      }
+      case 'subtask_start': {
+        const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || '子任务'
+        const titleLen = 48
+        const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + '…'
+        appendPrepLine('子代理：' + summaryLabel)
+        break
+      }
+      case 'subtask_chunk':
+      case 'subtask_end':
+        break
       case 'tool_invocation_start': {
-        if (!currentRound.value) break
+        const r = ensureRound()
+        collapseAllOpenPhases()
         const label = msg.summary || '正在执行: ' + (msg.plugin || '') + '.' + (msg.function || '')
-        currentRound.value.toolBlocks.push({
-          label,
-          status: 'running',
-          output: ''
-        })
+        const seg = newTimelineSeg('tool', label)
+        seg.status = 'running'
+        seg.output = ''
+        seg.label = label
+        seg.displayLabel = label.replace(/^正在执行:\s*/i, '')
+        r.toolSegQueue.push(seg)
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, 'in_progress')
         }
         break
       }
       case 'tool_invocation_end': {
-        if (!currentRound.value || !currentRound.value.toolBlocks.length) break
-        const block = currentRound.value.toolBlocks[currentToolEndIndex]
+        const r = currentRound.value
+        if (!r || !r.toolSegQueue || !r.toolSegQueue.length) break
+        const block = r.toolSegQueue[currentToolEndIndex]
         if (block) {
           block.status = msg.success === true ? 'done' : 'fail'
           block.output = (msg.content && String(msg.content).trim()) || ''
           block.displayLabel = (block.label || '').replace(/^正在执行:\s*/i, '')
+          block.open = false
         }
         if (msg.planStepIndex) {
-          updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'fail')
+          updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
         }
         currentToolEndIndex++
         break
@@ -847,6 +1003,344 @@ export function useCopilot() {
     hitlVisible.value = false
   }
 
+  // ───── @ 模式（工具/技能选择，与 chrome-extension 侧行为对齐）─────
+  const inputAreaRef = ref(null)
+  const atModeFilterInputRef = ref(null)
+  const atModeOpen = ref(false)
+  const atModeActiveIndex = ref(0)
+  const atTokenStart = ref(-1)
+  const atTokenEnd = ref(-1)
+  const atModeFilter = ref('')
+  const atModeCandidates = ref([])
+  const atModeTopList = ref([])
+  const atModeLoaded = ref(false)
+  const atModeLoadError = ref('')
+  const atModeBootstrapping = ref(false)
+  let atModeLoadingPromise = null
+  let atModeSyncScheduled = false
+
+  function sanitizeSkillFunctionName(skillId) {
+    if (!skillId) return 'Skill'
+    let s = String(skillId)
+      .trim()
+      .replace(/-/g, '_')
+      .replace(/\//g, '_')
+      .replace(/ /g, '_')
+    let out = ''
+    let prevUnderscore = false
+    for (const c of s) {
+      if (/[A-Za-z0-9_]/.test(c)) {
+        out += c
+        prevUnderscore = false
+      } else if (!prevUnderscore) {
+        out += '_'
+        prevUnderscore = true
+      }
+    }
+    out = out.replace(/^_+|_+$/g, '')
+    return out ? out : 'Skill'
+  }
+
+  function isWhitespace(ch) {
+    return /\s/.test(ch)
+  }
+
+  function findAtTokenInTextarea() {
+    const el = inputAreaRef.value
+    if (!el) return null
+    const value = inputText.value || ''
+    const caret = el.selectionStart ?? 0
+    const left = caret - 1
+    if (left < 0) return null
+    let i = left
+    let lastAt = -1
+    while (i >= 0) {
+      const ch = value[i]
+      if (isWhitespace(ch)) break
+      if (ch === '@') lastAt = i
+      i--
+    }
+    if (lastAt < 0) return null
+    return { atIndex: lastAt, caret, filter: value.slice(lastAt + 1, caret) }
+  }
+
+  async function loadAtModeCandidates() {
+    if (atModeLoaded.value) return
+    if (atModeLoadingPromise) return atModeLoadingPromise
+    atModeLoadingPromise = (async () => {
+      atModeLoadError.value = ''
+      try {
+        const [builtinRes, skillsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/tools/builtin`),
+          fetch(`${API_BASE}/api/skills`),
+        ])
+        const loadErrs = []
+        if (!builtinRes.ok) loadErrs.push('内置工具接口 HTTP ' + builtinRes.status)
+        if (!skillsRes.ok) loadErrs.push('技能接口 HTTP ' + skillsRes.status)
+        const builtins = builtinRes.ok ? await builtinRes.json() : []
+        const skills = skillsRes.ok ? await skillsRes.json() : []
+
+        const builtinCandidates = (Array.isArray(builtins) ? builtins : [])
+          .map((t) => ({
+            group: 'Tools',
+            label: t.name || t.id || '',
+            internal: t.id || t.Id || '',
+            desc: t.description || t.Description || '',
+          }))
+          .filter((c) => c.internal)
+
+        const skillCandidates = (Array.isArray(skills) ? skills : [])
+          .filter((s) => (s.enabled !== false && s.Enabled !== false) && (s.promptTemplate || s.PromptTemplate || ''))
+          .map((s) => {
+            const id = s.id || s.Id || ''
+            const safeName = sanitizeSkillFunctionName(id)
+            return {
+              group: 'Skills',
+              label: s.name || s.Name || id,
+              internal: 'UserSkill_' + safeName,
+              desc: s.description || s.Description || '',
+            }
+          })
+
+        builtinCandidates.sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-Hans'))
+        skillCandidates.sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-Hans'))
+        const merged = [...builtinCandidates, ...skillCandidates]
+        atModeCandidates.value = merged
+        atModeLoaded.value = true
+        if (loadErrs.length) {
+          atModeLoadError.value =
+            '部分数据加载失败：' +
+            loadErrs.join('；') +
+            '。请确认本机后台已启动（' +
+            API_BASE +
+            '）。' +
+            (merged.length ? ' 以下为已成功加载的条目。' : '')
+        }
+        if (!merged.length) {
+          atModeLoadError.value =
+            (atModeLoadError.value ? atModeLoadError.value + ' ' : '') + '当前没有可用的工具或技能可选。'
+        }
+      } catch (e) {
+        console.warn('Failed to load @ mode candidates', e)
+        atModeCandidates.value = []
+        atModeLoaded.value = true
+        atModeLoadError.value =
+          '无法加载工具/技能列表：' +
+          (e && e.message ? e.message : String(e)) +
+          '。请确认本机后台已启动。'
+      } finally {
+        atModeLoadingPromise = null
+      }
+    })()
+    return atModeLoadingPromise
+  }
+
+  function rebuildAtModeList(filterRaw) {
+    const filter = (filterRaw || '').trim().toLowerCase()
+    const list = atModeCandidates.value || []
+    if (!list.length) {
+      atModeTopList.value = []
+      atModeActiveIndex.value = 0
+      return
+    }
+    const scored = []
+    for (const c of list) {
+      const label = String(c.label || '').toLowerCase()
+      const internal = String(c.internal || '').toLowerCase()
+      const text = `${label} ${internal}`
+      if (filter && !text.includes(filter)) continue
+      let score = 0
+      if (!filter) score = 1
+      else if (label.startsWith(filter) || internal.startsWith(filter)) score = 100
+      else if (label.includes(filter) || internal.includes(filter)) score = 50
+      scored.push({ c, score })
+    }
+    scored.sort((a, b) => {
+      const g1 = a.c.group === 'Tools' ? 0 : 1
+      const g2 = b.c.group === 'Tools' ? 0 : 1
+      if (g1 !== g2) return g1 - g2
+      if (b.score !== a.score) return b.score - a.score
+      return String(a.c.label).localeCompare(String(b.c.label), 'zh-Hans')
+    })
+    atModeTopList.value = scored.slice(0, 30).map((x) => x.c)
+    atModeActiveIndex.value = 0
+  }
+
+  function openAtMode(filter, startIdx, endIdx) {
+    atModeOpen.value = true
+    atTokenStart.value = startIdx
+    atTokenEnd.value = endIdx
+    atModeFilter.value = filter || ''
+    atModeActiveIndex.value = 0
+    rebuildAtModeList(atModeFilter.value)
+  }
+
+  function closeAtMode() {
+    atModeOpen.value = false
+    atModeActiveIndex.value = 0
+    atTokenStart.value = -1
+    atTokenEnd.value = -1
+    atModeFilter.value = ''
+    atModeTopList.value = []
+  }
+
+  function setAtActiveIndex(idx) {
+    const n = atModeTopList.value.length
+    if (!n) return
+    atModeActiveIndex.value = Math.max(0, Math.min(n - 1, idx))
+  }
+
+  function insertAtCandidate(candidate) {
+    if (!candidate || atTokenStart.value < 0 || atTokenEnd.value < 0) return
+    const value = inputText.value || ''
+    const internal = candidate.internal || ''
+    const inserted = `[TOOL:${internal}]`
+    const afterChar = value[atTokenEnd.value] || ''
+    const trailing = afterChar && !/\s/.test(afterChar) ? ' ' : ''
+    const newValue = value.slice(0, atTokenStart.value) + inserted + trailing + value.slice(atTokenEnd.value)
+    inputText.value = newValue
+    const newCaret = atTokenStart.value + inserted.length + trailing.length
+    closeAtMode()
+    nextTick(() => {
+      const ta = inputAreaRef.value
+      if (ta) {
+        ta.focus()
+        ta.setSelectionRange(newCaret, newCaret)
+      }
+    })
+  }
+
+  function pickAtModeActive() {
+    const list = atModeTopList.value
+    const c = list[atModeActiveIndex.value]
+    if (c) insertAtCandidate(c)
+  }
+
+  async function updateAtModeFromTextarea() {
+    const el = inputAreaRef.value
+    if (!el) return
+    const token = findAtTokenInTextarea()
+    if (!token) {
+      if (atModeOpen.value) closeAtMode()
+      return
+    }
+    const value = inputText.value || ''
+    const prev = token.atIndex > 0 ? value[token.atIndex - 1] : ''
+    const allow =
+      token.atIndex === 0 || isWhitespace(prev) || /[.,;:!?()[\]{}]/.test(prev)
+    if (!allow) {
+      if (atModeOpen.value) closeAtMode()
+      return
+    }
+    if (!atModeLoaded.value) {
+      atModeBootstrapping.value = true
+      try {
+        await loadAtModeCandidates()
+      } finally {
+        atModeBootstrapping.value = false
+      }
+    }
+    const filter = token.filter || ''
+    if (
+      atModeOpen.value &&
+      atTokenStart.value === token.atIndex &&
+      atTokenEnd.value === token.caret &&
+      (atModeFilter.value || '') === filter
+    ) {
+      return
+    }
+    openAtMode(filter, token.atIndex, token.caret)
+  }
+
+  function scheduleAtModeSync() {
+    if (atModeSyncScheduled) return
+    atModeSyncScheduled = true
+    queueMicrotask(() => {
+      atModeSyncScheduled = false
+      void updateAtModeFromTextarea()
+    })
+  }
+
+  function onAtModeFilterInput() {
+    if (!atModeOpen.value || atTokenStart.value < 0 || atTokenEnd.value < 0) return
+    const newFilter = atModeFilter.value
+    const value = inputText.value || ''
+    const tokenStart = atTokenStart.value + 1
+    inputText.value = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd.value)
+    atTokenEnd.value = tokenStart + newFilter.length
+    rebuildAtModeList(newFilter)
+    nextTick(() => {
+      const ta = inputAreaRef.value
+      if (ta) ta.setSelectionRange(atTokenEnd.value, atTokenEnd.value)
+    })
+  }
+
+  function onAtModeFilterKeydown(e) {
+    if (!atModeOpen.value) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setAtActiveIndex(atModeActiveIndex.value + 1)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setAtActiveIndex(atModeActiveIndex.value - 1)
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      pickAtModeActive()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeAtMode()
+      inputAreaRef.value?.focus()
+    }
+  }
+
+  function onChatKeydown(e) {
+    if (atModeOpen.value) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeAtMode()
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setAtActiveIndex(atModeActiveIndex.value + 1)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setAtActiveIndex(atModeActiveIndex.value - 1)
+        return
+      }
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+        e.preventDefault()
+        pickAtModeActive()
+        return
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  function onChatKeyup() {
+    const fe = atModeFilterInputRef.value
+    if (fe && document.activeElement === fe) return
+    void updateAtModeFromTextarea()
+  }
+
+  function onChatInput() {
+    scheduleAtModeSync()
+  }
+
+  const atModeListPlaceholder = computed(() => {
+    if (atModeBootstrapping.value) return '正在加载工具/技能列表…'
+    if (!atModeCandidates.value.length) {
+      return atModeLoadError.value || '暂无可用工具/技能'
+    }
+    if (!atModeTopList.value.length) return '无匹配结果'
+    return ''
+  })
+
   const showWelcome = computed(() => messages.value.length === 0 && !currentRound.value)
 
   onMounted(() => {
@@ -898,6 +1392,19 @@ export function useCopilot() {
     handleFileInputChange,
     sendConfirmResponse,
     escapeHtml,
-    marked
+    marked,
+    inputAreaRef,
+    atModeFilterInputRef,
+    atModeOpen,
+    atModeActiveIndex,
+    atModeFilter,
+    atModeTopList,
+    atModeListPlaceholder,
+    insertAtCandidate,
+    onAtModeFilterInput,
+    onAtModeFilterKeydown,
+    onChatKeydown,
+    onChatKeyup,
+    onChatInput
   }
 }

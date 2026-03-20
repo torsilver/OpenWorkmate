@@ -3,6 +3,14 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace OfficeCopilot.Server.Services;
 
+/// <summary>两阶段工具选择结果：<see cref="SelectedPairs"/> 为 null 表示使用全量工具。</summary>
+public sealed record ToolSelectionOutcome(
+    IReadOnlyList<(string PluginName, string FunctionName)>? SelectedPairs,
+    string ReasonCode,
+    IReadOnlyList<string>? SelectedSubcategoryIds,
+    int CandidateFunctionCount,
+    int MergedFunctionCount);
+
 /// <summary>
 /// 根据用户消息与可选历史，选出本轮应参与的工具（插件名或具体函数），用于按需只传部分工具 schema 给模型。
 /// </summary>
@@ -23,13 +31,9 @@ public interface IToolSelector
         CancellationToken ct = default);
 
     /// <summary>
-    /// 两阶段选择：先选子类再选函数。返回选中的 (插件名, 函数名) 列表；null 或空表示使用全量工具。
+    /// 两阶段选择：先选子类再合并函数。<see cref="ToolSelectionOutcome.SelectedPairs"/> 为 null 表示使用全量工具。
     /// </summary>
-    /// <param name="userMessage">当前用户消息</param>
-    /// <param name="recentHistory">可选最近历史</param>
-    /// <param name="kernel">当前 Kernel，用于枚举插件/函数与子类列表</param>
-    /// <param name="ct">取消令牌</param>
-    Task<IReadOnlyList<(string PluginName, string FunctionName)>?> SelectFunctionsAsync(
+    Task<ToolSelectionOutcome> SelectFunctionsAsync(
         string userMessage,
         ChatHistory? recentHistory,
         Kernel kernel,

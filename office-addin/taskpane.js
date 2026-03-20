@@ -33,7 +33,6 @@
   let reconnectDelay = RECONNECT_BASE_MS;
   let reconnectTimer = null;
   let pendingMessages = [];
-  let streamingBubble = null;
 
   function getSessionId() {
     let id = sessionStorage.getItem("copilot_session_id");
@@ -97,11 +96,152 @@
 
   let currentBotMessageRaw = "";
   let currentRoundWrapper = null;
-  let executionLogSection = null;
-  let executionLogBody = null;
-  let executionLogSummaryEl = null;
+  let timelineRoot = null;
+  let openPrepSeg = null;
+  let openThinkSeg = null;
+  let openDigestSeg = null;
+  let openIntentSeg = null;
+  let openAnswerSeg = null;
+  const TIMELINE_TAIL_MAX = 100;
   let currentRoundToolBlocks = [];
   let currentToolEndIndex = 0;
+
+  function formatActivityTail(log, maxChars) {
+    const s = log || "";
+    if (s.length <= maxChars) return s;
+    return "…" + s.slice(s.length - maxChars);
+  }
+
+  function ensureTimeline() {
+    if (!currentRoundWrapper) return;
+    if (timelineRoot) return;
+    timelineRoot = document.createElement("div");
+    timelineRoot.className = "msg msg--agent-timeline";
+    timelineRoot.setAttribute("role", "region");
+    timelineRoot.setAttribute("aria-label", "助手处理过程");
+    currentRoundWrapper.appendChild(timelineRoot);
+  }
+
+  function closeOpenAnswerSegment() {
+    if (openAnswerSeg) {
+      collapseSeg({ details: openAnswerSeg.details });
+      openAnswerSeg = null;
+    }
+  }
+
+  function newAnswerStreamSeg() {
+    ensureTimeline();
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--answer";
+    d.dataset.kind = "answer";
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = "助手回复";
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const body = document.createElement("div");
+    body.className = "timeline-seg__body timeline-seg__body--md";
+    d.appendChild(sum);
+    d.appendChild(body);
+    timelineRoot.appendChild(d);
+    return { details: d, body, tail, rawMd: "" };
+  }
+
+  function runMermaidInTimeline(root) {
+    if (!root || typeof mermaid === "undefined") return;
+    root.querySelectorAll(".timeline-seg--answer .language-mermaid").forEach((block, index) => {
+      const id = "mermaid-" + Date.now() + "-" + index;
+      const code = block.textContent;
+      const container = document.createElement("div");
+      container.className = "mermaid-container";
+      container.id = id;
+      block.parentNode.replaceWith(container);
+      mermaid.render(id + "-svg", code).then((result) => {
+        container.innerHTML = result.svg;
+      }).catch((err) => {
+        container.innerHTML = "<pre>Mermaid Error: " + err.message + "</pre>";
+      });
+    });
+  }
+
+  function newTimelineSeg(kind, titleLabel) {
+    ensureTimeline();
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--" + kind;
+    d.dataset.kind = kind;
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = titleLabel;
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const pre = document.createElement("pre");
+    pre.className = "timeline-seg__body";
+    d.appendChild(sum);
+    d.appendChild(pre);
+    timelineRoot.appendChild(d);
+    return { details: d, pre, tail };
+  }
+
+  function collapseSeg(ref) {
+    if (ref && ref.details) ref.details.open = false;
+  }
+
+  function collapseAllOpenPhases() {
+    collapseSeg(openPrepSeg);
+    openPrepSeg = null;
+    collapseSeg(openThinkSeg);
+    openThinkSeg = null;
+    collapseSeg(openDigestSeg);
+    openDigestSeg = null;
+    collapseSeg(openIntentSeg);
+    openIntentSeg = null;
+    closeOpenAnswerSegment();
+  }
+
+  function appendAgentStatusLine(text) {
+    const line = (text && String(text).trim()) || "";
+    if (!line) return;
+    if (!currentRoundWrapper) beginStream();
+    if (!openPrepSeg) openPrepSeg = newTimelineSeg("prep", "准备 / 状态");
+    const pre = openPrepSeg.pre;
+    if (pre.textContent) pre.textContent += "\n";
+    pre.textContent += line;
+    openPrepSeg.tail.textContent = formatActivityTail(pre.textContent, TIMELINE_TAIL_MAX);
+    openPrepSeg.details.title = pre.textContent;
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
+  function appendAgentTrace(msg) {
+    const title =
+      ((msg.traceTitle && String(msg.traceTitle).trim()) || (msg.content && String(msg.content).trim()) || "");
+    const detail = (msg.traceDetail && String(msg.traceDetail).trim()) || "";
+    const cat = (msg.traceCategory && String(msg.traceCategory).trim()) || "trace";
+    if (!title && !detail) return;
+    let block = `[${cat}] ${title || "(无标题)"}`;
+    if (detail) block += `\n${detail}`;
+    appendAgentStatusLine(block);
+  }
+
+  function appendReasoningChunk(text) {
+    const t = text != null ? String(text) : "";
+    if (!t) return;
+    if (!currentRoundWrapper) beginStream();
+    if (!openThinkSeg) openThinkSeg = newTimelineSeg("think", "推理");
+    openThinkSeg.pre.textContent += t;
+    openThinkSeg.tail.textContent = formatActivityTail(openThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+    openThinkSeg.details.title = openThinkSeg.pre.textContent;
+    $messages.scrollTop = $messages.scrollHeight;
+  }
 
   function beginStream() {
     const welcome = $messages.querySelector(".welcome");
@@ -109,22 +249,12 @@
 
     currentRoundWrapper = document.createElement("div");
     currentRoundWrapper.className = "msg msg--round";
-
-    streamingBubble = document.createElement("div");
-    streamingBubble.className = "msg msg--bot msg--streaming";
-    streamingBubble.textContent = "";
-    currentRoundWrapper.appendChild(streamingBubble);
-
-    executionLogSection = document.createElement("details");
-    executionLogSection.className = "msg msg--execution-log";
-    executionLogSummaryEl = document.createElement("summary");
-    executionLogSummaryEl.textContent = "执行过程 (0 个操作)";
-    executionLogSection.appendChild(executionLogSummaryEl);
-    executionLogBody = document.createElement("div");
-    executionLogBody.className = "execution-log-body";
-    executionLogSection.appendChild(executionLogBody);
-    executionLogSection.open = false;
-    currentRoundWrapper.appendChild(executionLogSection);
+    timelineRoot = null;
+    openPrepSeg = null;
+    openThinkSeg = null;
+    openDigestSeg = null;
+    openIntentSeg = null;
+    openAnswerSeg = null;
 
     $messages.appendChild(currentRoundWrapper);
     currentBotMessageRaw = "";
@@ -133,42 +263,83 @@
     setInputEnabled(false);
   }
 
-  function updateExecutionLogCount() {
-    if (executionLogSummaryEl) executionLogSummaryEl.textContent = "执行过程 (" + currentRoundToolBlocks.length + " 个操作)";
-    if (executionLogSection && currentRoundToolBlocks.length > 0) executionLogSection.open = true;
-  }
+  function updateExecutionLogCount() {}
 
-  function appendStreamChunk(text) {
-    if (!streamingBubble) beginStream();
-    currentBotMessageRaw += text;
-    if (typeof marked !== "undefined") {
-      streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-    } else {
-      streamingBubble.textContent = currentBotMessageRaw;
-    }
+  function appendStreamWarning(text) {
+    if (!currentRoundWrapper) beginStream();
+    const wrap = currentRoundWrapper;
+    if (!wrap) return;
+    const notice = document.createElement("div");
+    notice.className = "msg msg--stream-warning";
+    notice.textContent = (text && String(text).trim()) || "服务端返回了警告";
+    wrap.insertBefore(notice, wrap.firstChild);
     $messages.scrollTop = $messages.scrollHeight;
   }
 
-  function finalizeStream() {
-    if (streamingBubble) {
-      streamingBubble.classList.remove("msg--streaming");
-      if (typeof marked !== "undefined") {
-        streamingBubble.innerHTML = marked.parse(currentBotMessageRaw);
-      }
-      streamingBubble = null;
-      currentBotMessageRaw = "";
+  function applyMarkedToElement(el, rawMarkdown) {
+    if (!el) return;
+    const raw = rawMarkdown != null ? String(rawMarkdown) : "";
+    if (typeof marked === "undefined") {
+      el.textContent = raw;
+      return;
     }
-    if (executionLogSection) {
-      executionLogSection.style.display = currentRoundToolBlocks.length === 0 ? "none" : "";
-      if (currentRoundToolBlocks.length > 0) {
-        executionLogSection.open = false;
-        currentRoundToolBlocks.forEach(function (b) { b.open = false; });
-      }
+    try {
+      el.innerHTML = marked.parse(raw);
+    } catch (e) {
+      console.warn("marked.parse failed", e);
+      el.textContent = raw;
+    }
+  }
+
+  let _streamRenderPending = false;
+  function appendStreamChunk(text) {
+    if (!currentRoundWrapper) beginStream();
+    collapseSeg(openThinkSeg);
+    openThinkSeg = null;
+    collapseSeg(openDigestSeg);
+    openDigestSeg = null;
+    const chunk = text != null ? String(text) : "";
+    if (!chunk) return;
+    currentBotMessageRaw += chunk;
+    if (!openAnswerSeg) openAnswerSeg = newAnswerStreamSeg();
+    openAnswerSeg.rawMd += chunk;
+    openAnswerSeg.details.dataset.streamRaw = openAnswerSeg.rawMd;
+    if (_streamRenderPending) return;
+    _streamRenderPending = true;
+    requestAnimationFrame(() => {
+      _streamRenderPending = false;
+      if (!openAnswerSeg) return;
+      applyMarkedToElement(openAnswerSeg.body, openAnswerSeg.rawMd);
+      const plain = openAnswerSeg.rawMd.replace(/\s+/g, " ").trim();
+      openAnswerSeg.tail.textContent = formatActivityTail(plain, TIMELINE_TAIL_MAX);
+      openAnswerSeg.details.title = plain.slice(0, 200);
+      $messages.scrollTop = $messages.scrollHeight;
+    });
+  }
+
+  function finalizeStream() {
+    collapseAllOpenPhases();
+    openAnswerSeg = null;
+    if (timelineRoot) {
+      timelineRoot.querySelectorAll(".timeline-seg--answer").forEach((el) => {
+        const div = el.querySelector(".timeline-seg__body--md");
+        const raw = el.dataset.streamRaw;
+        if (div && raw != null && typeof marked !== "undefined") {
+          applyMarkedToElement(div, raw);
+        }
+      });
+      if (typeof mermaid !== "undefined") runMermaidInTimeline(timelineRoot);
+      const allD = timelineRoot.querySelectorAll("details");
+      for (let di = 0; di < allD.length; di++) allD[di].open = false;
+      const ans = timelineRoot.querySelectorAll(".timeline-seg.timeline-seg--answer");
+      if (ans.length) ans[ans.length - 1].open = true;
+    }
+    currentBotMessageRaw = "";
+    if (currentRoundToolBlocks.length > 0) {
+      currentRoundToolBlocks.forEach(function (b) { b.open = false; });
     }
     currentRoundWrapper = null;
-    executionLogSection = null;
-    executionLogBody = null;
-    executionLogSummaryEl = null;
+    timelineRoot = null;
     currentRoundToolBlocks = [];
     currentToolEndIndex = 0;
     setInputEnabled(true);
@@ -202,7 +373,7 @@
     ws.onmessage = function (e) { handleMessage(e.data); };
 
     ws.onclose = function () {
-      const wasStreaming = !!streamingBubble;
+      const wasStreaming = !!currentRoundWrapper;
       ws = null;
       setStatus(false);
       finalizeStream();
@@ -294,14 +465,63 @@
       case "stream_start":
         beginStream();
         break;
+      case "agent_status": {
+        const line = (msg.content && String(msg.content).trim()) || "";
+        if (line) appendAgentStatusLine(line);
+        break;
+      }
+      case "agent_trace":
+        appendAgentTrace(msg);
+        break;
+      case "reasoning_chunk":
+        appendReasoningChunk(msg.content);
+        break;
+      case "agent_phase": {
+        const phase = (msg.phase && String(msg.phase)) || "";
+        const c = (msg.content && String(msg.content).trim()) || "";
+        if (!c) break;
+        if (!currentRoundWrapper) beginStream();
+        if (phase === "intent") {
+          collapseAllOpenPhases();
+          openIntentSeg = newTimelineSeg("intent", "计划 / 意图");
+          openIntentSeg.pre.textContent = c;
+          openIntentSeg.tail.textContent = formatActivityTail(c, TIMELINE_TAIL_MAX);
+        } else if (phase === "digest") {
+          if (openDigestSeg) {
+            openDigestSeg.details.open = false;
+            openDigestSeg = null;
+          }
+          openDigestSeg = newTimelineSeg("digest", "处理工具结果");
+          openDigestSeg.pre.textContent = c;
+          openDigestSeg.tail.textContent = formatActivityTail(c, TIMELINE_TAIL_MAX);
+        }
+        $messages.scrollTop = $messages.scrollHeight;
+        break;
+      }
       case "stream_chunk":
         appendStreamChunk(msg.content);
+        break;
+      case "stream_warning":
+        appendStreamWarning(msg.content);
         break;
       case "stream_end":
         finalizeStream();
         break;
+      case "subtask_start": {
+        if (!currentRoundWrapper) beginStream();
+        const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
+        const titleLen = 48;
+        const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
+        appendAgentStatusLine("子代理：" + summaryLabel);
+        break;
+      }
+      case "subtask_chunk":
+      case "subtask_end":
+        break;
       case "tool_invocation_start": {
-        if (!executionLogBody) break;
+        collapseAllOpenPhases();
+        ensureTimeline();
+        if (!timelineRoot) break;
         const label = msg.summary || "正在执行: " + (msg.plugin || "") + "." + (msg.function || "");
         const block = document.createElement("details");
         block.className = "tool-call-block tool-call--running";
@@ -312,7 +532,7 @@
         const out = document.createElement("pre");
         out.className = "tool-call-output";
         block.appendChild(out);
-        executionLogBody.appendChild(block);
+        timelineRoot.appendChild(block);
         currentRoundToolBlocks.push(block);
         block.open = true;
         updateExecutionLogCount();
@@ -837,7 +1057,7 @@
   function handleSend() {
     const text = $input.value.trim();
     if (!text) return;
-    if (streamingBubble) return;
+    if (currentRoundWrapper) return;
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       addUserMessage(text);
@@ -862,7 +1082,7 @@
   if ($sendBtn) $sendBtn.addEventListener("click", handleSend);
   if ($stopBtn) {
     $stopBtn.addEventListener("click", function () {
-      if (!streamingBubble) return;
+      if (!currentRoundWrapper) return;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stop" }));
       finalizeStream();
     });

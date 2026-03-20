@@ -6,6 +6,7 @@ using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
 
+/// <summary>WebSocket 消息。type=<c>agent_status</c> 为准备阶段文案；<c>agent_trace</c> 为内部过程详情；<c>agent_phase</c> 配合 <see cref="Phase"/>（intent/digest）；<c>reasoning_chunk</c> 为模型推理增量（与 <c>stream_chunk</c> 并列）。</summary>
 public class WsMessage
 {
     [JsonPropertyName("type")]
@@ -144,6 +145,26 @@ public class WsMessage
     [JsonPropertyName("isSubtask")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IsSubtask { get; set; }
+
+    /// <summary>agent_phase 时：阶段名，如 intent、digest。</summary>
+    [JsonPropertyName("phase")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Phase { get; set; }
+
+    /// <summary>agent_trace 时：memory | knowledgeBase | toolSelection | context（摘要/截断等上下文治理）。</summary>
+    [JsonPropertyName("traceCategory")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TraceCategory { get; set; }
+
+    /// <summary>agent_trace 时：一行摘要。</summary>
+    [JsonPropertyName("traceTitle")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TraceTitle { get; set; }
+
+    /// <summary>agent_trace 时：多行详情（服务端截断）。</summary>
+    [JsonPropertyName("traceDetail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TraceDetail { get; set; }
 }
 
 public class AttachmentDto

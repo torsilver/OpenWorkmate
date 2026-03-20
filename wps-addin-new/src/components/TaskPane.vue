@@ -88,45 +88,93 @@
           <div v-html="msg.html"></div>
         </div>
         <div v-else-if="msg.type === 'round'" class="msg msg--round">
-          <div :class="['msg', 'msg--bot', msg.isStreaming ? 'msg--streaming' : '']" v-html="msg.parsedHtml"></div>
-          <details v-if="msg.toolBlocks && msg.toolBlocks.length" class="msg msg--execution-log">
-            <summary>执行过程 ({{ msg.toolBlocks.length }} 个操作)</summary>
-            <div class="execution-log-body">
+          <div
+            v-for="(w, wi) in msg.streamWarnings || []"
+            :key="'sw-' + idx + '-' + wi"
+            class="msg msg--stream-warning"
+          >
+            {{ w }}
+          </div>
+          <div v-if="msg.timelineSegments && msg.timelineSegments.length" class="msg--agent-timeline">
+            <template v-for="seg in msg.timelineSegments" :key="seg.id">
               <details
-                v-for="(block, bi) in msg.toolBlocks"
-                :key="bi"
-                :class="['tool-call-block', 'tool-call--' + block.status]"
+                v-if="seg.kind !== 'tool'"
+                class="timeline-seg"
+                :class="'timeline-seg--' + seg.kind"
+                :open="false"
               >
                 <summary>
-                  <span class="tool-status-icon">{{ block.status === 'running' ? '⏳' : block.status === 'done' ? '✓' : '✗' }}</span>
-                  {{ escapeHtml(block.displayLabel || block.label) }}
+                  <span class="timeline-seg__label">{{ seg.title }}</span>
+                  <span class="timeline-seg__tail">{{ seg.tail }}</span>
                 </summary>
-                <pre v-show="block.output" class="tool-call-output">{{ block.output }}</pre>
+                <pre v-if="seg.kind !== 'answer'" class="timeline-seg__body">{{ seg.body }}</pre>
+                <div
+                  v-else
+                  class="timeline-seg__body timeline-seg__body--md markdown-body"
+                  v-html="seg.parsedHtml || escapeHtml(seg.body)"
+                ></div>
               </details>
-            </div>
-          </details>
+              <details
+                v-else
+                :class="['tool-call-block', 'tool-call--' + seg.status]"
+                :open="false"
+              >
+                <summary>
+                  <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
+                  {{ escapeHtml(seg.displayLabel || seg.label) }}
+                </summary>
+                <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
+              </details>
+            </template>
+          </div>
+          <div
+            v-if="roundNeedsBottomBubble(msg)"
+            :class="['msg', 'msg--bot', msg.isStreaming ? 'msg--streaming' : '']"
+            v-html="msg.parsedHtml"
+          ></div>
         </div>
       </template>
       <!-- 当前正在进行的 round -->
       <div v-if="currentRound" class="msg msg--round">
-        <div class="msg msg--bot msg--streaming" v-html="currentRound.parsedHtml || currentRound.streamContent"></div>
-        <details v-if="currentRound.toolBlocks && currentRound.toolBlocks.length" class="msg msg--execution-log" open>
-          <summary>执行过程 ({{ currentRound.toolBlocks.length }} 个操作)</summary>
-          <div class="execution-log-body">
+        <div
+          v-for="(w, wi) in currentRound.streamWarnings || []"
+          :key="'csw-' + wi"
+          class="msg msg--stream-warning"
+        >
+          {{ w }}
+        </div>
+        <div v-if="currentRound.timelineSegments && currentRound.timelineSegments.length" class="msg--agent-timeline">
+          <template v-for="seg in currentRound.timelineSegments" :key="seg.id">
             <details
-              v-for="(block, bi) in currentRound.toolBlocks"
-              :key="bi"
-              :class="['tool-call-block', 'tool-call--' + block.status]"
-              :open="block.status === 'running'"
+              v-if="seg.kind !== 'tool'"
+              class="timeline-seg"
+              :class="'timeline-seg--' + seg.kind"
+              :open="seg.open"
             >
               <summary>
-                <span class="tool-status-icon">{{ block.status === 'running' ? '⏳' : block.status === 'done' ? '✓' : '✗' }}</span>
-                {{ escapeHtml(block.displayLabel || block.label) }}
+                <span class="timeline-seg__label">{{ seg.title }}</span>
+                <span class="timeline-seg__tail">{{ seg.tail }}</span>
               </summary>
-              <pre v-show="block.output" class="tool-call-output">{{ block.output }}</pre>
+              <pre v-if="seg.kind !== 'answer'" class="timeline-seg__body">{{ seg.body }}</pre>
+              <div
+                v-else
+                class="timeline-seg__body timeline-seg__body--md markdown-body"
+                v-html="seg.parsedHtml || escapeHtml(seg.body)"
+              ></div>
             </details>
-          </div>
-        </details>
+            <details
+              v-else
+              :class="['tool-call-block', 'tool-call--' + seg.status]"
+              :open="seg.status === 'running'"
+            >
+              <summary>
+                <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
+                {{ escapeHtml(seg.displayLabel || seg.label) }}
+              </summary>
+              <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
+            </details>
+          </template>
+        </div>
       </div>
     </main>
 
@@ -185,12 +233,15 @@
         </button>
 
         <textarea
+          ref="inputAreaRef"
           v-model="inputText"
           class="input-box"
-          placeholder="输入消息..."
+          placeholder="输入消息…（@ 可选工具/技能；列表打开时 ↑↓ 切换）"
           rows="1"
           :disabled="!inputEnabled"
-          @keydown.enter.exact.prevent="handleSend"
+          @keydown="onChatKeydown"
+          @keyup="onChatKeyup"
+          @input="onChatInput"
         ></textarea>
         <button
           v-show="!inputEnabled"
@@ -207,6 +258,42 @@
           :disabled="!inputEnabled"
           @click="handleSend"
         >发送</button>
+      </div>
+
+      <div v-show="atModeOpen" class="at-mode-panel" role="dialog" aria-label="工具与技能选择">
+        <div class="at-mode-filter-row">
+          <span class="at-mode-filter-hint">过滤</span>
+          <input
+            ref="atModeFilterInputRef"
+            v-model="atModeFilter"
+            class="at-mode-filter-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="输入关键字…（此处可用 ↑↓ 选择）"
+            @input="onAtModeFilterInput"
+            @keydown="onAtModeFilterKeydown"
+          />
+        </div>
+        <div class="at-mode-list" role="listbox" aria-label="工具/技能列表">
+          <div v-if="!atModeTopList.length" class="at-mode-empty">{{ atModeListPlaceholder }}</div>
+          <template v-else>
+            <div
+              v-for="(c, idx) in atModeTopList"
+              :key="(c.internal || '') + '-' + idx"
+              class="at-mode-item"
+              :class="{ 'at-mode-item--active': idx === atModeActiveIndex }"
+              role="option"
+              :aria-selected="idx === atModeActiveIndex"
+              @mousedown.prevent="insertAtCandidate(c)"
+            >
+              <div class="at-mode-item-title">{{ c.label || c.internal }}</div>
+              <div class="at-mode-item-meta">
+                {{ c.group === 'Tools' ? '工具' : '技能' }} · [TOOL:{{ c.internal }}]
+              </div>
+            </div>
+          </template>
+        </div>
       </div>
     </footer>
 
@@ -277,8 +364,17 @@ export default {
       const raw = copilot.planContent.value || ''
       return typeof copilot.marked?.parse === 'function' ? copilot.marked.parse(raw) : copilot.escapeHtml(raw)
     })
+    function roundNeedsBottomBubble(msg) {
+      if (!msg) return false
+      const segs = msg.timelineSegments || []
+      if (segs.some((s) => s.kind === 'answer')) return false
+      const html = msg.parsedHtml && String(msg.parsedHtml).trim()
+      const raw = msg.streamContent && String(msg.streamContent).trim()
+      return !!(html || raw)
+    }
     return {
       ...copilot,
+      roundNeedsBottomBubble,
       fileInputRef,
       triggerAttach: () => {
         fileInputRef.value?.click()
@@ -687,6 +783,139 @@ export default {
   max-width: 100%;
 }
 
+.msg--agent-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.timeline-seg {
+  font-size: 12px;
+  background: var(--copilot-bg-tertiary, #252525);
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.timeline-seg summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--copilot-text-secondary, #999);
+}
+
+.timeline-seg summary::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-seg__label {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.timeline-seg__tail {
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+.timeline-seg__body {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--copilot-border, #333);
+  background: var(--copilot-bg-primary, #0f0f0f);
+  color: var(--copilot-text-secondary, #999);
+}
+
+.timeline-seg__body--md {
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--copilot-text-primary, #e8e8e8);
+  max-height: min(70vh, 480px);
+}
+.timeline-seg--answer .timeline-seg__body--md :is(p, ul, ol, pre, h1, h2, h3, h4) {
+  margin: 0.35em 0;
+}
+.timeline-seg--answer .timeline-seg__body--md pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+}
+
+.msg--stream-warning {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.12);
+  color: #eab308;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.msg--agent-activity {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--copilot-text-secondary, #999);
+  background: rgba(108, 140, 255, 0.12);
+  border: 1px solid rgba(108, 140, 255, 0.25);
+  border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  direction: ltr;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.msg--agent-activity-collapsed {
+  margin-bottom: 6px;
+  font-size: 12px;
+  background: var(--copilot-bg-tertiary, #252525);
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 8px;
+  overflow: hidden;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.msg--agent-activity-collapsed summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--copilot-text-secondary, #999);
+}
+
+.msg--agent-activity-collapsed summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-activity-full {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--copilot-border, #333);
+  color: var(--copilot-text-secondary, #999);
+  background: var(--copilot-bg-primary, #0f0f0f);
+}
+
 .msg--error {
   border-color: rgba(248, 113, 113, 0.4);
   background: rgba(248, 113, 113, 0.08);
@@ -760,6 +989,7 @@ export default {
 }
 
 .input-area {
+  position: relative;
   padding: 12px 16px;
   border-top: 1px solid var(--copilot-border, #333);
   background: var(--copilot-bg-secondary, #1a1a1a);
@@ -774,6 +1004,7 @@ export default {
   border: 1px solid var(--copilot-border, #333);
   border-radius: 12px;
   padding: 4px 4px 4px 14px;
+  position: relative;
 }
 
 .input-row:focus-within {
@@ -796,6 +1027,86 @@ export default {
 
 .input-box::placeholder {
   color: var(--copilot-text-secondary, #999);
+}
+
+.at-mode-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 50;
+  background: var(--copilot-bg-primary, #0f0f0f);
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  max-height: 320px;
+}
+
+.at-mode-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.at-mode-filter-hint {
+  font-size: 12px;
+  color: var(--copilot-text-secondary, #999);
+  flex-shrink: 0;
+}
+
+.at-mode-filter-input {
+  width: 100%;
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--copilot-bg-tertiary, #252525);
+  color: var(--copilot-text-primary, #e8e8e8);
+}
+
+.at-mode-filter-input::placeholder {
+  color: var(--copilot-text-secondary, #999);
+}
+
+.at-mode-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.at-mode-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.at-mode-item:hover {
+  background: var(--copilot-bg-tertiary, #252525);
+}
+
+.at-mode-item--active {
+  background: rgba(108, 140, 255, 0.15);
+  outline: 1px solid var(--copilot-accent, #6c8cff);
+}
+
+.at-mode-item-title {
+  font-size: 13px;
+  color: var(--copilot-text-primary, #e8e8e8);
+}
+
+.at-mode-item-meta {
+  font-size: 11px;
+  color: var(--copilot-text-secondary, #999);
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.at-mode-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--copilot-text-secondary, #999);
+  text-align: center;
 }
 
 .send-btn,

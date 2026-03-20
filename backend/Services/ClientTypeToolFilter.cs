@@ -18,6 +18,7 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(pluginName, "ClawhubSkill")
             || PluginComparer.Equals(pluginName, "AccurateData")
             || PluginComparer.Equals(pluginName, "ScheduledTask")
+            || PluginComparer.Equals(pluginName, "SkillAuthor")
             || pluginName.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)
             || pluginName.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase);
     }

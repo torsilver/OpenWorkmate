@@ -39,6 +39,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         var startDetail = GetRunningDetail(functionName, context.Arguments);
         var planStepIndex = GetPlanStepIndex(pluginName, functionName, context.Arguments);
 
+        await SendAgentPhaseAsync(sessionId, "intent", $"{pluginName}.{functionName}");
         // 发送开始
         await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex);
 
@@ -58,6 +59,9 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 
             var success = !IsToolResultFailure(content);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex);
+            await SendAgentPhaseAsync(sessionId, "digest", success
+                ? "已收到工具输出，继续处理…"
+                : "工具返回异常，将据此调整后续步骤。");
 
             // Plan.create_plan 成功后推送 plan_created，便于前端打开计划页
             if (success && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase) && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
@@ -103,6 +107,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
             var stepIndexOnFail = GetPlanStepIndex(pluginName, functionName, context.Arguments);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail);
+            await SendAgentPhaseAsync(sessionId, "digest", "工具调用失败，将据此调整后续步骤。");
             throw;
         }
     }
@@ -185,6 +190,18 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             Content = content ?? "",
             PlanStepIndex = planStepIndex,
             IsSubtask = SubtaskContext.GetIsActive() ? true : null
+        };
+        var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+        await _sessionManager.SendToAsync(sessionId, json);
+    }
+
+    private async Task SendAgentPhaseAsync(string sessionId, string phase, string content)
+    {
+        var msg = new WsMessage
+        {
+            Type = "agent_phase",
+            Phase = phase,
+            Content = content ?? ""
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
         await _sessionManager.SendToAsync(sessionId, json);

@@ -340,6 +340,12 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(planPlugin, "Plan");
         }
 
+        if (!disabledBuiltIn.Contains("skillauthor"))
+        {
+            var skillAuthorPlugin = _serviceProvider.GetRequiredService<SkillAuthorPlugin>();
+            newKernel.Plugins.AddFromObject(skillAuthorPlugin, "SkillAuthor");
+        }
+
         if (!disabledBuiltIn.Contains("user_options"))
         {
             var userOptionsManager = _serviceProvider.GetRequiredService<UserOptionsManager>();
@@ -453,12 +459,29 @@ public sealed class ChatService : IDisposable
         return keyed ?? kernel.GetRequiredService<IChatCompletionService>();
     }
 
+    /// <summary>追加到主对话 system：Memory / AccurateData / Plan 分工与双触发（用户可点名 + 模型可按需启用）。</summary>
+    private const string BuiltinTaskPluginSystemGuidance = """
+[内置插件：记忆 / 准确数据 / 计划]
+以下均为内置能力（非外接 MCP）。用户可在对话中明确要求；你也应在符合条件时主动选用对应工具。
+
+- Memory：记录与检索用户的习惯、取向、偏好与长期关键事实；不用于存大块中间数据或任务步骤正文。
+- AccurateData：多步复杂任务中按固定 id 精确读写大块结构化中间结果以减轻上下文；不替代语义记忆或计划步骤流。
+- Plan：将复杂任务拆解为可保存、可按步执行的计划（Markdown 步骤）；不替代 AccurateData 存原始数据块，不替代 Memory 记偏好。
+
+三者可同时使用（例如：Plan + AccurateData 存中间结果 + 用户要求记住偏好时使用 Memory）。
+""";
+
     private string GetActiveSystemPrompt()
     {
         var entry = GetActiveModelEntry();
         var prompt = entry?.SystemPrompt?.Trim();
-        if (!string.IsNullOrEmpty(prompt)) return prompt;
-        return _configService.Current.AI?.SystemPrompt ?? "";
+        var basePrompt = !string.IsNullOrEmpty(prompt)
+            ? prompt
+            : (_configService.Current.AI?.SystemPrompt ?? "").Trim();
+        var guidance = BuiltinTaskPluginSystemGuidance.Trim();
+        if (string.IsNullOrEmpty(basePrompt))
+            return guidance;
+        return basePrompt + "\n\n" + guidance;
     }
 
     public ChatHistory GetSessionHistory(string sessionId)
@@ -553,6 +576,9 @@ public sealed class ChatService : IDisposable
 
             TrimHistory(state.History);
 
+            var sessionManagerForStatus = _serviceProvider.GetRequiredService<SessionManager>();
+            await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在准备上下文…", ct).ConfigureAwait(false);
+
             var ctxConfig = _configService.Current.ContextWindow ?? new ContextWindowConfig();
             var historyBudget = GetEffectiveMaxContextTokens()
                 - ctxConfig.ReservedSystemTokens
@@ -570,13 +596,24 @@ public sealed class ChatService : IDisposable
                 {
                     try
                     {
-                        await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxConfig, sessionId, ct).ConfigureAwait(false);
+                        await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在整理历史对话…", ct).ConfigureAwait(false);
+                        var sumResult = await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxConfig, sessionId, ct).ConfigureAwait(false);
                         totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
-                        summarized = true;
+                        summarized = sumResult.DidCompact;
+                        if (sumResult.DidCompact)
+                        {
+                            var offloadDir = GetConversationHistoryDirectory(ctxConfig);
+                            var offloadConfigured = !string.IsNullOrWhiteSpace(offloadDir);
+                            var ctxTrace = AgentTraceFormatter.BuildContextSummarizationSuccessTrace(
+                                sumResult.MessagesRemoved, sumResult.SummaryLength, ctxConfig, offloadConfigured);
+                            await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", ctxTrace.Title, ctxTrace.Detail, ct).ConfigureAwait(false);
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogDebug(ex, "[{SessionId}] Summarization failed, continuing without.", sessionId);
+                        var failTrace = AgentTraceFormatter.BuildContextSummarizationFailureTrace(ErrorMessageHelper.GetFriendlyMessage(ex));
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", failTrace.Title, failTrace.Detail, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -588,6 +625,7 @@ public sealed class ChatService : IDisposable
                     var maxChars = Math.Max(100, ctxConfig.TruncateToolArgsMaxChars);
                     var truncateSuffix = "…(已截断)";
                     var oldEndIndex = Math.Max(0, state.History.Count - keep - 1);
+                    var truncatedCount = 0;
                     for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
                     {
                         var msg = state.History[i];
@@ -595,6 +633,13 @@ public sealed class ChatService : IDisposable
                         if (content.Length <= maxChars) continue;
                         var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
                         state.History[i] = new ChatMessageContent(msg.Role, truncated);
+                        truncatedCount++;
+                    }
+                    if (truncatedCount > 0)
+                    {
+                        var trTrace = AgentTraceFormatter.BuildContextTruncateTrace(
+                            truncatedCount, keep, maxChars, ctxConfig.TruncateToolArgsThresholdRatio, totalTokens, historyBudget);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", trTrace.Title, trTrace.Detail, ct).ConfigureAwait(false);
                     }
                 }
             }
@@ -606,10 +651,13 @@ public sealed class ChatService : IDisposable
             {
                 try
                 {
+                    await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索相关记忆…", ct).ConfigureAwait(false);
                     var sessionTopK = Math.Clamp(ctxConfig.MemorySessionTopK, 1, 20);
                     var sharedTopK = Math.Clamp(ctxConfig.MemorySharedTopK, 1, 20);
                     var sessionResults = await memorySvc.SearchAsync(userMessage, sessionTopK, sessionId, ct).ConfigureAwait(false);
                     var sharedResults = await memorySvc.SearchSharedAsync(userMessage, sharedTopK, ct).ConfigureAwait(false);
+                    var memTrace = AgentTraceFormatter.BuildMemoryTrace(sessionResults, sharedResults, sessionTopK, sharedTopK);
+                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", memTrace.Title, memTrace.Detail, ct).ConfigureAwait(false);
                     if (sessionResults.Count > 0 || sharedResults.Count > 0)
                     {
                         var parts = new List<string>();
@@ -628,7 +676,9 @@ public sealed class ChatService : IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[{SessionId}] Memory search failed, continuing without injection.", sessionId);
-                    warnings.Add("记忆检索失败：" + ErrorMessageHelper.GetFriendlyMessage(ex) + " 当前对话未注入长期记忆。");
+                    var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
+                    warnings.Add("记忆检索失败：" + friendly + " 当前对话未注入长期记忆。");
+                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", "长期记忆检索失败", friendly, ct).ConfigureAwait(false);
                 }
             }
 
@@ -637,7 +687,10 @@ public sealed class ChatService : IDisposable
             {
                 try
                 {
+                    await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索知识库…", ct).ConfigureAwait(false);
                     var kbResults = await memorySvc.SearchKnowledgeBaseAsync(knowledgeBaseId!.Trim(), userMessage, 5, ct).ConfigureAwait(false);
+                    var kbTrace = AgentTraceFormatter.BuildKnowledgeBaseTrace(knowledgeBaseId!.Trim(), kbResults);
+                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", kbTrace.Title, kbTrace.Detail, ct).ConfigureAwait(false);
                     if (kbResults.Count > 0)
                     {
                         var kbLines = kbResults.Select(r => $"- {r.Text}").ToList();
@@ -650,7 +703,9 @@ public sealed class ChatService : IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[{SessionId}] Knowledge base search failed for {KbId}.", sessionId, knowledgeBaseId);
-                    warnings.Add("知识库检索失败：" + ErrorMessageHelper.GetFriendlyMessage(ex));
+                    var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
+                    warnings.Add("知识库检索失败：" + friendly);
+                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", "知识库检索失败", friendly, ct).ConfigureAwait(false);
                 }
             }
 
@@ -731,11 +786,11 @@ public sealed class ChatService : IDisposable
                 sessionId, phase, state.History.Count, payloadChars);
 
             var aiConfig = _configService.Current.AI;
-            var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
-            var clientType = sessionManager.GetClientType(sessionId);
+            var clientType = sessionManagerForStatus.GetClientType(sessionId);
             IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
             if (!isPlanMode)
             {
+                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
                 try
                 {
                     var recentHistory = state.History.Count > 1 ? state.History : null;
@@ -746,33 +801,55 @@ public sealed class ChatService : IDisposable
                     if (embeddingConfigured && storePersistent)
                     {
                         var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
-                        var (vectorResults, goodEnough) = await _toolIndex.SearchToolsAsync(
+                        var vectorSearch = await _toolIndex.SearchToolsAsync(
                             userPrompt, clientType,
                             topK: ctxConfig.ToolSearchTopK,
                             minScore: ctxConfig.ToolSearchMinScore,
                             minCount: ctxConfig.ToolSearchMinCount,
                             ct).ConfigureAwait(false);
                         _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
-                            sessionId, vectorResults.Count, goodEnough);
-                        if (goodEnough && vectorResults.Count > 0)
+                            sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
+                        string vectorDecision;
+                        if (vectorSearch.GoodEnough && vectorSearch.Results.Count > 0)
                         {
-                            selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorResults, aiConfig ?? new AiConfig(), kernel);
+                            selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
                             _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
                             _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
+                            vectorDecision = "决策：已采用向量优先路径（合并 AlwaysInclude 后 (插件,函数) 对数=" + selectedPairs.Count + "）。";
                         }
+                        else
+                        {
+                            vectorDecision = "决策：向量命中未达 goodEnough 或为空，将调用两阶段子类筛选。";
+                        }
+                        var vectorDetail = AgentTraceFormatter.BuildToolVectorSearchDetail(
+                            clientType, vectorSearch,
+                            ctxConfig.ToolSearchTopK, ctxConfig.ToolSearchMinScore, ctxConfig.ToolSearchMinCount,
+                            vectorDecision);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引检索", vectorDetail, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
                     }
                     if (selectedPairs == null)
                     {
                         _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
-                        selectedPairs = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                        var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                        selectedPairs = twoStage.SelectedPairs;
                         _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
                             sessionId, selectedPairs?.Count ?? -1);
+                        var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
                     selectedPairs = null;
+                    await NotifyAgentTraceAsync(
+                        sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
+                        ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
                 }
             }
             IReadOnlyList<KernelFunction>? selectedFunctions;
@@ -823,35 +900,55 @@ public sealed class ChatService : IDisposable
             var identitySuffix = GetClientTypeIdentitySuffix(clientType);
             var historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
 
-            var collectedChunks = new List<string>();
+            await NotifyAgentStatusAsync(
+                sessionManagerForStatus,
+                sessionId,
+                isPlanMode ? "正在等待模型生成计划…" : "正在等待模型响应…",
+                ct).ConfigureAwait(false);
+
             for (var attempt = 0; attempt < 2; attempt++)
             {
-                collectedChunks.Clear();
-                try
+                if (attempt > 0)
+                    fullResponse.Clear();
+
+                await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(
+                    historyToUse, execSettings, kernel, ct).GetAsyncEnumerator(ct);
+
+                var contextRetry = false;
+                while (true)
                 {
-                    await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(
-                        historyToUse, execSettings, kernel, ct))
+                    bool moved;
+                    try
                     {
-                        if (chunk.Content is { Length: > 0 } text)
-                        {
-                            fullResponse.Append(text);
-                            collectedChunks.Add(text);
-                        }
+                        moved = await streamEnum.MoveNextAsync().ConfigureAwait(false);
                     }
-                    break;
+                    catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
+                    {
+                        _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
+                        TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
+                        historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
+                        contextRetry = true;
+                        break;
+                    }
+
+                    if (!moved)
+                        break;
+
+                    var chunk = streamEnum.Current;
+                    if (chunk.Content is { Length: > 0 } text)
+                    {
+                        fullResponse.Append(text);
+                        yield return new StreamItem(IsWarning: false, Content: text);
+                    }
                 }
-                catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
-                {
-                    _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
-                    TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
-                    historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
-                }
+
+                if (contextRetry)
+                    continue;
+
+                break;
             }
 
-            foreach (var text in collectedChunks)
-                yield return new StreamItem(IsWarning: false, Content: text);
-
-            var assistantText = fullResponse.ToString();
+            var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());
             state.History.AddAssistantMessage(assistantText);
             var previewLen = Math.Min(200, assistantText.Length);
             var preview = previewLen > 0 ? assistantText.AsSpan(0, previewLen).ToString().Replace('\r', ' ').Replace('\n', ' ') : "";
@@ -863,21 +960,22 @@ public sealed class ChatService : IDisposable
     }
 
     /// <summary>将最旧若干轮（最多 6 轮）压缩为一段摘要并替换为一条消息；若配置了落盘目录则先将被压缩的原文追加写入会话历史文件。</summary>
-    private async Task TrySummarizeOldTurnsAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, CancellationToken ct)
+    private async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> TrySummarizeOldTurnsAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, CancellationToken ct)
     {
         var dir = GetConversationHistoryDirectory(ctx);
-        var (didCompact, turns) = await SummarizeOldTurnsCoreAsync(history, kernel, chatService, ctx, sessionId, dir, ct).ConfigureAwait(false);
-        if (didCompact)
-            _logger.LogDebug("[{SessionId}] Summarized {Turns} turns into one block.", sessionId, turns);
+        var r = await SummarizeOldTurnsCoreAsync(history, kernel, chatService, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        if (r.DidCompact)
+            _logger.LogDebug("[{SessionId}] Summarized {MessagesRemoved} messages into one block.", sessionId, r.MessagesRemoved);
+        return r;
     }
 
-    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换历史。返回是否执行了压缩及被压缩的轮数。offloadDirectory 为空则不落盘。</summary>
-    private static async Task<(bool DidCompact, int TurnsSummarized)> SummarizeOldTurnsCoreAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
+    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换历史。返回是否执行、被移除的消息条数、摘要字符数。offloadDirectory 为空则不落盘。</summary>
+    private static async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> SummarizeOldTurnsCoreAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
     {
         const int maxTurnsToSummarize = 6;
         var toTake = Math.Min(maxTurnsToSummarize * 2, history.Count - 1);
         if (toTake < 4)
-            return (false, 0);
+            return (false, 0, 0);
         var sb = new System.Text.StringBuilder();
         for (var i = 1; i <= toTake && i < history.Count; i++)
         {
@@ -888,7 +986,7 @@ public sealed class ChatService : IDisposable
         }
         var input = sb.ToString().Trim();
         if (input.Length == 0)
-            return (false, 0);
+            return (false, 0, 0);
 
         var dir = offloadDirectory;
         if (!string.IsNullOrEmpty(dir))
@@ -918,13 +1016,13 @@ public sealed class ChatService : IDisposable
         }
         var summary = summaryBuilder.ToString().Trim();
         if (string.IsNullOrEmpty(summary))
-            return (false, 0);
+            return (false, 0, 0);
         if (summary.Length > ctx.SummarizationMaxSummaryChars)
             summary = summary.AsSpan(0, ctx.SummarizationMaxSummaryChars).ToString() + "…";
         for (var i = 0; i < toTake; i++)
             history.RemoveAt(1);
         history.Insert(1, new ChatMessageContent(AuthorRole.User, "[此前对话摘要]\n" + summary));
-        return (true, toTake / 2);
+        return (true, toTake, summary.Length);
     }
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
@@ -1045,9 +1143,20 @@ public sealed class ChatService : IDisposable
         if (chat == null)
             return "[错误] 未找到对话服务。";
         var dir = GetConversationHistoryDirectory(ctx);
-        var (didCompact, turns) = await SummarizeOldTurnsCoreAsync(state.History, kernel, chat, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        var (didCompact, messagesRemoved, _) = await SummarizeOldTurnsCoreAsync(state.History, kernel, chat, ctx, sessionId, dir, ct).ConfigureAwait(false);
         if (didCompact)
-            return $"[已压缩] 已将最近 {turns} 轮对话合并为一段摘要，上下文已释放。";
+        {
+            var sessionManager = _serviceProvider.GetService<SessionManager>();
+            if (sessionManager != null && messagesRemoved > 0)
+            {
+                var summaryLen = state.History.Count > 1 ? (state.History[1].Content?.Length ?? 0) : 0;
+                var offloadConfigured = !string.IsNullOrWhiteSpace(dir);
+                var ctxTrace = AgentTraceFormatter.BuildContextSummarizationSuccessTrace(messagesRemoved, summaryLen, ctx, offloadConfigured);
+                await NotifyAgentTraceAsync(sessionManager, sessionId, "context", ctxTrace.Title, ctxTrace.Detail, ct).ConfigureAwait(false);
+            }
+            var turns = Math.Max(1, messagesRemoved / 2);
+            return $"[已压缩] 已将最近约 {turns} 轮对话合并为一段摘要，上下文已释放。";
+        }
         if (state.History.Count <= 3)
             return "[无需压缩] 当前对话轮次较少，无需压缩。";
         return "[未压缩] 当前对话轮次或内容不足，未执行压缩。";
@@ -1415,6 +1524,46 @@ public sealed class ChatService : IDisposable
             string.Equals(x.Plugin, y.Plugin, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Function, y.Function, StringComparison.OrdinalIgnoreCase);
         public int GetHashCode((string Plugin, string Function) obj) =>
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
+    }
+
+    /// <summary>向当前会话 WebSocket 推送一行「正在干什么」，供前端活动条展示。</summary>
+    private static async Task NotifyAgentStatusAsync(SessionManager sessionManager, string sessionId, string text, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested || string.IsNullOrWhiteSpace(sessionId)) return;
+        var t = (text ?? "").Trim();
+        if (t.Length == 0) return;
+        if (t.Length > 200)
+            t = t.Substring(0, 200);
+        var msg = new WsMessage { Type = "agent_status", Content = t };
+        var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+        await sessionManager.SendToAsync(sessionId, json).ConfigureAwait(false);
+    }
+
+    /// <summary>向当前会话推送结构化内部过程，供时间线展示与联调。</summary>
+    private static async Task NotifyAgentTraceAsync(
+        SessionManager sessionManager,
+        string sessionId,
+        string traceCategory,
+        string traceTitle,
+        string? traceDetail,
+        CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested || string.IsNullOrWhiteSpace(sessionId)) return;
+        var cat = (traceCategory ?? "").Trim();
+        if (cat.Length == 0) return;
+        var title = AgentTraceFormatter.TruncateTitle(traceTitle);
+        if (title.Length == 0) return;
+        var detail = AgentTraceFormatter.TruncateDetail(traceDetail);
+        var msg = new WsMessage
+        {
+            Type = "agent_trace",
+            Content = title,
+            TraceCategory = cat,
+            TraceTitle = title,
+            TraceDetail = string.IsNullOrEmpty(detail) ? null : detail
+        };
+        var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+        await sessionManager.SendToAsync(sessionId, json).ConfigureAwait(false);
     }
 
     private void CleanupExpiredSessions(object? _)

@@ -17,6 +17,11 @@ public sealed class ToolSelectionService : IToolSelector
 
     private const string FallbackAllKeyword = "全部";
 
+    /// <summary>内置语音/OCR 以 MCP_ 前缀注册，但不走外接 MCP；工具选择子类「多媒体」与「外部」据此区分。</summary>
+    private static bool IsBuiltinMediaMcpPlugin(string pluginName) =>
+        string.Equals(pluginName, "MCP_STT", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(pluginName, "MCP_OCR", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>插件名 -> 简短描述，用于 LLM 工具选择的 system prompt。</summary>
     private static readonly FrozenDictionary<string, string> PluginDescriptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -32,6 +37,12 @@ public sealed class ToolSelectionService : IToolSelector
         ["Context"] = "对话上下文管理：主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或耗上下文的子任务交给子代理执行，仅收回最终总结",
         ["System"] = "当前日期与时间，用于回答今天几号、现在几点等时间相关问题",
+        ["SkillAuthor"] = "根据对话或目标生成并保存用户可复用技能（SKILL.md），与设置页技能列表一致",
+        ["MCP_STT"] = "内置语音转文字（Whisper），非外接 MCP",
+        ["MCP_OCR"] = "内置图片 OCR，非外接 MCP",
+        ["Memory"] = "长期记忆：用户可点名「记住…」；你也可在需延续习惯、偏好与关键事实时主动 save/search。非大块中间数据、非步骤清单",
+        ["AccurateData"] = "准确数据：用户可点名按 id 存取；多步复杂任务中有大块结构化中间结果需精确读写、减上下文时主动使用。非语义记忆、非计划正文",
+        ["Plan"] = "计划：用户可点名「写计划/分步」；任务明显多步且需落库拆解执行时主动 create/get/execute。非 AccurateData 存数、非 Memory 记偏好",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>子类 id -> 描述；内置子类（不含动态 技能/外部）。</summary>
@@ -52,7 +63,8 @@ public sealed class ToolSelectionService : IToolSelector
         ["Tavily-提取"] = "URL 内容提取",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["技能"] = "用户技能与 Clawhub 脚本",
-        ["外部"] = "MCP 工具",
+        ["多媒体"] = "内置语音转文字与图片 OCR（MCP_STT、MCP_OCR），与外接 MCP 无关",
+        ["外部"] = "外接 MCP 工具（设置中配置的 MCP 服务）",
         ["CurrentDocument-Word"] = "当前文档 Word（任务窗格）：读正文/选区、插段落/表格、查找替换",
         ["CurrentDocument-Excel"] = "当前文档 Excel（任务窗格）：读/写区域、列工作表、UsedRange、读/写公式",
         ["CurrentDocument-Ppt"] = "当前文档 PPT（任务窗格）：列/读/写/插/删幻灯片；扩展 RPC（图/备注/表格等）以服务端说明为准",
@@ -63,7 +75,9 @@ public sealed class ToolSelectionService : IToolSelector
         ["CrossAgentTask"] = "跨端派发任务：让 Word/Chrome/Excel/WPS/PowerPoint 端的 Agent 执行某任务；或标记本端已完成的任务",
         ["Context"] = "对话上下文管理：在换任务或已总结完后主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或会产出大量中间结果的任务交给子代理，仅收回最终总结",
-        ["AccurateData"] = "准确数据临时存盘：保存结构化数据到磁盘以减少上下文占用，需要时按 id 精确取回",
+        ["AccurateData"] = "准确数据：复杂任务中按 id 精确读写大块结构化中间结果、减上下文；用户可点名存取，你也可在多步推理需落盘时再选",
+        ["Memory"] = "长期记忆：用户习惯、取向、偏好与关键事实；用户可点名「记住」，你也可在需跨轮延续用户取向时主动 save/search",
+        ["Plan"] = "计划：多步骤拆解与落库执行（Markdown 步骤）；用户可点名列计划，你也可在任务明显复杂多步时主动 create/execute",
         ["System"] = "当前日期与时间：回答用户问今天几号、现在几点、本周/本月等时间相关问题时使用",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
@@ -140,6 +154,13 @@ public sealed class ToolSelectionService : IToolSelector
             ["Context"] = new List<(string, string)> { ("Context", "compact_conversation") },
             ["Subagent"] = new List<(string, string)> { ("Subagent", "run_subtask") },
             ["AccurateData"] = new List<(string, string)> { ("AccurateData", "accurate_data_write"), ("AccurateData", "accurate_data_read"), ("AccurateData", "accurate_data_list"), ("AccurateData", "accurate_data_delete") },
+            ["Memory"] = new List<(string, string)> { ("Memory", "save_memory"), ("Memory", "search_memory") },
+            ["Plan"] = new List<(string, string)>
+            {
+                ("Plan", "create_plan"), ("Plan", "get_plan"), ("Plan", "update_plan"),
+                ("Plan", "execute_plan_step"), ("Plan", "complete_plan")
+            },
+            ["多媒体"] = new List<(string, string)> { ("MCP_STT", "transcribe_audio"), ("MCP_OCR", "ocr_image") },
             ["System"] = new List<(string, string)> { ("System", "get_current_time") },
         };
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
@@ -167,7 +188,7 @@ public sealed class ToolSelectionService : IToolSelector
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<(string PluginName, string FunctionName)>?> SelectFunctionsAsync(
+    public async Task<ToolSelectionOutcome> SelectFunctionsAsync(
         string userMessage,
         ChatHistory? recentHistory,
         Kernel kernel,
@@ -177,7 +198,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             _logger.LogDebug("ToolSelection two-stage: Kernel null, return null (use all tools).");
             _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "Kernel null");
-            return null;
+            return new ToolSelectionOutcome(null, "kernel_null", null, 0, 0);
         }
 
         var ai = _configService.Current.AI;
@@ -186,7 +207,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             _logger.LogDebug("ToolSelection two-stage: no functions in kernel, return null.");
             _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no functions in kernel");
-            return null;
+            return new ToolSelectionOutcome(null, "no_functions", null, 0, 0);
         }
 
         var subcategories = BuildSubcategoryListFromKernel(kernel, allKernelFunctions);
@@ -197,7 +218,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             _logger.LogDebug("ToolSelection two-stage: no subcategories, return null (use all tools).");
             _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no subcategories");
-            return null;
+            return new ToolSelectionOutcome(null, "no_subcategories", null, 0, 0);
         }
 
         var userPrompt = BuildUserPromptWithHistory(userMessage, recentHistory);
@@ -208,7 +229,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             _logger.LogDebug("ToolSelection two-stage stage1: 全部 or fallback, return null (use all tools).");
             _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "Stage1 returned 全部 or fallback");
-            return null;
+            return new ToolSelectionOutcome(null, "stage1_fallback", null, 0, 0);
         }
 
         var candidateFunctions = GetCandidateFunctionsFromSubcategoryIds(kernel, selectedSubcategoryIds, allKernelFunctions);
@@ -216,7 +237,7 @@ public sealed class ToolSelectionService : IToolSelector
         {
             _logger.LogDebug("ToolSelection two-stage: no candidate functions after stage1, return null.");
             _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no candidate functions after stage1");
-            return null;
+            return new ToolSelectionOutcome(null, "no_candidates_after_stage1", selectedSubcategoryIds, 0, 0);
         }
 
         _logger.LogInformation("ToolSelection two-stage stage1: selected subcategoryIds={Ids} candidateFunctionCount={FuncCount}.",
@@ -227,7 +248,7 @@ public sealed class ToolSelectionService : IToolSelector
         var merged = MergeFunctionsWithAlwaysInclude(candidateFunctions, ai, allKernelFunctions);
         _logger.LogInformation("ToolSelection two-stage: result mergedFunctionCount={Count}.", merged.Count);
         _logger.LogDebug("ToolSelection two-stage result: {Count} functions.", merged.Count);
-        return merged;
+        return new ToolSelectionOutcome(merged, "ok_two_stage", selectedSubcategoryIds, candidateFunctions.Count, merged.Count);
     }
 
     /// <summary>从 Kernel 收集所有 (PluginName, FunctionName)，用于子类过滤与描述。</summary>
@@ -269,12 +290,14 @@ public sealed class ToolSelectionService : IToolSelector
                 coveredPlugins.Add(p.Name);
         }
 
-        var mcpPlugins = kernel.Plugins.Where(p => p.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase)).ToList();
-        if (mcpPlugins.Count > 0)
+        var externalMcpPlugins = kernel.Plugins
+            .Where(p => p.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) && !IsBuiltinMediaMcpPlugin(p.Name))
+            .ToList();
+        if (externalMcpPlugins.Count > 0)
         {
             if (SubcategoryDescriptions.TryGetValue("外部", out var extDesc))
                 result.Add(("外部", extDesc));
-            foreach (var p in mcpPlugins)
+            foreach (var p in externalMcpPlugins)
                 coveredPlugins.Add(p.Name);
         }
 
@@ -365,11 +388,16 @@ public sealed class ToolSelectionService : IToolSelector
         {
             "根据用户消息，从下列子类中选出会用到的，只输出子类id，多个用英文逗号分隔。不要输出序号、步骤或解释。",
             "尽量只输出会用到的子类，不要输出「全部」；只有完全无法判断时才输出：全部。",
+            "决策要点（用户可点名某子类；你也应在符合条件时主动选）：",
+            "- Memory：用户说「记住/以后都按…」等→必选 Memory。未明说但需延续其习惯、偏好、长期关键事实→也选 Memory。",
+            "- AccurateData：用户说「存成准确数据/按 id 取回」等→必选 AccurateData。多步任务中有大块结构化中间结果需精确读写、减轻上下文→也选 AccurateData。",
+            "- Plan：用户说「列计划/分步骤/出个实现计划」等→必选 Plan。任务明显多步且需落库拆解执行→也选 Plan。",
+            "- 多媒体：语音转文字、图片 OCR→多媒体（常与 File 同选）。外接 MCP 仅当选「外部」。",
             "子类列表："
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字或判断文件大小→File, MCP_OCR 或 外部。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。用户说「帮我列个多步计划」→Plan。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
         return string.Join("\n", lines);
     }
 
@@ -423,6 +451,8 @@ public sealed class ToolSelectionService : IToolSelector
                 foreach (var plugin in kernel.Plugins)
                 {
                     if (!plugin.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (IsBuiltinMediaMcpPlugin(plugin.Name))
                         continue;
                     foreach (KernelFunction f in plugin)
                         result.Add((plugin.Name, f.Name));
@@ -561,6 +591,7 @@ public sealed class ToolSelectionService : IToolSelector
             "你是一个工具选择助手。根据用户当前消息，从下面列出的插件中选出本轮可能用到的插件名。",
             "只输出插件名，多个用英文逗号分隔；若无法判断或需要全部工具则只输出：全部。",
             "如果用户消息中出现形如 `[TOOL:<插件名>]` 的显式 token，请把 `<插件名>` 视为必须选择的插件名（去重后只输出插件名），并优先使用它们作为本轮候选集合。",
+            "内置插件分工（用户可点名；符合条件时你也应主动选）：Memory=习惯偏好与长期事实；AccurateData=大块中间结果按 id 精确读写；Plan=复杂多步计划与按步执行。",
             "可用插件："
         };
         foreach (var name in availablePluginNames)
@@ -569,7 +600,7 @@ public sealed class ToolSelectionService : IToolSelector
             var desc = PluginDescriptions.TryGetValue(name, out var d) ? d : (name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase) ? "用户技能" : name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) ? "MCP 工具" : name);
             lines.Add($"- {name}: {desc}");
         }
-        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
+        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户说「记住我以后…」→ Memory。用户说「存成准确数据」→ AccurateData。用户说「列个实现计划」→ Plan。多步复杂任务未明说→可输出 Plan, AccurateData。用户说「把刚才聊的做成技能」→ SkillAuthor。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
         return string.Join("\n", lines);
     }
 

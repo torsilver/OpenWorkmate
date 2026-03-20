@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -100,10 +101,10 @@ public sealed class SkillService
         }
     }
 
-    /// <summary>解析 Agent Skills 格式的 SKILL.md：YAML frontmatter + Markdown body；支持 Clawhub metadata。</summary>
-    private static SkillDefinition? ParseSkillMd(string skillMdPath, string defaultId, string baseDir)
+    /// <summary>解析 Agent Skills 格式的 SKILL.md 文本：YAML frontmatter + Markdown body；支持 Clawhub metadata。</summary>
+    /// <param name="scriptsBaseDir">技能目录路径；为 null 时不检查 scripts 子目录（仅依据 requiresBins 判断 IsExecutable）。</param>
+    internal static SkillDefinition? ParseSkillMdFromContent(string raw, string defaultId, string? scriptsBaseDir)
     {
-        var raw = File.ReadAllText(skillMdPath, Encoding.UTF8);
         var match = Regex.Match(raw, @"^\s*---\s*\r?\n(.*?)\r?\n---\s*\r?\n([\s\S]*)", RegexOptions.Singleline);
         string body;
         var name = defaultId;
@@ -157,7 +158,8 @@ public sealed class SkillService
             body = raw.Trim();
         }
 
-        var isExecutable = requiresBins.Count > 0 || Directory.Exists(Path.Combine(baseDir, "scripts"));
+        var hasScriptsDir = !string.IsNullOrEmpty(scriptsBaseDir) && Directory.Exists(Path.Combine(scriptsBaseDir, "scripts"));
+        var isExecutable = requiresBins.Count > 0 || hasScriptsDir;
 
         if (string.IsNullOrWhiteSpace(name)) return null;
 
@@ -168,12 +170,79 @@ public sealed class SkillService
             Description = description,
             PromptTemplate = body,
             Enabled = enabled,
-            BaseDir = baseDir,
+            BaseDir = scriptsBaseDir ?? "",
             RequiresBins = requiresBins,
             RequiresEnv = requiresEnv,
             PrimaryEnv = primaryEnv,
             IsExecutable = isExecutable
         };
+    }
+
+    /// <summary>解析 Agent Skills 格式的 SKILL.md：YAML frontmatter + Markdown body；支持 Clawhub metadata。</summary>
+    private static SkillDefinition? ParseSkillMd(string skillMdPath, string defaultId, string baseDir)
+    {
+        var raw = File.ReadAllText(skillMdPath, Encoding.UTF8);
+        return ParseSkillMdFromContent(raw, defaultId, baseDir);
+    }
+
+    /// <summary>从完整 SKILL.md 文本解析技能；用于对话中生成/保存技能。要求含有效 frontmatter、非空 name 与 description。</summary>
+    public bool TryParseSkillMarkdown(string raw, [NotNullWhen(true)] out SkillDefinition? skill, out string? errorMessage)
+    {
+        skill = null;
+        errorMessage = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            errorMessage = "[技能解析失败] 内容为空。";
+            return false;
+        }
+
+        if (!Regex.Match(raw, @"^\s*---\s*\r?\n(.*?)\r?\n---\s*\r?\n", RegexOptions.Singleline).Success)
+        {
+            errorMessage = "[技能解析失败] 必须包含 YAML frontmatter（以 --- 开头与结束的元数据块），且正文在第二个 --- 之后。";
+            return false;
+        }
+
+        var parsed = ParseSkillMdFromContent(raw, "", null);
+        if (parsed == null || string.IsNullOrWhiteSpace(parsed.Id))
+        {
+            errorMessage = "[技能解析失败] frontmatter 中缺少有效的 name。";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(parsed.Description))
+        {
+            errorMessage = "[技能解析失败] frontmatter 中 description 不能为空。";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(parsed.PromptTemplate))
+        {
+            errorMessage = "[技能解析失败] 技能正文（Markdown 说明）不能为空。";
+            return false;
+        }
+
+        var safe = SanitizeId(parsed.Id);
+        if (string.IsNullOrWhiteSpace(safe))
+        {
+            errorMessage = "[技能解析失败] name 经规范化后无效，请使用字母、数字、下划线或连字符等合法文件名字符。";
+            return false;
+        }
+
+        skill = parsed;
+        skill.Id = safe;
+        return true;
+    }
+
+    /// <summary>是否已存在同名技能目录（含 SKILL.md）。</summary>
+    public bool SkillExists(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+        var safe = SanitizeId(id);
+        lock (_lock)
+        {
+            var dir = Path.Combine(_skillsDir, safe);
+            return Directory.Exists(dir) && File.Exists(Path.Combine(dir, "SKILL.md"));
+        }
     }
 
     /// <summary>解析 Clawhub metadata（JSON 或 YAML 风格）：clawdbot.requires.bins / env、primaryEnv。</summary>
