@@ -14,11 +14,13 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 {
     private readonly SessionManager _sessionManager;
     private readonly ILogger<ToolStatusFilter> _logger;
+    private readonly AgentDebugStatsService _debugStats;
 
-    public ToolStatusFilter(SessionManager sessionManager, ILogger<ToolStatusFilter> logger)
+    public ToolStatusFilter(SessionManager sessionManager, ILogger<ToolStatusFilter> logger, AgentDebugStatsService debugStats)
     {
         _sessionManager = sessionManager;
         _logger = logger;
+        _debugStats = debugStats;
     }
 
     public async Task OnFunctionInvocationAsync(
@@ -58,6 +60,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             catch { /* 非字符串结果忽略 */ }
 
             var success = !IsToolResultFailure(content);
+            _debugStats.RecordToolInvocation(pluginName, functionName, success);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex);
             await SendAgentPhaseAsync(sessionId, "digest", success
                 ? "已收到工具输出，继续处理…"
@@ -106,6 +109,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             _logger.LogWarning(ex, "[ToolStatus] Function {Plugin}.{Function} failed", pluginName, functionName);
             var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
             var stepIndexOnFail = GetPlanStepIndex(pluginName, functionName, context.Arguments);
+            _debugStats.RecordToolInvocation(pluginName, functionName, false);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail);
             await SendAgentPhaseAsync(sessionId, "digest", "工具调用失败，将据此调整后续步骤。");
             throw;

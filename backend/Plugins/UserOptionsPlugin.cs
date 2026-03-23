@@ -66,10 +66,14 @@ public sealed class UserOptionsPlugin
             }
         }
 
-        Dictionary<string, string> selections;
+        AskOptionsRequestResult outcome;
         try
         {
-            selections = await _userOptionsManager.RequestOptionsAsync(sessionId, title, prompt, steps, cancellationToken).ConfigureAwait(false);
+            outcome = await _userOptionsManager.RequestOptionsAsync(sessionId, title, prompt, steps, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) // 含 TaskCanceledException（如用户点停止）
+        {
+            return "[ask_options] 失败：请求已取消（会话中断或停止生成），未完成侧栏选择。";
         }
         catch (Exception ex)
         {
@@ -77,7 +81,10 @@ public sealed class UserOptionsPlugin
             return $"[ask_options] 失败：等待用户选择失败，错误：{ex.Message}";
         }
 
-        var selectionsJson = JsonSerializer.Serialize(selections, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        if (outcome.TimedOut)
+            return $"[ask_options] 失败：等待用户选择超时（{UserOptionsManager.AskOptionsWaitSeconds} 秒内未在侧栏完成选择）。请向用户说明可重试，或在对话中直接说明选项。";
+
+        var selectionsJson = JsonSerializer.Serialize(outcome.Selections, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         return $"[ask_options] 已获取 selections：{selectionsJson}";
     }
 }

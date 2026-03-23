@@ -2,13 +2,15 @@ using System.Collections.Concurrent;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Plugins;
 
 namespace OfficeCopilot.Server.Services;
 
 public sealed record AskOptionsStep(string StepId, string Question, List<AskOptionsOption> Options);
 
 public sealed record AskOptionsOption(string OptionId, string Label);
+
+/// <summary>Outcome of <see cref="UserOptionsManager.RequestOptionsAsync"/>.</summary>
+public sealed record AskOptionsRequestResult(bool TimedOut, IReadOnlyDictionary<string, string> Selections);
 
 /// <summary>
 /// Manages multi-round "AI candidate options" confirmations:
@@ -17,10 +19,14 @@ public sealed record AskOptionsOption(string OptionId, string Label);
 public sealed class UserOptionsManager
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Dictionary<string, string>>> _pending = new();
-    private readonly SessionManager _sessionManager;
+    private readonly Func<string, string, Task> _sendToSession;
     private readonly ILogger<UserOptionsManager> _logger;
+    private readonly TimeSpan _requestTimeout;
 
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(90);
+    /// <summary>Default wait for <see cref="RequestOptionsAsync"/> (seconds); user-facing error text should stay in sync.</summary>
+    public const int AskOptionsWaitSeconds = 90;
+
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(AskOptionsWaitSeconds);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,12 +35,22 @@ public sealed class UserOptionsManager
     };
 
     public UserOptionsManager(SessionManager sessionManager, ILogger<UserOptionsManager> logger)
+        : this((sessionId, message) => sessionManager.SendToAsync(sessionId, message), logger, null)
     {
-        _sessionManager = sessionManager;
-        _logger = logger;
     }
 
-    public async Task<Dictionary<string, string>> RequestOptionsAsync(
+    /// <summary>Tests: custom send callback and optional timeout override.</summary>
+    internal UserOptionsManager(
+        Func<string, string, Task> sendToSession,
+        ILogger<UserOptionsManager> logger,
+        TimeSpan? requestTimeout = null)
+    {
+        _sendToSession = sendToSession ?? throw new ArgumentNullException(nameof(sendToSession));
+        _logger = logger;
+        _requestTimeout = requestTimeout ?? DefaultTimeout;
+    }
+
+    public async Task<AskOptionsRequestResult> RequestOptionsAsync(
         string sessionId,
         string title,
         string prompt,
@@ -62,18 +78,39 @@ public sealed class UserOptionsManager
         };
 
         var json = JsonSerializer.Serialize(msg, JsonOptions);
-        await _sessionManager.SendToAsync(sessionId, json);
+        await _sendToSession(sessionId, json).ConfigureAwait(false);
 
         _logger.LogInformation("[UserOptions] ask_options_request id={ReqId} steps={StepCount} sessionId={SessionId}", requestId, steps?.Count ?? 0, sessionId);
 
-        var delayTask = Task.Delay(DefaultTimeout, ct);
+        using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        delayCts.CancelAfter(_requestTimeout);
+        var delayTask = Task.Delay(Timeout.InfiniteTimeSpan, delayCts.Token);
         var completed = await Task.WhenAny(tcs.Task, delayTask).ConfigureAwait(false);
         if (completed == tcs.Task)
-            return tcs.Task.Result;
+        {
+            var dict = await tcs.Task.ConfigureAwait(false);
+            return new AskOptionsRequestResult(false, dict);
+        }
+
+        try
+        {
+            await delayTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                if (_pending.TryRemove(requestId, out var orphan))
+                    orphan.TrySetCanceled(ct);
+                throw;
+            }
+        }
 
         _logger.LogWarning("[UserOptions] ask_options_request id={ReqId} timed out", requestId);
-        _pending.TryRemove(requestId, out _);
-        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (_pending.TryRemove(requestId, out var left))
+            left.TrySetCanceled(CancellationToken.None);
+
+        return new AskOptionsRequestResult(true, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
     }
 
     public void HandleResponse(string requestId, Dictionary<string, string>? selections)
@@ -92,4 +129,3 @@ public sealed class UserOptionsManager
         _logger.LogInformation("[UserOptions] ask_options_response id={ReqId} selectionsCount={Count}", requestId, safe.Count);
     }
 }
-

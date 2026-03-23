@@ -68,6 +68,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
     builder.Services.AddSingleton<ContextManager>();
+    builder.Services.AddSingleton<AgentDebugStatsService>();
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {
@@ -270,6 +271,14 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
 });
 
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
+
+app.MapGet("/api/debug/agent-stats", (AgentDebugStatsService agentDebugStats) =>
+    Results.Json(agentDebugStats.GetSnapshot(), JsonCtx.Default.AgentDebugStatsResponse));
+app.MapPost("/api/debug/agent-stats/reset", (AgentDebugStatsService agentDebugStats) =>
+{
+    agentDebugStats.Reset();
+    return Results.Json(new DebugStatsResetResponse(), JsonCtx.Default.DebugStatsResetResponse);
+});
 
 app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenAccepted={Dev}, AllowedOriginsCount={Count}",
     wsPath, !string.IsNullOrEmpty(authToken), isDev, allowedOrigins.Length);
@@ -650,6 +659,7 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "Memory", Name = "Memory", Description = "长期记忆：用户可点名「记住」；也可主动保存/检索习惯、取向与关键事实（需配置 Embedding）" },
         new() { Id = "AccurateData", Name = "AccurateData", Description = "准确数据：用户可点名按 id 存取；复杂任务中可主动落盘大块结构化中间结果以减上下文" },
         new() { Id = "Plan", Name = "Plan", Description = "计划：用户可点名列计划；复杂多步任务可主动生成/按步执行已保存的实现计划" },
+        new() { Id = "UserOptions", Name = "UserOptions", Description = "候选项确认（ask_options）：侧栏分步单选让用户确认方案/格式等；需在 Chrome 扩展侧栏连接（WPS 等端若未接 UI 则可能超时）" },
         new() { Id = "SkillAuthor", Name = "SkillAuthor", Description = "技能撰写：根据目标与对话摘要生成 SKILL.md 并保存为用户技能，与设置页技能列表一致" }
     };
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);

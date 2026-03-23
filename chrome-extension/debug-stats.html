@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>调试统计 - Office Copilot</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #58a6ff;
+      --ok: #3fb950;
+      --bad: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 8px; }
+    .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; }
+    button {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button.danger:hover { border-color: var(--bad); color: var(--bad); }
+    label.auto { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; margin-left: 8px; }
+    .meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    section h2 { font-size: 1rem; margin: 0 0 12px; font-weight: 600; }
+    dl.stats { display: grid; grid-template-columns: minmax(200px, 1fr) auto; gap: 6px 16px; margin: 0; }
+    dl.stats dt { color: var(--muted); margin: 0; }
+    dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    .rate { color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .empty { color: var(--muted); padding: 12px 0; }
+    #err {
+      display: none;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(248, 81, 73, 0.5);
+      background: rgba(248, 81, 73, 0.12);
+      color: #ffb1ad;
+      margin-bottom: 16px;
+      white-space: pre-wrap;
+    }
+    #err.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>调试统计</h1>
+    <p class="sub">本页展示当前 OfficeCopilot 服务进程内的工具向量选择汇总与各工具调用成功次数。服务重启后清零。默认连接 <code>http://localhost:8765</code>。</p>
+    <div id="err" role="alert"></div>
+    <div class="toolbar">
+      <button type="button" id="btn-refresh">刷新</button>
+      <button type="button" id="btn-reset" class="danger">清空计数</button>
+      <label class="auto"><input type="checkbox" id="chk-auto"> 每 3 秒自动刷新</label>
+      <span class="meta" id="last-updated"></span>
+    </div>
+    <section>
+      <h2>工具向量选择</h2>
+      <dl class="stats" id="tool-selection-dl"></dl>
+    </section>
+    <section>
+      <h2>各工具调用</h2>
+      <div id="tools-table-wrap"></div>
+    </section>
+  </div>
+  <script src="debug-stats.js"></script>
+</body>
+</html>

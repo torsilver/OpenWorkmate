@@ -36,9 +36,10 @@ public sealed class ChatService : IDisposable
     private readonly IKernelAccessor _kernelAccessor;
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
+    private readonly AgentDebugStatsService _agentDebugStats;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -52,6 +53,7 @@ public sealed class ChatService : IDisposable
         _kernelAccessor = kernelAccessor;
         _embeddingProvider = embeddingProvider;
         _planStore = planStore;
+        _agentDebugStats = agentDebugStats;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -248,7 +250,7 @@ public sealed class ChatService : IDisposable
         // 注入当前会话 ID，供 BrowserPlugin 等插件在工具调用时使用
         newKernel.FunctionInvocationFilters.Add(new SessionContextFilter(_loggerFactory.CreateLogger<SessionContextFilter>()));
         // 工具调用状态对前端可见：推送 tool_invocation_start / tool_invocation_end
-        newKernel.FunctionInvocationFilters.Add(new ToolStatusFilter(sessionManager, _loggerFactory.CreateLogger<ToolStatusFilter>()));
+        newKernel.FunctionInvocationFilters.Add(new ToolStatusFilter(sessionManager, _loggerFactory.CreateLogger<ToolStatusFilter>(), _agentDebugStats));
 
         // 已停用的内置插件 ID（不区分大小写）
         var disabledBuiltIn = _configService.Current.DisabledBuiltInPlugins?
@@ -459,16 +461,17 @@ public sealed class ChatService : IDisposable
         return keyed ?? kernel.GetRequiredService<IChatCompletionService>();
     }
 
-    /// <summary>追加到主对话 system：Memory / AccurateData / Plan 分工与双触发（用户可点名 + 模型可按需启用）。</summary>
+    /// <summary>追加到主对话 system：Memory / AccurateData / Plan / UserOptions 分工与双触发（用户可点名 + 模型可按需启用）。</summary>
     private const string BuiltinTaskPluginSystemGuidance = """
-[内置插件：记忆 / 准确数据 / 计划]
+[内置插件：记忆 / 准确数据 / 计划 / 候选项确认]
 以下均为内置能力（非外接 MCP）。用户可在对话中明确要求；你也应在符合条件时主动选用对应工具。
 
 - Memory：记录与检索用户的习惯、取向、偏好与长期关键事实；不用于存大块中间数据或任务步骤正文。
 - AccurateData：多步复杂任务中按固定 id 精确读写大块结构化中间结果以减轻上下文；不替代语义记忆或计划步骤流。
 - Plan：将复杂任务拆解为可保存、可按步执行的计划（Markdown 步骤）；不替代 AccurateData 存原始数据块，不替代 Memory 记偏好。
+- UserOptions（工具 ask_options）：当任务存在多种合理解法、输出格式或分步选择且不宜替用户拍板时，用侧栏分步单选让用户确认；用 stepsJson 描述每步问题与选项，勿要求用户在聊天里回复「选 A/B」。
 
-三者可同时使用（例如：Plan + AccurateData 存中间结果 + 用户要求记住偏好时使用 Memory）。
+记忆、准确数据、计划与候选项确认可同时使用（例如：先 ask_options 定方案，再 Plan 执行并用 AccurateData 存中间结果）。
 """;
 
     private string GetActiveSystemPrompt()
@@ -791,6 +794,7 @@ public sealed class ChatService : IDisposable
             if (!isPlanMode)
             {
                 await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
+                _agentDebugStats.IncrementToolSelectionTotal();
                 try
                 {
                     var recentHistory = state.History.Count > 1 ? state.History : null;
@@ -809,8 +813,10 @@ public sealed class ChatService : IDisposable
                             ct).ConfigureAwait(false);
                         _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
                             sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
+                        var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
+                        _agentDebugStats.RecordVectorSearchCompleted(vectorSearch.GoodEnough, vectorFirstChosen);
                         string vectorDecision;
-                        if (vectorSearch.GoodEnough && vectorSearch.Results.Count > 0)
+                        if (vectorFirstChosen)
                         {
                             selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
                             _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
@@ -829,11 +835,16 @@ public sealed class ChatService : IDisposable
                     }
                     else
                     {
+                        if (!embeddingConfigured)
+                            _agentDebugStats.RecordVectorSkippedNoEmbedding();
+                        else
+                            _agentDebugStats.RecordVectorSkippedNonPersistent();
                         var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
                         await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
                     }
                     if (selectedPairs == null)
                     {
+                        _agentDebugStats.RecordTwoStageUsed();
                         _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
                         var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                         selectedPairs = twoStage.SelectedPairs;
@@ -846,6 +857,7 @@ public sealed class ChatService : IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
+                    _agentDebugStats.RecordToolSelectionException();
                     selectedPairs = null;
                     await NotifyAgentTraceAsync(
                         sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",

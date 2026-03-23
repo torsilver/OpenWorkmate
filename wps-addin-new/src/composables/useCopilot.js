@@ -62,6 +62,10 @@ export function useCopilot() {
   let reconnectTimer = null
   let pendingMessages = []
   let currentToolEndIndex = 0
+  let crossAgentAutoRunLock = false
+  let crossAgentAutoRunQueued = false
+  const CROSS_AGENT_AUTO_TRIGGER_TEXT =
+    '请根据系统说明中「来自其他端的待办」逐项执行；每完成一项请调用 complete_cross_agent_task 标记完成。除待办外请勿延伸闲聊。'
 
   function parsePlanStepsFromContent(content) {
     // 约定：计划内容中使用 Markdown 标题形式标记步骤，例如：
@@ -119,6 +123,8 @@ export function useCopilot() {
     }
     pendingMessages = []
     currentToolEndIndex = 0
+    crossAgentAutoRunLock = false
+    crossAgentAutoRunQueued = false
     currentRound.value = null
     messages.value = []
     inputText.value = ''
@@ -309,6 +315,13 @@ export function useCopilot() {
       currentRound.value = null
     }
     inputEnabled.value = true
+    if (crossAgentAutoRunLock) {
+      crossAgentAutoRunLock = false
+    }
+    if (crossAgentAutoRunQueued && !currentRound.value?.isStreaming) {
+      crossAgentAutoRunQueued = false
+      scheduleCrossAgentAutoRun()
+    }
   }
 
   function setInputEnabled(enabled) {
@@ -335,6 +348,7 @@ export function useCopilot() {
         const m = pendingMessages.shift()
         send(m.text, m.attachmentsPayload || null)
       }
+      flushCrossAgentAutoRunAfterReconnect()
     }
     ws.onmessage = (e) => handleMessage(e.data)
     ws.onclose = () => {
@@ -359,13 +373,14 @@ export function useCopilot() {
     }, reconnectDelay)
   }
 
-  function send(text, attachmentsPayload = null) {
+  function send(text, attachmentsPayload = null, sendOpts = {}) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       addBotMessage('连接已断开，消息未发送。请检查后台是否启动，并在 Chrome 扩展中配置。', true)
       return
     }
+    const skipPlan = sendOpts && sendOpts.skipPlan === true
     const payload = { type: 'text', content: text || '' }
-    if (planId.value) {
+    if (!skipPlan && planId.value) {
       payload.mode = 'agent'
       payload.planId = planId.value
     }
@@ -373,6 +388,49 @@ export function useCopilot() {
       payload.attachments = attachmentsPayload
     }
     ws.send(JSON.stringify(payload))
+  }
+
+  function scheduleCrossAgentAutoRun() {
+    if (crossAgentAutoRunLock) {
+      crossAgentAutoRunQueued = true
+      return
+    }
+    if (currentRound.value?.isStreaming) {
+      crossAgentAutoRunQueued = true
+      return
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      crossAgentAutoRunQueued = true
+      return
+    }
+    crossAgentAutoRunLock = true
+    crossAgentAutoRunQueued = false
+    addUserMessage(CROSS_AGENT_AUTO_TRIGGER_TEXT)
+    send(CROSS_AGENT_AUTO_TRIGGER_TEXT, null, { skipPlan: true })
+  }
+
+  function onCrossAgentTaskPush(msg) {
+    const tid = msg && msg.taskId != null ? String(msg.taskId) : ''
+    const desc = msg && msg.description != null ? String(msg.description).trim() : ''
+    let line = '已收到来自其他端的跨端任务'
+    if (tid) line += '（id=' + tid + '）'
+    line += '。'
+    if (desc) {
+      const max = 180
+      line += '摘要：' + (desc.length > max ? desc.slice(0, max) + '…' : desc)
+    }
+    addSystemMessage(line)
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      crossAgentAutoRunQueued = true
+      addSystemMessage('当前未连接，重连成功后将自动尝试执行跨端待办。')
+      return
+    }
+    scheduleCrossAgentAutoRun()
+  }
+
+  function flushCrossAgentAutoRunAfterReconnect() {
+    if (!crossAgentAutoRunQueued || crossAgentAutoRunLock || currentRound.value?.isStreaming) return
+    scheduleCrossAgentAutoRun()
   }
 
   function handleMessage(raw) {
@@ -495,6 +553,19 @@ export function useCopilot() {
         const title = msg.title || '新计划'
         const createdBy = (msg.createdBy || '').toLowerCase()
         if (planIdMsg && createdBy === CLIENT_TYPE) fetchPlanAndShow(planIdMsg, title, createdBy)
+        break
+      }
+      case 'cross_agent_task':
+        onCrossAgentTaskPush(msg)
+        break
+      case 'cross_agent_task_completed': {
+        const st = (msg.status && String(msg.status)) || ''
+        const rs = (msg.resultSummary && String(msg.resultSummary).trim()) || ''
+        const tid = msg.taskId != null ? String(msg.taskId) : ''
+        let line = '跨端任务已由对方处理' + (tid ? '（id=' + tid + '）' : '')
+        if (st) line += '，状态：' + st
+        line += rs ? '。' + (rs.length > 160 ? rs.slice(0, 160) + '…' : rs) : '。'
+        addSystemMessage(line)
         break
       }
       default:

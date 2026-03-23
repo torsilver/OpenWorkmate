@@ -297,6 +297,11 @@ let reconnectAttempts = 0;
 let pendingMessages = [];
 /** 计划页触发执行、侧边栏加载时尚未连接，连接后自动发执行请求 */
 let pendingExecutePlan = false;
+/** 收到 cross_agent_task 后自动发一轮用户消息以拉取服务端待办（与 office/wps 侧约定一致） */
+let crossAgentAutoRunLock = false;
+let crossAgentAutoRunQueued = false;
+const CROSS_AGENT_AUTO_TRIGGER_TEXT =
+  "请根据系统说明中「来自其他端的待办」逐项执行；每完成一项请调用 complete_cross_agent_task 标记完成。除待办外请勿延伸闲聊。";
 const attachments = []; // { mimeType, data (base64), id } for preview
 
 // ───── @ Mode (tool/skill chooser) ─────
@@ -700,6 +705,7 @@ const $closeDebugBtn = document.getElementById("close-debug-btn");
 const $debugContent = document.getElementById("debug-content");
 const $debugRuntimeLog = document.getElementById("debug-runtime-log");
 const $clearRuntimeLogBtn = document.getElementById("clear-runtime-log-btn");
+const $openDebugStatsBtn = document.getElementById("open-debug-stats-btn");
 
 function debugLog(tag, message, type = "info") {
   const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -730,6 +736,12 @@ if ($toggleDebugBtn) {
 if ($closeDebugBtn) {
   $closeDebugBtn.addEventListener("click", () => {
     $debugPanel.style.display = "none";
+  });
+}
+if ($openDebugStatsBtn && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL && chrome.tabs) {
+  $openDebugStatsBtn.addEventListener("click", () => {
+    const url = chrome.runtime.getURL("debug-stats.html");
+    chrome.tabs.create({ url });
   });
 }
 document.querySelectorAll(".debug-tab").forEach((btn) => {
@@ -802,6 +814,7 @@ function connect() {
       pendingExecutePlan = false;
       send("请按当前绑定的计划执行");
     }
+    flushCrossAgentAutoRunAfterReconnect();
   });
 
   ws.addEventListener("message", (e) => {
@@ -838,18 +851,66 @@ function scheduleReconnect() {
   }, reconnectDelay);
 }
 
-function send(text, attachmentsPayload = null) {
+function send(text, attachmentsPayload = null, sendOptions = {}) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     addBotMessage("连接已断开，消息未发送。请检查网络或刷新侧边栏后重试。", true);
     return;
   }
-  const planId = getCurrentPlanId() || undefined;
-  const base = { type: "text", content: text || "", mode: "agent", planId };
-  if (planId) base.planCurrentStepIndex = getPlanCurrentStepIndex();
+  const skipPlan = sendOptions && sendOptions.skipPlan === true;
+  const planId = skipPlan ? undefined : (getCurrentPlanId() || undefined);
+  const base = { type: "text", content: text || "", mode: "agent" };
+  if (planId) {
+    base.planId = planId;
+    base.planCurrentStepIndex = getPlanCurrentStepIndex();
+  }
   if (attachmentsPayload && attachmentsPayload.length > 0) base.attachments = attachmentsPayload;
   const payload = JSON.stringify(base);
   ws.send(payload);
   debugLog("WS Send", "type=text planId=" + (planId || "-") + " step=" + (planId ? getPlanCurrentStepIndex() : "-") + " len=" + (text || "").length, "send");
+}
+
+function scheduleCrossAgentAutoRun() {
+  if (crossAgentAutoRunLock) {
+    crossAgentAutoRunQueued = true;
+    return;
+  }
+  if (currentRoundWrapper) {
+    crossAgentAutoRunQueued = true;
+    return;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    crossAgentAutoRunQueued = true;
+    return;
+  }
+  crossAgentAutoRunLock = true;
+  crossAgentAutoRunQueued = false;
+  addUserMessage(CROSS_AGENT_AUTO_TRIGGER_TEXT);
+  showThinkingIndicator();
+  send(CROSS_AGENT_AUTO_TRIGGER_TEXT, null, { skipPlan: true });
+}
+
+function onCrossAgentTaskPush(msg) {
+  const tid = msg && msg.taskId != null ? String(msg.taskId) : "";
+  const desc = msg && msg.description != null ? String(msg.description).trim() : "";
+  let line = "已收到来自其他端的跨端任务";
+  if (tid) line += "（id=" + tid + "）";
+  line += "。";
+  if (desc) {
+    const max = 180;
+    line += "摘要：" + (desc.length > max ? desc.slice(0, max) + "…" : desc);
+  }
+  addSystemMessage(line);
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    crossAgentAutoRunQueued = true;
+    addSystemMessage("当前未连接，重连成功后将自动尝试执行跨端待办。");
+    return;
+  }
+  scheduleCrossAgentAutoRun();
+}
+
+function flushCrossAgentAutoRunAfterReconnect() {
+  if (!crossAgentAutoRunQueued || crossAgentAutoRunLock || currentRoundWrapper) return;
+  scheduleCrossAgentAutoRun();
 }
 
 // ───── Init Libraries ─────
@@ -1159,6 +1220,13 @@ function finalizeStream() {
   currentSubtaskToolBlocks = [];
   currentSubtaskToolEndIndex = 0;
   setInputEnabled(true);
+  if (crossAgentAutoRunLock) {
+    crossAgentAutoRunLock = false;
+  }
+  if (crossAgentAutoRunQueued && !currentRoundWrapper) {
+    crossAgentAutoRunQueued = false;
+    scheduleCrossAgentAutoRun();
+  }
 }
 
 // ───── Message handling ─────
@@ -1434,6 +1502,21 @@ function handleMessage(raw) {
         if (welcome) welcome.remove();
         $messages.scrollTop = $messages.scrollHeight;
       }
+      break;
+    }
+
+    case "cross_agent_task":
+      onCrossAgentTaskPush(msg);
+      break;
+
+    case "cross_agent_task_completed": {
+      const st = (msg.status && String(msg.status)) || "";
+      const rs = (msg.resultSummary && String(msg.resultSummary).trim()) || "";
+      const tid = msg.taskId != null ? String(msg.taskId) : "";
+      let line = "跨端任务已由对方处理" + (tid ? "（id=" + tid + "）" : "");
+      if (st) line += "，状态：" + st;
+      line += rs ? "。" + (rs.length > 160 ? rs.slice(0, 160) + "…" : rs) : "。";
+      addSystemMessage(line);
       break;
     }
 

@@ -406,6 +406,34 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var list = JsonDocument.Parse(json).RootElement;
         Assert.Equal(JsonValueKind.Array, list.ValueKind);
     }
+
+    [Fact]
+    public async Task GetDebugAgentStats_Returns200_WithCamelCaseShape()
+    {
+        var response = await _client.GetAsync("/api/debug/agent-stats");
+        response.EnsureSuccessStatusCode();
+        var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(root.TryGetProperty("serverStartedUtc", out _));
+        Assert.True(root.TryGetProperty("toolSelection", out var ts));
+        Assert.True(ts.TryGetProperty("totalNonPlanSelections", out _));
+        Assert.True(root.TryGetProperty("toolInvocations", out var inv));
+        Assert.Equal(JsonValueKind.Array, inv.ValueKind);
+    }
+
+    [Fact]
+    public async Task PostDebugAgentStatsReset_Returns200_WithOk_AndClearsCounters()
+    {
+        var reset = await _client.PostAsync("/api/debug/agent-stats/reset", null);
+        reset.EnsureSuccessStatusCode();
+        var resetRoot = JsonDocument.Parse(await reset.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(resetRoot.TryGetProperty("ok", out var ok) && ok.GetBoolean());
+
+        var get = await _client.GetAsync("/api/debug/agent-stats");
+        get.EnsureSuccessStatusCode();
+        var ts = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement.GetProperty("toolSelection");
+        Assert.Equal(0, ts.GetProperty("totalNonPlanSelections").GetInt64());
+        Assert.Equal(0, ts.GetProperty("vectorSearchRunCount").GetInt64());
+    }
 }
 
 internal sealed class SttFakeHttpMessageHandler : HttpMessageHandler

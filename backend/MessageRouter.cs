@@ -329,4 +329,9 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(List<OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta>))]
 [JsonSerializable(typeof(ScheduledTaskCreateRequest))]
 [JsonSerializable(typeof(ScheduledTaskUpdateRequest))]
+[JsonSerializable(typeof(AgentDebugStatsResponse))]
+[JsonSerializable(typeof(ToolSelectionDebugStatsDto))]
+[JsonSerializable(typeof(ToolInvocationDebugStatDto))]
+[JsonSerializable(typeof(List<ToolInvocationDebugStatDto>))]
+[JsonSerializable(typeof(DebugStatsResetResponse))]
 internal partial class JsonCtx : JsonSerializerContext;
