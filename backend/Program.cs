@@ -10,6 +10,8 @@ using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Mcp;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -68,7 +70,9 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
     builder.Services.AddSingleton<ContextManager>();
-    builder.Services.AddSingleton<AgentDebugStatsService>();
+    builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
+        sp.GetRequiredService<ILogger<AgentDebugStatsService>>(),
+        sp.GetRequiredService<IHostApplicationLifetime>()));
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {
@@ -272,8 +276,25 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
 
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
 
-app.MapGet("/api/debug/agent-stats", (AgentDebugStatsService agentDebugStats) =>
-    Results.Json(agentDebugStats.GetSnapshot(), JsonCtx.Default.AgentDebugStatsResponse));
+app.MapGet("/api/debug/agent-stats", (AgentDebugStatsService agentDebugStats, ConfigService config) =>
+{
+    var snap = agentDebugStats.GetSnapshot();
+    var cw = config.Current.ContextWindow ?? new ContextWindowConfig();
+    var withConfig = new AgentDebugStatsResponse
+    {
+        ServerStartedUtc = snap.ServerStartedUtc,
+        StatsAccumulatedSinceUtc = snap.StatsAccumulatedSinceUtc,
+        ToolSelection = snap.ToolSelection,
+        ToolInvocations = snap.ToolInvocations,
+        ToolSearchConfig = new ToolSearchConfigSnapshotDto
+        {
+            ToolSearchTopK = cw.ToolSearchTopK,
+            ToolSearchMinScore = cw.ToolSearchMinScore,
+            ToolSearchMinCount = cw.ToolSearchMinCount
+        }
+    };
+    return Results.Json(withConfig, JsonCtx.Default.AgentDebugStatsResponse);
+});
 app.MapPost("/api/debug/agent-stats/reset", (AgentDebugStatsService agentDebugStats) =>
 {
     agentDebugStats.Reset();

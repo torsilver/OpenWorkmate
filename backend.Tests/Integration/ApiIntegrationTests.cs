@@ -418,6 +418,11 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(ts.TryGetProperty("totalNonPlanSelections", out _));
         Assert.True(root.TryGetProperty("toolInvocations", out var inv));
         Assert.Equal(JsonValueKind.Array, inv.ValueKind);
+        Assert.True(root.TryGetProperty("toolSearchConfig", out var tsc));
+        Assert.True(tsc.TryGetProperty("toolSearchTopK", out _));
+        Assert.True(tsc.TryGetProperty("toolSearchMinScore", out _));
+        Assert.True(tsc.TryGetProperty("toolSearchMinCount", out _));
+        Assert.True(root.TryGetProperty("statsAccumulatedSinceUtc", out _));
     }
 
     [Fact]

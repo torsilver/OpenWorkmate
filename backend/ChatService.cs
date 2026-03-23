@@ -814,7 +814,16 @@ public sealed class ChatService : IDisposable
                         _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
                             sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
                         var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
-                        _agentDebugStats.RecordVectorSearchCompleted(vectorSearch.GoodEnough, vectorFirstChosen);
+                        var scored = vectorSearch.ScoredHits;
+                        var maxS = scored.Count > 0 ? scored[0].Score : 0.0;
+                        double? secondS = scored.Count >= 2 ? scored[1].Score : null;
+                        _agentDebugStats.RecordVectorSearchCompleted(new VectorSearchTelemetry(
+                            clientType,
+                            maxS,
+                            secondS,
+                            scored.Count,
+                            vectorSearch.GoodEnough,
+                            vectorFirstChosen));
                         string vectorDecision;
                         if (vectorFirstChosen)
                         {
