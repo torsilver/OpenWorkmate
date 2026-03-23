@@ -97,6 +97,118 @@
       .replace(/'/g, "&#039;");
   }
 
+  function wpsPptCollectionCount(collection) {
+    if (!collection) return 0;
+    var count = collection.Count;
+    if (typeof count !== "number") count = count != null && count.value !== undefined ? count.value : 0;
+    return count;
+  }
+
+  function parsePptReorder1Based(newOrderStr, n) {
+    if (!newOrderStr || !String(newOrderStr).trim()) return { err: "[错误] 请提供 newOrder，如 2,3,1。" };
+    var parts = String(newOrderStr)
+      .split(",")
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(Boolean);
+    var order = parts.map(function (p) {
+      return parseInt(p, 10);
+    });
+    for (var pi = 0; pi < order.length; pi++) {
+      if (isNaN(order[pi])) return { err: "[错误] newOrder 中含无法解析的序号。" };
+    }
+    if (order.length !== n) return { err: "[错误] newOrder 长度须等于当前幻灯片张数（" + n + "）。" };
+    var seen = {};
+    for (var pj = 0; pj < order.length; pj++) {
+      var xv = order[pj];
+      if (xv < 1 || xv > n) return { err: "[错误] newOrder 中序号须在 1～" + n + " 之间。" };
+      if (seen[xv]) return { err: "[错误] newOrder 中序号须无重复。" };
+      seen[xv] = true;
+    }
+    return { order: order };
+  }
+
+  function parsePptRowsCsv(rowsCsv) {
+    if (!rowsCsv || !String(rowsCsv).trim()) return { err: "[错误] 请提供 rowsCsv。" };
+    var rows = String(rowsCsv)
+      .split("|")
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(function (x) {
+        return x.length > 0;
+      });
+    return {
+      rows: rows.map(function (line) {
+        return line.split(",").map(function (cell) {
+          return String(cell !== undefined ? cell : "").trim();
+        });
+      }),
+    };
+  }
+
+  function wpsPptNotesPlainText(notesPage) {
+    if (!notesPage || !notesPage.Shapes) return "";
+    var parts = [];
+    var n = wpsPptCollectionCount(notesPage.Shapes);
+    for (var i = 1; i <= n; i++) {
+      var sh = notesPage.Shapes.Item(i);
+      if (sh && sh.TextFrame && sh.TextFrame.TextRange && sh.TextFrame.TextRange.Text) {
+        parts.push(String(sh.TextFrame.TextRange.Text));
+      }
+    }
+    return parts.join("\n").trim();
+  }
+
+  function wpsPptSetNotesPlainText(notesPage, text) {
+    if (!notesPage || !notesPage.Shapes) return;
+    var n = wpsPptCollectionCount(notesPage.Shapes);
+    for (var j = 1; j <= n; j++) {
+      var sh2 = notesPage.Shapes.Item(j);
+      if (sh2 && sh2.TextFrame && sh2.TextFrame.TextRange) {
+        sh2.TextFrame.TextRange.Text = text;
+        return;
+      }
+    }
+    if (n > 0) {
+      var sh3 = notesPage.Shapes.Item(1);
+      if (sh3 && sh3.TextFrame && sh3.TextFrame.TextRange) sh3.TextFrame.TextRange.Text = text;
+    }
+  }
+
+  function wpsPptFindFirstTableShape(slide) {
+    if (!slide || !slide.Shapes) return null;
+    var nt = wpsPptCollectionCount(slide.Shapes);
+    for (var k = 1; k <= nt; k++) {
+      var sh4 = slide.Shapes.Item(k);
+      if (!sh4) continue;
+      if (sh4.HasTable) return sh4;
+      try {
+        if (sh4.Table) return sh4;
+      } catch (e0) {}
+    }
+    return null;
+  }
+
+  function wpsPptPickTextShape(slide, shapeIndex, shapeName) {
+    if (!slide || !slide.Shapes) return null;
+    var nt2 = wpsPptCollectionCount(slide.Shapes);
+    if (shapeIndex > 0 && shapeIndex <= nt2) {
+      var cand = slide.Shapes.Item(shapeIndex);
+      if (cand && cand.TextFrame && cand.TextFrame.TextRange) return cand;
+    }
+    if (shapeName) {
+      for (var si = 0; si < nt2; si++) {
+        var it = slide.Shapes.Item(si + 1);
+        if (it && it.Name && String(it.Name).toLowerCase() === shapeName.toLowerCase() && it.TextFrame && it.TextFrame.TextRange) {
+          return it;
+        }
+      }
+    }
+    return null;
+  }
+
   var currentBotMessageRaw = "";
   var currentRoundWrapper = null;
   var timelineRoot = null;
@@ -985,23 +1097,355 @@
         } catch (e) {
           sendRes(null, "ppt_slide_delete 失败：" + (e && e.message ? e.message : String(e)));
         }
-      } else if (
-        method === "ppt_document_create" ||
-        method === "ppt_slide_image_add" ||
-        method === "ppt_notes_read" ||
-        method === "ppt_notes_write" ||
-        method === "ppt_slides_reorder" ||
-        method === "ppt_table_create" ||
-        method === "ppt_table_write_cells" ||
-        method === "ppt_hyperlink_add" ||
-        method === "ppt_slide_duplicate"
-      ) {
-        sendRes(
-          "[错误] 该操作在 WPS 任务窗格中暂未实现（OpenXml 仅在 Chrome/后端文件路径模式）。请使用 Chrome 连接同一后端并对 .pptx 使用工具 " +
-            method +
-            "。",
-          null
-        );
+      } else if (method === "ppt_document_create") {
+        try {
+          var filePath = (params.filePath != null ? String(params.filePath) : '').trim()
+          if (!filePath) {
+            sendRes('[错误] 请提供 filePath（.pptx 或 .pptm）。', null)
+            return
+          }
+          var lower = filePath.toLowerCase()
+          if (!lower.endsWith('.pptx') && !lower.endsWith('.pptm')) {
+            sendRes('[错误] filePath 须为 .pptx 或 .pptm。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.Presentations.Add()
+          if (pres && typeof pres.SaveAs === 'function') {
+            pres.SaveAs(filePath)
+          }
+          sendRes('成功：已新建演示文稿并保存到：' + filePath, null)
+        } catch (e) {
+          sendRes(null, 'ppt_document_create 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_slide_image_add") {
+        try {
+          var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1
+          var imagePath = (params.imagePath != null ? String(params.imagePath) : '').trim()
+          var imageBase64 = params.imageBase64 != null ? String(params.imageBase64) : ''
+          var tempFromB64 = null
+          if (!imagePath && imageBase64) {
+            try {
+              var fso = new ActiveXObject("Scripting.FileSystemObject")
+              var folder = fso.GetSpecialFolder(2)
+              tempFromB64 = folder + '\\taskly_ppt_img_' + Date.now() + '.bin'
+              var stream = new ActiveXObject("ADODB.Stream")
+              stream.Type = 1
+              stream.Open()
+              var xml = new ActiveXObject("Microsoft.XMLDOM")
+              var el = xml.createElement('tmp')
+              el.dataType = 'bin.base64'
+              el.text = imageBase64.replace(/\s/g, '')
+              stream.Write(el.nodeTypedValue)
+              stream.SaveToFile(tempFromB64, 2)
+              stream.Close()
+              imagePath = tempFromB64
+            } catch (e2) {
+              sendRes(
+                null,
+                'ppt_slide_image_add：无法将 imageBase64 写入临时文件（' +
+                  (e2 && e2.message ? e2.message : String(e2)) +
+                  '）。请提供本机 imagePath，或使用 Chrome + 后端文件路径。'
+              )
+              return
+            }
+          }
+          if (!imagePath) {
+            sendRes(null, '[错误] 请提供 imagePath，或由服务端随 RPC 附带 imageBase64。')
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex < 1 || slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          var left = 20
+          var top = 120
+          var width = 400
+          var height = 225
+          if (slide && slide.Shapes && typeof slide.Shapes.AddPicture === 'function') {
+            slide.Shapes.AddPicture(imagePath, false, true, left, top, width, height)
+            sendRes('成功：已在第 ' + slideIndex + ' 页插入图片。', null)
+          } else {
+            sendRes(null, '当前 WPS 版本不支持 Shapes.AddPicture。')
+          }
+          if (tempFromB64) {
+            try {
+              new ActiveXObject("Scripting.FileSystemObject").DeleteFile(tempFromB64, true)
+            } catch (eIgn) {}
+          }
+        } catch (e) {
+          sendRes(null, 'ppt_slide_image_add 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_notes_read") {
+        try {
+          var slideIndex = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          var np = slide.NotesPage
+          if (!np && typeof slide.AddNotesPage === 'function') {
+            slide.AddNotesPage()
+            np = slide.NotesPage
+          }
+          if (!np) {
+            sendRes('（无备注）', null)
+            return
+          }
+          var text = wpsPptNotesPlainText(np)
+          sendRes(text ? text : '（无备注）', null)
+        } catch (e) {
+          sendRes(null, 'ppt_notes_read 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_notes_write") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 0
+          var text = (params.text != null ? params.text : '').toString()
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          var np = slide.NotesPage
+          if (!np && typeof slide.AddNotesPage === 'function') {
+            slide.AddNotesPage()
+            np = slide.NotesPage
+          }
+          if (!np || !np.Shapes) {
+            sendRes(null, '[错误] 无法创建或访问备注页。')
+            return
+          }
+          wpsPptSetNotesPlainText(np, text)
+          sendRes('成功：已写入备注。', null)
+        } catch (e) {
+          sendRes(null, 'ppt_notes_write 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_slides_reorder") {
+        try {
+          var newOrder = (params.newOrder != null ? String(params.newOrder) : '').trim()
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var n = wpsPptCollectionCount(pres.Slides)
+          var parsed = parsePptReorder1Based(newOrder, n)
+          if (parsed.err) {
+            sendRes(parsed.err, null)
+            return
+          }
+          var order = parsed.order
+          var slides = pres.Slides
+          var refs = []
+          for (var k = 0; k < order.length; k++) {
+            refs.push(slides.Item(order[k]))
+          }
+          for (var targetPos = 1; targetPos <= n; targetPos++) {
+            var s = refs[targetPos - 1]
+            if (s && typeof s.MoveTo === 'function') {
+              s.MoveTo(targetPos)
+            } else {
+              sendRes(null, '当前 WPS 版本不支持 Slide.MoveTo，无法重排幻灯片。')
+              return
+            }
+          }
+          sendRes('成功：已重排幻灯片。', null)
+        } catch (e) {
+          sendRes(null, 'ppt_slides_reorder 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_table_create") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1
+          var rows = params.rows != null ? parseInt(params.rows, 10) : 2
+          var cols = params.cols != null ? parseInt(params.cols, 10) : 2
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          if (rows < 1 || cols < 1 || rows > 20 || cols > 10) {
+            sendRes('[错误] 表格行列无效（行 1–20，列 1–10）。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          if (!slide || !slide.Shapes || typeof slide.Shapes.AddTable !== 'function') {
+            sendRes(null, '当前 WPS 版本不支持 Shapes.AddTable。')
+            return
+          }
+          var left = 36
+          var top = 216
+          var width = 720
+          var height = 200
+          slide.Shapes.AddTable(rows, cols, left, top, width, height)
+          sendRes('成功：已在第 ' + slideIndex + ' 页添加表格（' + rows + '×' + cols + '）。', null)
+        } catch (e) {
+          sendRes(null, 'ppt_table_create 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_table_write_cells") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1
+          var rowsCsv = (params.rowsCsv != null ? params.rowsCsv : '').toString()
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          var parsedCsv = parsePptRowsCsv(rowsCsv)
+          if (parsedCsv.err) {
+            sendRes(parsedCsv.err, null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          var tableShape = wpsPptFindFirstTableShape(slide)
+          if (!tableShape || !tableShape.Table) {
+            sendRes(null, '[错误] 该幻灯片上未找到表格。')
+            return
+          }
+          var tbl = tableShape.Table
+          var inputRows = parsedCsv.rows
+          for (var r = 0; r < inputRows.length; r++) {
+            var rowIdx = r + 1
+            var cells = inputRows[r]
+            for (var c = 0; c < cells.length; c++) {
+              var colIdx = c + 1
+              try {
+                var cell = tbl.Cell(rowIdx, colIdx)
+                if (cell && cell.Shape && cell.Shape.TextFrame && cell.Shape.TextFrame.TextRange) {
+                  cell.Shape.TextFrame.TextRange.Text = cells[c]
+                }
+              } catch (eCell) {}
+            }
+          }
+          sendRes('成功：已写入表格单元格。', null)
+        } catch (e) {
+          sendRes(null, 'ppt_table_write_cells 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_hyperlink_add") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1
+          var url = (params.url != null ? String(params.url) : '').trim()
+          var shapeIndex = params.shapeIndex != null ? parseInt(params.shapeIndex, 10) : 1
+          var shapeName = (params.shapeName != null ? params.shapeName : '').toString().trim()
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          if (!url) {
+            sendRes('[错误] URL 为空。', null)
+            return
+          }
+          if (!/^https?:\/\//i.test(url)) {
+            sendRes('[错误] URL 必须是绝对地址（如 https://...）。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          var shape = wpsPptPickTextShape(slide, shapeIndex, shapeName)
+          if (!shape || !shape.TextFrame || !shape.TextFrame.TextRange) {
+            sendRes(null, '[错误] 未找到可设置超链接的文本形状，请检查 shapeIndex 或 shapeName。')
+            return
+          }
+          var clickEnum = app.Enum && app.Enum.ppMouseClick != null ? app.Enum.ppMouseClick : 1
+          var aset = shape.ActionSettings(clickEnum)
+          if (aset && aset.Hyperlink) {
+            aset.Hyperlink.Address = url
+            sendRes('成功：已添加超链接。', null)
+          } else {
+            sendRes(null, '[错误] 无法设置 ActionSettings.Hyperlink。')
+          }
+        } catch (e) {
+          sendRes(null, 'ppt_hyperlink_add 失败：' + (e && e.message ? e.message : String(e)))
+        }
+      } else if (method === "ppt_slide_duplicate") {
+        try {
+          var slideIndex = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1
+          if (slideIndex < 1) {
+            sendRes('[错误] slideIndex 必须大于等于 1。', null)
+            return
+          }
+          var app = window.wps.Application || window.wps
+          var pres = app.ActivePresentation
+          if (!pres || !pres.Slides) {
+            sendRes(null, '当前不是 WPS 演示文档。')
+            return
+          }
+          var count = wpsPptCollectionCount(pres.Slides)
+          if (slideIndex > count) {
+            sendRes('[错误] 幻灯片序号超出范围。', null)
+            return
+          }
+          var slide = pres.Slides.Item(slideIndex)
+          if (slide && typeof slide.Duplicate === 'function') {
+            slide.Duplicate()
+            sendRes('成功：已复制幻灯片（插入在源页之后）。', null)
+          } else {
+            sendRes(null, '当前 WPS 版本不支持 Slide.Duplicate。')
+          }
+        } catch (e) {
+          sendRes(null, 'ppt_slide_duplicate 失败：' + (e && e.message ? e.message : String(e)))
+        }
       } else {
         sendRes(null, "Method not supported in this client: " + method);
       }

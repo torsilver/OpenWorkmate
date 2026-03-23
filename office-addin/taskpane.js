@@ -98,6 +98,49 @@
       .replace(/'/g, "&#039;");
   }
 
+  function officePptParseReorder1Based(newOrderStr, n) {
+    if (!newOrderStr || !String(newOrderStr).trim()) return { err: "[错误] 请提供 newOrder，如 2,3,1。" };
+    var parts = String(newOrderStr)
+      .split(",")
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(Boolean);
+    var order = parts.map(function (p) {
+      return parseInt(p, 10);
+    });
+    for (var i = 0; i < order.length; i++) {
+      if (isNaN(order[i])) return { err: "[错误] newOrder 中含无法解析的序号。" };
+    }
+    if (order.length !== n) return { err: "[错误] newOrder 长度须等于当前幻灯片张数（" + n + "）。" };
+    var seen = {};
+    for (var j = 0; j < order.length; j++) {
+      var x = order[j];
+      if (x < 1 || x > n) return { err: "[错误] newOrder 中序号须在 1～" + n + " 之间。" };
+      if (seen[x]) return { err: "[错误] newOrder 中序号须无重复。" };
+      seen[x] = true;
+    }
+    return { order: order };
+  }
+
+  function officePptParseRowsCsv(rowsCsv) {
+    if (!rowsCsv || !String(rowsCsv).trim()) return { err: "[错误] 请提供 rowsCsv。" };
+    var lines = String(rowsCsv)
+      .split("|")
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(function (x) {
+        return x.length > 0;
+      });
+    var rows = lines.map(function (line) {
+      return line.split(",").map(function (cell) {
+        return String(cell !== undefined ? cell : "").trim();
+      });
+    });
+    return { rows: rows };
+  }
+
   let currentBotMessageRaw = "";
   let currentRoundWrapper = null;
   let timelineRoot = null;
@@ -1053,21 +1096,244 @@
               });
             });
           }
-        } else if (
-          method === "ppt_document_create" ||
-          method === "ppt_slide_image_add" ||
-          method === "ppt_notes_read" ||
-          method === "ppt_notes_write" ||
-          method === "ppt_slides_reorder" ||
-          method === "ppt_table_create" ||
-          method === "ppt_table_write_cells" ||
-          method === "ppt_hyperlink_add" ||
-          method === "ppt_slide_duplicate"
-        ) {
+        } else if (method === "ppt_document_create") {
+          var createPath = params.filePath != null ? String(params.filePath).trim() : "";
+          if (!createPath) {
+            result = "[错误] 请提供 filePath（.pptx 或 .pptm）。";
+          } else {
+            var lp = createPath.toLowerCase();
+            if (!lp.endsWith(".pptx") && !lp.endsWith(".pptm")) {
+              result = "[错误] filePath 须为 .pptx 或 .pptm。";
+            } else if (typeof PowerPoint !== "undefined" && typeof PowerPoint.createPresentation === "function") {
+              PowerPoint.createPresentation();
+              result =
+                "成功：已调用 PowerPoint.createPresentation 打开新演示文稿。Office.js 无法将新文件直接保存到磁盘路径；若需保存到 " +
+                createPath +
+                "，请在 PowerPoint 中手动「另存为」。";
+            } else {
+              result = "[错误] 当前宿主未提供 PowerPoint.createPresentation，无法新建演示文稿。";
+            }
+          }
+        } else if (method === "ppt_slide_image_add") {
+          var imgSlideIdx = (params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1) || 1;
+          var b64 = params.imageBase64 != null ? String(params.imageBase64).trim() : "";
+          if (b64.indexOf("base64,") >= 0) b64 = b64.split("base64,").pop() || "";
+          b64 = b64.replace(/\s/g, "");
+          if (!b64) {
+            result =
+              "[错误] PowerPoint 任务窗格无法从本机路径读取图片；后台未成功读取 imagePath 或未附带 imageBase64。请确认后台与 PowerPoint 同机且图片路径可读，或使用 Chrome + 文件路径调用 ppt_slide_image_add。";
+          } else if (imgSlideIdx < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (imgSlideIdx > countResult.value) {
+                  result = "[错误] 幻灯片序号 " + imgSlideIdx + " 超出范围，当前共 " + countResult.value + " 张。";
+                  return Promise.resolve();
+                }
+                var slide = context.presentation.slides.getItemAt(imgSlideIdx - 1);
+                slide.shapes.addPicture(b64, {
+                  left: 20,
+                  top: 120,
+                  width: 400,
+                  height: 225,
+                });
+                return context.sync().then(function () {
+                  result = "成功：已在第 " + imgSlideIdx + " 页插入图片。";
+                });
+              });
+            });
+          }
+        } else if (method === "ppt_notes_read" || method === "ppt_notes_write") {
           result =
-            "[错误] 该操作在 PowerPoint 任务窗格中暂未实现（OpenXml 仅在 Chrome/后端文件路径模式）。请使用 Chrome 扩展连接同一后端，并对 .pptx 使用工具 " +
+            "[错误] PowerPoint JavaScript API（任务窗格）当前不支持演讲者备注读写。请使用 WPS 演示任务窗格，或使用 Chrome 扩展 + 后端文件路径调用 " +
             method +
             "。";
+        } else if (method === "ppt_slides_reorder") {
+          var ordStr = params.newOrder != null ? String(params.newOrder).trim() : "";
+          await PowerPoint.run(function (context) {
+            var countResult = context.presentation.slides.getCount();
+            return context.sync().then(function () {
+              var nn = countResult.value;
+              var parsedOrd = officePptParseReorder1Based(ordStr, nn);
+              if (parsedOrd.err) {
+                result = parsedOrd.err;
+                return Promise.resolve();
+              }
+              var ord = parsedOrd.order;
+              var refs = [];
+              for (var ki = 0; ki < ord.length; ki++) {
+                refs.push(context.presentation.slides.getItemAt(ord[ki] - 1));
+              }
+              for (var ti = 0; ti < nn; ti++) {
+                refs[ti].moveTo(ti);
+              }
+              return context.sync().then(function () {
+                result = "成功：已重排幻灯片。";
+              });
+            });
+          });
+        } else if (method === "ppt_table_create") {
+          var tSlideIdx = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          var tRows = params.rows != null ? parseInt(params.rows, 10) : 2;
+          var tCols = params.cols != null ? parseInt(params.cols, 10) : 2;
+          if (tSlideIdx < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else if (tRows < 1 || tCols < 1 || tRows > 20 || tCols > 10) {
+            result = "[错误] 表格行列无效（行 1–20，列 1–10）。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (tSlideIdx > countResult.value) {
+                  result = "[错误] 幻灯片序号超出范围。";
+                  return Promise.resolve();
+                }
+                var sld = context.presentation.slides.getItemAt(tSlideIdx - 1);
+                sld.shapes.addTable(tRows, tCols, { left: 36, top: 216, width: 600, height: 200 });
+                return context.sync().then(function () {
+                  result = "成功：已在第 " + tSlideIdx + " 页添加表格（" + tRows + "×" + tCols + "）。";
+                });
+              });
+            });
+          }
+        } else if (method === "ppt_table_write_cells") {
+          var wcSlideIdx = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          var wcCsv = params.rowsCsv != null ? params.rowsCsv : "";
+          var wcParsed = officePptParseRowsCsv(wcCsv);
+          if (wcParsed.err) {
+            result = wcParsed.err;
+          } else if (wcSlideIdx < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (wcSlideIdx > countResult.value) {
+                  result = "[错误] 幻灯片序号超出范围。";
+                  return Promise.resolve();
+                }
+                var sld2 = context.presentation.slides.getItemAt(wcSlideIdx - 1);
+                sld2.shapes.load("items/type");
+                return context.sync().then(function () {
+                  var items = sld2.shapes.items || [];
+                  var tableShape = null;
+                  for (var qi = 0; qi < items.length; qi++) {
+                    var it = items[qi];
+                    if (it.type === "Table" || String(it.type).toLowerCase() === "table") {
+                      tableShape = it;
+                      break;
+                    }
+                  }
+                  if (!tableShape) {
+                    result = "[错误] 该幻灯片上未找到表格。";
+                    return Promise.resolve();
+                  }
+                  var tbl = tableShape.getTable();
+                  tbl.load("rowCount,columnCount");
+                  return context.sync().then(function () {
+                    var inRows = wcParsed.rows;
+                    for (var r = 0; r < inRows.length; r++) {
+                      var cells = inRows[r];
+                      for (var c = 0; c < cells.length; c++) {
+                        if (r >= tbl.rowCount || c >= tbl.columnCount) continue;
+                        var cell = tbl.getCellOrNullObject(r, c);
+                        if (!cell.isNullObject) cell.text = cells[c];
+                      }
+                    }
+                    return context.sync().then(function () {
+                      result = "成功：已写入表格单元格。";
+                    });
+                  });
+                });
+              });
+            });
+          }
+        } else if (method === "ppt_hyperlink_add") {
+          var hSlideIdx = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          var hUrl = params.url != null ? String(params.url).trim() : "";
+          var hShapeIdx = params.shapeIndex != null ? parseInt(params.shapeIndex, 10) : 1;
+          var hShapeName = params.shapeName != null ? String(params.shapeName).trim() : "";
+          if (hSlideIdx < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else if (!hUrl) {
+            result = "[错误] URL 为空。";
+          } else if (!/^https?:\/\//i.test(hUrl)) {
+            result = "[错误] URL 必须是绝对地址（如 https://...）。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (hSlideIdx > countResult.value) {
+                  result = "[错误] 幻灯片序号超出范围。";
+                  return Promise.resolve();
+                }
+                var hs = context.presentation.slides.getItemAt(hSlideIdx - 1);
+                hs.shapes.load("items/name, items/textFrame/textRange/text");
+                return context.sync().then(function () {
+                  var hItems = hs.shapes.items || [];
+                  var hShape = null;
+                  if (hShapeIdx > 0 && hShapeIdx <= hItems.length) {
+                    var hc = hItems[hShapeIdx - 1];
+                    if (hc && hc.textFrame && hc.textFrame.textRange) hShape = hc;
+                  }
+                  if (!hShape && hShapeName) {
+                    for (var hi = 0; hi < hItems.length; hi++) {
+                      var hx = hItems[hi];
+                      if (hx.name && String(hx.name).toLowerCase() === hShapeName.toLowerCase() && hx.textFrame && hx.textFrame.textRange) {
+                        hShape = hx;
+                        break;
+                      }
+                    }
+                  }
+                  if (!hShape || !hShape.textFrame || !hShape.textFrame.textRange) {
+                    result = "[错误] 未找到可设置超链接的文本形状，请检查 shapeIndex 或 shapeName。";
+                    return Promise.resolve();
+                  }
+                  if (!hShape.textFrame.textRange.text || hShape.textFrame.textRange.text.length === 0) {
+                    hShape.textFrame.textRange.text = hUrl;
+                  }
+                  hShape.setHyperlink({ address: hUrl, screenTip: hUrl });
+                  return context.sync().then(function () {
+                    result = "成功：已添加超链接。";
+                  });
+                });
+              });
+            });
+          }
+        } else if (method === "ppt_slide_duplicate") {
+          var dupIdx = params.slideIndex != null ? parseInt(params.slideIndex, 10) : 1;
+          if (dupIdx < 1) {
+            result = "[错误] slideIndex 必须大于等于 1。";
+          } else {
+            await PowerPoint.run(function (context) {
+              var countResult = context.presentation.slides.getCount();
+              return context.sync().then(function () {
+                if (dupIdx > countResult.value) {
+                  result = "[错误] 幻灯片序号超出范围。";
+                  return Promise.resolve();
+                }
+                var dupSlide = context.presentation.slides.getItemAt(dupIdx - 1);
+                dupSlide.load("id");
+                var b64res = dupSlide.exportAsBase64();
+                return context.sync().then(function () {
+                  var payload = b64res.value;
+                  var fmt =
+                    typeof PowerPoint !== "undefined" && PowerPoint.InsertSlideFormatting
+                      ? PowerPoint.InsertSlideFormatting.keepSourceFormatting
+                      : "KeepSourceFormatting";
+                  context.presentation.insertSlidesFromBase64(payload, {
+                    targetSlideId: dupSlide.id,
+                    formatting: fmt,
+                  });
+                  return context.sync().then(function () {
+                    result = "成功：已复制幻灯片（插入在源页之后）。若含复杂媒体导致失败，请见宿主报错信息。";
+                  });
+                });
+              });
+            });
+          }
         } else {
           throw new Error("Method not supported in PowerPoint: " + method);
         }

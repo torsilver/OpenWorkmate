@@ -292,7 +292,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_slide_image_add")]
-    [Description("在当前演示文稿指定页插入本地图片。任务窗格端能力取决于 Office/WPS API；若不支持将返回明确说明。仅演示文稿任务窗格连接时可用。")]
+    [Description("在当前演示文稿指定页插入本地图片。后台会尝试读取 imagePath 并附带 imageBase64，供 PowerPoint 任务窗格 addPicture 使用（与宿主同机且路径可读时）。仅演示文稿任务窗格连接时可用。")]
     public Task<string> CurrentPptSlideImageAddAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
         [Description("本地图片路径")] string imagePath = "",
@@ -301,11 +301,26 @@ public sealed class CurrentDocumentPlugin
     {
         var sessionId = arguments?.TryGetValue("sessionId", out var sidObj) == true && sidObj is string s ? s : SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_ppt_slide_image_add sessionId={SessionId}", sessionId ?? "(null)");
-        return SendRpcAsync(sessionId!, "ppt_slide_image_add", new { slideIndex, imagePath }, cancellationToken);
+        string? imageBase64 = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(imagePath))
+            {
+                var p = OpenXmlHelpers.ResolvePath(imagePath);
+                if (File.Exists(p))
+                    imageBase64 = Convert.ToBase64String(File.ReadAllBytes(p));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[CurrentDocument] Skip imageBase64 for path {Path}", imagePath);
+        }
+
+        return SendRpcAsync(sessionId!, "ppt_slide_image_add", new { slideIndex, imagePath, imageBase64 }, cancellationToken);
     }
 
     [KernelFunction("current_ppt_notes_read")]
-    [Description("读取当前演示文稿指定幻灯片的演讲者备注。仅演示文稿任务窗格连接时可用。")]
+    [Description("读取当前演示文稿指定幻灯片的演讲者备注。WPS 演示任务窗格可用；PowerPoint 任务窗格因 Office.js 无备注 API 会返回明确说明。仅演示文稿任务窗格连接时可用。")]
     public Task<string> CurrentPptNotesReadAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
         KernelArguments? arguments = null,
@@ -316,7 +331,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_notes_write")]
-    [Description("写入当前演示文稿指定幻灯片的演讲者备注。仅演示文稿任务窗格连接时可用。")]
+    [Description("写入当前演示文稿指定幻灯片的演讲者备注。WPS 演示任务窗格可用；PowerPoint 任务窗格因 Office.js 无备注 API 会返回明确说明。仅演示文稿任务窗格连接时可用。")]
     public Task<string> CurrentPptNotesWriteAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex,
         [Description("备注文本")] string text,
@@ -328,7 +343,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_slides_reorder")]
-    [Description("重排当前演示文稿全部幻灯片顺序。newOrder 如 2,3,1。任务窗格端可能不支持，将返回说明。仅演示文稿任务窗格连接时可用。")]
+    [Description("重排当前演示文稿全部幻灯片顺序。newOrder 如 2,3,1（长度须等于总页数）。任务窗格已实现（WPS MoveTo / PowerPoint moveTo）。仅演示文稿任务窗格连接时可用。")]
     public Task<string> CurrentPptSlidesReorderAsync(
         [Description("逗号分隔的新顺序")] string newOrder,
         KernelArguments? arguments = null,
@@ -339,7 +354,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_table_create")]
-    [Description("在当前演示文稿指定页添加表格。任务窗格端可能不支持。仅演示文稿任务窗格连接时可用。")]
+    [Description("在当前演示文稿指定页添加表格（行 1–20、列 1–10）。任务窗格已实现。仅演示文稿任务窗格连接时可用。")]
     public Task<string> CurrentPptTableCreateAsync(
         [Description("幻灯片序号")] int slideIndex,
         [Description("行数")] int rows,
@@ -352,7 +367,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_table_write_cells")]
-    [Description("向当前演示文稿指定页首张表格写入单元格文本（rowsCsv）。任务窗格端可能不支持。")]
+    [Description("向当前演示文稿指定页首张表格写入单元格文本（rowsCsv：| 分行、英文逗号分列）。任务窗格已实现。")]
     public Task<string> CurrentPptTableWriteCellsAsync(
         [Description("幻灯片序号")] int slideIndex,
         [Description("如 A1,B1|A2,B2")] string rowsCsv,
@@ -364,7 +379,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_hyperlink_add")]
-    [Description("为指定页某形状文本添加超链接。任务窗格端可能不支持。")]
+    [Description("为指定页某形状文本添加超链接（绝对 URL）。任务窗格已实现（PowerPoint 需 PowerPointApi 1.10+）。")]
     public Task<string> CurrentPptHyperlinkAddAsync(
         [Description("幻灯片序号")] int slideIndex,
         [Description("绝对 URL")] string url,
@@ -378,7 +393,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [KernelFunction("current_ppt_slide_duplicate")]
-    [Description("复制指定幻灯片（插入在其后）。任务窗格端可能不支持。")]
+    [Description("复制指定幻灯片（插入在其后）。任务窗格已实现（WPS Duplicate；PowerPoint 用 exportAsBase64 + insertSlidesFromBase64）。")]
     public Task<string> CurrentPptSlideDuplicateAsync(
         [Description("要复制的幻灯片序号")] int slideIndex,
         KernelArguments? arguments = null,

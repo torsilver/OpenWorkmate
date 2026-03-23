@@ -1,7 +1,7 @@
 ---
 name: PPT / Pptx
 slug: ppt-pptx
-version: 1.1.0
+version: 1.2.0
 description: Create and edit PowerPoint (.pptx/.pptm) via Open XML on disk (Chrome) or current deck via task pane. Includes document create, structured read/write, images, notes, reorder, tables, hyperlinks, duplicate slide.
 metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 ---
@@ -24,8 +24,8 @@ User needs to **create** a new deck or **read/write** slides in a file path (.pp
 | Client | File path (backend) | Task pane |
 |--------|---------------------|-----------|
 | Chrome | Full **`Ppt`** plugin: `ppt_document_create`, list/read/write/insert/delete, image, notes, reorder, table, hyperlink, duplicate | N/A |
-| Office PPT | Not exposed | `current_ppt_*` RPC (read/write/insert/delete enhanced; OpenXml-only tools return explicit “use Chrome + filePath” from add-in) |
-| WPS 演示 | Not exposed | Same as Office for RPC surface |
+| Office PPT | Not exposed | `current_ppt_*` → `ppt_*` RPC：幻灯片列表/读写/插入/删、插图、重排、表格、超链、复制；**演讲者备注**在 PowerPoint 任务窗格不可用（Office.js 限制），用 Chrome+文件路径或 WPS |
+| WPS 演示 | Not exposed | 同上；**备注读写**可用；`ppt_document_create` 可 `SaveAs` 到路径 |
 
 ## Tool summary (file path)
 

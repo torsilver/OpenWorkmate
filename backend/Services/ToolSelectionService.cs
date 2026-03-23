@@ -68,7 +68,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["外部"] = "外接 MCP 工具（设置中配置的 MCP 服务）",
         ["CurrentDocument-Word"] = "当前文档 Word（任务窗格）：读正文/选区、插段落/表格、查找替换",
         ["CurrentDocument-Excel"] = "当前文档 Excel（任务窗格）：读/写区域、列工作表、UsedRange、读/写公式",
-        ["CurrentDocument-Ppt"] = "当前文档 PPT（任务窗格）：列/读/写/插/删幻灯片；扩展 RPC（图/备注/表格等）以服务端说明为准",
+        ["CurrentDocument-Ppt"] = "当前文档 PPT（任务窗格）：列/读/写/插/删、插图、重排、表格、超链、复制幻灯片；WPS 可读写备注，PowerPoint 任务窗格不支持备注（Office.js 限制）",
         ["Ppt-新建文稿"] = "创建空白 PPT 文件（pptx/pptm）",
         ["Ppt-获取信息"] = "列出幻灯片、读取幻灯片与形状列表、读取演讲者备注",
         ["Ppt-编辑内容"] = "写入文本、插入/删除/复制幻灯片、备注、重排顺序",

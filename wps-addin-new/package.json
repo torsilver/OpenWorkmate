@@ -5,6 +5,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"sync-public-ppt-rpc": "node scripts/sync-public-ppt-rpc.mjs",
 		"dev": "vite --port 3890",
 		"build": "vite build",
 		"preview": "vite preview",
