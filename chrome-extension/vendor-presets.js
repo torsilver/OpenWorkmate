@@ -1,5 +1,8 @@
 /**
  * 与后端 VendorModelDefaults / connectionKind 一致；vendorId 与 ConfigService 持久化字段对齐。
+ *
+ * chat 项可选 providerChoices：对接类型下拉显示的取值列表；省略时视为 [provider] 单一协议，设置页默认隐藏主对接类型行。
+ * other_auto 须列出全部可选协议供用户自选。
  */
 window.OFFICE_COPILOT_VENDOR_PRESETS = {
   chat: [
@@ -20,7 +23,7 @@ window.OFFICE_COPILOT_VENDOR_PRESETS = {
     { id: 'openai', label: 'OpenAI', provider: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1', defaultModelId: 'gpt-4o-mini' },
     { id: 'azure_openai', label: '微软 Azure OpenAI', provider: 'Azure', defaultEndpoint: 'https://YOUR_RESOURCE.openai.azure.com/', defaultModelId: 'gpt-4o' },
     { id: 'google_gemini', label: 'Google Gemini（OpenAI 适配地址）', provider: 'OpenAI', defaultEndpoint: '', defaultModelId: 'gemini-2.0-flash' },
-    { id: 'anthropic', label: 'Anthropic Claude（OpenAI 形态网关）', provider: 'Anthropic', defaultEndpoint: '', defaultModelId: '' },
+    { id: 'anthropic', label: 'Anthropic Claude（OpenAI 形态网关）', provider: 'Anthropic', providerChoices: ['Anthropic', 'OpenAI'], defaultEndpoint: '', defaultModelId: '' },
     { id: 'aws_bedrock', label: 'Amazon Bedrock（后续专用适配）', provider: 'OpenAI', defaultEndpoint: '', defaultModelId: '' },
     { id: 'groq', label: 'Groq', provider: 'OpenAI', defaultEndpoint: 'https://api.groq.com/openai/v1', defaultModelId: 'llama-3.1-8b-instant' },
     { id: 'mistral', label: 'Mistral AI', provider: 'OpenAI', defaultEndpoint: 'https://api.mistral.ai/v1', defaultModelId: 'mistral-small-latest' },
@@ -34,7 +37,7 @@ window.OFFICE_COPILOT_VENDOR_PRESETS = {
     { id: 'nvidia_nim', label: 'NVIDIA NIM', provider: 'OpenAI', defaultEndpoint: '', defaultModelId: '' },
     { id: 'ollama', label: 'Ollama（本地）', provider: 'Ollama', defaultEndpoint: 'http://localhost:11434/v1', defaultModelId: 'llama3' },
     { id: 'lm_studio', label: 'LM Studio（本地）', provider: 'OpenAI', defaultEndpoint: 'http://localhost:1234/v1', defaultModelId: '' },
-    { id: 'other_auto', label: '其他（自行填写地址）', provider: 'OpenAI', defaultEndpoint: '', defaultModelId: '' }
+    { id: 'other_auto', label: '其他（自行填写地址）', provider: 'OpenAI', providerChoices: ['OpenAI', 'Azure', 'Ollama', 'Anthropic'], defaultEndpoint: '', defaultModelId: '' }
   ],
   stt: [
     { id: 'other_auto', label: '其他（根据网址自动识别）', connectionKind: '', defaultEndpoint: '', defaultModelId: 'whisper-1' },

@@ -316,17 +316,26 @@
           <div class="form-group">
             <label for="aiModelVendor">AI 供应商</label>
             <select id="aiModelVendor"></select>
-            <div class="help-text">先选供应商，将自动带出常用接口地址与对接类型；你仍可按控制台实际信息修改。</div>
+            <div class="help-text" id="aiModelVendorHelp">对接类型已按供应商自动设置；选择「其他（自行填写地址）」时须指定对接类型。展开下方「高级」可手动覆盖对接类型。</div>
           </div>
-          <div class="form-group">
-            <label for="aiModelProvider">对接类型（一般随供应商自动设置）</label>
-            <select id="aiModelProvider" name="provider">
-              <option value="OpenAI">OpenAI 形态 API</option>
-              <option value="Azure">Azure OpenAI</option>
-              <option value="Ollama">Ollama</option>
-              <option value="Anthropic">Anthropic（需网关为 OpenAI 形态时）</option>
-            </select>
+          <div class="form-group" id="aiModelProviderPrimaryRow" style="display: none;">
+            <label for="aiModelProvider">对接类型</label>
+            <div id="aiModelProviderSelectHostPrimary">
+              <select id="aiModelProvider" name="provider">
+                <option value="OpenAI">OpenAI 形态 API</option>
+                <option value="Azure">Azure OpenAI</option>
+                <option value="Ollama">Ollama</option>
+                <option value="Anthropic">Anthropic（需网关为 OpenAI 形态时）</option>
+              </select>
+            </div>
           </div>
+          <details id="aiModelProviderAdvancedWrap" class="form-group" style="display: none;">
+            <summary style="cursor: pointer; font-size: 13px; color: var(--text-secondary); user-select: none;">高级：手动指定对接类型（一般无需修改）</summary>
+            <div class="form-group" style="margin-top: 10px; margin-bottom: 0;">
+              <label for="aiModelProvider">对接类型</label>
+              <div id="aiModelProviderSelectHostAdvanced"></div>
+            </div>
+          </details>
           <div class="form-group" id="aiModelEndpointGroup">
             <label for="aiModelEndpoint">接口地址 (Endpoint)</label>
             <input type="text" id="aiModelEndpoint" name="endpoint" placeholder="https://api.openai.com/v1">

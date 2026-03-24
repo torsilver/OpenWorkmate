@@ -88,6 +88,87 @@ function findChatPreset(id) {
   return null;
 }
 
+var CHAT_ALL_PROVIDER_VALUES = ['OpenAI', 'Azure', 'Ollama', 'Anthropic'];
+
+var CHAT_PROVIDER_LABELS = {
+  OpenAI: 'OpenAI 形态 API',
+  Azure: 'Azure OpenAI',
+  Ollama: 'Ollama',
+  Anthropic: 'Anthropic（需网关为 OpenAI 形态时）'
+};
+
+function getChatPresetProviderChoices(preset) {
+  if (!preset) return CHAT_ALL_PROVIDER_VALUES.slice();
+  if (Array.isArray(preset.providerChoices) && preset.providerChoices.length > 0)
+    return preset.providerChoices.slice();
+  return [preset.provider || 'OpenAI'];
+}
+
+function populateAiProviderSelect(allowedValues) {
+  var sel = document.getElementById('aiModelProvider');
+  if (!sel || !allowedValues || !allowedValues.length) return;
+  var prev = sel.value;
+  sel.innerHTML = '';
+  allowedValues.forEach(function (v) {
+    var opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = CHAT_PROVIDER_LABELS[v] || v;
+    sel.appendChild(opt);
+  });
+  if (allowedValues.indexOf(prev) >= 0) sel.value = prev;
+  else sel.value = allowedValues[0];
+}
+
+function mountChatProviderSelect(mode) {
+  var sel = document.getElementById('aiModelProvider');
+  var hostP = document.getElementById('aiModelProviderSelectHostPrimary');
+  var hostA = document.getElementById('aiModelProviderSelectHostAdvanced');
+  if (!sel || !hostP || !hostA) return;
+  var host = mode === 'primary' ? hostP : hostA;
+  if (sel.parentNode !== host) host.appendChild(sel);
+}
+
+/** @param {boolean} resetProviderToPreset true 时按供应商预设覆盖对接类型（切换供应商）；false 时尽量保留当前已选值 */
+function updateChatProviderUi(resetProviderToPreset) {
+  var vendorEl = document.getElementById('aiModelVendor');
+  var vid = (vendorEl && vendorEl.value) || 'other_auto';
+  var preset = findChatPreset(vid);
+  var choices = getChatPresetProviderChoices(preset);
+  var multi = choices.length > 1;
+  var primaryRow = document.getElementById('aiModelProviderPrimaryRow');
+  var advancedWrap = document.getElementById('aiModelProviderAdvancedWrap');
+  var sel = document.getElementById('aiModelProvider');
+  if (multi) {
+    if (primaryRow) primaryRow.style.display = '';
+    if (advancedWrap) advancedWrap.style.display = 'none';
+    mountChatProviderSelect('primary');
+    populateAiProviderSelect(choices);
+  } else {
+    if (primaryRow) primaryRow.style.display = 'none';
+    if (advancedWrap) advancedWrap.style.display = '';
+    mountChatProviderSelect('advanced');
+    populateAiProviderSelect(CHAT_ALL_PROVIDER_VALUES);
+  }
+  if (resetProviderToPreset && preset && sel && sel.options.length) {
+    var d = preset.provider || choices[0];
+    var ok = false;
+    for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === d) { ok = true; break; }
+    if (ok) sel.value = d;
+    else sel.value = sel.options[0].value;
+  } else if (!resetProviderToPreset && sel && sel.options.length) {
+    var cur = sel.value;
+    var has = false;
+    for (var j = 0; j < sel.options.length; j++) if (sel.options[j].value === cur) { has = true; break; }
+    if (!has) {
+      var d2 = preset ? (preset.provider || sel.options[0].value) : sel.options[0].value;
+      var ok2 = false;
+      for (var k = 0; k < sel.options.length; k++) if (sel.options[k].value === d2) { ok2 = true; break; }
+      sel.value = ok2 ? d2 : sel.options[0].value;
+    }
+  }
+  toggleAzureFields();
+}
+
 function findSttPreset(id) {
   var list = getVendorPresets().stt;
   for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -182,11 +263,11 @@ function onAiVendorChange() {
   var el = document.getElementById('aiModelVendor');
   if (!el) return;
   var preset = findChatPreset(el.value);
-  if (!preset) return;
-  if (preset.provider && els.aiModelProvider) els.aiModelProvider.value = preset.provider;
-  toggleAzureFields();
-  if (preset.defaultEndpoint && els.aiModelEndpoint) els.aiModelEndpoint.value = preset.defaultEndpoint;
-  if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && els.aiModelModelId) els.aiModelModelId.value = preset.defaultModelId;
+  if (preset) {
+    if (preset.defaultEndpoint && els.aiModelEndpoint) els.aiModelEndpoint.value = preset.defaultEndpoint;
+    if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && els.aiModelModelId) els.aiModelModelId.value = preset.defaultModelId;
+  }
+  updateChatProviderUi(!!preset);
 }
 
 function onSttVendorChange() {
@@ -1170,7 +1251,7 @@ function openAiModelEditor(existingId) {
     if (vendorSelect) vendorSelect.value = 'other_auto';
     testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'other_auto' };
   }
-  toggleAzureFields();
+  updateChatProviderUi(!existingId);
   if (els.aiModelEditor) els.aiModelEditor.style.display = 'block';
   bindTestConnectionFieldsSync();
 }
