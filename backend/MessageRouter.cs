@@ -165,6 +165,11 @@ public class WsMessage
     [JsonPropertyName("traceDetail")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TraceDetail { get; set; }
+
+    /// <summary>ui_theme_changed 时：对话界面预设主题 id（与 AppConfig.UiThemeId 一致）。</summary>
+    [JsonPropertyName("uiThemeId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UiThemeId { get; set; }
 }
 
 public class AttachmentDto

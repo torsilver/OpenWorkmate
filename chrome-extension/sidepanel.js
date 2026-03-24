@@ -913,6 +913,26 @@ function flushCrossAgentAutoRunAfterReconnect() {
   scheduleCrossAgentAutoRun();
 }
 
+// ───── 主题联动（hljs / Mermaid） ─────
+function tasklyRefreshEmbedThemes() {
+  const t = document.documentElement.getAttribute("data-theme") || "dark";
+  const link = document.getElementById("taskly-hljs-theme");
+  if (link && typeof TasklyTheme !== "undefined") {
+    link.href = TasklyTheme.getHljsStylesheetHref(t);
+  }
+  if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
+    mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+  }
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key !== "tasklyUiTheme") return;
+  if (typeof TasklyTheme === "undefined") return;
+  const v = e.newValue != null && e.newValue !== "" ? e.newValue : "dark";
+  TasklyTheme.applyThemeDomOnly(v);
+  tasklyRefreshEmbedThemes();
+});
+
 // ───── Init Libraries ─────
 if (typeof marked !== 'undefined') {
   marked.setOptions({
@@ -926,9 +946,7 @@ if (typeof marked !== 'undefined') {
   });
 }
 
-if (typeof mermaid !== 'undefined') {
-  mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-}
+tasklyRefreshEmbedThemes();
 
 // ───── Streaming state ─────
 
@@ -1455,6 +1473,15 @@ function handleMessage(raw) {
 
     case "pong":
       break;
+
+    case "ui_theme_changed": {
+      const tid = (msg.uiThemeId && String(msg.uiThemeId).trim()) || "";
+      if (tid && typeof TasklyTheme !== "undefined") {
+        TasklyTheme.setTheme(tid);
+        if (typeof tasklyRefreshEmbedThemes === "function") tasklyRefreshEmbedThemes();
+      }
+      break;
+    }
 
     case "error":
       removeThinkingIndicator();

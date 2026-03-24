@@ -1,12 +1,17 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server;
 
 /// <summary>Stores WebSocket, optional client type (chrome | office-word | office-excel | office-powerpoint | wps), and optional display name (e.g. page title) per session.</summary>
 public sealed class SessionManager
 {
+    private readonly ILogger<SessionManager> _logger;
     private readonly ConcurrentDictionary<string, SessionEntry> _connections = new();
+
+    public SessionManager(ILogger<SessionManager> logger) => _logger = logger;
 
     public void Add(string sessionId, WebSocket ws, string? clientType = null) =>
         _connections[sessionId] = new SessionEntry(ws, clientType, null);
@@ -50,8 +55,27 @@ public sealed class SessionManager
     {
         if (_connections.TryGetValue(sessionId, out var entry) && entry.WebSocket.State == WebSocketState.Open)
         {
-            var bytes = System.Text.Encoding.UTF8.GetBytes(message);
+            var bytes = Encoding.UTF8.GetBytes(message);
             await entry.WebSocket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+        }
+    }
+
+    /// <summary>向当前所有已打开的连接广播 UTF-8 JSON 文本；单连接失败不影响其它连接。</summary>
+    public async Task BroadcastToAllOpenAsync(string utf8Json, CancellationToken cancellationToken = default)
+    {
+        var bytes = Encoding.UTF8.GetBytes(utf8Json);
+        foreach (var kv in _connections)
+        {
+            var ws = kv.Value.WebSocket;
+            if (ws.State != WebSocketState.Open) continue;
+            try
+            {
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Broadcast skip session {SessionId} (send failed)", kv.Key);
+            }
         }
     }
 

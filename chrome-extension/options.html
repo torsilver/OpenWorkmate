@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Office Copilot 设置</title>
+  <script src="taskly-theme-boot.js"></script>
   <style>
     :root {
       --bg-primary: #f8fafc;
@@ -281,14 +282,35 @@
 <body>
   <div class="container">
     <h1>⚙️ Office Copilot 控制台</h1>
-    
+    <p class="help-text" style="margin-bottom: 16px; max-width: 52rem;">
+      <strong>多端说明</strong>：本页为<strong>全局配置唯一入口</strong>（模型、技能、Embedding、MCP、User Scripts 等）。
+      WPS / Office 任务窗格仅连接同一本地后台，<strong>不提供</strong>重复设置页；浏览器侧能力（标签页脚本注入、可见区域截图、侧栏 Debug / workspace 等）仅存在于 Chrome 扩展。
+    </p>
+
     <div class="tabs">
+      <div class="tab" data-target="tab-appearance">外观</div>
       <div class="tab active" data-target="tab-ai">大模型设置</div>
       <div class="tab" data-target="tab-memory">记忆与 RAG</div>
       <div class="tab" data-target="tab-skills">自定义技能 (Skills)</div>
       <div class="tab" data-target="tab-mcp">外部组件 (MCP)</div>
       <div class="tab" data-target="tab-scheduled-tasks">定时任务</div>
       <div class="tab" data-target="tab-plans-accurate">计划与准确数据</div>
+    </div>
+
+    <div id="tab-appearance" class="tab-content">
+      <div class="form-group">
+        <label for="uiThemeId">对话界面主题</label>
+        <select id="uiThemeId" name="uiThemeId">
+          <option value="dark">暗色</option>
+          <option value="light">浅色</option>
+          <option value="blocks">色块</option>
+          <option value="modern">现代</option>
+          <option value="minimal">简约</option>
+          <option value="lines">线条</option>
+          <option value="sketch">手绘</option>
+        </select>
+        <p class="help-text">侧栏、WPS/Office 任务窗格、计划与 Workspace 等对话相关页面将使用同一主题；保存后写入本机配置并同步 localStorage。</p>
+      </div>
     </div>
     
     <!-- 大模型设置 -->

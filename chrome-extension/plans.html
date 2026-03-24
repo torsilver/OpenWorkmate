@@ -4,8 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>计划 - Office Copilot</title>
+  <script src="taskly-theme-boot.js"></script>
+  <link rel="stylesheet" href="chat-themes.css">
   <link rel="stylesheet" href="plans.css">
-  <link rel="stylesheet" href="libs/github-dark.min.css">
+  <link id="taskly-hljs-theme" rel="stylesheet" href="libs/github-dark.min.css">
+  <script>
+    (function () {
+      var el = document.getElementById("taskly-hljs-theme");
+      if (el && window.TasklyTheme) {
+        el.href = TasklyTheme.getHljsStylesheetHref(document.documentElement.getAttribute("data-theme") || "dark");
+      }
+    })();
+  </script>
   <script src="libs/marked.min.js"></script>
   <script src="libs/highlight.min.js"></script>
 </head>

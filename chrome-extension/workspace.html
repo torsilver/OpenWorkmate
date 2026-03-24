@@ -4,29 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Office Copilot - Workspace</title>
-  <link rel="stylesheet" href="libs/github-dark.min.css">
+  <script src="taskly-theme-boot.js"></script>
+  <link rel="stylesheet" href="chat-themes.css">
+  <link id="taskly-hljs-theme" rel="stylesheet" href="libs/github-dark.min.css">
+  <script>
+    (function () {
+      var el = document.getElementById("taskly-hljs-theme");
+      if (el && window.TasklyTheme) {
+        el.href = TasklyTheme.getHljsStylesheetHref(document.documentElement.getAttribute("data-theme") || "dark");
+      }
+    })();
+  </script>
   <script src="libs/marked.min.js"></script>
   <script src="libs/highlight.min.js"></script>
   <script src="libs/mermaid.min.js"></script>
   <style>
-    :root {
-      --bg-primary: #0f0f0f;
-      --text-primary: #e8e8e8;
-    }
     body {
       margin: 0;
       padding: 0;
       background: var(--bg-primary);
       color: var(--text-primary);
-      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-family: var(--font-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif);
       display: flex;
       flex-direction: column;
       height: 100vh;
     }
     header {
       padding: 16px 24px;
-      background: #1a1a1a;
-      border-bottom: 1px solid #333;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -54,7 +60,7 @@
       line-height: 1.6;
     }
     .markdown-body pre {
-      background: #0d1117;
+      background: var(--chat-code-bg, #0d1117);
       padding: 16px;
       border-radius: 8px;
       overflow-x: auto;
@@ -65,18 +71,18 @@
       margin: 16px 0;
     }
     .markdown-body th, .markdown-body td {
-      border: 1px solid #333;
+      border: 1px solid var(--border);
       padding: 8px 12px;
     }
     .markdown-body th {
-      background: #252525;
+      background: var(--bg-tertiary);
     }
     .empty-state {
       display: flex;
       align-items: center;
       justify-content: center;
       height: 100%;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 18px;
     }
   </style>
@@ -84,7 +90,7 @@
 <body>
   <header>
     <h1>⚡ Office Copilot Workspace</h1>
-    <span id="status-text" style="color: #999; font-size: 14px;">等待接收数据...</span>
+    <span id="status-text" style="color: var(--text-secondary); font-size: 14px;">等待接收数据...</span>
   </header>
   <div id="content-area">
     <div id="empty-state" class="empty-state">在侧边栏中发起对话以在此处生成内容</div>

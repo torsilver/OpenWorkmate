@@ -230,6 +230,33 @@
     });
   }
 
+  function tasklyRefreshHljsLink() {
+    var link = document.getElementById("taskly-hljs-theme");
+    if (link && typeof TasklyTheme !== "undefined") {
+      link.href = TasklyTheme.getHljsStylesheetHref(document.documentElement.getAttribute("data-theme") || "dark");
+    }
+  }
+
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "tasklyUiTheme") return;
+    if (typeof TasklyTheme !== "undefined") {
+      TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+    }
+    tasklyRefreshHljsLink();
+  });
+
+  tasklyRefreshHljsLink();
+
+  fetch(API_BASE + "/api/config")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || typeof TasklyTheme === "undefined") return;
+      var id = j.uiThemeId || j.UiThemeId;
+      if (id) TasklyTheme.setTheme(id);
+      tasklyRefreshHljsLink();
+    })
+    .catch(function () {});
+
   const planId = getPlanIdFromUrl();
   loadPlan(planId);
 })();

@@ -1011,6 +1011,33 @@ app.MapDelete("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore
     return Results.Ok(new { ok = true });
 });
 
+{
+    var configSvc = app.Services.GetRequiredService<ConfigService>();
+    var sessionMgr = app.Services.GetRequiredService<SessionManager>();
+    var themeBroadcastLogger = app.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("UiThemeBroadcast");
+    string? lastBroadcastUiTheme = null;
+    configSvc.OnConfigChanged += () =>
+    {
+        var id = string.IsNullOrWhiteSpace(configSvc.Current.UiThemeId)
+            ? "dark"
+            : configSvc.Current.UiThemeId.Trim();
+        if (lastBroadcastUiTheme != null &&
+            string.Equals(lastBroadcastUiTheme, id, StringComparison.Ordinal))
+            return;
+        lastBroadcastUiTheme = id;
+        try
+        {
+            var payload = new WsMessage { Type = "ui_theme_changed", UiThemeId = id };
+            var json = JsonSerializer.Serialize(payload, JsonCtx.Default.WsMessage);
+            _ = BroadcastUiThemeToAllSessionsAsync(sessionMgr, themeBroadcastLogger, json);
+        }
+        catch (Exception ex)
+        {
+            themeBroadcastLogger.LogWarning(ex, "Failed to serialize ui_theme_changed broadcast");
+        }
+    };
+}
+
 app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
 app.Run();
 
@@ -1240,4 +1267,16 @@ static async Task SendJson(WebSocket ws, WsMessage msg)
     var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
     var bytes = Encoding.UTF8.GetBytes(json);
     await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+}
+
+static async Task BroadcastUiThemeToAllSessionsAsync(SessionManager sessions, Microsoft.Extensions.Logging.ILogger logger, string json)
+{
+    try
+    {
+        await sessions.BroadcastToAllOpenAsync(json).ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Broadcast ui_theme_changed failed");
+    }
 }

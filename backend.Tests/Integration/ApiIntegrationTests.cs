@@ -463,6 +463,41 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostConfig_UiThemeId_RoundTrip()
+    {
+        var body = new { ai = new { }, uiThemeId = "minimal" };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var postResponse = await _client.PostAsync("/api/config", content);
+        postResponse.EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var json = await getResponse.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(json).RootElement;
+        Assert.True(root.TryGetProperty("uiThemeId", out var themeProp));
+        Assert.Equal("minimal", themeProp.GetString());
+    }
+
+    [Fact]
+    public async Task PostConfig_OmitsUiThemeId_KeepsPrevious()
+    {
+        var initBody = new { ai = new { }, uiThemeId = "lines" };
+        var initContent = new StringContent(JsonSerializer.Serialize(initBody), Encoding.UTF8, "application/json");
+        (await _client.PostAsync("/api/config", initContent)).EnsureSuccessStatusCode();
+
+        var secondBody = new { ai = new { } };
+        var secondContent = new StringContent(JsonSerializer.Serialize(secondBody), Encoding.UTF8, "application/json");
+        (await _client.PostAsync("/api/config", secondContent)).EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var json = await getResponse.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(json).RootElement;
+        Assert.True(root.TryGetProperty("uiThemeId", out var themeProp));
+        Assert.Equal("lines", themeProp.GetString());
+    }
+
+    [Fact]
     public async Task GetSkills_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/skills");

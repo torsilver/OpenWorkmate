@@ -1493,6 +1493,18 @@ async function loadConfig() {
     toggleContextWindowSection(!!activePresetId);
     toggleSessionSection(!!activePresetId);
     updatePresetRenameDeleteVisibility(activePresetId, presets);
+    var themeEl = document.getElementById('uiThemeId');
+    if (themeEl && typeof TasklyTheme !== 'undefined') {
+      var serverTheme = data.uiThemeId ?? data.UiThemeId;
+      if (serverTheme != null && String(serverTheme).trim() !== '') {
+        TasklyTheme.setTheme(String(serverTheme).trim());
+      } else {
+        TasklyTheme.applyFromStorage();
+      }
+      themeEl.value = TasklyTheme.normalize(localStorage.getItem(TasklyTheme.KEY) || 'dark');
+    } else if (themeEl) {
+      themeEl.value = 'dark';
+    }
   } catch (err) {
     var friendly = messageForBackendUnreachable(err);
     if (friendly) console.warn(friendly);
@@ -1738,6 +1750,9 @@ async function saveConfig() {
     var activeSttModelId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
     var ocrModelsToSave = getOcrModels();
     var activeOcrModelId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
+    var uiThemeEl = document.getElementById('uiThemeId');
+    var uiThemeId = (uiThemeEl && uiThemeEl.value) ? uiThemeEl.value : ((fullConfig && (fullConfig.uiThemeId ?? fullConfig.UiThemeId)) || 'dark');
+    if (typeof TasklyTheme !== 'undefined') uiThemeId = TasklyTheme.normalize(uiThemeId);
     const payload = {
       ai: aiPayload,
       aiModels: aiModelsToSave,
@@ -1759,7 +1774,8 @@ async function saveConfig() {
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
       planConfirmation: planConfirmationPayload,
       activeContextPresetId: activeContextPresetId || undefined,
-      contextOptimizationPresets: contextOptimizationPresets.length > 0 ? contextOptimizationPresets : undefined
+      contextOptimizationPresets: contextOptimizationPresets.length > 0 ? contextOptimizationPresets : undefined,
+      uiThemeId: uiThemeId
     };
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -1770,7 +1786,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -2376,6 +2392,13 @@ function collectCliScriptPerEndPayload() {
 document.addEventListener('DOMContentLoaded', function () {
   initVendorPresetSelects();
   wireVendorSelectListeners();
+  var uiThemeSelect = document.getElementById('uiThemeId');
+  if (uiThemeSelect) {
+    uiThemeSelect.addEventListener('change', function () {
+      if (typeof TasklyTheme !== 'undefined') TasklyTheme.setTheme(uiThemeSelect.value);
+      debouncedSaveConfig();
+    });
+  }
   loadConfig();
   setupPassThroughContextToggle();
   updateUserScriptsSection();

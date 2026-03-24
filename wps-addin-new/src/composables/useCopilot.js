@@ -3,6 +3,8 @@
  */
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
+import hljs from 'highlight.js'
+import mermaid from 'mermaid'
 
 const WS_URL = 'ws://localhost:8765/ws'
 const API_BASE = 'http://localhost:8765'
@@ -11,6 +13,64 @@ const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 16000
 const CLIENT_TYPE = 'wps'
 const TIMELINE_TAIL_MAX = 100
+const STORAGE_PLAN_STEP_INDEX = 'copilot_plan_step_index'
+
+marked.setOptions({
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value
+    }
+    return hljs.highlightAuto(code).value
+  },
+  breaks: true
+})
+
+function tasklyMermaidTheme() {
+  if (typeof document === 'undefined') return 'dark'
+  const t = document.documentElement.getAttribute('data-theme') || 'dark'
+  return t === 'light' || t === 'minimal' || t === 'lines' || t === 'sketch' ? 'neutral' : 'dark'
+}
+
+function refreshMermaidConfig() {
+  try {
+    mermaid.initialize({ startOnLoad: false, theme: tasklyMermaidTheme() })
+  } catch {
+    /* ignore */
+  }
+}
+
+refreshMermaidConfig()
+
+let mermaidRunScheduled = false
+function scheduleMermaidRun() {
+  if (typeof document === 'undefined') return
+  if (mermaidRunScheduled) return
+  mermaidRunScheduled = true
+  nextTick(() => {
+    mermaidRunScheduled = false
+    refreshMermaidConfig()
+    const root = document.querySelector('.copilot-app')
+    if (!root || typeof mermaid.render !== 'function') return
+    root.querySelectorAll('pre code.language-mermaid').forEach((code, index) => {
+      const pre = code.parentElement
+      if (!pre || pre.closest('.mermaid-container')) return
+      const graph = (code.textContent || '').trim()
+      if (!graph) return
+      const id = `taskly-mm-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`
+      mermaid
+        .render(id, graph)
+        .then(({ svg }) => {
+          const div = document.createElement('div')
+          div.className = 'mermaid-container markdown-body'
+          div.innerHTML = svg
+          pre.replaceWith(div)
+        })
+        .catch(() => {
+          /* keep pre/code fallback */
+        })
+    })
+  })
+}
 
 function formatActivityTail(log, maxChars) {
   const s = log || ''
@@ -194,6 +254,24 @@ export function useCopilot() {
     return steps
   }
 
+  function getPlanCurrentStepIndex() {
+    const v = sessionStorage.getItem(STORAGE_PLAN_STEP_INDEX)
+    const n = parseInt(v, 10)
+    return n >= 1 ? n : 1
+  }
+
+  function setPlanCurrentStepIndex(stepIndex) {
+    if (stepIndex >= 1) sessionStorage.setItem(STORAGE_PLAN_STEP_INDEX, String(stepIndex))
+  }
+
+  function clearPlanCurrentStepIndex() {
+    try {
+      sessionStorage.removeItem(STORAGE_PLAN_STEP_INDEX)
+    } catch {
+      /* ignore */
+    }
+  }
+
   function initPlanChecklistFromContent(content) {
     const steps = parsePlanStepsFromContent(content)
     planChecklistSteps.value = steps
@@ -202,6 +280,7 @@ export function useCopilot() {
       nextStatus[s.index] = 'pending'
     })
     planChecklistStatus.value = nextStatus
+    setPlanCurrentStepIndex(1)
   }
 
   function cancelPlanBinding() {
@@ -213,6 +292,7 @@ export function useCopilot() {
     planPanelVisible.value = false
     planChecklistSteps.value = []
     planChecklistStatus.value = {}
+    clearPlanCurrentStepIndex()
     addSystemMessage('已取消当前计划绑定')
   }
 
@@ -288,6 +368,7 @@ export function useCopilot() {
     const raw = (isError && text ? '⚠️ ' : '') + (text || '')
     const html = typeof marked.parse === 'function' ? marked.parse(raw) : raw
     messages.value.push({ type: 'bot', content: text, isError, html })
+    scheduleMermaidRun()
   }
 
   function ensureRound() {
@@ -425,6 +506,7 @@ export function useCopilot() {
       crossAgentAutoRunQueued = false
       scheduleCrossAgentAutoRun()
     }
+    scheduleMermaidRun()
   }
 
   function setInputEnabled(enabled) {
@@ -486,6 +568,7 @@ export function useCopilot() {
     if (!skipPlan && planId.value) {
       payload.mode = 'agent'
       payload.planId = planId.value
+      payload.planCurrentStepIndex = getPlanCurrentStepIndex()
     }
     if (attachmentsPayload && attachmentsPayload.length > 0) {
       payload.attachments = attachmentsPayload
@@ -630,6 +713,14 @@ export function useCopilot() {
         }
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
+        }
+        if (
+          msg.plugin === 'Plan' &&
+          msg.function === 'execute_plan_step' &&
+          msg.planStepIndex &&
+          msg.success === true
+        ) {
+          setPlanCurrentStepIndex(msg.planStepIndex + 1)
         }
         currentToolEndIndex++
         break

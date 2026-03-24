@@ -1,11 +1,4 @@
-:root {
-  --plans-bg: #0f172a;
-  --plans-border: #334155;
-  --plans-text: #e2e8f0;
-  --plans-text-secondary: #94a3b8;
-  --plans-accent: #3b82f6;
-  --plans-list-bg: #1e293b;
-}
+/* 计划页颜色来自 chat-themes.css（html[data-theme] → --plans-*） */
 
 * { box-sizing: border-box; }
 

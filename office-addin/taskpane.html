@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Office Copilot</title>
+  <script src="taskly-theme-boot.js"></script>
+  <link rel="stylesheet" href="chat-themes.css">
   <link rel="stylesheet" href="taskpane.css">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <div id="app">
@@ -16,13 +17,21 @@
         <h1>Office Copilot</h1>
       </div>
       <div class="header-controls">
+        <button type="button" id="new-chat-btn" class="header-btn" title="新建对话">💬</button>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
           <span class="status-text">未连接</span>
         </div>
       </div>
     </header>
-    <p class="config-hint">请在 Chrome 扩展中配置后台与 AI</p>
+    <p class="config-hint">请在 Chrome 扩展中配置后台与 AI（完整设置仅 Chrome 扩展 options 页）。</p>
+
+    <div id="plan-checklist-wrap" class="plan-checklist-wrap" style="display: none;">
+      <details class="plan-checklist-details" open>
+        <summary id="plan-checklist-summary" class="plan-checklist-summary">执行进度</summary>
+        <ul id="plan-checklist-list" class="plan-checklist-list"></ul>
+      </details>
+    </div>
 
     <div id="plan-panel" class="plan-panel" style="display: none;">
       <div class="plan-panel-header">
@@ -41,13 +50,23 @@
     <main id="messages" class="messages">
       <div class="welcome">
         <p class="welcome-title">你好，我是 Office Copilot 👋</p>
-        <p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel 文档。配置请在 Chrome 扩展中完成。</p>
+        <p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel/PowerPoint 文档。完整配置请在 Chrome 扩展 options 页完成。</p>
       </div>
     </main>
 
     <footer class="input-area">
+      <div id="at-mode-panel" class="at-mode-panel" style="display: none;" role="dialog" aria-label="工具与技能选择">
+        <div class="at-mode-filter-row">
+          <span class="at-mode-filter-hint">过滤</span>
+          <input type="text" id="at-mode-filter-input" class="at-mode-filter-input" placeholder="输入以筛选…" autocomplete="off" />
+        </div>
+        <div id="at-mode-list" class="at-mode-list" role="listbox" aria-label="工具/技能列表"></div>
+      </div>
+      <div id="attachments-preview" class="attachments-preview" style="display: none;"></div>
       <div class="input-row">
-        <textarea id="input" class="input-box" placeholder="输入消息..." rows="1" autofocus></textarea>
+        <input type="file" id="file-input" accept="image/*" multiple hidden />
+        <button type="button" id="attach-btn" class="attach-btn" title="附加图片">📎</button>
+        <textarea id="input" class="input-box" placeholder="输入消息…（@ 可选工具/技能）" rows="1" autofocus></textarea>
         <button id="stop-btn" class="stop-btn" title="停止生成" style="display: none;">■</button>
         <button id="send-btn" class="send-btn" title="发送">发送</button>
       </div>
@@ -66,6 +85,45 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link id="taskly-hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+(function () {
+  function tasklyOfficeRefreshEmbedThemes() {
+    var t = document.documentElement.getAttribute("data-theme") || "dark";
+    var link = document.getElementById("taskly-hljs-theme");
+    var light = t === "light" || t === "minimal" || t === "lines" || t === "sketch";
+    if (link) {
+      link.href = light
+        ? "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css"
+        : "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css";
+    }
+    if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
+      mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+    }
+  }
+  window.tasklyOfficeRefreshEmbedThemes = tasklyOfficeRefreshEmbedThemes;
+  if (typeof marked !== "undefined" && typeof hljs !== "undefined") {
+    marked.setOptions({
+      highlight: function (code, lang) {
+        if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
+        return hljs.highlightAuto(code).value;
+      },
+      breaks: true
+    });
+  }
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "tasklyUiTheme") return;
+    if (typeof TasklyTheme !== "undefined") {
+      TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+    }
+    tasklyOfficeRefreshEmbedThemes();
+  });
+  tasklyOfficeRefreshEmbedThemes();
+})();
+  </script>
   <script src="taskpane.js"></script>
 </body>
 </html>

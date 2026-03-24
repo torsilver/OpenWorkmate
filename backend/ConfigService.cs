@@ -304,6 +304,8 @@ public class AppConfig
     public List<OcrModelEntry> OcrModels { get; set; } = new();
     /// <summary>当前使用的 OCR 模型 Id，对应 OcrModels 中某条的 Id。</summary>
     public string? ActiveOcrModelId { get; set; }
+    /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch；空或未识别时前端按 dark 处理。</summary>
+    public string? UiThemeId { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>
@@ -927,6 +929,7 @@ public sealed class ConfigService
                 if (newConfig.ActiveSttModelId == null) newConfig.ActiveSttModelId = _currentConfig.ActiveSttModelId;
                 if (newConfig.OcrModels == null) newConfig.OcrModels = _currentConfig.OcrModels ?? new List<OcrModelEntry>();
                 if (newConfig.ActiveOcrModelId == null) newConfig.ActiveOcrModelId = _currentConfig.ActiveOcrModelId;
+                if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {

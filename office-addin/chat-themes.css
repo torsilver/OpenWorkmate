@@ -1,0 +1,184 @@
+/**
+ * Taskly 对话 UI 命名预设主题（语义 CSS 变量）。
+ * 根节点须设置 data-theme="light|dark|blocks|modern|minimal|lines|sketch"。
+ * 由 taskly-theme-boot.js 从 localStorage tasklyUiTheme 或后端配置同步。
+ */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #252525;
+  --text-primary: #e8e8e8;
+  --text-secondary: #999;
+  --accent: #6c8cff;
+  --accent-dim: rgba(108, 140, 255, 0.12);
+  --user-bubble: #2a2d5e;
+  --user-bubble-text: #dce4ff;
+  --bot-bubble: #1e1e1e;
+  --border: #333;
+  --success: #4ade80;
+  --danger: #f87171;
+  --radius: 12px;
+  --transition: 150ms ease;
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --chat-code-bg: #0d1117;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --accent: #2563eb;
+  --accent-dim: rgba(37, 99, 235, 0.12);
+  --user-bubble: #3b82f6;
+  --user-bubble-text: #f8fafc;
+  --bot-bubble: #ffffff;
+  --border: #cbd5e1;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --radius: 12px;
+  --transition: 150ms ease;
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --chat-code-bg: #f6f8fa;
+}
+
+/* 色块：深色底 + 高饱和强调 */
+html[data-theme="blocks"] {
+  color-scheme: dark;
+  --bg-primary: #1a1033;
+  --bg-secondary: #251447;
+  --bg-tertiary: #351863;
+  --text-primary: #f3e8ff;
+  --text-secondary: #c4b5fd;
+  --accent: #f472b6;
+  --accent-dim: rgba(244, 114, 182, 0.15);
+  --user-bubble: #7c3aed;
+  --user-bubble-text: #faf5ff;
+  --bot-bubble: #2e1065;
+  --border: #6d28d9;
+  --success: #34d399;
+  --danger: #fb7185;
+  --radius: 16px;
+  --transition: 180ms ease;
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --chat-code-bg: #1e1b4b;
+}
+
+/* 现代：冷色深底 + 青色强调 */
+html[data-theme="modern"] {
+  color-scheme: dark;
+  --bg-primary: #0c1222;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --accent: #22d3ee;
+  --accent-dim: rgba(34, 211, 238, 0.12);
+  --user-bubble: #164e63;
+  --user-bubble-text: #ecfeff;
+  --bot-bubble: #1e293b;
+  --border: #334155;
+  --success: #4ade80;
+  --danger: #f87171;
+  --radius: 10px;
+  --transition: 150ms ease;
+  --font-ui: ui-sans-serif, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --chat-code-bg: #0f172a;
+}
+
+/* 简约：浅灰、小圆角、弱对比 */
+html[data-theme="minimal"] {
+  color-scheme: light;
+  --bg-primary: #fafafa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f4f4f5;
+  --text-primary: #18181b;
+  --text-secondary: #71717a;
+  --accent: #52525b;
+  --accent-dim: rgba(82, 82, 91, 0.08);
+  --user-bubble: #27272a;
+  --user-bubble-text: #fafafa;
+  --bot-bubble: #ffffff;
+  --border: #e4e4e7;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --radius: 6px;
+  --transition: 120ms ease;
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --chat-code-bg: #f4f4f5;
+}
+
+/* 线条：线框感、机器人气泡透明底 */
+html[data-theme="lines"] {
+  color-scheme: light;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --accent: #0f172a;
+  --accent-dim: rgba(15, 23, 42, 0.06);
+  --user-bubble: #0f172a;
+  --user-bubble-text: #ffffff;
+  --bot-bubble: transparent;
+  --border: #0f172a;
+  --success: #15803d;
+  --danger: #b91c1c;
+  --radius: 4px;
+  --transition: 150ms ease;
+  --font-ui: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  --chat-code-bg: #f8fafc;
+}
+
+html[data-theme="lines"] .msg--bot {
+  border-width: 2px;
+}
+
+/* 手绘：手写体、不规则圆角、略「草图」阴影 */
+html[data-theme="sketch"] {
+  color-scheme: light;
+  --bg-primary: #fffef7;
+  --bg-secondary: #fff8e7;
+  --bg-tertiary: #ffedd5;
+  --text-primary: #292524;
+  --text-secondary: #78716c;
+  --accent: #ea580c;
+  --accent-dim: rgba(234, 88, 12, 0.12);
+  --user-bubble: #fdba74;
+  --user-bubble-text: #431407;
+  --bot-bubble: #ffffff;
+  --border: #57534e;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --radius: 18px;
+  --transition: 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --font-ui: "Segoe Print", "Comic Sans MS", "PingFang SC", "Microsoft YaHei", cursive, sans-serif;
+  --chat-code-bg: #fff7ed;
+}
+
+html[data-theme="sketch"] .msg {
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  box-shadow: 2px 3px 0 rgba(41, 37, 36, 0.12);
+}
+
+html[data-theme="sketch"] .msg--user {
+  border-bottom-right-radius: 8px;
+}
+
+html[data-theme="sketch"] .msg--bot {
+  border-bottom-left-radius: 8px;
+}
+
+/* 计划页等复用对话 token（--bg-primary 等由上文各预设定义） */
+html[data-theme] {
+  --plans-bg: var(--bg-primary);
+  --plans-border: var(--border);
+  --plans-text: var(--text-primary);
+  --plans-text-secondary: var(--text-secondary);
+  --plans-accent: var(--accent);
+  --plans-list-bg: var(--bg-secondary);
+}

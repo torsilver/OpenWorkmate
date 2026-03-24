@@ -1,3 +1,34 @@
+const TASKLY_API_BASE = "http://localhost:8765";
+
+function tasklyRefreshEmbedThemes() {
+  const t = document.documentElement.getAttribute("data-theme") || "dark";
+  const link = document.getElementById("taskly-hljs-theme");
+  if (link && typeof TasklyTheme !== "undefined") {
+    link.href = TasklyTheme.getHljsStylesheetHref(t);
+  }
+  if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
+    mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+  }
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key !== "tasklyUiTheme") return;
+  if (typeof TasklyTheme !== "undefined") {
+    TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+  }
+  tasklyRefreshEmbedThemes();
+});
+
+fetch(TASKLY_API_BASE + "/api/config")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((j) => {
+    if (!j || typeof TasklyTheme === "undefined") return;
+    const id = j.uiThemeId || j.UiThemeId;
+    if (id) TasklyTheme.setTheme(id);
+    tasklyRefreshEmbedThemes();
+  })
+  .catch(() => {});
+
 // Initialize libraries
 if (typeof marked !== 'undefined') {
   marked.setOptions({
@@ -11,9 +42,7 @@ if (typeof marked !== 'undefined') {
   });
 }
 
-if (typeof mermaid !== 'undefined') {
-  mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-}
+tasklyRefreshEmbedThemes();
 
 const $emptyState = document.getElementById('empty-state');
 const $markdownContainer = document.getElementById('markdown-container');

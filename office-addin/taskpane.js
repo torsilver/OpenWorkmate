@@ -9,6 +9,20 @@
 
   let OFFICE_CLIENT_TYPE = "office"; // set after Office.onReady to office-word | office-excel | office-powerpoint
 
+  (function tasklySyncThemeFromBackend() {
+    try {
+      fetch(API_BASE + "/api/config")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || typeof TasklyTheme === "undefined") return;
+          var id = j.uiThemeId || j.UiThemeId;
+          if (id) TasklyTheme.setTheme(id);
+          if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+        })
+        .catch(function () {});
+    } catch (e) {}
+  })();
+
   const $messages = document.getElementById("messages");
   const $input = document.getElementById("input");
   const $sendBtn = document.getElementById("send-btn");
@@ -22,11 +36,46 @@
   const $planEditBtn = document.getElementById("plan-edit-btn");
   const $planSaveBtn = document.getElementById("plan-save-btn");
   const $planCancelEditBtn = document.getElementById("plan-cancel-edit-btn");
+  const $planChecklistWrap = document.getElementById("plan-checklist-wrap");
+  const $planChecklistList = document.getElementById("plan-checklist-list");
+  const $planChecklistSummary = document.getElementById("plan-checklist-summary");
+  const $newChatBtn = document.getElementById("new-chat-btn");
+  const $attachBtn = document.getElementById("attach-btn");
+  const $fileInput = document.getElementById("file-input");
+  const $attachmentsPreview = document.getElementById("attachments-preview");
+  const $atModePanel = document.getElementById("at-mode-panel");
+  const $atModeFilterInput = document.getElementById("at-mode-filter-input");
+  const $atModeList = document.getElementById("at-mode-list");
+
+  const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
 
   let currentPlanId = null;
   let currentPlanTitle = null;
   let currentPlanContent = null;
   let currentPlanCreatedBy = null;
+
+  /** @type {{ index: number, title: string }[]} */
+  let planChecklistSteps = [];
+  /** @type {Record<number, string>} */
+  let planChecklistStatus = {};
+
+  /** @type {{ id: string, mimeType: string, data: string }[]} */
+  let attachments = [];
+
+  let atModeOpen = false;
+  let atModeActiveIndex = 0;
+  let atTokenStart = -1;
+  let atTokenEnd = -1;
+  let atModeFilterStr = "";
+  /** @type {{ group: string, label: string, internal: string, desc: string }[]} */
+  let atModeCandidates = [];
+  /** @type {{ group: string, label: string, internal: string, desc: string }[]} */
+  let atModeTopList = [];
+  let atModeLoaded = false;
+  let atModeLoadError = "";
+  let atModeBootstrapping = false;
+  let atModeLoadingPromise = null;
+  let atModeSyncScheduled = false;
 
   let ws = null;
   let sessionId = null;
@@ -96,6 +145,504 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function getPlanCurrentStepIndex() {
+    const v = sessionStorage.getItem(STORAGE_PLAN_STEP_INDEX);
+    const n = parseInt(v, 10);
+    return n >= 1 ? n : 1;
+  }
+
+  function setPlanCurrentStepIndex(stepIndex) {
+    if (stepIndex >= 1) sessionStorage.setItem(STORAGE_PLAN_STEP_INDEX, String(stepIndex));
+  }
+
+  function clearPlanCurrentStepIndex() {
+    try {
+      sessionStorage.removeItem(STORAGE_PLAN_STEP_INDEX);
+    } catch (e) { /* ignore */ }
+  }
+
+  function parsePlanStepsFromContent(content) {
+    if (!content || typeof content !== "string") return [];
+    const steps = [];
+    const re = /^#{1,6}\s*步骤\s*(\d+)\s*$/gm;
+    const indices = [];
+    let m;
+    while ((m = re.exec(content)) !== null) indices.push({ num: parseInt(m[1], 10), pos: m.index });
+    for (let i = 0; i < indices.length; i++) {
+      const start = indices[i].pos;
+      const end = i + 1 < indices.length ? indices[i + 1].pos : content.length;
+      const block = content.slice(start, end).trim();
+      const firstLine = (block.split(/\r?\n/)[0] || "").trim();
+      const title =
+        firstLine.replace(/^#{1,6}\s*步骤\s*\d+\s*/, "").trim() ||
+        "步骤 " + indices[i].num;
+      steps.push({ index: indices[i].num, title: title.slice(0, 60) });
+    }
+    return steps;
+  }
+
+  function renderPlanChecklist() {
+    if (!$planChecklistWrap || !$planChecklistList) return;
+    if (planChecklistSteps.length === 0) {
+      $planChecklistWrap.style.display = "none";
+      return;
+    }
+    $planChecklistWrap.style.display = "block";
+    $planChecklistList.innerHTML = "";
+    const total = planChecklistSteps.length;
+    const done = Object.values(planChecklistStatus).filter(function (s) { return s === "done"; }).length;
+    if ($planChecklistSummary) $planChecklistSummary.textContent = "执行进度 (" + done + "/" + total + ")";
+    planChecklistSteps.forEach(function (s) {
+      const status = planChecklistStatus[s.index] || "pending";
+      const li = document.createElement("li");
+      li.className = "plan-step plan-step--" + status;
+      li.dataset.stepIndex = String(s.index);
+      const icon = document.createElement("span");
+      icon.className = "plan-step-icon";
+      icon.textContent = status === "done" ? "✓" : status === "in_progress" ? "◐" : "○";
+      const tit = document.createElement("span");
+      tit.className = "plan-step-title";
+      tit.textContent = "步骤 " + s.index + ": " + s.title;
+      li.appendChild(icon);
+      li.appendChild(tit);
+      $planChecklistList.appendChild(li);
+    });
+  }
+
+  function updateChecklistStep(stepIndex, status) {
+    if (!stepIndex || stepIndex < 1) return;
+    planChecklistStatus[stepIndex] = status;
+    renderPlanChecklist();
+  }
+
+  function initPlanChecklistFromContent(content) {
+    planChecklistSteps = parsePlanStepsFromContent(content);
+    planChecklistStatus = {};
+    planChecklistSteps.forEach(function (s) {
+      planChecklistStatus[s.index] = "pending";
+    });
+    setPlanCurrentStepIndex(1);
+    renderPlanChecklist();
+  }
+
+  function renderAttachmentsPreview() {
+    if (!$attachmentsPreview) return;
+    $attachmentsPreview.innerHTML = "";
+    if (attachments.length === 0) {
+      $attachmentsPreview.style.display = "none";
+      return;
+    }
+    $attachmentsPreview.style.display = "flex";
+    attachments.forEach(function (att) {
+      const wrap = document.createElement("div");
+      wrap.className = "attachment-thumb-wrap";
+      const img = document.createElement("img");
+      img.className = "attachment-thumb";
+      img.alt = "";
+      img.src = "data:" + att.mimeType + ";base64," + att.data;
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "attachment-remove";
+      removeBtn.textContent = "×";
+      removeBtn.title = "移除";
+      const idToRemove = att.id;
+      removeBtn.addEventListener("click", function () {
+        attachments = attachments.filter(function (a) {
+          return a.id !== idToRemove;
+        });
+        renderAttachmentsPreview();
+      });
+      wrap.appendChild(img);
+      wrap.appendChild(removeBtn);
+      $attachmentsPreview.appendChild(wrap);
+    });
+  }
+
+  function buildAttachmentsPayload() {
+    return attachments.map(function (a) {
+      return { mimeType: a.mimeType, data: a.data };
+    });
+  }
+
+  function addFilesAsAttachments(files) {
+    const imageFiles = Array.prototype.filter.call(files || [], function (f) {
+      return f && f.type && f.type.indexOf("image/") === 0;
+    });
+    if (imageFiles.length === 0) return Promise.resolve();
+    const tasks = Array.prototype.map.call(imageFiles, function (file) {
+      return new Promise(function (resolve) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const dataUrl = String(reader.result || "");
+          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          const mime = match ? match[1] : "image/png";
+          const data = match ? match[2] : "";
+          if (data) {
+            attachments.push({
+              id: Date.now() + "-" + Math.random(),
+              mimeType: mime || "image/png",
+              data: data
+            });
+          }
+          resolve();
+        };
+        reader.onerror = function () { resolve(); };
+        reader.readAsDataURL(file);
+      });
+    });
+    return Promise.all(tasks).then(function () { renderAttachmentsPreview(); });
+  }
+
+  function sanitizeSkillFunctionName(skillId) {
+    if (!skillId) return "Skill";
+    let s = String(skillId).trim().replace(/-/g, "_").replace(/\//g, "_").replace(/ /g, "_");
+    let out = "";
+    let prevUnderscore = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (/[A-Za-z0-9_]/.test(c)) {
+        out += c;
+        prevUnderscore = false;
+      } else if (!prevUnderscore) {
+        out += "_";
+        prevUnderscore = true;
+      }
+    }
+    out = out.replace(/^_+|_+$/g, "");
+    return out ? out : "Skill";
+  }
+
+  function isWhitespaceCh(ch) {
+    return /\s/.test(ch);
+  }
+
+  function findAtTokenInTextarea() {
+    if (!$input) return null;
+    const value = $input.value || "";
+    const caret = $input.selectionStart != null ? $input.selectionStart : 0;
+    const left = caret - 1;
+    if (left < 0) return null;
+    let i = left;
+    let lastAt = -1;
+    while (i >= 0) {
+      const ch = value[i];
+      if (isWhitespaceCh(ch)) break;
+      if (ch === "@") lastAt = i;
+      i--;
+    }
+    if (lastAt < 0) return null;
+    return { atIndex: lastAt, caret: caret, filter: value.slice(lastAt + 1, caret) };
+  }
+
+  function loadAtModeCandidates() {
+    if (atModeLoaded) return Promise.resolve();
+    if (atModeLoadingPromise) return atModeLoadingPromise;
+    atModeLoadingPromise = fetch(API_BASE + "/api/tools/builtin")
+      .then(function (builtinRes) {
+        return fetch(API_BASE + "/api/skills").then(function (skillsRes) {
+          return { builtinRes: builtinRes, skillsRes: skillsRes };
+        });
+      })
+      .then(function (_ref) {
+        const builtinRes = _ref.builtinRes;
+        const skillsRes = _ref.skillsRes;
+        const loadErrs = [];
+        if (!builtinRes.ok) loadErrs.push("内置工具接口 HTTP " + builtinRes.status);
+        if (!skillsRes.ok) loadErrs.push("技能接口 HTTP " + skillsRes.status);
+        return Promise.all([
+          builtinRes.ok ? builtinRes.json() : Promise.resolve([]),
+          skillsRes.ok ? skillsRes.json() : Promise.resolve([])
+        ]).then(function (arr) {
+          return { builtins: arr[0], skills: arr[1], loadErrs: loadErrs };
+        });
+      })
+      .then(function (pack) {
+        const builtins = Array.isArray(pack.builtins) ? pack.builtins : [];
+        const skills = Array.isArray(pack.skills) ? pack.skills : [];
+        const builtinCandidates = builtins
+          .map(function (t) {
+            return {
+              group: "Tools",
+              label: t.name || t.id || "",
+              internal: t.id || t.Id || "",
+              desc: t.description || t.Description || ""
+            };
+          })
+          .filter(function (c) {
+            return c.internal;
+          });
+        const skillCandidates = skills
+          .filter(function (s) {
+            return (s.enabled !== false && s.Enabled !== false) && (s.promptTemplate || s.PromptTemplate || "");
+          })
+          .map(function (s) {
+            const id = s.id || s.Id || "";
+            const safeName = sanitizeSkillFunctionName(id);
+            return {
+              group: "Skills",
+              label: s.name || s.Name || id,
+              internal: "UserSkill_" + safeName,
+              desc: s.description || s.Description || ""
+            };
+          });
+        builtinCandidates.sort(function (a, b) {
+          return String(a.label).localeCompare(String(b.label), "zh-Hans");
+        });
+        skillCandidates.sort(function (a, b) {
+          return String(a.label).localeCompare(String(b.label), "zh-Hans");
+        });
+        atModeCandidates = builtinCandidates.concat(skillCandidates);
+        atModeLoaded = true;
+        atModeLoadError = "";
+        if (pack.loadErrs.length) {
+          atModeLoadError =
+            "部分数据加载失败：" +
+            pack.loadErrs.join("；") +
+            "。请确认本机后台已启动（" +
+            API_BASE +
+            "）。" +
+            (atModeCandidates.length ? " 以下为已成功加载的条目。" : "");
+        }
+        if (!atModeCandidates.length) {
+          atModeLoadError =
+            (atModeLoadError ? atModeLoadError + " " : "") + "当前没有可用的工具或技能可选。";
+        }
+      })
+      .catch(function (e) {
+        console.warn("Failed to load @ mode candidates", e);
+        atModeCandidates = [];
+        atModeLoaded = true;
+        atModeLoadError =
+          "无法加载工具/技能列表：" +
+          (e && e.message ? e.message : String(e)) +
+          "。请确认本机后台已启动。";
+      })
+      .then(function () {
+        atModeLoadingPromise = null;
+      });
+    return atModeLoadingPromise;
+  }
+
+  function rebuildAtModeList(filterRaw) {
+    const filter = (filterRaw || "").trim().toLowerCase();
+    if (!atModeCandidates.length) {
+      atModeTopList = [];
+      atModeActiveIndex = 0;
+      return;
+    }
+    const scored = [];
+    for (let i = 0; i < atModeCandidates.length; i++) {
+      const c = atModeCandidates[i];
+      const label = String(c.label || "").toLowerCase();
+      const internal = String(c.internal || "").toLowerCase();
+      const text = label + " " + internal;
+      if (filter && text.indexOf(filter) === -1) continue;
+      let score = 0;
+      if (!filter) score = 1;
+      else if (label.indexOf(filter) === 0 || internal.indexOf(filter) === 0) score = 100;
+      else if (label.indexOf(filter) !== -1 || internal.indexOf(filter) !== -1) score = 50;
+      scored.push({ c: c, score: score });
+    }
+    scored.sort(function (a, b) {
+      const g1 = a.c.group === "Tools" ? 0 : 1;
+      const g2 = b.c.group === "Tools" ? 0 : 1;
+      if (g1 !== g2) return g1 - g2;
+      if (b.score !== a.score) return b.score - a.score;
+      return String(a.c.label).localeCompare(String(b.c.label), "zh-Hans");
+    });
+    atModeTopList = scored.slice(0, 30).map(function (x) {
+      return x.c;
+    });
+    atModeActiveIndex = 0;
+  }
+
+  function renderAtModeListUI() {
+    if (!$atModeList) return;
+    $atModeList.innerHTML = "";
+    let placeholder = "";
+    if (atModeBootstrapping) placeholder = "正在加载工具/技能列表…";
+    else if (!atModeCandidates.length) placeholder = atModeLoadError || "暂无可用工具/技能";
+    else if (!atModeTopList.length) placeholder = "无匹配结果";
+    if (placeholder) {
+      const empty = document.createElement("div");
+      empty.className = "at-mode-empty";
+      empty.textContent = placeholder;
+      $atModeList.appendChild(empty);
+      return;
+    }
+    for (let idx = 0; idx < atModeTopList.length; idx++) {
+      const c = atModeTopList[idx];
+      const div = document.createElement("div");
+      div.className = "at-mode-item" + (idx === atModeActiveIndex ? " at-mode-item--active" : "");
+      div.setAttribute("role", "option");
+      div.dataset.atIdx = String(idx);
+      const t = document.createElement("div");
+      t.className = "at-mode-item-title";
+      t.textContent = c.label || c.internal || "";
+      const m = document.createElement("div");
+      m.className = "at-mode-item-meta";
+      m.textContent = (c.group || "") + " · " + (c.internal || "");
+      div.appendChild(t);
+      div.appendChild(m);
+      $atModeList.appendChild(div);
+    }
+  }
+
+  function openAtMode(filter, startIdx, endIdx) {
+    atModeOpen = true;
+    atTokenStart = startIdx;
+    atTokenEnd = endIdx;
+    atModeFilterStr = filter || "";
+    atModeActiveIndex = 0;
+    rebuildAtModeList(atModeFilterStr);
+    if ($atModePanel) $atModePanel.style.display = "flex";
+    if ($atModeFilterInput) {
+      $atModeFilterInput.value = atModeFilterStr;
+      setTimeout(function () {
+        $atModeFilterInput.focus();
+      }, 0);
+    }
+    renderAtModeListUI();
+  }
+
+  function closeAtMode() {
+    atModeOpen = false;
+    atModeActiveIndex = 0;
+    atTokenStart = -1;
+    atTokenEnd = -1;
+    atModeFilterStr = "";
+    atModeTopList = [];
+    if ($atModePanel) $atModePanel.style.display = "none";
+    if ($atModeFilterInput) $atModeFilterInput.value = "";
+  }
+
+  function setAtActiveIndex(idx) {
+    const n = atModeTopList.length;
+    if (!n) return;
+    atModeActiveIndex = Math.max(0, Math.min(n - 1, idx));
+    renderAtModeListUI();
+  }
+
+  function insertAtCandidate(candidate) {
+    if (!candidate || atTokenStart < 0 || atTokenEnd < 0 || !$input) return;
+    const value = $input.value || "";
+    const internal = candidate.internal || "";
+    const inserted = "[TOOL:" + internal + "]";
+    const afterChar = value[atTokenEnd] || "";
+    const trailing = afterChar && !/\s/.test(afterChar) ? " " : "";
+    const newValue = value.slice(0, atTokenStart) + inserted + trailing + value.slice(atTokenEnd);
+    $input.value = newValue;
+    const newCaret = atTokenStart + inserted.length + trailing.length;
+    closeAtMode();
+    setTimeout(function () {
+      $input.focus();
+      $input.setSelectionRange(newCaret, newCaret);
+    }, 0);
+  }
+
+  function pickAtModeActive() {
+    const c = atModeTopList[atModeActiveIndex];
+    if (c) insertAtCandidate(c);
+  }
+
+  function updateAtModeFromTextarea() {
+    if (!$input) return;
+    const token = findAtTokenInTextarea();
+    if (!token) {
+      if (atModeOpen) closeAtMode();
+      return;
+    }
+    const value = $input.value || "";
+    const prev = token.atIndex > 0 ? value[token.atIndex - 1] : "";
+    const allow =
+      token.atIndex === 0 || isWhitespaceCh(prev) || /[.,;:!?()[\]{}]/.test(prev);
+    if (!allow) {
+      if (atModeOpen) closeAtMode();
+      return;
+    }
+    if (!atModeLoaded) {
+      atModeBootstrapping = true;
+      renderAtModeListUI();
+      loadAtModeCandidates().then(function () {
+        atModeBootstrapping = false;
+        if (atModeOpen) {
+          rebuildAtModeList(atModeFilterStr);
+          renderAtModeListUI();
+        }
+      });
+    }
+    const filter = token.filter || "";
+    if (
+      atModeOpen &&
+      atTokenStart === token.atIndex &&
+      atTokenEnd === token.caret &&
+      atModeFilterStr === filter
+    ) {
+      return;
+    }
+    openAtMode(filter, token.atIndex, token.caret);
+  }
+
+  function scheduleAtModeSync() {
+    if (atModeSyncScheduled) return;
+    atModeSyncScheduled = true;
+    queueMicrotask(function () {
+      atModeSyncScheduled = false;
+      updateAtModeFromTextarea();
+    });
+  }
+
+  function onAtModeFilterInputSync() {
+    if (!atModeOpen || atTokenStart < 0 || atTokenEnd < 0 || !$input || !$atModeFilterInput) return;
+    const newFilter = $atModeFilterInput.value || "";
+    const value = $input.value || "";
+    const tokenStart = atTokenStart + 1;
+    $input.value = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd);
+    atTokenEnd = tokenStart + newFilter.length;
+    atModeFilterStr = newFilter;
+    rebuildAtModeList(newFilter);
+    renderAtModeListUI();
+    setTimeout(function () {
+      $input.setSelectionRange(atTokenEnd, atTokenEnd);
+    }, 0);
+  }
+
+  function resetOfficeConversation() {
+    closeAtMode();
+    try {
+      sessionStorage.removeItem("copilot_session_id");
+    } catch (e) { /* ignore */ }
+    pendingMessages = [];
+    crossAgentAutoRunLock = false;
+    crossAgentAutoRunQueued = false;
+    attachments = [];
+    renderAttachmentsPreview();
+    currentPlanId = null;
+    currentPlanTitle = null;
+    currentPlanContent = null;
+    currentPlanCreatedBy = null;
+    if ($planPanel) $planPanel.style.display = "none";
+    planChecklistSteps = [];
+    planChecklistStatus = {};
+    if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
+    clearPlanCurrentStepIndex();
+    $messages.innerHTML =
+      '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel 文档。配置请在 Chrome 扩展中完成。</p></div>';
+    if ($input) $input.value = "";
+    if (ws) {
+      try {
+        ws.close();
+      } catch (e2) { /* ignore */ }
+      ws = null;
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = RECONNECT_BASE_MS;
+    connect();
   }
 
   function officePptParseReorder1Based(newOrderStr, n) {
@@ -420,7 +967,7 @@
       addSystemMessage("已连接到本地服务");
       while (pendingMessages.length > 0) {
         const m = pendingMessages.shift();
-        send(m.text);
+        send(m.text, { attachments: m.attachmentsPayload || null });
       }
       flushCrossAgentAutoRunAfterReconnect();
     };
@@ -449,15 +996,21 @@
   }
 
   function send(text, sendOpts) {
+    sendOpts = sendOpts || {};
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       addBotMessage("连接已断开，消息未发送。请检查后台是否启动，并在 Chrome 扩展中配置。", true);
       return;
     }
     const payload = { type: "text", content: text || "" };
-    const skipPlan = sendOpts && sendOpts.skipPlan === true;
+    const skipPlan = sendOpts.skipPlan === true;
+    const attachmentsPayload = sendOpts.attachments || null;
     if (!skipPlan && currentPlanId) {
       payload.mode = "agent";
       payload.planId = currentPlanId;
+      payload.planCurrentStepIndex = getPlanCurrentStepIndex();
+    }
+    if (attachmentsPayload && attachmentsPayload.length > 0) {
+      payload.attachments = attachmentsPayload;
     }
     ws.send(JSON.stringify(payload));
   }
@@ -478,7 +1031,7 @@
     crossAgentAutoRunLock = true;
     crossAgentAutoRunQueued = false;
     addUserMessage(CROSS_AGENT_AUTO_TRIGGER_TEXT);
-    send(CROSS_AGENT_AUTO_TRIGGER_TEXT, { skipPlan: true });
+    send(CROSS_AGENT_AUTO_TRIGGER_TEXT, { skipPlan: true, attachments: null });
   }
 
   function onCrossAgentTaskPush(msg) {
@@ -528,6 +1081,7 @@
       if ($planEditBtn) $planEditBtn.style.display = "inline-block";
       if ($planSaveBtn) $planSaveBtn.style.display = "none";
       if ($planCancelEditBtn) $planCancelEditBtn.style.display = "none";
+      initPlanChecklistFromContent(currentPlanContent || "");
     } catch (e) {
       console.error("fetch plan failed", e);
     }
@@ -561,6 +1115,12 @@
     }
 
     switch (msg.type) {
+      case "ui_theme_changed": {
+        const tid = (msg.uiThemeId && String(msg.uiThemeId).trim()) || "";
+        if (tid && typeof TasklyTheme !== "undefined") TasklyTheme.setTheme(tid);
+        if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+        break;
+      }
       case "stream_start":
         beginStream();
         break;
@@ -618,6 +1178,9 @@
       case "subtask_end":
         break;
       case "tool_invocation_start": {
+        if (msg.planStepIndex) {
+          updateChecklistStep(msg.planStepIndex, "in_progress");
+        }
         collapseAllOpenPhases();
         ensureTimeline();
         if (!timelineRoot) break;
@@ -653,6 +1216,17 @@
             out.textContent = content || "";
             out.style.display = content ? "block" : "none";
           }
+        }
+        if (msg.planStepIndex) {
+          updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
+        }
+        if (
+          msg.plugin === "Plan" &&
+          msg.function === "execute_plan_step" &&
+          msg.planStepIndex &&
+          msg.success === true
+        ) {
+          setPlanCurrentStepIndex(msg.planStepIndex + 1);
         }
         currentToolEndIndex++;
         break;
@@ -724,6 +1298,7 @@
         if ($planContentView) {
           $planContentView.innerHTML = (typeof marked !== "undefined") ? marked.parse(content || "") : escapeHtml(content || "");
         }
+        initPlanChecklistFromContent(content || "");
         cancelPlanEdit();
       } catch (e) {
         console.error("save plan failed", e);
@@ -1390,13 +1965,18 @@
   if ($hitlDenyBtn) $hitlDenyBtn.addEventListener("click", function () { if (pendingConfirmId) sendConfirmResponse(pendingConfirmId, false); });
 
   function handleSend() {
+    if (!$input) return;
     const text = $input.value.trim();
-    if (!text) return;
+    const hasAttachments = attachments.length > 0;
+    if (!text && !hasAttachments) return;
     if (currentRoundWrapper) return;
 
+    const attachmentsPayload = hasAttachments ? buildAttachmentsPayload() : null;
+    const userLabel = text || (hasAttachments ? "（附图片）" : "");
+
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      addUserMessage(text);
-      pendingMessages.push({ text: text });
+      addUserMessage(userLabel);
+      pendingMessages.push({ text: text, attachmentsPayload: attachmentsPayload });
       addBotMessage("连接已断开，正在重连… 请确保后台已启动并在 Chrome 扩展中配置。", true);
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
@@ -1404,14 +1984,64 @@
       }
       connect();
       $input.value = "";
+      attachments = [];
+      renderAttachmentsPreview();
       $input.focus();
       return;
     }
 
-    addUserMessage(text);
-    send(text);
+    addUserMessage(userLabel);
+    send(text, { attachments: attachmentsPayload });
     $input.value = "";
+    attachments = [];
+    renderAttachmentsPreview();
     $input.focus();
+  }
+
+  if ($newChatBtn) $newChatBtn.addEventListener("click", resetOfficeConversation);
+  if ($attachBtn && $fileInput) {
+    $attachBtn.addEventListener("click", function () {
+      $fileInput.click();
+    });
+  }
+  if ($fileInput) {
+    $fileInput.addEventListener("change", function (e) {
+      const t = e.target;
+      if (!t || !t.files) return;
+      addFilesAsAttachments(t.files).then(function () {
+        try {
+          t.value = "";
+        } catch (err) { /* ignore */ }
+      });
+    });
+  }
+  if ($atModeList) {
+    $atModeList.addEventListener("click", function (e) {
+      const item = e.target && e.target.closest ? e.target.closest(".at-mode-item") : null;
+      if (!item || item.dataset.atIdx == null) return;
+      const idx = parseInt(item.dataset.atIdx, 10);
+      if (!isNaN(idx) && atModeTopList[idx]) insertAtCandidate(atModeTopList[idx]);
+    });
+  }
+  if ($atModeFilterInput) {
+    $atModeFilterInput.addEventListener("input", onAtModeFilterInputSync);
+    $atModeFilterInput.addEventListener("keydown", function (e) {
+      if (!atModeOpen) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAtActiveIndex(atModeActiveIndex + 1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAtActiveIndex(atModeActiveIndex - 1);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        pickAtModeActive();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeAtMode();
+        if ($input) $input.focus();
+      }
+    });
   }
 
   if ($sendBtn) $sendBtn.addEventListener("click", handleSend);
@@ -1424,10 +2054,39 @@
   }
   if ($input) {
     $input.addEventListener("keydown", function (e) {
+      if (atModeOpen) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeAtMode();
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setAtActiveIndex(atModeActiveIndex + 1);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setAtActiveIndex(atModeActiveIndex - 1);
+          return;
+        }
+        if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+          e.preventDefault();
+          pickAtModeActive();
+          return;
+        }
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
+    });
+    $input.addEventListener("keyup", function () {
+      if ($atModeFilterInput && document.activeElement === $atModeFilterInput) return;
+      scheduleAtModeSync();
+    });
+    $input.addEventListener("input", function () {
+      scheduleAtModeSync();
     });
   }
 

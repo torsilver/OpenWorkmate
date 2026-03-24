@@ -8,6 +8,19 @@
   const RECONNECT_MAX_MS = 16000;
   const CLIENT_TYPE = "wps";
 
+  (function tasklySyncThemeFromBackend() {
+    try {
+      fetch(API_BASE + "/api/config")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || typeof TasklyTheme === "undefined") return;
+          var id = j.uiThemeId || j.UiThemeId;
+          if (id) TasklyTheme.setTheme(id);
+        })
+        .catch(function () {});
+    } catch (e) {}
+  })();
+
   const $messages = document.getElementById("messages");
   const $input = document.getElementById("input");
   const $sendBtn = document.getElementById("send-btn");
@@ -622,6 +635,11 @@
     var msg;
     try { msg = JSON.parse(raw); } catch (e) { msg = { type: "text", content: raw }; }
     switch (msg.type) {
+      case "ui_theme_changed": {
+        var tid = (msg.uiThemeId && String(msg.uiThemeId).trim()) || "";
+        if (tid && typeof TasklyTheme !== "undefined") TasklyTheme.setTheme(tid);
+        break;
+      }
       case "stream_start": beginStream(); break;
       case "agent_status": {
         var line = (msg.content && String(msg.content).trim()) || "";

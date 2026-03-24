@@ -9,14 +9,6 @@
         <button type="button" class="header-btn" title="新建对话" @click="resetConversation">
           💬
         </button>
-        <button
-          type="button"
-          class="header-btn"
-          title="设置"
-          @click="openSettings"
-        >
-          ⚙️
-        </button>
         <div
           :class="['status', connected ? 'status--connected' : 'status--disconnected']"
           title="连接状态"
@@ -27,7 +19,7 @@
       </div>
     </header>
     <p class="config-hint">
-      本机后台与 AI 配置请在桌面端/扩展完成（可访问 <span class="config-hint-link">http://localhost:8765</span>）。
+      本机后台与 AI 的<strong>完整设置</strong>请仅在 <strong>Chrome 扩展</strong> 的选项页完成；此处仅使用已启动的后台服务（<span class="config-hint-link">http://localhost:8765</span>）。
     </p>
 
     <div v-if="planChecklistSteps && planChecklistSteps.length > 0" class="plan-checklist-wrap">
@@ -79,7 +71,7 @@
     <main ref="messagesRef" class="messages">
       <div v-if="showWelcome" class="welcome">
         <p class="welcome-title">你好，我是 Office Copilot 👋</p>
-        <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。配置请在 Chrome 扩展中完成。</p>
+        <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。模型与密钥等请在 Chrome 扩展选项页配置。</p>
       </div>
       <template v-for="(msg, idx) in messages" :key="idx">
         <div v-if="msg.type === 'system'" class="msg msg--system">{{ msg.content }}</div>
@@ -380,10 +372,6 @@ export default {
         fileInputRef.value?.click()
       },
       planContentRendered,
-      openSettings: () => {
-        // WPS 内无法直接进入 Chrome 扩展 options 页；尝试打开本机后端配置接口（返回 JSON）。
-        window.open('http://localhost:8765/api/config', '_blank')
-      },
       async copyCurrentPlan() {
         const text = copilot.planId.value ? (copilot.planTitle.value || copilot.planId.value) : ''
         if (!text) return
@@ -1212,6 +1200,11 @@ export default {
   overflow-x: auto;
   margin: 8px 0;
   border: 1px solid var(--copilot-border, #333);
+}
+
+.copilot-app .mermaid-container {
+  margin: 8px 0;
+  overflow-x: auto;
 }
 
 .copilot-app .markdown-body code {
