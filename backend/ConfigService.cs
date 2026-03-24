@@ -306,6 +306,8 @@ public class AppConfig
     public string? ActiveOcrModelId { get; set; }
     /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch；空或未识别时前端按 dark 处理。</summary>
     public string? UiThemeId { get; set; }
+    /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘「设置」用于打开 chrome-extension://…/options.html；也可用环境变量 OFFICECOPILOT_CHROME_EXTENSION_ID。</summary>
+    public string? ChromeExtensionId { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>

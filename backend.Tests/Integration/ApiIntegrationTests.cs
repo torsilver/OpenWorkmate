@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net;
 using System.IO;
+using System.Linq;
 using System;
 using System.Text;
 using System.Text.Json;
@@ -548,6 +549,48 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var ts = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement.GetProperty("toolSelection");
         Assert.Equal(0, ts.GetProperty("totalNonPlanSelections").GetInt64());
         Assert.Equal(0, ts.GetProperty("vectorSearchRunCount").GetInt64());
+    }
+
+    [Fact]
+    public async Task GetDebugLogFiles_Returns200_WithFilesArray()
+    {
+        var response = await _client.GetAsync("/api/debug/log-files");
+        response.EnsureSuccessStatusCode();
+        var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(root.TryGetProperty("files", out var files));
+        Assert.Equal(JsonValueKind.Array, files.ValueKind);
+    }
+
+    [Fact]
+    public async Task GetDebugLogTail_WithSyntheticFile_ReturnsLines()
+    {
+        var logsDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+        Directory.CreateDirectory(logsDir);
+        const string name = "office-copilot-20990101.txt";
+        var path = Path.Combine(logsDir, name);
+        await File.WriteAllTextAsync(path, "alpha\nbeta\ngamma\n");
+        try
+        {
+            var response = await _client.GetAsync("/api/debug/log-tail?file=" + Uri.EscapeDataString(name) + "&lines=10");
+            response.EnsureSuccessStatusCode();
+            var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            Assert.True(root.TryGetProperty("lines", out var lines));
+            Assert.True(lines.GetArrayLength() >= 3);
+            var joined = string.Join("\n", lines.EnumerateArray().Select(e => e.GetString() ?? ""));
+            Assert.Contains("gamma", joined, StringComparison.Ordinal);
+            Assert.Contains("alpha", joined, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
     }
 }
 

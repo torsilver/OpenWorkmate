@@ -23,7 +23,7 @@ public sealed class ChatService : IDisposable
     /// <summary>当前选中的模型 Id，用于按 key 解析 IChatCompletionService。</summary>
     private string _activeModelId = "";
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
-    private readonly Timer _cleanupTimer;
+    private readonly System.Threading.Timer _cleanupTimer;
     private readonly ILogger<ChatService> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ConfigService _configService;
@@ -62,7 +62,7 @@ public sealed class ChatService : IDisposable
         _configService.OnConfigChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
         _skillService.OnSkillsChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
 
-        _cleanupTimer = new Timer(CleanupExpiredSessions, null,
+        _cleanupTimer = new System.Threading.Timer(CleanupExpiredSessions, null,
             TimeSpan.FromMinutes(cleanupInterval),
             TimeSpan.FromMinutes(cleanupInterval));
     }

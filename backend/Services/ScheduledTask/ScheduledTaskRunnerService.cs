@@ -9,7 +9,7 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
     private readonly IScheduledTaskStore _store;
     private readonly ChatService _chatService;
     private readonly ILogger<ScheduledTaskRunnerService> _logger;
-    private Timer? _timer;
+    private System.Threading.Timer? _timer;
     private const int IntervalSeconds = 60;
 
     public ScheduledTaskRunnerService(
@@ -24,7 +24,7 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _timer = new Timer(RunScheduledTasksAsync, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(IntervalSeconds));
+        _timer = new System.Threading.Timer(RunScheduledTasksAsync, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(IntervalSeconds));
         _logger.LogInformation("ScheduledTaskRunnerService started, interval={Sec}s", IntervalSeconds);
         return Task.CompletedTask;
     }

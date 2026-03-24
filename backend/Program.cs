@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
+using System.Threading;
 using System.Text;
 using System.Text.Json;
 using OfficeCopilot.Server;
@@ -24,8 +25,28 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
-    var buildToolIndex = args.Contains("--build-tool-index");
+    var buildToolIndex = args.Any(a => string.Equals(a, "--build-tool-index", StringComparison.OrdinalIgnoreCase));
+    var useTray = !buildToolIndex && args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
+    var hostArgs = args.Where(a => !string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)).ToArray();
+
+#if WINDOWS
+    if (useTray && OperatingSystem.IsWindows())
+    {
+        if (!OfficeCopilotTrayHost.TryAcquireTraySingleInstance())
+        {
+            System.Windows.Forms.MessageBox.Show(
+                "已有 Office Copilot 后台实例在运行（托盘模式不支持多开）。",
+                "Office Copilot",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Information);
+            return;
+        }
+
+        Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
+    }
+#endif
+
+    var builder = WebApplication.CreateBuilder(hostArgs);
     builder.Host.UseSerilog();
 
     builder.Services.AddHttpClient();
@@ -218,6 +239,8 @@ app.UseCors(policy =>
           .SetIsOriginAllowed(origin => true) // Local tool, allow all origins for now to avoid extension CORS issues
 );
 
+app.UseStaticFiles();
+
 app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService chatService) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
@@ -303,6 +326,25 @@ app.MapPost("/api/debug/agent-stats/reset", (AgentDebugStatsService agentDebugSt
 {
     agentDebugStats.Reset();
     return Results.Json(new DebugStatsResetResponse(), JsonCtx.Default.DebugStatsResetResponse);
+});
+
+app.MapGet("/api/debug/log-files", (HttpContext ctx) =>
+{
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+        return Results.Json(new { ok = false, message = "仅允许本机 loopback 访问调试日志接口。" }, statusCode: 403);
+    var files = DebugLogHelper.ListLogFileNames();
+    return Results.Json(new { files });
+});
+
+app.MapGet("/api/debug/log-tail", (HttpContext ctx, int? lines, string? file) =>
+{
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+        return Results.Json(new { ok = false, message = "仅允许本机 loopback 访问调试日志接口。" }, statusCode: 403);
+    var maxLines = lines ?? 500;
+    var (fileName, tailLines, err) = DebugLogHelper.ReadTail(file, maxLines);
+    if (err != null)
+        return Results.Json(new { ok = false, message = err, fileName, lines = tailLines }, statusCode: 400);
+    return Results.Json(new { ok = true, fileName, lines = tailLines });
 });
 
 app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenAccepted={Dev}, AllowedOriginsCount={Count}",
@@ -1039,7 +1081,29 @@ app.MapDelete("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore
 }
 
 app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
-app.Run();
+var logPort = app.Configuration.GetSection("WebSocket")["Port"] ?? "8765";
+try
+{
+    if (app.Urls.Count > 0)
+    {
+        var u = app.Urls.First();
+        if (Uri.TryCreate(u, UriKind.Absolute, out var uri) &&
+            uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
+            logPort = uri.Port.ToString();
+    }
+}
+catch
+{
+    /* 使用 WebSocket:Port 或默认 */
+}
+
+var logViewerUrl = $"http://127.0.0.1:{logPort}/debug/logs.html";
+#if WINDOWS
+if (useTray && OperatingSystem.IsWindows())
+    OfficeCopilotTrayHost.Run(app, logViewerUrl);
+else
+#endif
+    app.Run();
 
 }
 catch (Exception ex)

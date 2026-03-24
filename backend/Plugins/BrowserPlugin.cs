@@ -257,17 +257,17 @@ public class BrowserPlugin
                 var maxWidth = 0;
                 foreach (var bytes in list)
                 {
-                    using var img = Image.Load<Rgba32>(bytes);
+                    using var img = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
                     totalHeight += img.Height;
                     if (img.Width > maxWidth) maxWidth = img.Width;
                 }
 
-                using var stitched = new Image<Rgba32>(maxWidth, totalHeight);
+                using var stitched = new SixLabors.ImageSharp.Image<Rgba32>(maxWidth, totalHeight);
                 var y = 0;
                 foreach (var bytes in list)
                 {
-                    using var img = Image.Load<Rgba32>(bytes);
-                    stitched.Mutate(m => m.DrawImage(img, new Point(0, y), 1f));
+                    using var img = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
+                    stitched.Mutate(m => m.DrawImage(img, new SixLabors.ImageSharp.Point(0, y), 1f));
                     y += img.Height;
                 }
 

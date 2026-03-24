@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Office Copilot — 调试日志</title>
+  <style>
+    :root { color-scheme: dark; --bg: #1a1d23; --fg: #e6e8ee; --muted: #8b919d; --accent: #6ea8fe; }
+    body { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; margin: 0; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 1.45; }
+    header { padding: 12px 16px; border-bottom: 1px solid #333; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1 1 auto; }
+    label { color: var(--muted); margin-right: 6px; }
+    select, button { background: #2d333b; color: var(--fg); border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font: inherit; }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    #status { color: var(--muted); font-size: 12px; }
+    pre { margin: 0; padding: 16px; white-space: pre-wrap; word-break: break-word; min-height: 200px; }
+    .err { color: #f85149; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>调试日志 <span id="status"></span></h1>
+    <div>
+      <label for="file">文件</label>
+      <select id="file"></select>
+    </div>
+    <div>
+      <label for="lines">行数</label>
+      <select id="lines">
+        <option>200</option>
+        <option selected>500</option>
+        <option>2000</option>
+        <option>5000</option>
+      </select>
+    </div>
+    <button type="button" id="refresh">刷新</button>
+  </header>
+  <pre id="out"></pre>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $('status');
+    const outEl = $('out');
+    const fileSel = $('file');
+    const linesSel = $('lines');
+
+    async function loadFiles() {
+      const res = await fetch('/api/debug/log-files');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        outEl.textContent = data.message || ('HTTP ' + res.status);
+        outEl.className = 'err';
+        return;
+      }
+      const files = data.files || [];
+      const cur = fileSel.value;
+      fileSel.innerHTML = '';
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = '（最新）';
+      fileSel.appendChild(opt0);
+      for (const f of files) {
+        const o = document.createElement('option');
+        o.value = f;
+        o.textContent = f;
+        fileSel.appendChild(o);
+      }
+      if ([...fileSel.options].some((o) => o.value === cur)) fileSel.value = cur;
+    }
+
+    async function loadTail() {
+      statusEl.textContent = '加载中…';
+      outEl.className = '';
+      const lines = linesSel.value;
+      const file = fileSel.value;
+      const q = new URLSearchParams({ lines });
+      if (file) q.set('file', file);
+      const res = await fetch('/api/debug/log-tail?' + q.toString());
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        outEl.textContent = data.message || ('HTTP ' + res.status);
+        outEl.className = 'err';
+        statusEl.textContent = '';
+        return;
+      }
+      const name = data.fileName || '（无）';
+      statusEl.textContent = '· ' + name;
+      const arr = data.lines || [];
+      outEl.textContent = arr.join('\n');
+    }
+
+    $('refresh').addEventListener('click', loadTail);
+    fileSel.addEventListener('change', loadTail);
+    linesSel.addEventListener('change', loadTail);
+
+    let t = setInterval(loadTail, 4000);
+    window.addEventListener('beforeunload', () => clearInterval(t));
+
+    (async () => {
+      await loadFiles();
+      await loadTail();
+    })();
+  </script>
+</body>
+</html>

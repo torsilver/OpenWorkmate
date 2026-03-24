@@ -224,7 +224,7 @@ public sealed class WordPlugin
                 new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
                 new Bold(),
                 new FontSize { Val = "44" }, // 22pt
-                new Color { Val = "1F3864" }),
+                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "1F3864" }),
             new StyleParagraphProperties(
                 new SpacingBetweenLines { Before = "360", After = "120" },
                 new KeepNext()))
@@ -240,7 +240,7 @@ public sealed class WordPlugin
                 new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
                 new Bold(),
                 new FontSize { Val = "32" }, // 16pt
-                new Color { Val = "2E75B6" }),
+                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "2E75B6" }),
             new StyleParagraphProperties(
                 new SpacingBetweenLines { Before = "240", After = "80" },
                 new KeepNext()))
@@ -256,7 +256,7 @@ public sealed class WordPlugin
                 new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
                 new Bold(),
                 new FontSize { Val = "28" }, // 14pt
-                new Color { Val = "404040" }),
+                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "404040" }),
             new StyleParagraphProperties(
                 new SpacingBetweenLines { Before = "200", After = "80" },
                 new KeepNext()))
@@ -428,7 +428,7 @@ public sealed class WordPlugin
                 if (fontSize > 0) rPr.FontSize = new FontSize { Val = (fontSize * 2).ToString() };
                 if (!string.IsNullOrWhiteSpace(fontName)) rPr.RunFonts = new RunFonts { Ascii = fontName!.Trim(), HighAnsi = fontName.Trim(), EastAsia = fontName.Trim() };
                 if (!string.IsNullOrWhiteSpace(colorHex) && colorHex!.Trim().Length >= 6)
-                    rPr.Color = new Color { Val = colorHex.Trim().StartsWith("#") ? colorHex.Trim()[1..].Length > 6 ? colorHex.Trim()[1..7] : colorHex.Trim()[1..] : colorHex.Trim().Length > 6 ? colorHex.Trim()[..6] : colorHex.Trim() };
+                    rPr.Color = new DocumentFormat.OpenXml.Wordprocessing.Color { Val = colorHex.Trim().StartsWith("#") ? colorHex.Trim()[1..].Length > 6 ? colorHex.Trim()[1..7] : colorHex.Trim()[1..] : colorHex.Trim().Length > 6 ? colorHex.Trim()[..6] : colorHex.Trim() };
             }
             main.Document!.Save();
             return $"已对 {runs.Count} 处包含「{searchText}」的文字应用格式。";
@@ -962,7 +962,7 @@ public sealed class WordPlugin
             var rel = main.AddHyperlinkRelationship(new Uri(url, UriKind.Absolute), true);
             var hyperlink = new DocumentFormat.OpenXml.Wordprocessing.Hyperlink { Id = rel.Id };
             hyperlink.AppendChild(new Run(
-                new RunProperties(new RunStyle { Val = "Hyperlink" }, new Color { ThemeColor = DocumentFormat.OpenXml.Wordprocessing.ThemeColorValues.Hyperlink }, new Underline { Val = DocumentFormat.OpenXml.Wordprocessing.UnderlineValues.Single }),
+                new RunProperties(new RunStyle { Val = "Hyperlink" }, new DocumentFormat.OpenXml.Wordprocessing.Color { ThemeColor = DocumentFormat.OpenXml.Wordprocessing.ThemeColorValues.Hyperlink }, new Underline { Val = DocumentFormat.OpenXml.Wordprocessing.UnderlineValues.Single }),
                 new Text(string.IsNullOrEmpty(displayText) ? url : displayText)));
             paragraphs[paragraphIndex - 1].AppendChild(hyperlink);
             main.Document!.Save();
