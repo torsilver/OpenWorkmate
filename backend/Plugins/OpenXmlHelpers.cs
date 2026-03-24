@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>Excel/Word 插件共用的路径解析与扩展名校验，Phase 0 共享层。</summary>
@@ -16,7 +18,7 @@ public static class OpenXmlHelpers
     }
 
     /// <summary>仅允许 .xlsx / .xlsm；.xls 返回明确错误。</summary>
-    public static bool ValidateExcelExtension(string filePath, out string? errorMessage)
+    public static bool ValidateExcelExtension(string filePath, [NotNullWhen(false)] out string? errorMessage)
     {
         errorMessage = null;
         var ext = Path.GetExtension(filePath ?? "");
@@ -29,7 +31,7 @@ public static class OpenXmlHelpers
     }
 
     /// <summary>仅允许 .docx / .docm；.doc 返回明确错误。</summary>
-    public static bool ValidateWordExtension(string filePath, out string? errorMessage)
+    public static bool ValidateWordExtension(string filePath, [NotNullWhen(false)] out string? errorMessage)
     {
         errorMessage = null;
         var ext = Path.GetExtension(filePath ?? "");
@@ -42,7 +44,7 @@ public static class OpenXmlHelpers
     }
 
     /// <summary>仅允许 .pptx / .pptm；.ppt 返回明确错误。</summary>
-    public static bool ValidatePptExtension(string filePath, out string? errorMessage)
+    public static bool ValidatePptExtension(string filePath, [NotNullWhen(false)] out string? errorMessage)
     {
         errorMessage = null;
         var ext = Path.GetExtension(filePath ?? "");

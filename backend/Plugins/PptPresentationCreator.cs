@@ -31,7 +31,9 @@ internal static class PptPresentationCreator
         var notesSize1 = new NotesSize { Cx = 6858000, Cy = 9144000 };
         var defaultTextStyle1 = new DefaultTextStyle();
 
-        presentationPart.Presentation.Append(slideMasterIdList1, slideIdList1, slideSize1, notesSize1, defaultTextStyle1);
+        if (presentationPart.Presentation is not { } presentation)
+            throw new InvalidOperationException("Presentation 根未初始化。");
+        presentation.Append(slideMasterIdList1, slideIdList1, slideSize1, notesSize1, defaultTextStyle1);
 
         var slidePart1 = CreateSlidePart(presentationPart);
         var slideLayoutPart1 = CreateSlideLayoutPart(slidePart1);

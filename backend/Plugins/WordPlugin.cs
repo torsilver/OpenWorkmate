@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -13,6 +14,27 @@ public sealed class WordPlugin
 
     public WordPlugin(ILogger<WordPlugin>? logger = null) => _logger = logger;
 
+    private const string WordStructureErrMsg = "[错误] Word 文档结构不完整或已损坏（缺少主文档或正文）。";
+
+    private static bool TryGetMainPart(WordprocessingDocument doc, [NotNullWhen(true)] out MainDocumentPart? main, out string errorMessage)
+    {
+        main = doc.MainDocumentPart;
+        if (main == null) { errorMessage = WordStructureErrMsg; return false; }
+        errorMessage = "";
+        return true;
+    }
+
+    private static bool TryGetMainAndBody(WordprocessingDocument doc, [NotNullWhen(true)] out MainDocumentPart? main, [NotNullWhen(true)] out Body? body, out string errorMessage)
+    {
+        main = doc.MainDocumentPart;
+        body = null;
+        if (main == null) { errorMessage = WordStructureErrMsg; return false; }
+        if (main.Document?.Body is not { } b) { errorMessage = WordStructureErrMsg; return false; }
+        body = b;
+        errorMessage = "";
+        return true;
+    }
+
     [KernelFunction("word_body_read")]
     [Description("读取 Word 文档正文：段落（可选含表格）。支持段落范围与长度截断。")]
     public string WordBodyRead(
@@ -26,7 +48,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var body = doc.MainDocumentPart!.Document.Body!;
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
             var blocks = body.ChildElements.ToList();
             var paragraphs = blocks.OfType<Paragraph>().ToList();
             int start = startParagraph > 0 ? startParagraph - 1 : 0;
@@ -73,7 +95,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var tables = doc.MainDocumentPart!.Document.Body!.Elements<Table>().ToList();
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
+            var tables = body.Elements<Table>().ToList();
             if (tables.Count == 0) return "文档中无表格。";
             var sb = new StringBuilder();
             for (int i = 0; i < tables.Count; i++)
@@ -98,7 +121,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var body = doc.MainDocumentPart!.Document.Body!;
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
             var tables = body.Elements<Table>().ToList();
             if (tables.Count == 0) return "文档中无表格。";
             var sb = new StringBuilder();
@@ -137,7 +160,8 @@ public sealed class WordPlugin
             var mainPart = doc.AddMainDocumentPart();
             AddDefaultStyles(mainPart);
             mainPart.Document = new Document(new Body());
-            var body = mainPart.Document.Body!;
+            if (mainPart.Document?.Body is not { } body)
+                return "[错误] 创建文档后未能初始化正文。";
 
             // Title paragraph with Heading1 style
             body.Append(new Paragraph(
@@ -308,7 +332,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var body = doc.MainDocumentPart!.Document.Body!;
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
             int count = 0;
             foreach (var text in body.Descendants<Text>())
             {
@@ -318,7 +342,7 @@ public sealed class WordPlugin
                     count++;
                 }
             }
-            doc.MainDocumentPart.Document.Save();
+            main.Document!.Save();
             return count > 0 ? $"已替换 {count} 处「{searchText}」→「{replaceText}」" : $"未找到「{searchText}」";
         }
         catch (Exception ex) { return $"[错误] 替换失败: {ex.Message}"; }
@@ -340,7 +364,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var body = doc.MainDocumentPart!.Document.Body!;
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
             var paragraphs = body.Elements<Paragraph>().ToList();
             if (paragraphs.Count == 0) return "文档中无段落。";
             int start = Math.Max(1, startParagraph) - 1;
@@ -370,7 +394,7 @@ public sealed class WordPlugin
                     if (spacingAfter > 0) spacing.After = (spacingAfter * 20).ToString();
                 }
             }
-            doc.MainDocumentPart.Document.Save();
+            main.Document!.Save();
             return $"已格式化第 {start + 1}～{end} 段，共 {end - start} 个段落。";
         }
         catch (Exception ex) { return $"[错误] 格式化失败: {ex.Message}"; }
@@ -393,7 +417,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var body = doc.MainDocumentPart!.Document.Body!;
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
             var runs = body.Descendants<Run>().Where(r => r.InnerText.Contains(searchText)).ToList();
             if (runs.Count == 0) return $"未找到包含「{searchText}」的文字。";
             foreach (var run in runs)
@@ -406,7 +430,7 @@ public sealed class WordPlugin
                 if (!string.IsNullOrWhiteSpace(colorHex) && colorHex!.Trim().Length >= 6)
                     rPr.Color = new Color { Val = colorHex.Trim().StartsWith("#") ? colorHex.Trim()[1..].Length > 6 ? colorHex.Trim()[1..7] : colorHex.Trim()[1..] : colorHex.Trim().Length > 6 ? colorHex.Trim()[..6] : colorHex.Trim() };
             }
-            doc.MainDocumentPart.Document.Save();
+            main.Document!.Save();
             return $"已对 {runs.Count} 处包含「{searchText}」的文字应用格式。";
         }
         catch (Exception ex) { return $"[错误] 格式化失败: {ex.Message}"; }
@@ -451,7 +475,7 @@ public sealed class WordPlugin
             var commentsPart = doc.MainDocumentPart!.WordprocessingCommentsPart;
             if (commentsPart?.Comments == null || !commentsPart.Comments.Elements<Comment>().Any())
                 return "文档中无批注。";
-            var body = doc.MainDocumentPart.Document.Body!;
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
             var sb = new StringBuilder();
             foreach (var comment in commentsPart.Comments.Elements<Comment>())
             {
@@ -485,7 +509,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var mainPart = doc.MainDocumentPart!;
+            if (!TryGetMainAndBody(doc, out var mainPart, out var body, out var structErr)) return structErr;
             var commentsPart = mainPart.WordprocessingCommentsPart ?? mainPart.AddNewPart<WordprocessingCommentsPart>();
             if (commentsPart.Comments == null) commentsPart.Comments = new Comments();
 
@@ -506,7 +530,7 @@ public sealed class WordPlugin
 
             Run? targetRun = null;
             Text? targetText = null;
-            foreach (var run in mainPart.Document.Body!.Descendants<Run>())
+            foreach (var run in body.Descendants<Run>())
             {
                 foreach (var text in run.Elements<Text>())
                 {
@@ -527,7 +551,7 @@ public sealed class WordPlugin
             targetRun.InsertBefore(commentRangeStart, targetRun.FirstChild);
             targetRun.InsertAfter(commentRangeEnd, targetRun.LastChild);
             targetRun.Parent!.InsertAfter(commentRef, targetRun);
-            mainPart.Document.Save();
+            mainPart.Document!.Save();
             return $"已添加批注(Id={newId})到「{anchorText}」处。";
         }
         catch (Exception ex) { return $"[错误] 添加批注失败: {ex.Message}"; }
@@ -545,7 +569,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var commentsPart = doc.MainDocumentPart!.WordprocessingCommentsPart;
+            if (!TryGetMainPart(doc, out var mainDoc, out var structErr0)) return structErr0;
+            var commentsPart = mainDoc.WordprocessingCommentsPart;
             if (commentsPart?.Comments == null) return "文档中无批注。";
             var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (deleteAll)
@@ -555,7 +580,7 @@ public sealed class WordPlugin
                     if (!string.IsNullOrEmpty(id)) toRemove.Add(id);
 
             if (toRemove.Count == 0) return "未指定要删除的批注。";
-            var body = doc.MainDocumentPart.Document.Body!;
+            if (mainDoc.Document?.Body is not { } body) return WordStructureErrMsg;
             foreach (var id in toRemove)
             {
                 foreach (var el in body.Descendants<CommentRangeStart>().Where(x => x.Id?.Value == id).ToList())
@@ -571,7 +596,7 @@ public sealed class WordPlugin
                 comment?.Remove();
             }
             commentsPart.Comments.Save();
-            doc.MainDocumentPart.Document.Save();
+            mainDoc.Document!.Save();
             return $"已删除 {toRemove.Count} 个批注。";
         }
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
@@ -593,7 +618,9 @@ public sealed class WordPlugin
             switch (part.Trim().ToLowerInvariant())
             {
                 case "document":
-                    xml = doc.MainDocumentPart!.Document.OuterXml;
+                    if (!TryGetMainPart(doc, out var mdPart, out var docErr)) return docErr;
+                    if (mdPart.Document is not { } wordDoc) return WordStructureErrMsg;
+                    xml = wordDoc.OuterXml;
                     break;
                 case "comments":
                     var cp = doc.MainDocumentPart!.WordprocessingCommentsPart;
@@ -623,7 +650,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var main = doc.MainDocumentPart!;
+            if (!TryGetMainPart(doc, out var main, out var structErr)) return structErr;
             var sb = new StringBuilder();
             int i = 0;
             foreach (var hp in main.HeaderParts) { i++; sb.AppendLine($"页眉 {i}: {hp.Uri}"); }
@@ -685,7 +712,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var main = doc.MainDocumentPart!;
+            if (!TryGetMainAndBody(doc, out var main, out var mainBody, out var structErr)) return structErr;
             HeaderPart? hp;
             if (index >= 1 && index <= main.HeaderParts.Count())
                 hp = main.HeaderParts.ToList()[index - 1];
@@ -694,12 +721,12 @@ public sealed class WordPlugin
                 hp = main.AddNewPart<HeaderPart>();
                 hp.Header = new Header(new Paragraph(new Run(new Text(text))));
                 var relId = main.GetIdOfPart(hp);
-                foreach (var sect in main.Document.Body!.Descendants<SectionProperties>())
+                foreach (var sect in mainBody.Descendants<SectionProperties>())
                 {
                     var refH = sect.Elements<HeaderReference>().FirstOrDefault();
                     if (refH == null) { refH = new HeaderReference { Type = HeaderFooterValues.Default, Id = relId }; sect.InsertAt(refH, 0); }
                 }
-                main.Document.Save();
+                main.Document!.Save();
                 return "已添加新页眉。";
             }
             if (hp.Header == null) hp.Header = new Header();
@@ -723,7 +750,7 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var main = doc.MainDocumentPart!;
+            if (!TryGetMainAndBody(doc, out var main, out var mainBody, out var structErr)) return structErr;
             FooterPart? fp;
             if (index >= 1 && index <= main.FooterParts.Count())
                 fp = main.FooterParts.ToList()[index - 1];
@@ -732,12 +759,12 @@ public sealed class WordPlugin
                 fp = main.AddNewPart<FooterPart>();
                 fp.Footer = new Footer(new Paragraph(new Run(new Text(text))));
                 var relId = main.GetIdOfPart(fp);
-                foreach (var sect in main.Document.Body!.Descendants<SectionProperties>())
+                foreach (var sect in mainBody.Descendants<SectionProperties>())
                 {
                     var refF = sect.Elements<FooterReference>().FirstOrDefault();
                     if (refF == null) { refF = new FooterReference { Type = HeaderFooterValues.Default, Id = relId }; sect.InsertAt(refF, 0); }
                 }
-                main.Document.Save();
+                main.Document!.Save();
                 return "已添加新页脚。";
             }
             if (fp.Footer == null) fp.Footer = new Footer();
@@ -759,7 +786,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var starts = doc.MainDocumentPart!.Document.Body!.Descendants<BookmarkStart>().Select(b => b.Name?.Value ?? "").Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
+            var starts = body.Descendants<BookmarkStart>().Select(b => b.Name?.Value ?? "").Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
             return starts.Count == 0 ? "文档中无书签。" : string.Join("\n", starts);
         }
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
@@ -777,7 +805,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var start = doc.MainDocumentPart!.Document.Body!.Descendants<BookmarkStart>().FirstOrDefault(b => b.Name?.Value == name);
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
+            var start = body.Descendants<BookmarkStart>().FirstOrDefault(b => b.Name?.Value == name);
             if (start == null) return $"未找到书签: {name}";
             var bookmarkId = start.Id?.Value ?? "";
             var sb = new StringBuilder();
@@ -807,16 +836,17 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var paragraphs = doc.MainDocumentPart!.Document.Body!.Elements<Paragraph>().ToList();
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
+            var paragraphs = body.Elements<Paragraph>().ToList();
             if (paragraphIndex < 1 || paragraphIndex > paragraphs.Count) return $"段落索引无效（共 {paragraphs.Count} 段）。";
             var maxId = 0L;
-            foreach (var b in doc.MainDocumentPart!.Document.Body!.Descendants<BookmarkStart>())
+            foreach (var b in body.Descendants<BookmarkStart>())
                 if (long.TryParse(b.Id?.Value, out var id) && id > maxId) maxId = id;
             var newId = (maxId + 1).ToString();
             var para = paragraphs[paragraphIndex - 1];
             para.AppendChild(new BookmarkStart { Name = name, Id = newId });
             para.AppendChild(new BookmarkEnd { Id = newId });
-            doc.MainDocumentPart.Document.Save();
+            main.Document!.Save();
             return $"已在第 {paragraphIndex} 段插入书签「{name}」。";
         }
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }
@@ -832,9 +862,10 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var parts = doc.MainDocumentPart!.ImageParts?.Count() ?? 0;
+            if (!TryGetMainPart(doc, out var main, out var structErr)) return structErr;
+            var parts = main.ImageParts?.Count() ?? 0;
             if (parts == 0) return "文档中无图片。";
-            var ids = doc.MainDocumentPart.Parts.Where(p => p.OpenXmlPart is ImagePart).Select(p => p.RelationshipId).ToList();
+            var ids = main.Parts.Where(p => p.OpenXmlPart is ImagePart).Select(p => p.RelationshipId).ToList();
             return $"共 {parts} 个图片部件。RelationshipIds: {string.Join(", ", ids)}";
         }
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
@@ -853,8 +884,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var main = doc.MainDocumentPart!;
-            var paragraphs = main.Document.Body!.Elements<Paragraph>().ToList();
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
+            var paragraphs = body.Elements<Paragraph>().ToList();
             if (paragraphIndex < 1 || paragraphIndex > paragraphs.Count) return $"段落索引无效（共 {paragraphs.Count} 段）。";
             var ext = Path.GetExtension(imagePath).ToLowerInvariant();
             ImagePart imagePart = ext is ".jpg" or ".jpeg" ? main.AddImagePart(ImagePartType.Jpeg)
@@ -888,7 +919,7 @@ public sealed class WordPlugin
                     { Uri = picUri }));
             var newPara = new Paragraph(new Run(new Drawing(inline)));
             paragraphs[paragraphIndex - 1].InsertAfterSelf(newPara);
-            main.Document.Save();
+            main.Document!.Save();
             return $"已在第 {paragraphIndex} 段后插入图片。";
         }
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }
@@ -904,7 +935,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, false);
-            var count = doc.MainDocumentPart!.Document.Body!.Descendants<SectionProperties>().Count();
+            if (!TryGetMainAndBody(doc, out _, out var body, out var structErr)) return structErr;
+            var count = body.Descendants<SectionProperties>().Count();
             return count == 0 ? "文档中无显式节属性。" : $"共 {count} 个节。";
         }
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
@@ -924,8 +956,8 @@ public sealed class WordPlugin
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
-            var main = doc.MainDocumentPart!;
-            var paragraphs = main.Document.Body!.Elements<Paragraph>().ToList();
+            if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
+            var paragraphs = body.Elements<Paragraph>().ToList();
             if (paragraphIndex < 1 || paragraphIndex > paragraphs.Count) return $"段落索引无效（共 {paragraphs.Count} 段）。";
             var rel = main.AddHyperlinkRelationship(new Uri(url, UriKind.Absolute), true);
             var hyperlink = new DocumentFormat.OpenXml.Wordprocessing.Hyperlink { Id = rel.Id };
@@ -933,7 +965,7 @@ public sealed class WordPlugin
                 new RunProperties(new RunStyle { Val = "Hyperlink" }, new Color { ThemeColor = DocumentFormat.OpenXml.Wordprocessing.ThemeColorValues.Hyperlink }, new Underline { Val = DocumentFormat.OpenXml.Wordprocessing.UnderlineValues.Single }),
                 new Text(string.IsNullOrEmpty(displayText) ? url : displayText)));
             paragraphs[paragraphIndex - 1].AppendChild(hyperlink);
-            main.Document.Save();
+            main.Document!.Save();
             return $"已在第 {paragraphIndex} 段插入超链接。";
         }
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }

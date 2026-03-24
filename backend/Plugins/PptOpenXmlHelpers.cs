@@ -370,6 +370,8 @@ internal static class PptOpenXmlHelpers
         }
 
         var notesSlide = notesPart.NotesSlide;
+        if (notesSlide == null)
+            return;
         var bodyShape = notesSlide.CommonSlideData?.ShapeTree?.Elements<Shape>().FirstOrDefault(s => s.TextBody != null);
         if (bodyShape?.TextBody == null)
             return;

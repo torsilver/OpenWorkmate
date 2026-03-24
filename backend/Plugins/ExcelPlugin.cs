@@ -20,8 +20,9 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
-            var sheets = doc.WorkbookPart!.Workbook.Sheets!.Elements<Sheet>();
-            var names = sheets.Select(s => s.Name?.Value ?? "(unnamed)").ToList();
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
+            var names = RequireSheets(workbook).Elements<Sheet>().Select(s => s.Name?.Value ?? "(unnamed)").ToList();
             return $"共 {names.Count} 个工作表: {string.Join(", ", names)}";
         }
         catch (Exception ex) { return $"[错误] 无法打开文件: {ex.Message}"; }
@@ -42,10 +43,12 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
-            var wbPart = doc.WorkbookPart!;
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
+            var sheets = RequireSheets(workbook);
             var sheet = string.IsNullOrEmpty(sheetName)
-                ? wbPart.Workbook.Sheets!.Elements<Sheet>().First()
-                : wbPart.Workbook.Sheets!.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
+                ? sheets.Elements<Sheet>().First()
+                : sheets.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
                   ?? throw new Exception($"找不到工作表: {sheetName}");
             var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
             var sst = wbPart.SharedStringTablePart?.SharedStringTable;
@@ -54,7 +57,7 @@ public sealed class ExcelPlugin
             if (maxRows > 0)
                 return ReadRangeSax(wsPart, sst, startRow, startCol, endCell, maxRows, includeFormulas);
 
-            var sheetData = wsPart.Worksheet.Elements<SheetData>().First();
+            var sheetData = RequireWorksheet(wsPart).Elements<SheetData>().First();
             int endRow, endCol;
             if (!string.IsNullOrEmpty(endCell))
                 (endRow, endCol) = ParseCellRef(endCell);
@@ -109,11 +112,12 @@ public sealed class ExcelPlugin
             var isXlsm = filePath.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase);
             var docType = isXlsm ? SpreadsheetDocumentType.MacroEnabledWorkbook : SpreadsheetDocumentType.Workbook;
             using var doc = isNew ? SpreadsheetDocument.Create(filePath, docType) : SpreadsheetDocument.Open(filePath, true);
-            var wbPart = isNew ? doc.AddWorkbookPart() : doc.WorkbookPart!;
+            var wbPart = isNew ? doc.AddWorkbookPart() : RequireWorkbookPart(doc);
             if (isNew) wbPart.Workbook = new Workbook(new Sheets());
 
             var targetSheetName = string.IsNullOrEmpty(sheetName) ? "Sheet1" : sheetName;
-            var existingSheet = wbPart.Workbook.Sheets!.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == targetSheetName);
+            var workbook = RequireWorkbook(wbPart);
+            var existingSheet = RequireSheets(workbook).Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == targetSheetName);
             WorksheetPart wsPart;
             if (existingSheet != null)
                 wsPart = (WorksheetPart)wbPart.GetPartById(existingSheet.Id!.Value!);
@@ -121,12 +125,12 @@ public sealed class ExcelPlugin
             {
                 wsPart = wbPart.AddNewPart<WorksheetPart>();
                 wsPart.Worksheet = new Worksheet(new SheetData());
-                var sheets = wbPart.Workbook.Sheets!;
+                var sheets = RequireSheets(workbook);
                 uint newId = sheets.Elements<Sheet>().Any() ? sheets.Elements<Sheet>().Max(s => s.SheetId!.Value) + 1 : 1;
                 sheets.Append(new Sheet { Id = wbPart.GetIdOfPart(wsPart), SheetId = newId, Name = targetSheetName });
             }
 
-            var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+            var sheetData = RequireWorksheet(wsPart).GetFirstChild<SheetData>()!;
             var (startRow, startCol) = ParseCellRef(startCell);
             for (int r = 0; r < data.Count; r++)
             {
@@ -146,8 +150,8 @@ public sealed class ExcelPlugin
                     { cell.CellValue = new CellValue(val.ToString()); cell.DataType = CellValues.String; }
                 }
             }
-            wsPart.Worksheet.Save();
-            wbPart.Workbook.Save();
+            RequireWorksheet(wsPart).Save();
+            RequireWorkbook(wbPart).Save();
             return $"已写入 {data.Count} 行到 {targetSheetName}!{startCell}";
         }
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
@@ -166,13 +170,15 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var wbPart = doc.WorkbookPart!;
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
+            var sheets = RequireSheets(workbook);
             var sheet = string.IsNullOrEmpty(sheetName)
-                ? wbPart.Workbook.Sheets!.Elements<Sheet>().First()
-                : wbPart.Workbook.Sheets!.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
+                ? sheets.Elements<Sheet>().First()
+                : sheets.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
                   ?? throw new Exception($"找不到工作表: {sheetName}");
             var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
-            var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+            var sheetData = RequireWorksheet(wsPart).GetFirstChild<SheetData>()!;
             var (row, col) = ParseCellRef(cellRef);
             var rowElem = sheetData.Elements<Row>().FirstOrDefault(x => x.RowIndex?.Value == (uint)row);
             if (rowElem == null) { rowElem = new Row { RowIndex = (uint)row }; sheetData.Append(rowElem); }
@@ -181,7 +187,7 @@ public sealed class ExcelPlugin
             cell.CellFormula = new CellFormula(formula.TrimStart('='));
             cell.CellValue = null;
             cell.DataType = null;
-            wsPart.Worksheet.Save();
+            RequireWorksheet(wsPart).Save();
             return $"已写入公式到 {cellRef}";
         }
         catch (Exception ex) { return $"[错误] 写入公式失败: {ex.Message}"; }
@@ -201,7 +207,7 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var worksheet = wsPart.Worksheet;
+            var worksheet = RequireWorksheet(wsPart);
             var sheetData = worksheet.GetFirstChild<SheetData>()!;
             var mergeCells = worksheet.Elements<MergeCells>().FirstOrDefault();
             if (mergeCells == null)
@@ -230,12 +236,13 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var mergeCells = wsPart.Worksheet.Elements<MergeCells>().FirstOrDefault();
+            var worksheet = RequireWorksheet(wsPart);
+            var mergeCells = worksheet.Elements<MergeCells>().FirstOrDefault();
             if (mergeCells == null) return "该工作表中无合并单元格。";
             var toRemove = mergeCells.Elements<MergeCell>().FirstOrDefault(m => (m.Reference?.Value ?? "").Equals(range.Trim(), StringComparison.OrdinalIgnoreCase));
             if (toRemove == null) return $"未找到合并区域 {range}。";
             toRemove.Remove();
-            wsPart.Worksheet.Save();
+            worksheet.Save();
             return $"已取消合并 {range}";
         }
         catch (Exception ex) { return $"[错误] 取消合并失败: {ex.Message}"; }
@@ -251,7 +258,7 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
-            var definedNames = doc.WorkbookPart!.Workbook.DefinedNames;
+            var definedNames = RequireWorkbook(RequireWorkbookPart(doc)).DefinedNames;
             if (definedNames == null || !definedNames.Any())
                 return "工作簿中无命名区域。";
             var sb = new StringBuilder();
@@ -274,8 +281,8 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
-            var wbPart = doc.WorkbookPart!;
-            var definedName = wbPart.Workbook.DefinedNames?.Elements<DefinedName>()
+            var wbPart = RequireWorkbookPart(doc);
+            var definedName = RequireWorkbook(wbPart).DefinedNames?.Elements<DefinedName>()
                 .FirstOrDefault(dn => string.Equals(dn.Name?.Value, name.Trim(), StringComparison.OrdinalIgnoreCase));
             if (definedName == null) return $"[错误] 未找到命名区域: {name}";
             var refText = (definedName.Text ?? "").Trim();
@@ -302,7 +309,8 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var wbPart = doc.WorkbookPart!;
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
             var r = range.Trim();
             string ToAbs(string c)
             {
@@ -314,11 +322,11 @@ public sealed class ExcelPlugin
                 : ToAbs(r);
             if (!string.IsNullOrEmpty(sheetName))
                 formulaRef = $"'{sheetName}'!{formulaRef}";
-            var definedNames = wbPart.Workbook.DefinedNames ?? wbPart.Workbook.AppendChild(new DefinedNames());
+            var definedNames = workbook.DefinedNames ?? workbook.AppendChild(new DefinedNames());
             var existing = definedNames.Elements<DefinedName>().FirstOrDefault(dn => string.Equals(dn.Name?.Value, name.Trim(), StringComparison.OrdinalIgnoreCase));
             if (existing != null) existing.Text = formulaRef;
             else definedNames.AppendChild(new DefinedName { Name = name.Trim(), Text = formulaRef });
-            wbPart.Workbook.Save();
+            workbook.Save();
             return $"已定义命名区域: {name} = {formulaRef}";
         }
         catch (Exception ex) { return $"[错误] 定义失败: {ex.Message}"; }
@@ -338,7 +346,7 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var worksheet = wsPart.Worksheet;
+            var worksheet = RequireWorksheet(wsPart);
             var columns = worksheet.GetFirstChild<Columns>();
             if (columns == null) { columns = new Columns(); worksheet.InsertBefore(columns, worksheet.GetFirstChild<SheetData>()); }
             var col = columns.Elements<Column>().FirstOrDefault(c => c.Min?.Value == (uint)columnIndex && c.Max?.Value == (uint)columnIndex);
@@ -365,12 +373,13 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+            var worksheet = RequireWorksheet(wsPart);
+            var sheetData = worksheet.GetFirstChild<SheetData>()!;
             var row = sheetData.Elements<Row>().FirstOrDefault(r => r.RowIndex?.Value == (uint)rowIndex);
             if (row == null) { row = new Row { RowIndex = (uint)rowIndex }; sheetData.Append(row); }
             row.Height = height;
             row.CustomHeight = true;
-            wsPart.Worksheet.Save();
+            worksheet.Save();
             return $"已设置第 {rowIndex} 行高度为 {height}。";
         }
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
@@ -388,7 +397,7 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var validations = wsPart.Worksheet.Elements<DataValidations>().FirstOrDefault();
+            var validations = RequireWorksheet(wsPart).Elements<DataValidations>().FirstOrDefault();
             if (validations == null || !validations.Elements<DataValidation>().Any())
                 return "该工作表中无数据验证。";
             var sb = new StringBuilder();
@@ -416,8 +425,9 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var validations = wsPart.Worksheet.Elements<DataValidations>().FirstOrDefault();
-            if (validations == null) { validations = new DataValidations(); wsPart.Worksheet.Append(validations); }
+            var worksheet = RequireWorksheet(wsPart);
+            var validations = worksheet.Elements<DataValidations>().FirstOrDefault();
+            if (validations == null) { validations = new DataValidations(); worksheet.Append(validations); }
             var dvType = type.Trim().ToLowerInvariant() switch
             {
                 "whole" => DataValidationValues.Whole,
@@ -434,7 +444,7 @@ public sealed class ExcelPlugin
             if (!string.IsNullOrEmpty(formula1)) dv.AppendChild(new DocumentFormat.OpenXml.Spreadsheet.Formula { Text = formula1 });
             if (!string.IsNullOrEmpty(formula2)) dv.AppendChild(new DocumentFormat.OpenXml.Spreadsheet.Formula { Text = formula2 });
             validations.Append(dv);
-            wsPart.Worksheet.Save();
+            worksheet.Save();
             return $"已在 {range} 设置数据验证（{type}）。";
         }
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
@@ -454,11 +464,12 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, _) = GetWorksheetPart(doc, sheetName);
-            var validations = wsPart.Worksheet.Elements<DataValidations>().FirstOrDefault();
+            var worksheet = RequireWorksheet(wsPart);
+            var validations = worksheet.Elements<DataValidations>().FirstOrDefault();
             if (validations == null) return "无数据验证。";
             var toRemove = validations.Elements<DataValidation>().Where(dv => (dv.SequenceOfReferences?.InnerText ?? "").Equals(range.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
             foreach (var dv in toRemove) dv.Remove();
-            wsPart.Worksheet.Save();
+            worksheet.Save();
             return $"已清除 {toRemove.Count} 条验证。";
         }
         catch (Exception ex) { return $"[错误] 清除失败: {ex.Message}"; }
@@ -475,7 +486,8 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
-            var cfs = GetWorksheetPart(doc, sheetName).wsPart.Worksheet.Elements<ConditionalFormatting>();
+            var (wsP, _) = GetWorksheetPart(doc, sheetName);
+            var cfs = RequireWorksheet(wsP).Elements<ConditionalFormatting>();
             var sb = new StringBuilder();
             int i = 0;
             foreach (var cf in cfs)
@@ -505,7 +517,8 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var worksheet = GetWorksheetPart(doc, sheetName).wsPart.Worksheet;
+            var (wsP2, _) = GetWorksheetPart(doc, sheetName);
+            var worksheet = RequireWorksheet(wsP2);
             var cf = new ConditionalFormatting { SequenceOfReferences = new ListValue<StringValue>() };
             cf.SequenceOfReferences.Items.Add(new StringValue(range.Trim()));
             var opVal = op.Trim().ToLowerInvariant() switch
@@ -545,7 +558,8 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var worksheet = GetWorksheetPart(doc, sheetName).wsPart.Worksheet;
+            var (wsP3, _) = GetWorksheetPart(doc, sheetName);
+            var worksheet = RequireWorksheet(wsP3);
             var toRemove = worksheet.Elements<ConditionalFormatting>()
                 .Where(cf => (cf.SequenceOfReferences?.InnerText ?? "").Equals(range.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
             foreach (var cf in toRemove) cf.Remove();
@@ -571,7 +585,8 @@ public sealed class ExcelPlugin
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
             var (wsPart, sheet) = GetWorksheetPart(doc, sheetName);
-            var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+            var worksheet = RequireWorksheet(wsPart);
+            var sheetData = worksheet.GetFirstChild<SheetData>()!;
             var (rowIdx, colIdx) = ParseCellRef(cellRef);
             var row = sheetData.Elements<Row>().FirstOrDefault(r => r.RowIndex?.Value == (uint)rowIdx);
             if (row == null) { row = new Row { RowIndex = (uint)rowIdx }; sheetData.Append(row); }
@@ -582,10 +597,10 @@ public sealed class ExcelPlugin
             cell.InlineString = new InlineString(new Text(display));
             cell.DataType = CellValues.InlineString;
             cell.CellValue = null;
-            var hyperlinks = wsPart.Worksheet.Elements<Hyperlinks>().FirstOrDefault();
-            if (hyperlinks == null) { hyperlinks = new Hyperlinks(); wsPart.Worksheet.AppendChild(hyperlinks); }
+            var hyperlinks = worksheet.Elements<Hyperlinks>().FirstOrDefault();
+            if (hyperlinks == null) { hyperlinks = new Hyperlinks(); worksheet.AppendChild(hyperlinks); }
             hyperlinks.AppendChild(new Hyperlink { Reference = cellRef, Id = rel.Id });
-            wsPart.Worksheet.Save();
+            worksheet.Save();
             return $"已在 {cellRef} 设置超链接。";
         }
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
@@ -603,13 +618,14 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var wbPart = doc.WorkbookPart!;
-            var sheets = wbPart.Workbook.Sheets!;
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
+            var sheets = RequireSheets(workbook);
             var wsPart = wbPart.AddNewPart<WorksheetPart>();
             wsPart.Worksheet = new Worksheet(new SheetData());
             uint newId = sheets.Elements<Sheet>().Any() ? sheets.Elements<Sheet>().Max(s => s.SheetId!.Value) + 1 : 1;
             sheets.Append(new Sheet { Id = wbPart.GetIdOfPart(wsPart), SheetId = newId, Name = sheetName.Trim() });
-            wbPart.Workbook.Save();
+            workbook.Save();
             return $"已添加工作表「{sheetName}」。";
         }
         catch (Exception ex) { return $"[错误] 添加失败: {ex.Message}"; }
@@ -627,12 +643,13 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, true);
-            var wbPart = doc.WorkbookPart!;
-            var sheet = wbPart.Workbook.Sheets!.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName);
+            var wbPart = RequireWorkbookPart(doc);
+            var workbook = RequireWorkbook(wbPart);
+            var sheet = RequireSheets(workbook).Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName);
             if (sheet == null) return $"未找到工作表: {sheetName}";
             wbPart.DeletePart(wbPart.GetPartById(sheet.Id!.Value!));
             sheet.Remove();
-            wbPart.Workbook.Save();
+            workbook.Save();
             return $"已删除工作表「{sheetName}」。";
         }
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
@@ -648,10 +665,12 @@ public sealed class ExcelPlugin
         try
         {
             using var doc = SpreadsheetDocument.Open(filePath, false);
+            var wbPartCharts = RequireWorkbookPart(doc);
+            var workbookCharts = RequireWorkbook(wbPartCharts);
             var sb = new StringBuilder();
-            foreach (var sheet in doc.WorkbookPart!.Workbook.Sheets!.Elements<Sheet>())
+            foreach (var sheet in RequireSheets(workbookCharts).Elements<Sheet>())
             {
-                var wsPart = (WorksheetPart)doc.WorkbookPart.GetPartById(sheet.Id!.Value!);
+                var wsPart = (WorksheetPart)wbPartCharts.GetPartById(sheet.Id!.Value!);
                 var chartParts = wsPart.GetPartsOfType<ChartPart>().ToList();
                 if (chartParts.Count > 0)
                     sb.AppendLine($"工作表「{sheet.Name?.Value}」: {chartParts.Count} 个图表");
@@ -664,12 +683,28 @@ public sealed class ExcelPlugin
 
     // ── Helpers ──
 
+    private const string ExcelWorkbookStructErr = "[错误] Excel 工作簿结构不完整或已损坏。";
+
+    private static WorkbookPart RequireWorkbookPart(SpreadsheetDocument doc) =>
+        doc.WorkbookPart ?? throw new Exception(ExcelWorkbookStructErr);
+
+    private static Workbook RequireWorkbook(WorkbookPart wbPart) =>
+        wbPart.Workbook ?? throw new Exception(ExcelWorkbookStructErr);
+
+    private static Sheets RequireSheets(Workbook workbook) =>
+        workbook.Sheets ?? throw new Exception("[错误] 工作簿无工作表清单。");
+
+    private static Worksheet RequireWorksheet(WorksheetPart wsPart) =>
+        wsPart.Worksheet ?? throw new Exception("[错误] 工作表部件缺少内容。");
+
     private static (WorksheetPart wsPart, Sheet sheet) GetWorksheetPart(SpreadsheetDocument doc, string sheetName)
     {
-        var wbPart = doc.WorkbookPart!;
+        var wbPart = RequireWorkbookPart(doc);
+        var workbook = RequireWorkbook(wbPart);
+        var sheets = RequireSheets(workbook);
         var sheet = string.IsNullOrEmpty(sheetName)
-            ? wbPart.Workbook.Sheets!.Elements<Sheet>().First()
-            : wbPart.Workbook.Sheets!.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
+            ? sheets.Elements<Sheet>().First()
+            : sheets.Elements<Sheet>().FirstOrDefault(s => s.Name?.Value == sheetName)
               ?? throw new Exception($"找不到工作表: {sheetName}");
         var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
         return (wsPart, sheet);

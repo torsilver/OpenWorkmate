@@ -85,9 +85,11 @@ public class McpClient : IDisposable
     {
         try
         {
-            while (!ct.IsCancellationRequested && _stdout != null && !_stdout.EndOfStream)
+            while (!ct.IsCancellationRequested && _stdout != null)
             {
                 var line = await _stdout.ReadLineAsync(ct);
+                if (line == null)
+                    break;
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 try

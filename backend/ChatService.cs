@@ -1053,6 +1053,7 @@ public sealed class ChatService : IDisposable
             return "[错误] 无当前会话，无法执行子任务。";
         if (string.IsNullOrWhiteSpace(taskDescription))
             return "[错误] 子任务描述不能为空。";
+        var taskDescTrimmed = taskDescription.Trim();
         var kernel = _kernelAccessor.Kernel;
         if (kernel == null)
             return "[错误] 内核未就绪。";
@@ -1072,7 +1073,7 @@ public sealed class ChatService : IDisposable
             return "[错误] 当前端无可用的工具集，无法执行子任务。";
 
         var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。";
-        var userContent = (taskDescription ?? "").Trim();
+        var userContent = taskDescTrimmed;
         if (!string.IsNullOrWhiteSpace(constraints))
             userContent += "\n\n约束：" + constraints.Trim();
         var subHistory = new ChatHistory(systemPrompt);
@@ -1092,7 +1093,7 @@ public sealed class ChatService : IDisposable
             await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
             {
                 Type = "subtask_start",
-                TaskDescription = taskDescription.Trim(),
+                TaskDescription = taskDescTrimmed,
                 Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim()
             }).ConfigureAwait(false);
             await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))

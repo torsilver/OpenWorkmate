@@ -66,8 +66,12 @@ public class PptPluginOpenXmlTests : IDisposable
             var pres = doc.PresentationPart!;
             var slideIds = pres.Presentation!.SlideIdList!.Elements<SlideId>().ToList();
             Assert.Equal(2, slideIds.Count);
-            var sp1 = (SlidePart)pres.GetPartById(slideIds[0].RelationshipId!.Value);
-            var sp2 = (SlidePart)pres.GetPartById(slideIds[1].RelationshipId!.Value);
+            var rel0 = slideIds[0].RelationshipId?.Value;
+            var rel1 = slideIds[1].RelationshipId?.Value;
+            Assert.False(string.IsNullOrEmpty(rel0));
+            Assert.False(string.IsNullOrEmpty(rel1));
+            var sp1 = (SlidePart)pres.GetPartById(rel0!);
+            var sp2 = (SlidePart)pres.GetPartById(rel1!);
             Assert.NotEqual(sp1.Uri.ToString(), sp2.Uri.ToString());
             Assert.Contains("第二页标题", sp2.Slide!.OuterXml);
             Assert.Contains("要点一", sp2.Slide!.OuterXml);
