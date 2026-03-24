@@ -9,6 +9,8 @@ using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.CrossAgentTask;
+using OfficeCopilot.Server.Services.Stt;
+using OfficeCopilot.Server.Services.Ocr;
 using OfficeCopilot.Server.Mcp;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -66,6 +68,8 @@ try
 builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();
+    builder.Services.AddSingleton<SttTranscriberProvider>();
+    builder.Services.AddSingleton<OcrExtractorProvider>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
@@ -452,10 +456,15 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
         return Results.Json(new { ok = false, message = "请求参数无效：缺少 apiKey。" }, statusCode: 400);
     }
 
-    OfficeCopilot.Server.Services.SttUpstreamAdapter.UpstreamKind kind;
+    if (!ModelConnectionKind.IsValidStt(body.ConnectionKind))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：connectionKind 取值无效，请留空或填写 openai_whisper_multipart、dashscope_openai_chat_audio。" }, statusCode: 400);
+    }
+
+    SttUpstreamAdapter.UpstreamKind kind;
     try
     {
-        kind = OfficeCopilot.Server.Services.SttUpstreamAdapter.ResolveMode(endpoint);
+        kind = SttTranscriberResolver.Resolve(endpoint, body.ConnectionKind, body.VendorId);
     }
     catch (InvalidOperationException ex)
     {
@@ -463,32 +472,32 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
     }
 
     // 最小 WAV 头（44 字节）+ 无采样，用于测试连接
-    var minimalWav = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildMinimalWavPcm16kMono(durationMs: 200);
+    var minimalWav = SttUpstreamAdapter.BuildMinimalWavPcm16kMono(durationMs: 200);
 
     using var http = httpClientFactory.CreateClient("STT");
     http.Timeout = TimeSpan.FromSeconds(15);
 
     try
     {
-        if (kind == OfficeCopilot.Server.Services.SttUpstreamAdapter.UpstreamKind.DashScopeQwenOpenAICompatible)
+        if (kind == SttUpstreamAdapter.UpstreamKind.DashScopeQwenOpenAICompatible)
         {
             try
             {
-                OfficeCopilot.Server.Services.SttUpstreamAdapter.ValidateDashScopeModelId(modelId);
+                SttUpstreamAdapter.ValidateDashScopeModelIdPresent(modelId);
             }
             catch (InvalidOperationException ex)
             {
                 return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
             }
 
-            var urlDash = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
+            var urlDash = SttUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
             if (!Uri.TryCreate(urlDash, UriKind.Absolute, out var uriDash) || (uriDash.Scheme != "http" && uriDash.Scheme != "https"))
             {
                 return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
             }
 
-            var dataUrl = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildAudioDataUrl(minimalWav, "audio/wav");
-            var jsonPayload = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson(modelId, dataUrl, language: null);
+            var dataUrl = SttUpstreamAdapter.BuildAudioDataUrl(minimalWav, "audio/wav");
+            var jsonPayload = SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson(modelId, dataUrl, language: null);
             var requestDash = new HttpRequestMessage(HttpMethod.Post, uriDash);
             requestDash.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
             requestDash.Content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
@@ -506,7 +515,7 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
         }
 
         // Whisper 兼容
-        var urlWhisper = OfficeCopilot.Server.Services.SttUpstreamAdapter.BuildWhisperTranscriptionsUrl(endpoint);
+        var urlWhisper = SttUpstreamAdapter.BuildWhisperTranscriptionsUrl(endpoint);
         if (!Uri.TryCreate(urlWhisper, UriKind.Absolute, out var uriW) || (uriW.Scheme != "http" && uriW.Scheme != "https"))
         {
             return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
@@ -570,6 +579,30 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
     {
         return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
     }
+
+    if (!ModelConnectionKind.IsValidOcr(body.ConnectionKind))
+    {
+        return Results.Json(new { ok = false, message = "请求参数无效：connectionKind 取值无效，请留空或填写 openai_compatible_multipart、dashscope_openai_chat_image。" }, statusCode: 400);
+    }
+
+    var ocrProbe = new OcrModelEntry
+    {
+        Endpoint = endpoint,
+        ConnectionKind = (body.ConnectionKind ?? "").Trim(),
+        VendorId = (body.VendorId ?? "").Trim(),
+        ModelId = string.IsNullOrWhiteSpace(body.ModelId) ? "" : body.ModelId!.Trim(),
+        Language = body.Language
+    };
+    OcrBackendKind ocrBackend;
+    try
+    {
+        ocrBackend = OcrExtractorResolver.Resolve(ocrProbe);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
+    }
+
     // 最小 10x10 PNG，用于测试连接
     var minimalPng = new byte[]
     {
@@ -583,18 +616,18 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
         0x85, 0x5d, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
     };
 
-    // 兼容多模态：DashScope/OpenAI-Compatible（chat/completions + image_url data URL）
-    if (endpoint.Contains("compatible-mode", StringComparison.OrdinalIgnoreCase))
+    if (ocrBackend == OcrBackendKind.DashScopeOpenAiChatImage)
     {
         var dataUrl = OcrUpstreamAdapter.BuildDataUrlFromImageBytes(minimalPng, "image/png");
-        // 这里的 modelId 需要和实际 DashScope 可用模型一致；language 字段可用于 qwen-* 的覆盖
         var defaultModelId = "qwen-vl-ocr-latest";
         var prompt = "请只输出图片中的识别文字，不要输出解释或额外格式。";
+        var configuredModel = string.IsNullOrWhiteSpace(body.ModelId) ? null : body.ModelId.Trim();
         var requestJson = OcrUpstreamAdapter.BuildDashScopeOpenAICompatibleOcrRequestJson(
             defaultModelId,
             dataUrl,
             prompt,
-            body.Language);
+            body.Language,
+            configuredModel);
 
         var chatUrl = OcrUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
 

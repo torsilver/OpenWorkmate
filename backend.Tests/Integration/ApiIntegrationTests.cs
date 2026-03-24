@@ -255,6 +255,81 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostConfigTestStt_InvalidConnectionKind_Returns400()
+    {
+        var body = new
+        {
+            endpoint = "https://api.openai.com/v1",
+            apiKey = "k",
+            modelId = "whisper-1",
+            connectionKind = "not_a_valid_kind"
+        };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-stt", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostConfigTestOcr_InvalidConnectionKind_Returns400()
+    {
+        var body = new
+        {
+            endpoint = "https://api.openai.com/v1",
+            apiKey = "k",
+            connectionKind = "invalid_ocr_kind"
+        };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/config/test-ocr", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostConfigTestStt_DashScopeCompatible_CustomModelId_SentInUpstreamJson()
+    {
+        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
+        try
+        {
+            SttFakeHttpMessageHandler.LastRequestUri = null;
+            SttFakeHttpMessageHandler.LastRequestBody = null;
+            SttFakeHttpMessageHandler.OnSendAsync = _ =>
+            {
+                var responseText = """
+                {
+                  "choices": [
+                    { "message": { "content": "x" } }
+                  ]
+                }
+                """;
+                var resp = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(responseText, Encoding.UTF8, "application/json")
+                };
+                return Task.FromResult(resp);
+            };
+
+            var body = new
+            {
+                endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                apiKey = "sk-x",
+                modelId = "my-custom-asr-model",
+                connectionKind = "dashscope_openai_chat_audio"
+            };
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _client.PostAsync("/api/config/test-stt", content);
+            response.EnsureSuccessStatusCode();
+            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestBody);
+            using var reqDoc = JsonDocument.Parse(SttFakeHttpMessageHandler.LastRequestBody!);
+            Assert.Equal("my-custom-asr-model", reqDoc.RootElement.GetProperty("model").GetString());
+        }
+        finally
+        {
+            SttFakeHttpMessageHandler.OnSendAsync = null;
+            SttFakeHttpMessageHandler.Mutex.Release();
+        }
+    }
+
+    [Fact]
     public async Task GetToolsBuiltin_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/tools/builtin");

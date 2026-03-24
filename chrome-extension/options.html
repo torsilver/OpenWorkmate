@@ -314,11 +314,17 @@
             <input type="text" id="aiModelDisplayName" name="displayName" placeholder="例如: 我的 GPT-4">
           </div>
           <div class="form-group">
-            <label for="aiModelProvider">类型 (Provider)</label>
+            <label for="aiModelVendor">AI 供应商</label>
+            <select id="aiModelVendor"></select>
+            <div class="help-text">先选供应商，将自动带出常用接口地址与对接类型；你仍可按控制台实际信息修改。</div>
+          </div>
+          <div class="form-group">
+            <label for="aiModelProvider">对接类型（一般随供应商自动设置）</label>
             <select id="aiModelProvider" name="provider">
-              <option value="OpenAI">OpenAI / 兼容接口</option>
+              <option value="OpenAI">OpenAI 形态 API</option>
+              <option value="Azure">Azure OpenAI</option>
               <option value="Ollama">Ollama</option>
-              <option value="Anthropic">Anthropic (Claude)</option>
+              <option value="Anthropic">Anthropic（需网关为 OpenAI 形态时）</option>
             </select>
           </div>
           <div class="form-group" id="aiModelEndpointGroup">
@@ -362,6 +368,7 @@
         <summary id="embeddingModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">Embedding 模型（未配置）</summary>
         <div style="margin-top: 12px;">
           <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。仅支持远程 Embedding API；不配置则记忆/RAG 不生效。点击「设为当前」即使用该模型。</p>
+          <p class="help-text" style="margin-bottom: 12px; color: var(--danger);">注意：更换不同向量模型可能导致<strong>向量维度不一致</strong>，已有记忆/RAG 需重新嵌入后再用。</p>
           <div id="embeddingModelsList" class="ai-models-list"></div>
           <button type="button" id="addEmbeddingModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 Embedding 模型</button>
           <div id="embeddingModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
@@ -372,6 +379,10 @@
             <div class="form-group">
               <label for="embeddingEditorDisplayName">展示名称</label>
               <input type="text" id="embeddingEditorDisplayName" placeholder="例如: OpenAI text-embedding">
+            </div>
+            <div class="form-group">
+              <label for="embeddingEditorVendor">供应商（与对话列表一致，可选）</label>
+              <select id="embeddingEditorVendor"></select>
             </div>
             <div class="form-group">
               <label for="embeddingEditorEndpoint">接口地址 (Endpoint)</label>
@@ -397,7 +408,7 @@
       <details id="sttModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <summary id="sttModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">语音转文字 (STT) 模型</summary>
         <div style="margin-top: 12px;">
-              <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字。支持两类上游：<code>Whisper</code> 兼容 `/audio/transcriptions`，以及阿里百炼 Qwen 的 <code>compatible-mode/v1/chat/completions</code>（OpenAI 兼容，`input_audio`）。与对话大模型独立配置；不配置则语音转文字不可用。点击「设为当前」即使用该模型。</p>
+              <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字。请先选择<strong>供应商</strong>，程序会按供应商选择识别方式（Whisper 或通义百炼等）；仍可按厂商文档修改地址与模型 ID。</p>
           <div id="sttModelsList" class="ai-models-list"></div>
           <button type="button" id="addSttModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 STT 模型</button>
           <div id="sttModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
@@ -408,6 +419,10 @@
             <div class="form-group">
               <label for="sttEditorDisplayName">展示名称</label>
               <input type="text" id="sttEditorDisplayName" placeholder="例如: OpenAI Whisper">
+            </div>
+            <div class="form-group">
+              <label for="sttEditorVendor">供应商</label>
+              <select id="sttEditorVendor"></select>
             </div>
             <div class="form-group">
               <label for="sttEditorEndpoint">接口地址 (Endpoint)</label>
@@ -450,6 +465,10 @@
               <input type="text" id="ocrEditorDisplayName" placeholder="例如: 通用 OCR 服务">
             </div>
             <div class="form-group">
+              <label for="ocrEditorVendor">供应商</label>
+              <select id="ocrEditorVendor"></select>
+            </div>
+            <div class="form-group">
               <label for="ocrEditorEndpoint">接口地址 (Endpoint)</label>
               <input type="text" id="ocrEditorEndpoint" placeholder="如 OCR 接口 URL 或兼容接口地址">
             </div>
@@ -458,7 +477,11 @@
               <input type="password" id="ocrEditorApiKey" placeholder="API Key">
             </div>
             <div class="form-group">
-              <label for="ocrEditorLanguage">语言/模型（可选，视具体 API）</label>
+              <label for="ocrEditorModelId">模型 ID（百炼等可在控制台查看；可选）</label>
+              <input type="text" id="ocrEditorModelId" placeholder="如 qwen-vl-ocr-latest，留空则用默认">
+            </div>
+            <div class="form-group">
+              <label for="ocrEditorLanguage">语言/模型提示（可选，视具体 API）</label>
               <input type="text" id="ocrEditorLanguage" placeholder="可选">
             </div>
             <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
@@ -894,6 +917,7 @@ postgresql://localhost/mydb"></textarea>
     
   </div>
 
+  <script src="vendor-presets.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

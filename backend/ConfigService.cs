@@ -48,6 +48,9 @@ public class AiModelEntry
     /// <summary>单模型上下文 token 上限；存在时覆盖全局 MaxContextTokens（如内部 64K、云端 128K）。</summary>
     [JsonPropertyName("contextLength")]
     public int? ContextLength { get; set; }
+    /// <summary>Chrome 设置的 AI 供应商 id，用于反显与默认 endpoint；与 provider 并存。</summary>
+    [JsonPropertyName("vendorId")]
+    public string VendorId { get; set; } = "";
 }
 
 /// <summary>Embedding 模型列表中的单条；仅支持 Remote 远程 API。</summary>
@@ -65,6 +68,8 @@ public class EmbeddingModelEntry
     public string ApiKey { get; set; } = "";
     [JsonPropertyName("modelId")]
     public string ModelId { get; set; } = "";
+    [JsonPropertyName("vendorId")]
+    public string VendorId { get; set; } = "";
 }
 
 /// <summary>会话配置：历史轮数、超时等。</summary>
@@ -143,6 +148,8 @@ public class TestAiRequest
     public string? ModelId { get; set; }
     public string? Provider { get; set; }
     public string? DeploymentName { get; set; }
+    [JsonPropertyName("vendorId")]
+    public string? VendorId { get; set; }
 }
 
 /// <summary>测试 Embedding 连接时前端传入的请求体。</summary>
@@ -151,6 +158,8 @@ public class TestEmbeddingRequest
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
     public string? ModelId { get; set; }
+    [JsonPropertyName("vendorId")]
+    public string? VendorId { get; set; }
 }
 
 /// <summary>STT 模型列表中的单条；Whisper 兼容接口。</summary>
@@ -170,6 +179,10 @@ public class SttModelEntry
     public string? Language { get; set; }
     [JsonPropertyName("chunkMinutes")]
     public int ChunkMinutes { get; set; } = 2;
+    [JsonPropertyName("connectionKind")]
+    public string ConnectionKind { get; set; } = "";
+    [JsonPropertyName("vendorId")]
+    public string VendorId { get; set; } = "";
 }
 
 /// <summary>OCR 模型列表中的单条。</summary>
@@ -185,6 +198,12 @@ public class OcrModelEntry
     public string ApiKey { get; set; } = "";
     [JsonPropertyName("language")]
     public string? Language { get; set; }
+    [JsonPropertyName("modelId")]
+    public string ModelId { get; set; } = "";
+    [JsonPropertyName("connectionKind")]
+    public string ConnectionKind { get; set; } = "";
+    [JsonPropertyName("vendorId")]
+    public string VendorId { get; set; } = "";
 }
 
 /// <summary>测试 STT 连接时前端传入的请求体。</summary>
@@ -193,6 +212,8 @@ public class TestSttRequest
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
     public string? ModelId { get; set; }
+    public string? ConnectionKind { get; set; }
+    public string? VendorId { get; set; }
 }
 
 /// <summary>测试 OCR 连接时前端传入的请求体。</summary>
@@ -201,6 +222,9 @@ public class TestOcrRequest
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
     public string? Language { get; set; }
+    public string? ModelId { get; set; }
+    public string? ConnectionKind { get; set; }
+    public string? VendorId { get; set; }
 }
 
 /// <summary>语音转文字（STT）配置，用于 POST /api/transcribe；不配置时使用当前 AI 模型的 endpoint/apiKey 调用 Whisper。</summary>

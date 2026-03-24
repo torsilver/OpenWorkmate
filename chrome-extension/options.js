@@ -76,7 +76,162 @@ let aiModelsCache = [];
 /** 当前编辑的模型 Id，空表示新增 */
 let editingAiModelId = null;
 /** 测试连接时使用的字段缓存，打开编辑时写入、输入时同步，点击测试时只读此对象避免 DOM 读取异常 */
-let testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '' };
+let testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: '' };
+
+function getVendorPresets() {
+  return window.OFFICE_COPILOT_VENDOR_PRESETS || { chat: [], stt: [], ocr: [] };
+}
+
+function findChatPreset(id) {
+  var list = getVendorPresets().chat;
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+function findSttPreset(id) {
+  var list = getVendorPresets().stt;
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+function findOcrPreset(id) {
+  var list = getVendorPresets().ocr;
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+function fillSelectFromPresets(selectId, items) {
+  var el = document.getElementById(selectId);
+  if (!el || !items || !items.length) return;
+  while (el.firstChild) el.removeChild(el.firstChild);
+  items.forEach(function (p) {
+    var opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.label;
+    el.appendChild(opt);
+  });
+}
+
+function initVendorPresetSelects() {
+  var p = getVendorPresets();
+  fillSelectFromPresets('aiModelVendor', p.chat);
+  fillSelectFromPresets('embeddingEditorVendor', p.chat);
+  fillSelectFromPresets('sttEditorVendor', p.stt);
+  fillSelectFromPresets('ocrEditorVendor', p.ocr);
+}
+
+function resolveChatVendorId(entry) {
+  if (!entry) return 'other_auto';
+  var vid = String(entry.vendorId || entry.VendorId || '').trim();
+  if (vid) return vid;
+  var ep = String(entry.endpoint || entry.Endpoint || '').trim().toLowerCase().replace(/\/$/, '');
+  var prov = String(entry.provider || entry.Provider || 'OpenAI');
+  var list = getVendorPresets().chat;
+  for (var i = 0; i < list.length; i++) {
+    var preset = list[i];
+    var de = String(preset.defaultEndpoint || '').trim().toLowerCase().replace(/\/$/, '');
+    if (de && ep && (ep === de || ep.indexOf(de + '/') === 0) && (!preset.provider || preset.provider === prov)) return preset.id;
+  }
+  if (prov === 'Azure') return 'azure_openai';
+  if (prov === 'Ollama') return 'ollama';
+  return 'other_auto';
+}
+
+function resolveSttVendorId(entry) {
+  if (!entry) return 'other_auto';
+  var vid = String(entry.vendorId || entry.VendorId || '').trim();
+  if (vid) return vid;
+  var ck = String(entry.connectionKind || entry.ConnectionKind || '').trim();
+  var ep = String(entry.endpoint || entry.Endpoint || '').trim().toLowerCase();
+  var list = getVendorPresets().stt;
+  var i;
+  for (i = 0; i < list.length; i++) {
+    if (ck && String(list[i].connectionKind || '') === ck) return list[i].id;
+  }
+  for (i = 0; i < list.length; i++) {
+    var de = String(list[i].defaultEndpoint || '').trim().toLowerCase().replace(/\/$/, '');
+    if (de && ep.indexOf(de) >= 0) return list[i].id;
+  }
+  if (ep.indexOf('dashscope') >= 0) return 'aliyun_bailian';
+  if (ep.indexOf('groq.com') >= 0) return 'groq';
+  if (ep.indexOf('openai.com') >= 0) return 'openai';
+  return 'other_auto';
+}
+
+function resolveOcrVendorId(entry) {
+  if (!entry) return 'other_auto';
+  var vid = String(entry.vendorId || entry.VendorId || '').trim();
+  if (vid) return vid;
+  var ck = String(entry.connectionKind || entry.ConnectionKind || '').trim();
+  var ep = String(entry.endpoint || entry.Endpoint || '').trim().toLowerCase();
+  var list = getVendorPresets().ocr;
+  var i;
+  for (i = 0; i < list.length; i++) {
+    if (ck && String(list[i].connectionKind || '') === ck) return list[i].id;
+  }
+  for (i = 0; i < list.length; i++) {
+    var de = String(list[i].defaultEndpoint || '').trim().toLowerCase().replace(/\/$/, '');
+    if (de && ep.indexOf(de) >= 0) return list[i].id;
+  }
+  if (ep.indexOf('dashscope') >= 0) return 'aliyun_bailian';
+  if (ep.indexOf('openai.com') >= 0) return 'openai';
+  return 'other_auto';
+}
+
+function onAiVendorChange() {
+  var el = document.getElementById('aiModelVendor');
+  if (!el) return;
+  var preset = findChatPreset(el.value);
+  if (!preset) return;
+  if (preset.provider && els.aiModelProvider) els.aiModelProvider.value = preset.provider;
+  toggleAzureFields();
+  if (preset.defaultEndpoint && els.aiModelEndpoint) els.aiModelEndpoint.value = preset.defaultEndpoint;
+  if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && els.aiModelModelId) els.aiModelModelId.value = preset.defaultModelId;
+}
+
+function onSttVendorChange() {
+  var el = document.getElementById('sttEditorVendor');
+  if (!el) return;
+  var preset = findSttPreset(el.value);
+  if (!preset) return;
+  var endEl = document.getElementById('sttEditorEndpoint');
+  var modelEl = document.getElementById('sttEditorModelId');
+  if (preset.defaultEndpoint && endEl) endEl.value = preset.defaultEndpoint;
+  if (modelEl && preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '') modelEl.value = preset.defaultModelId;
+}
+
+function onOcrVendorChange() {
+  var el = document.getElementById('ocrEditorVendor');
+  if (!el) return;
+  var preset = findOcrPreset(el.value);
+  if (!preset) return;
+  var endEl = document.getElementById('ocrEditorEndpoint');
+  var modelEl = document.getElementById('ocrEditorModelId');
+  if (preset.defaultEndpoint && endEl) endEl.value = preset.defaultEndpoint;
+  if (modelEl && preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '') modelEl.value = preset.defaultModelId;
+}
+
+function onEmbeddingVendorChange() {
+  var el = document.getElementById('embeddingEditorVendor');
+  if (!el) return;
+  var preset = findChatPreset(el.value);
+  if (!preset) return;
+  var endEl = document.getElementById('embeddingEditorEndpoint');
+  var modelEl = document.getElementById('embeddingEditorModelId');
+  if (preset.defaultEndpoint && endEl) endEl.value = preset.defaultEndpoint;
+  if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && modelEl) modelEl.value = preset.defaultModelId;
+}
+
+function wireVendorSelectListeners() {
+  var a = document.getElementById('aiModelVendor');
+  if (a) a.addEventListener('change', onAiVendorChange);
+  var s = document.getElementById('sttEditorVendor');
+  if (s) s.addEventListener('change', onSttVendorChange);
+  var o = document.getElementById('ocrEditorVendor');
+  if (o) o.addEventListener('change', onOcrVendorChange);
+  var e = document.getElementById('embeddingEditorVendor');
+  if (e) e.addEventListener('change', onEmbeddingVendorChange);
+}
 
 // ───── Tabs ─────
 els.tabs.forEach(tab => {
@@ -285,6 +440,8 @@ function openSttEditor(id) {
   if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
   if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || 'whisper-1') : 'whisper-1';
   if (langEl) langEl.value = entry ? (entry.language || entry.Language || '') : '';
+  var svEl = document.getElementById('sttEditorVendor');
+  if (svEl) svEl.value = entry ? resolveSttVendorId(entry) : 'other_auto';
   var statusEl = document.getElementById('testSttStatus');
   if (statusEl) statusEl.textContent = '';
   if (editorEl) editorEl.style.display = 'block';
@@ -315,9 +472,13 @@ function saveSttFromEditor() {
     alert('请填写 API Key');
     return;
   }
+  var vendorEl = document.getElementById('sttEditorVendor');
+  var vendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto';
+  var sttPreset = findSttPreset(vendorId);
+  var connectionKind = sttPreset && typeof sttPreset.connectionKind === 'string' ? sttPreset.connectionKind : '';
   var list = getSttModels();
   var id = editingSttId || ('stt-' + Date.now());
-  var entry = { id: id, displayName: displayName || modelId, endpoint: endpoint, apiKey: apiKey, modelId: modelId, language: language || undefined, chunkMinutes: 2 };
+  var entry = { id: id, displayName: displayName || modelId, endpoint: endpoint, apiKey: apiKey, modelId: modelId, language: language || undefined, chunkMinutes: 2, vendorId: vendorId, connectionKind: connectionKind };
   var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingSttId; });
   if (idx >= 0) list[idx] = entry;
   else list.push(entry);
@@ -364,7 +525,12 @@ function testSttById(id) {
       if (row.getAttribute('data-stt-id') === id) statusEl = row.querySelector('.stt-row-test-status');
     });
   }
-  doTestSttConnection(endpoint, apiKey, modelId, statusEl || undefined);
+  var connectionKind = (entry.connectionKind || entry.ConnectionKind || '').trim();
+  var vendorId = (entry.vendorId || entry.VendorId || '').trim();
+  doTestSttConnection(endpoint, apiKey, modelId, statusEl || undefined, {
+    connectionKind: connectionKind || undefined,
+    vendorId: vendorId || undefined
+  });
 }
 
 function getOcrModels() {
@@ -430,6 +596,10 @@ function openOcrEditor(id) {
   if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
   if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
   if (langEl) langEl.value = entry ? (entry.language || entry.Language || '') : '';
+  var ovEl = document.getElementById('ocrEditorVendor');
+  if (ovEl) ovEl.value = entry ? resolveOcrVendorId(entry) : 'other_auto';
+  var midEl = document.getElementById('ocrEditorModelId');
+  if (midEl) midEl.value = entry ? (entry.modelId || entry.ModelId || '') : '';
   var statusEl = document.getElementById('testOcrStatus');
   if (statusEl) statusEl.textContent = '';
   if (editorEl) editorEl.style.display = 'block';
@@ -446,10 +616,16 @@ function saveOcrFromEditor() {
   var endEl = document.getElementById('ocrEditorEndpoint');
   var keyEl = document.getElementById('ocrEditorApiKey');
   var langEl = document.getElementById('ocrEditorLanguage');
+  var modelIdEl = document.getElementById('ocrEditorModelId');
+  var vendorEl = document.getElementById('ocrEditorVendor');
   var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
   var language = (langEl && langEl.value && langEl.value.trim()) || null;
+  var modelId = (modelIdEl && modelIdEl.value && modelIdEl.value.trim()) || '';
+  var vendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto';
+  var ocrPreset = findOcrPreset(vendorId);
+  var ocrConnectionKind = ocrPreset && typeof ocrPreset.connectionKind === 'string' ? ocrPreset.connectionKind : '';
   if (!endpoint) {
     alert('请填写接口地址');
     return;
@@ -460,7 +636,7 @@ function saveOcrFromEditor() {
   }
   var list = getOcrModels();
   var id = editingOcrId || ('ocr-' + Date.now());
-  var entry = { id: id, displayName: displayName || id, endpoint: endpoint, apiKey: apiKey, language: language || undefined };
+  var entry = { id: id, displayName: displayName || id, endpoint: endpoint, apiKey: apiKey, language: language || undefined, vendorId: vendorId, connectionKind: ocrConnectionKind, modelId: modelId };
   var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingOcrId; });
   if (idx >= 0) list[idx] = entry;
   else list.push(entry);
@@ -506,7 +682,16 @@ function testOcrById(id) {
       if (row.getAttribute('data-ocr-id') === id) statusEl = row.querySelector('.ocr-row-test-status');
     });
   }
-  doTestOcrConnection(endpoint, apiKey, statusEl || undefined);
+  var connectionKind = (entry.connectionKind || entry.ConnectionKind || '').trim();
+  var vendorId = (entry.vendorId || entry.VendorId || '').trim();
+  var modelId = (entry.modelId || entry.ModelId || '').trim();
+  var language = (entry.language || entry.Language || '').trim();
+  doTestOcrConnection(endpoint, apiKey, statusEl || undefined, {
+    language: language || undefined,
+    modelId: modelId || undefined,
+    connectionKind: connectionKind || undefined,
+    vendorId: vendorId || undefined
+  });
 }
 
 var editingEmbeddingId = null;
@@ -526,6 +711,8 @@ function openEmbeddingEditor(id) {
   if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
   if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
   if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || '') : '';
+  var evEl = document.getElementById('embeddingEditorVendor');
+  if (evEl) evEl.value = entry ? resolveChatVendorId(entry) : 'other_auto';
   var statusEl = document.getElementById('testEmbeddingStatus');
   if (statusEl) statusEl.textContent = '';
   if (editorEl) editorEl.style.display = 'block';
@@ -542,17 +729,19 @@ function saveEmbeddingFromEditor() {
   var endEl = document.getElementById('embeddingEditorEndpoint');
   var keyEl = document.getElementById('embeddingEditorApiKey');
   var modelEl = document.getElementById('embeddingEditorModelId');
+  var vendorEl = document.getElementById('embeddingEditorVendor');
   var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
   var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || '';
+  var embVendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto';
   if (!modelId) {
     alert('请填写模型 ID');
     return;
   }
   var list = getEmbeddingModels();
   var id = editingEmbeddingId || ('emb-' + Date.now());
-  var entry = { id: id, displayName: displayName || modelId, source: 'Remote', endpoint: endpoint, apiKey: apiKey, modelId: modelId };
+  var entry = { id: id, displayName: displayName || modelId, source: 'Remote', endpoint: endpoint, apiKey: apiKey, modelId: modelId, vendorId: embVendorId };
   var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingEmbeddingId; });
   if (idx >= 0) list[idx] = entry;
   else list.push(entry);
@@ -600,7 +789,8 @@ function testEmbeddingById(id) {
     });
   }
   if (statusEl) statusEl.textContent = '';
-  doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl || undefined);
+  var vendorId = (entry.vendorId || entry.VendorId || '').trim();
+  doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl || undefined, vendorId || undefined);
 }
 
 var MEMORY_SCOPE_SHARED = '__shared__';
@@ -730,13 +920,15 @@ function testEmbeddingConnection() {
   var endEl = document.getElementById('embeddingEditorEndpoint');
   var keyEl = document.getElementById('embeddingEditorApiKey');
   var modelEl = document.getElementById('embeddingEditorModelId');
+  var vendorEl = document.getElementById('embeddingEditorVendor');
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
   var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || '';
-  doTestEmbeddingConnection(endpoint, apiKey, modelId);
+  var vendorId = (vendorEl && vendorEl.value) ? vendorEl.value : undefined;
+  doTestEmbeddingConnection(endpoint, apiKey, modelId, undefined, vendorId);
 }
 
-async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl) {
+async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl, vendorId) {
   statusEl = statusEl || document.getElementById('testEmbeddingStatus');
   if (!statusEl) return;
   if (!endpoint || !modelId) {
@@ -748,10 +940,12 @@ async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl) {
   statusEl.style.color = 'var(--text-secondary, #94a3b8)';
   try {
     var baseUrl = API_URL.replace('/api/config', '');
+    var body = { endpoint: endpoint, apiKey: apiKey, modelId: modelId };
+    if (vendorId) body.vendorId = vendorId;
     var res = await fetch(baseUrl + '/api/config/test-embedding', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey, modelId: modelId })
+      body: JSON.stringify(body)
     });
     var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (res.ok && data.ok) {
@@ -775,13 +969,20 @@ function testSttConnection() {
   var endEl = document.getElementById('sttEditorEndpoint');
   var keyEl = document.getElementById('sttEditorApiKey');
   var modelEl = document.getElementById('sttEditorModelId');
+  var vendorEl = document.getElementById('sttEditorVendor');
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
   var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || 'whisper-1';
-  doTestSttConnection(endpoint, apiKey, modelId);
+  var sttPreset = findSttPreset(vendorEl && vendorEl.value);
+  var ck = sttPreset && typeof sttPreset.connectionKind === 'string' ? sttPreset.connectionKind : '';
+  doTestSttConnection(endpoint, apiKey, modelId, undefined, {
+    connectionKind: ck || undefined,
+    vendorId: (vendorEl && vendorEl.value) || undefined
+  });
 }
 
-async function doTestSttConnection(endpoint, apiKey, modelId, statusEl) {
+async function doTestSttConnection(endpoint, apiKey, modelId, statusEl, opts) {
+  opts = opts || {};
   statusEl = statusEl || document.getElementById('testSttStatus');
   if (!statusEl) return;
   if (!endpoint) {
@@ -798,10 +999,13 @@ async function doTestSttConnection(endpoint, apiKey, modelId, statusEl) {
   statusEl.style.color = 'var(--text-secondary, #94a3b8)';
   try {
     var baseUrl = API_URL.replace('/api/config', '');
+    var payload = { endpoint: endpoint, apiKey: apiKey, modelId: modelId || 'whisper-1' };
+    if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
+    if (opts.vendorId) payload.vendorId = opts.vendorId;
     var res = await fetch(baseUrl + '/api/config/test-stt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey, modelId: modelId || 'whisper-1' })
+      body: JSON.stringify(payload)
     });
     var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (res.ok && data.ok) {
@@ -820,12 +1024,23 @@ async function doTestSttConnection(endpoint, apiKey, modelId, statusEl) {
 function testOcrConnection() {
   var endEl = document.getElementById('ocrEditorEndpoint');
   var keyEl = document.getElementById('ocrEditorApiKey');
+  var langEl = document.getElementById('ocrEditorLanguage');
+  var modelEl = document.getElementById('ocrEditorModelId');
+  var vendorEl = document.getElementById('ocrEditorVendor');
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
-  doTestOcrConnection(endpoint, apiKey);
+  var ocrPreset = findOcrPreset(vendorEl && vendorEl.value);
+  var ck = ocrPreset && typeof ocrPreset.connectionKind === 'string' ? ocrPreset.connectionKind : '';
+  doTestOcrConnection(endpoint, apiKey, undefined, {
+    language: (langEl && langEl.value && langEl.value.trim()) || undefined,
+    modelId: (modelEl && modelEl.value && modelEl.value.trim()) || undefined,
+    connectionKind: ck || undefined,
+    vendorId: (vendorEl && vendorEl.value) || undefined
+  });
 }
 
-async function doTestOcrConnection(endpoint, apiKey, statusEl) {
+async function doTestOcrConnection(endpoint, apiKey, statusEl, opts) {
+  opts = opts || {};
   statusEl = statusEl || document.getElementById('testOcrStatus');
   if (!statusEl) return;
   if (!endpoint) {
@@ -842,10 +1057,15 @@ async function doTestOcrConnection(endpoint, apiKey, statusEl) {
   statusEl.style.color = 'var(--text-secondary, #94a3b8)';
   try {
     var baseUrl = API_URL.replace('/api/config', '');
+    var payload = { endpoint: endpoint, apiKey: apiKey };
+    if (opts.language) payload.language = opts.language;
+    if (opts.modelId) payload.modelId = opts.modelId;
+    if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
+    if (opts.vendorId) payload.vendorId = opts.vendorId;
     var res = await fetch(baseUrl + '/api/config/test-ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: endpoint, apiKey: apiKey })
+      body: JSON.stringify(payload)
     });
     var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (res.ok && data.ok) {
@@ -914,6 +1134,7 @@ if (memoryScopeFilterEl) {
 function openAiModelEditor(existingId) {
   editingAiModelId = existingId || null;
   els.aiModelEditorTitle.textContent = existingId ? '编辑 AI 模型' : '添加新 AI';
+  var vendorSelect = document.getElementById('aiModelVendor');
   if (existingId) {
     const m = aiModelsCache.find(function (x) { return (x.id || x.Id) === existingId; });
     if (m) {
@@ -926,12 +1147,14 @@ function openAiModelEditor(existingId) {
       els.aiModelModelId.value = m.modelId || m.ModelId || '';
       els.aiModelSystemPrompt.value = m.systemPrompt || m.SystemPrompt || '';
       els.aiModelEnabled.checked = m.enabled !== false && m.Enabled !== false;
+      if (vendorSelect) vendorSelect.value = resolveChatVendorId(m);
       testConnectionFields = {
         endpoint: String(m.endpoint || m.Endpoint || '').trim(),
         modelId: String(m.modelId || m.ModelId || '').trim(),
         apiKey: m.apiKey || m.ApiKey || '',
         provider: m.provider || m.Provider || 'OpenAI',
-        deploymentName: String(m.deploymentName || m.DeploymentName || '').trim()
+        deploymentName: String(m.deploymentName || m.DeploymentName || '').trim(),
+        vendorId: resolveChatVendorId(m)
       };
     }
   } else {
@@ -944,7 +1167,8 @@ function openAiModelEditor(existingId) {
     els.aiModelModelId.value = '';
     els.aiModelSystemPrompt.value = '';
     els.aiModelEnabled.checked = true;
-    testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '' };
+    if (vendorSelect) vendorSelect.value = 'other_auto';
+    testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'other_auto' };
   }
   toggleAzureFields();
   if (els.aiModelEditor) els.aiModelEditor.style.display = 'block';
@@ -960,11 +1184,13 @@ function bindTestConnectionFieldsSync() {
     var p = form.elements['provider'];
     var d = form.elements['deploymentName'];
     var k = form.elements['apiKey'];
+    var ve = document.getElementById('aiModelVendor');
     if (e && e.value != null) testConnectionFields.endpoint = String(e.value).trim();
     if (m && m.value != null) testConnectionFields.modelId = String(m.value).trim();
     if (p && p.value) testConnectionFields.provider = p.value;
     if (d && d.value != null) testConnectionFields.deploymentName = String(d.value).trim();
     if (k && k.value != null) testConnectionFields.apiKey = k.value;
+    if (ve && ve.value) testConnectionFields.vendorId = ve.value;
   }
   ['endpoint', 'modelId', 'apiKey', 'provider', 'deploymentName'].forEach(function (name) {
     var el = form.elements[name];
@@ -975,6 +1201,11 @@ function bindTestConnectionFieldsSync() {
       el.addEventListener('change', update);
     }
   });
+  var ve = document.getElementById('aiModelVendor');
+  if (ve) {
+    ve.removeEventListener('change', update);
+    ve.addEventListener('change', update);
+  }
 }
 
 function closeAiModelEditor() {
@@ -997,6 +1228,7 @@ function toggleAzureFields() {
 
 function saveAiModelFromEditor() {
   const id = editingAiModelId || ('ai_' + Date.now());
+  var vendorEl = document.getElementById('aiModelVendor');
   const entry = {
     id: id,
     displayName: (els.aiModelDisplayName && els.aiModelDisplayName.value.trim()) || id,
@@ -1007,7 +1239,8 @@ function saveAiModelFromEditor() {
     apiVersion: (els.aiModelApiVersion && els.aiModelApiVersion.value.trim()) || '2024-02-01',
     modelId: (els.aiModelModelId && els.aiModelModelId.value.trim()) || '',
     systemPrompt: (els.aiModelSystemPrompt && els.aiModelSystemPrompt.value.trim()) || '',
-    enabled: els.aiModelEnabled ? els.aiModelEnabled.checked : true
+    enabled: els.aiModelEnabled ? els.aiModelEnabled.checked : true,
+    vendorId: (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto'
   };
   if (editingAiModelId) {
     const idx = aiModelsCache.findIndex(function (x) { return (x.id || x.Id) === editingAiModelId; });
@@ -1622,7 +1855,8 @@ function testAiConnectionById(id) {
     });
   }
   if (statusEl) statusEl.textContent = '';
-  doTestAiConnection({ endpoint: endpoint, modelId: modelId, provider: provider, deploymentName: deploymentName, apiKey: apiKey }, statusEl || undefined);
+  var vendorId = (m.vendorId || m.VendorId || '').trim();
+  doTestAiConnection({ endpoint: endpoint, modelId: modelId, provider: provider, deploymentName: deploymentName, apiKey: apiKey, vendorId: vendorId }, statusEl || undefined);
 }
 
 async function doTestAiConnection(fields, statusEl) {
@@ -1633,6 +1867,7 @@ async function doTestAiConnection(fields, statusEl) {
   var provider = (fields && fields.provider) || 'OpenAI';
   var deploymentName = (fields && fields.deploymentName) || '';
   var apiKey = (fields && fields.apiKey) || '';
+  var vendorId = (fields && fields.vendorId) || '';
   if (!endpoint || !modelId) {
     statusEl.textContent = '请先填写接口地址和模型 ID';
     statusEl.style.color = 'var(--danger)';
@@ -1643,16 +1878,18 @@ async function doTestAiConnection(fields, statusEl) {
   var testModelId = (provider === 'Azure' && deploymentName) ? deploymentName : modelId;
   try {
     var baseUrl = API_URL.replace('/api/config', '');
+    var testBody = {
+      endpoint: endpoint,
+      apiKey: apiKey,
+      modelId: testModelId,
+      provider: provider,
+      deploymentName: deploymentName
+    };
+    if (vendorId) testBody.vendorId = vendorId;
     var res = await fetch(baseUrl + '/api/config/test-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint: endpoint,
-        apiKey: apiKey,
-        modelId: testModelId,
-        provider: provider,
-        deploymentName: deploymentName
-      })
+      body: JSON.stringify(testBody)
     });
     var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (data.ok) {
@@ -2056,6 +2293,8 @@ function collectCliScriptPerEndPayload() {
 
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
+  initVendorPresetSelects();
+  wireVendorSelectListeners();
   loadConfig();
   setupPassThroughContextToggle();
   updateUserScriptsSection();

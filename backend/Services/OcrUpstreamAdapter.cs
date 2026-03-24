@@ -32,31 +32,33 @@ public static class OcrUpstreamAdapter
         return "data:" + ct + ";base64," + base64;
     }
 
+    /// <param name="configuredModelId">用户在配置中显式填写的模型 ID；非空时锁定模型，language 中的 qwen-* 不再覆盖 model。</param>
     public static string BuildDashScopeOpenAICompatibleOcrRequestJson(
         string modelId,
         string dataUrl,
         string prompt,
-        string? languageHint)
+        string? languageHint,
+        string? configuredModelId = null)
     {
-        var finalModelId = (modelId ?? "").Trim();
+        var modelLocked = !string.IsNullOrWhiteSpace(configuredModelId);
+        var finalModelId = modelLocked ? configuredModelId!.Trim() : (modelId ?? "").Trim();
         if (string.IsNullOrWhiteSpace(finalModelId))
-            throw new InvalidOperationException("OCR modelId 无效。");
+            finalModelId = "qwen-vl-ocr-latest";
 
         var finalPrompt = prompt ?? "";
 
         if (!string.IsNullOrWhiteSpace(languageHint))
         {
             var lh = languageHint.Trim();
-            // 如果 languageHint 本身就是 qwen-*，把它当作模型覆盖（满足你对齐百炼模型的需求）
-            if (lh.StartsWith("qwen-", StringComparison.OrdinalIgnoreCase))
+            if (modelLocked)
             {
+                if (!lh.StartsWith("qwen-", StringComparison.OrdinalIgnoreCase))
+                    finalPrompt += "\n识别语言提示：" + lh;
+            }
+            else if (lh.StartsWith("qwen-", StringComparison.OrdinalIgnoreCase))
                 finalModelId = lh;
-            }
-            else if (!string.IsNullOrWhiteSpace(lh))
-            {
-                // 否则当作识别语言提示拼进 prompt
+            else
                 finalPrompt += "\n识别语言提示：" + lh;
-            }
         }
 
         if (string.IsNullOrWhiteSpace(dataUrl))

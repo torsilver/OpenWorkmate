@@ -33,6 +33,16 @@ public class SttUpstreamAdapterTests
     }
 
     [Fact]
+    public void ValidateDashScopeModelIdPresent_AllowsNonWhitelistedModel()
+    {
+        SttUpstreamAdapter.ValidateDashScopeModelIdPresent("custom-asr-model");
+        var dataUrl = "data:audio/wav;base64,AAAA";
+        var json = SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson("custom-asr-model", dataUrl, language: null);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("custom-asr-model", doc.RootElement.GetProperty("model").GetString());
+    }
+
+    [Fact]
     public void BuildDashScopeOpenAICompatibleRequestJson_ContainsInputAudioAndModel()
     {
         var modelId = "qwen3-asr-flash";

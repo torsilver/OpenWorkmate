@@ -66,20 +66,17 @@ public static class SttUpstreamAdapter
         return "data:" + ct + ";base64," + base64;
     }
 
-    public static void ValidateDashScopeModelId(string modelId)
+    /// <summary>百炼 ASR 兼容模式：仅校验模型 ID 非空（具体模型由上游与控制台决定）。</summary>
+    public static void ValidateDashScopeModelIdPresent(string modelId)
     {
         var mid = (modelId ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(mid))
             throw new InvalidOperationException("DashScope 兼容模式需要填写模型 ID（如 qwen3-asr-flash）。");
-
-        // 目前仅做这一条最小闭环，避免用户随便填其它模型导致继续 404。
-        if (!string.Equals(mid, "qwen3-asr-flash", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("DashScope 兼容模式目前仅支持模型 qwen3-asr-flash（你填的是 " + mid + "）。");
     }
 
     public static string BuildDashScopeOpenAICompatibleRequestJson(string modelId, string dataUrl, string? language)
     {
-        ValidateDashScopeModelId(modelId);
+        ValidateDashScopeModelIdPresent(modelId);
         if (string.IsNullOrWhiteSpace(dataUrl))
             throw new InvalidOperationException("语音数据无效。");
 

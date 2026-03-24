@@ -53,6 +53,20 @@ public class OcrUpstreamAdapterTests
     }
 
     [Fact]
+    public void BuildDashScopeOpenAICompatibleOcrRequestJson_LockedModel_IgnoresQwenLanguageOverride()
+    {
+        var modelId = "qwen-vl-ocr-latest";
+        var dataUrl = "data:image/png;base64,AAAA";
+        var prompt = "hello";
+        var json = OcrUpstreamAdapter.BuildDashScopeOpenAICompatibleOcrRequestJson(
+            modelId, dataUrl, prompt, "qwen-vl-from-language", configuredModelId: "user-locked-model");
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal("user-locked-model", root.GetProperty("model").GetString());
+    }
+
+    [Fact]
     public void BuildDashScopeOpenAICompatibleOcrRequestJson_UsesModelOverride_WhenLanguageHintIsQwen()
     {
         var modelId = "qwen-vl-ocr-latest";
