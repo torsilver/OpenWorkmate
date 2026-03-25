@@ -2477,6 +2477,10 @@ function collectCliScriptPerEndPayload() {
 
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
+  var aiModelForm = document.getElementById('aiModelForm');
+  if (aiModelForm) {
+    aiModelForm.addEventListener('submit', function (e) { e.preventDefault(); });
+  }
   initVendorPresetSelects();
   wireVendorSelectListeners();
   var uiThemeSelect = document.getElementById('uiThemeId');
