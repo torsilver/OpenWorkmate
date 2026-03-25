@@ -1,6 +1,55 @@
-const WS_URL = "ws://localhost:8765/ws";
-const API_BASE = "http://localhost:8765";
-const AUTH_TOKEN = "office-copilot-dev-token";
+let WS_URL = "ws://127.0.0.1:8765/ws";
+let API_BASE = "http://127.0.0.1:8765";
+const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
+
+var tasklySidepanelApiReady = null;
+function tasklyEnsureApiBase() {
+  if (tasklySidepanelApiReady) return tasklySidepanelApiReady;
+  tasklySidepanelApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+    typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
+  ).then(function (r) {
+    var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+    API_BASE = hw.apiBase;
+    WS_URL = hw.wsUrl;
+  });
+  return tasklySidepanelApiReady;
+}
+
+function tasklyFetch(url, init) {
+  init = init ? Object.assign({}, init) : {};
+  return new Promise(function (resolve) {
+    chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+      var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+      var headers = Object.assign({}, init.headers || {});
+      if (t) headers["X-OfficeCopilot-Token"] = t;
+      init.headers = headers;
+      resolve(fetch(url, init));
+    });
+  });
+}
+
+/** 本机 loopback：若 chrome.storage 尚无密钥，从后台引导接口写入（与选项页保存的 user-config / appsettings 一致） */
+function ensureLocalServiceTokenFromBootstrap() {
+  return tasklyEnsureApiBase().then(function () {
+  return fetch(API_BASE + "/api/bootstrap/local-service-auth")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.ok) return;
+      var t = (j.webSocketAuthToken || "").trim();
+      if (!t) return;
+      return new Promise(function (resolve) {
+        chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (cur) {
+          var existing = (cur && cur[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+          if (existing) { resolve(); return; }
+          var o = {};
+          o[COPILOT_TOKEN_STORAGE_KEY] = t;
+          chrome.storage.local.set(o, function () { resolve(); });
+        });
+      });
+    })
+    .catch(function () {});
+  });
+}
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 16000;
@@ -172,7 +221,8 @@ function parsePlanStepsFromContent(content) {
 async function ensurePlanChecklistLoaded(planId) {
   if (planChecklistSteps.length > 0) return;
   try {
-    const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+    await tasklyEnsureApiBase();
+    const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
     if (!res.ok) return;
     const data = await res.json();
     const content = data.content || "";
@@ -336,9 +386,10 @@ async function loadAtModeCandidates() {
   atModeLoading = (async () => {
     atModeLoadError = "";
     try {
+      await tasklyEnsureApiBase();
       const [builtinRes, skillsRes] = await Promise.all([
-        fetch(API_BASE + "/api/tools/builtin"),
-        fetch(API_BASE + "/api/skills"),
+        tasklyFetch(API_BASE + "/api/tools/builtin"),
+        tasklyFetch(API_BASE + "/api/skills"),
       ]);
       const loadErrs = [];
       if (!builtinRes.ok) loadErrs.push("内置工具接口 HTTP " + builtinRes.status);
@@ -792,8 +843,15 @@ function connect() {
   }
 
   sessionId = getSessionId();
-  const url = `${WS_URL}?sessionId=${sessionId}&token=${AUTH_TOKEN}&clientType=chrome`;
-  ws = new WebSocket(url);
+  ensureLocalServiceTokenFromBootstrap().then(function () {
+  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+    var token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+    var qs = new URLSearchParams();
+    qs.set("sessionId", sessionId);
+    qs.set("clientType", "chrome");
+    if (token) qs.set("token", token);
+    var url = WS_URL + "?" + qs.toString();
+    ws = new WebSocket(url);
 
   ws.addEventListener("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
@@ -834,6 +892,11 @@ function connect() {
   ws.addEventListener("error", () => {
     debugLog("WS", "error", "err");
     ws.close();
+  });
+  });
+  }).catch(function (err) {
+    setStatus("failed");
+    addBotMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)), true);
   });
 }
 
@@ -2595,10 +2658,11 @@ $input.addEventListener("input", () => {
   }
 
   async function transcribeChunk(blob) {
+    await tasklyEnsureApiBase();
     const formData = new FormData();
     formData.append("file", blob, "chunk.webm");
     try {
-      const res = await fetch(API_BASE + "/api/transcribe", { method: "POST", body: formData });
+      const res = await tasklyFetch(API_BASE + "/api/transcribe", { method: "POST", body: formData });
       if (!res.ok) return "";
       const data = await res.json();
       return (data.ok !== false && data.text) ? data.text : "";
@@ -2741,4 +2805,11 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", ensureConnectionOnVisible);
 
-connect();
+tasklyEnsureApiBase()
+  .then(function () {
+    connect();
+  })
+  .catch(function (err) {
+    setStatus("failed");
+    addBotMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)), true);
+  });

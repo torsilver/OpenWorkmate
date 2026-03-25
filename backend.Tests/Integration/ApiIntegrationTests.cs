@@ -38,6 +38,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                     ["PlansDirectory"] = "",
                     ["ScheduledTasksDirectory"] = "",
                     ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
+                    ["WebSocket:AuthToken"] = "",
                 });
             });
             builder.ConfigureServices(services =>
@@ -594,7 +595,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 }
 
-internal sealed class SttFakeHttpMessageHandler : HttpMessageHandler
+public sealed class SttFakeHttpMessageHandler : HttpMessageHandler
 {
     public static readonly SemaphoreSlim Mutex = new(1, 1);
 

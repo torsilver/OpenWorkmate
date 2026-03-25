@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Threading;
@@ -13,6 +14,7 @@ using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
 using OfficeCopilot.Server.Mcp;
+using OfficeCopilot.Server.Security;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -26,27 +28,34 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var buildToolIndex = args.Any(a => string.Equals(a, "--build-tool-index", StringComparison.OrdinalIgnoreCase));
+    var allowSecondInstance =
+        args.Any(a => string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase));
     var useTray = !buildToolIndex && args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
-    var hostArgs = args.Where(a => !string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)).ToArray();
+    var hostArgs = args.Where(a =>
+            !string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
 
 #if WINDOWS
-    if (useTray && OperatingSystem.IsWindows())
+    if (OperatingSystem.IsWindows() && !buildToolIndex && !allowSecondInstance)
     {
-        if (!OfficeCopilotTrayHost.TryAcquireTraySingleInstance())
+        if (!OfficeCopilotSingleInstance.TryAcquire())
         {
             System.Windows.Forms.MessageBox.Show(
-                "已有 Office Copilot 后台实例在运行（托盘模式不支持多开）。",
+                "已有 Office Copilot 后台实例在运行。",
                 "Office Copilot",
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
             return;
         }
-
-        Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
     }
+
+    if (useTray && OperatingSystem.IsWindows())
+        Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
 #endif
 
     var builder = WebApplication.CreateBuilder(hostArgs);
+    LocalListenUrlConfigurer.Apply(builder);
     builder.Host.UseSerilog();
 
     builder.Services.AddHttpClient();
@@ -149,6 +158,20 @@ builder.Services.AddSingleton<UserOptionsManager>();
 
     var app = builder.Build();
 
+    {
+        var ws0 = app.Configuration.GetSection("WebSocket");
+        if (int.TryParse(ws0["Port"], out var p0) && p0 >= 1 && p0 <= 65535)
+            LocalServiceListenOptions.PortScanStart = p0;
+        if (int.TryParse(ws0["PortFallbackCount"], out var c0) && c0 >= 1 && c0 <= 100)
+            LocalServiceListenOptions.PortScanCount = c0;
+        if (string.IsNullOrEmpty(LocalServiceListenOptions.ListenBaseUrl) && app.Urls.Count > 0)
+        {
+            var first = app.Urls.First();
+            if (Uri.TryCreate(first, UriKind.Absolute, out var abs0))
+                LocalServiceListenOptions.ListenBaseUrl = abs0.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+    }
+
     if (buildToolIndex)
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "tool-index-build.json");
@@ -221,9 +244,7 @@ app.UseWebSockets(new WebSocketOptions
 
 var wsConfig = app.Configuration.GetSection("WebSocket");
 var wsPath = wsConfig["Path"] ?? "/ws";
-var authToken = wsConfig["AuthToken"] ?? "";
 var allowedOrigins = wsConfig.GetSection("AllowedOrigins").Get<string[]>() ?? [];
-const string DevToken = "office-copilot-dev-token";
 var isDev = app.Environment.IsDevelopment();
 // 开发环境下始终放行 localhost，便于 wpsjs debug 等本地任务窗格连接
 if (isDev)
@@ -232,16 +253,17 @@ if (isDev)
     allowedOrigins = allowedOrigins.Union(devOrigins).Distinct().ToArray();
 }
 
-app.UseCors(policy => 
-    policy.WithOrigins(allowedOrigins.Length > 0 ? allowedOrigins : new[] { "*" })
+var corsOriginPrefixes = allowedOrigins.ToList();
+app.UseCors(policy =>
+    policy.SetIsOriginAllowed(origin => CorsOriginEvaluator.IsOriginAllowed(origin, corsOriginPrefixes, isDev))
           .AllowAnyMethod()
-          .AllowAnyHeader()
-          .SetIsOriginAllowed(origin => true) // Local tool, allow all origins for now to avoid extension CORS issues
-);
+          .AllowAnyHeader());
+
+app.UseMiddleware<LocalApiAuthMiddleware>();
 
 app.UseStaticFiles();
 
-app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService chatService) =>
+app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService chatService, ConfigService configService) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -261,10 +283,11 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
         return;
     }
 
+    var authToken = configService.GetEffectiveWebSocketAuthToken();
     var token = context.Request.Query["token"].ToString();
     var tokenOk = string.IsNullOrEmpty(authToken)
         || token == authToken
-        || (isDev && token == DevToken);
+        || (isDev && token == ProgramAuthConstants.DevelopmentWsToken);
     if (!tokenOk)
     {
         app.Logger.LogWarning("Rejected connection: invalid token");
@@ -303,8 +326,10 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
 
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
 
-app.MapGet("/api/debug/agent-stats", (AgentDebugStatsService agentDebugStats, ConfigService config) =>
+app.MapGet("/api/debug/agent-stats", (HttpContext ctx, AgentDebugStatsService agentDebugStats, ConfigService config) =>
 {
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+        return Results.Json(new { ok = false, message = "仅允许本机 loopback 访问该调试接口。" }, statusCode: 403);
     var snap = agentDebugStats.GetSnapshot();
     var cw = config.Current.ContextWindow ?? new ContextWindowConfig();
     var withConfig = new AgentDebugStatsResponse
@@ -322,8 +347,10 @@ app.MapGet("/api/debug/agent-stats", (AgentDebugStatsService agentDebugStats, Co
     };
     return Results.Json(withConfig, JsonCtx.Default.AgentDebugStatsResponse);
 });
-app.MapPost("/api/debug/agent-stats/reset", (AgentDebugStatsService agentDebugStats) =>
+app.MapPost("/api/debug/agent-stats/reset", (HttpContext ctx, AgentDebugStatsService agentDebugStats) =>
 {
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+        return Results.Json(new { ok = false, message = "仅允许本机 loopback 访问该调试接口。" }, statusCode: 403);
     agentDebugStats.Reset();
     return Results.Json(new DebugStatsResetResponse(), JsonCtx.Default.DebugStatsResetResponse);
 });
@@ -347,8 +374,27 @@ app.MapGet("/api/debug/log-tail", (HttpContext ctx, int? lines, string? file) =>
     return Results.Json(new { ok = true, fileName, lines = tailLines });
 });
 
-app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenAccepted={Dev}, AllowedOriginsCount={Count}",
-    wsPath, !string.IsNullOrEmpty(authToken), isDev, allowedOrigins.Length);
+{
+    var cfg0 = app.Services.GetRequiredService<ConfigService>();
+    app.Logger.LogInformation("WebSocket path={Path}, AuthRequired={Auth}, DevTokenAccepted={Dev}, AllowedOriginsCount={Count}",
+        wsPath, !string.IsNullOrEmpty(cfg0.GetEffectiveWebSocketAuthToken()), isDev, allowedOrigins.Length);
+}
+
+app.MapGet("/api/bootstrap/local-service-auth", (HttpContext ctx, ConfigService config) =>
+{
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+        return Results.Json(new { ok = false, message = "仅允许本机 loopback 拉取访问密钥。" }, statusCode: 403);
+    var t = config.GetEffectiveWebSocketAuthToken();
+    var reqBase = $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+    return Results.Json(new
+    {
+        ok = true,
+        webSocketAuthToken = t,
+        localServiceBaseUrl = reqBase,
+        localServicePortScanStart = LocalServiceListenOptions.PortScanStart,
+        localServicePortScanCount = LocalServiceListenOptions.PortScanCount
+    });
+});
 
 app.MapGet("/api/config", (ConfigService config) => Results.Json(config.Current, JsonCtx.Default.AppConfig));
 app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
@@ -363,7 +409,7 @@ app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
     return Results.Json(new { ok = false, message = "请求体解析失败或格式无效，请确认发送的是有效 JSON 配置。" }, statusCode: 400);
 });
 
-app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logger) =>
+app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logger, ConfigService configService) =>
 {
     TestAiRequest? body;
     try
@@ -387,6 +433,9 @@ app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logg
     var url = endpoint.Contains("/v1") ? endpoint + "/chat/completions" : endpoint + "/v1/chat/completions";
     if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
         return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 200);
+    var ssrf = TestEndpointSecurity.GetBlockedReason(uri, configService.Current.AllowPrivateEndpointTests);
+    if (ssrf != null)
+        return Results.Json(new { ok = false, message = ssrf }, statusCode: 400);
     using var http = new HttpClient();
     http.Timeout = TimeSpan.FromSeconds(5);
     var payload = new
@@ -420,7 +469,7 @@ app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logg
     }
 });
 
-app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Program> logger) =>
+app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Program> logger, ConfigService configService) =>
 {
     TestEmbeddingRequest? body;
     try
@@ -445,6 +494,9 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
     {
         return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
     }
+    var ssrfEmb = TestEndpointSecurity.GetBlockedReason(uri, configService.Current.AllowPrivateEndpointTests);
+    if (ssrfEmb != null)
+        return Results.Json(new { ok = false, message = ssrfEmb }, statusCode: 400);
     using var http = new HttpClient();
     http.Timeout = TimeSpan.FromSeconds(5);
     var payload = new { model = modelId, input = "test" };
@@ -473,7 +525,7 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
     }
 });
 
-app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger, IHttpClientFactory httpClientFactory) =>
+app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger, IHttpClientFactory httpClientFactory, ConfigService configService) =>
 {
     TestSttRequest? body;
     try
@@ -537,6 +589,9 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
             {
                 return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
             }
+            var ssrfDash = TestEndpointSecurity.GetBlockedReason(uriDash, configService.Current.AllowPrivateEndpointTests);
+            if (ssrfDash != null)
+                return Results.Json(new { ok = false, message = ssrfDash }, statusCode: 400);
 
             var dataUrl = SttUpstreamAdapter.BuildAudioDataUrl(minimalWav, "audio/wav");
             var jsonPayload = SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson(modelId, dataUrl, language: null);
@@ -562,6 +617,9 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
         {
             return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
         }
+        var ssrfW = TestEndpointSecurity.GetBlockedReason(uriW, configService.Current.AllowPrivateEndpointTests);
+        if (ssrfW != null)
+            return Results.Json(new { ok = false, message = ssrfW }, statusCode: 400);
 
         using var content = new MultipartFormDataContent();
         var fileContent = new StreamContent(new MemoryStream(minimalWav));
@@ -595,7 +653,7 @@ app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> log
     }
 });
 
-app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> logger) =>
+app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> logger, ConfigService configService) =>
 {
     TestOcrRequest? body;
     try
@@ -621,6 +679,10 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
     {
         return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
     }
+    var allowPrivOcr = configService.Current.AllowPrivateEndpointTests;
+    var ssrfOcrBase = TestEndpointSecurity.GetBlockedReason(uri, allowPrivOcr);
+    if (ssrfOcrBase != null)
+        return Results.Json(new { ok = false, message = ssrfOcrBase }, statusCode: 400);
 
     if (!ModelConnectionKind.IsValidOcr(body.ConnectionKind))
     {
@@ -672,6 +734,11 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
             configuredModel);
 
         var chatUrl = OcrUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
+        if (!Uri.TryCreate(chatUrl, UriKind.Absolute, out var chatUri) || (chatUri.Scheme != "http" && chatUri.Scheme != "https"))
+            return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
+        var ssrfOcrDash = TestEndpointSecurity.GetBlockedReason(chatUri, allowPrivOcr);
+        if (ssrfOcrDash != null)
+            return Results.Json(new { ok = false, message = ssrfOcrDash }, statusCode: 400);
 
         using var httpClientDash = new HttpClient();
         httpClientDash.Timeout = TimeSpan.FromSeconds(15);
@@ -1078,6 +1145,34 @@ app.MapDelete("/api/scheduled-tasks/{id}", async (string id, IScheduledTaskStore
             themeBroadcastLogger.LogWarning(ex, "Failed to serialize ui_theme_changed broadcast");
         }
     };
+}
+
+if (LocalServiceDiscoveryFile.ShouldWriteDiscoveryFile(app))
+{
+    var baseUrl = LocalServiceListenOptions.ListenBaseUrl;
+    if (string.IsNullOrEmpty(baseUrl) && app.Urls.Count > 0 &&
+        Uri.TryCreate(app.Urls.First(), UriKind.Absolute, out var absPub))
+        baseUrl = absPub.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+    if (!string.IsNullOrEmpty(baseUrl))
+    {
+        LocalServiceDiscoveryFile.TryWrite(
+            baseUrl,
+            Environment.ProcessId,
+            LocalServiceListenOptions.PortScanStart,
+            LocalServiceListenOptions.PortScanCount);
+    }
+
+    var lifetimeDiscovery = app.Services.GetRequiredService<IHostApplicationLifetime>();
+    lifetimeDiscovery.ApplicationStopping.Register(static () => LocalServiceDiscoveryFile.TryDelete());
+}
+
+var allowPublicBind = args.Any(a => string.Equals(a, "--allow-public-bind", StringComparison.OrdinalIgnoreCase));
+var bindAuthToken = app.Services.GetRequiredService<ConfigService>().GetEffectiveWebSocketAuthToken();
+var bindUnsafeMsg = ListenAddressGuard.GetFatalMessageIfUnsafe(app.Urls, bindAuthToken, allowPublicBind);
+if (bindUnsafeMsg != null)
+{
+    Log.Fatal(bindUnsafeMsg);
+    Environment.Exit(1);
 }
 
 app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);

@@ -1,4 +1,51 @@
-const TASKLY_API_BASE = "http://localhost:8765";
+let TASKLY_API_BASE = "http://127.0.0.1:8765";
+const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
+
+var tasklyWorkspaceApiReady = null;
+function tasklyEnsureWorkspaceApiBase() {
+  if (tasklyWorkspaceApiReady) return tasklyWorkspaceApiReady;
+  tasklyWorkspaceApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+    typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
+  ).then(function (r) {
+    TASKLY_API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+  });
+  return tasklyWorkspaceApiReady;
+}
+
+function tasklyFetch(url, init) {
+  init = init ? Object.assign({}, init) : {};
+  return new Promise(function (resolve) {
+    chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+      var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+      var headers = Object.assign({}, init.headers || {});
+      if (t) headers["X-OfficeCopilot-Token"] = t;
+      init.headers = headers;
+      resolve(fetch(url, init));
+    });
+  });
+}
+
+function ensureLocalServiceTokenFromBootstrap() {
+  return tasklyEnsureWorkspaceApiBase().then(function () {
+  return fetch(TASKLY_API_BASE + "/api/bootstrap/local-service-auth")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.ok) return;
+      var t = (j.webSocketAuthToken || "").trim();
+      if (!t) return;
+      return new Promise(function (resolve) {
+        chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (cur) {
+          var existing = (cur && cur[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+          if (existing) { resolve(); return; }
+          var o = {};
+          o[COPILOT_TOKEN_STORAGE_KEY] = t;
+          chrome.storage.local.set(o, function () { resolve(); });
+        });
+      });
+    })
+    .catch(function () {});
+  });
+}
 
 function tasklyRefreshEmbedThemes() {
   const t = document.documentElement.getAttribute("data-theme") || "dark";
@@ -19,8 +66,10 @@ window.addEventListener("storage", (e) => {
   tasklyRefreshEmbedThemes();
 });
 
-fetch(TASKLY_API_BASE + "/api/config")
-  .then((r) => (r.ok ? r.json() : null))
+ensureLocalServiceTokenFromBootstrap().then(function () {
+  return tasklyFetch(TASKLY_API_BASE + "/api/config");
+})
+  .then((r) => (r && r.ok ? r.json() : null))
   .then((j) => {
     if (!j || typeof TasklyTheme === "undefined") return;
     const id = j.uiThemeId || j.UiThemeId;

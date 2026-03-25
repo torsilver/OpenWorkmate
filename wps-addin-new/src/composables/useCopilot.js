@@ -5,10 +5,58 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mermaid from 'mermaid'
+import { tasklyResolveLocalServiceBase, tasklyHttpWsFromBase } from '../utils/tasklyLocalService.js'
 
-const WS_URL = 'ws://localhost:8765/ws'
-const API_BASE = 'http://localhost:8765'
-const AUTH_TOKEN = 'office-copilot-dev-token'
+let WS_URL = 'ws://127.0.0.1:8765/ws'
+let API_BASE = 'http://127.0.0.1:8765'
+let apiBaseReadyPromise = null
+
+function ensureApiBase() {
+  if (!apiBaseReadyPromise) {
+    apiBaseReadyPromise = tasklyResolveLocalServiceBase().then((r) => {
+      const hw = tasklyHttpWsFromBase(r.baseUrl)
+      API_BASE = hw.apiBase
+      WS_URL = hw.wsUrl
+    })
+  }
+  return apiBaseReadyPromise
+}
+/** 与后端有效密钥一致；通常首次连接会自动从本机引导接口同步，也可手动 localStorage.setItem */
+const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
+
+function getStoredAuthToken() {
+  try {
+    return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function tasklyFetch(url, init = {}) {
+  const headers = new Headers(init.headers)
+  const t = getStoredAuthToken()
+  if (t) headers.set('X-OfficeCopilot-Token', t)
+  return fetch(url, { ...init, headers })
+}
+
+/** 本机 loopback：localStorage 尚无密钥时从后台拉取（与 Chrome 选项页写入的 user-config / appsettings 一致） */
+function ensureBootstrapAuthToken() {
+  return ensureApiBase().then(() =>
+    fetch(`${API_BASE}/api/bootstrap/local-service-auth`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (!j || !j.ok) return
+      const t = (j.webSocketAuthToken || '').trim()
+      if (!t || getStoredAuthToken()) return
+      try {
+        localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t)
+      } catch {
+        /* ignore */
+      }
+    })
+    .catch(() => {})
+  )
+}
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 16000
 const CLIENT_TYPE = 'wps'
@@ -515,16 +563,20 @@ export function useCopilot() {
 
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
-    sessionId = getSessionId()
-    const url =
-      WS_URL +
+    ensureApiBase()
+      .then(() => {
+        sessionId = getSessionId()
+        return ensureBootstrapAuthToken()
+      })
+      .then(() => {
+    const tok = getStoredAuthToken()
+    let qs =
       '?sessionId=' +
       encodeURIComponent(sessionId) +
-      '&token=' +
-      encodeURIComponent(AUTH_TOKEN) +
       '&clientType=' +
       encodeURIComponent(CLIENT_TYPE)
-    ws = new WebSocket(url)
+    if (tok) qs += '&token=' + encodeURIComponent(tok)
+    ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {
       reconnectDelay = RECONNECT_BASE_MS
       connected.value = true
@@ -547,6 +599,10 @@ export function useCopilot() {
     ws.onerror = () => {
       if (ws) ws.close()
     }
+    })
+      .catch((e) => {
+        addSystemMessage('找不到本机 Office Copilot：' + (e && e.message ? e.message : String(e)))
+      })
   }
 
   function scheduleReconnect() {
@@ -851,24 +907,28 @@ export function useCopilot() {
 
   function fetchPlanAndShow(id, title, createdBy) {
     if (createdBy !== CLIENT_TYPE) return
-    fetch(API_BASE + '/api/plans/' + encodeURIComponent(id))
-      .then((res) => res.json().catch(() => ({})).then((data) => {
-        if (!res.ok) return Promise.reject(new Error((data && data.message) || '请求失败 ' + res.status))
-        return data
-      }))
-      .then((data) => {
-        planId.value = id
-        planTitle.value = title || (data.meta && data.meta.title) || id
-        planContent.value = data.content || ''
-        planContentEdit.value = data.content || ''
-        planEditMode.value = false
-        planPanelVisible.value = true
-        initPlanChecklistFromContent(data.content || '')
-      })
-      .catch((e) => {
-        console.error('fetch plan failed', e)
-        alert(e.message || '加载计划失败')
-      })
+    ensureApiBase().then(() =>
+      tasklyFetch(API_BASE + '/api/plans/' + encodeURIComponent(id))
+        .then((res) =>
+          res.json().catch(() => ({})).then((data) => {
+            if (!res.ok) return Promise.reject(new Error((data && data.message) || '请求失败 ' + res.status))
+            return data
+          })
+        )
+        .then((data) => {
+          planId.value = id
+          planTitle.value = title || (data.meta && data.meta.title) || id
+          planContent.value = data.content || ''
+          planContentEdit.value = data.content || ''
+          planEditMode.value = false
+          planPanelVisible.value = true
+          initPlanChecklistFromContent(data.content || '')
+        })
+        .catch((e) => {
+          console.error('fetch plan failed', e)
+          alert(e.message || '加载计划失败')
+        })
+    )
   }
 
   function showPlanEdit() {
@@ -883,7 +943,8 @@ export function useCopilot() {
   function savePlan() {
     if (!planId.value) return
     const content = planContentEdit.value
-    fetch(API_BASE + '/api/plans/' + encodeURIComponent(planId.value), {
+    ensureApiBase().then(() =>
+      tasklyFetch(API_BASE + '/api/plans/' + encodeURIComponent(planId.value), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
@@ -902,6 +963,7 @@ export function useCopilot() {
         console.error('save plan failed', e)
         alert(e.message || '保存失败')
       })
+    )
   }
 
   function executePlan() {
@@ -1671,9 +1733,10 @@ export function useCopilot() {
     atModeLoadingPromise = (async () => {
       atModeLoadError.value = ''
       try {
+        await ensureApiBase()
         const [builtinRes, skillsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/tools/builtin`),
-          fetch(`${API_BASE}/api/skills`),
+          tasklyFetch(`${API_BASE}/api/tools/builtin`),
+          tasklyFetch(`${API_BASE}/api/skills`),
         ])
         const loadErrs = []
         if (!builtinRes.ok) loadErrs.push('内置工具接口 HTTP ' + builtinRes.status)

@@ -1,16 +1,50 @@
 (function () {
   "use strict";
 
-  const WS_URL = "ws://localhost:8765/ws";
-  const API_BASE = "http://localhost:8765";
-  const AUTH_TOKEN = "office-copilot-dev-token";
+  var WS_URL = "ws://127.0.0.1:8765/ws";
+  var API_BASE = "http://127.0.0.1:8765";
+  var tasklyWpsApiReady = null;
+  function tasklyEnsureWpsApiBase() {
+    if (tasklyWpsApiReady) return tasklyWpsApiReady;
+    tasklyWpsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(null).then(function (r) {
+      var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+      API_BASE = hw.apiBase;
+      WS_URL = hw.wsUrl;
+    });
+    return tasklyWpsApiReady;
+  }
+  var TASKLY_AUTH_TOKEN_KEY = "tasklyLocalServiceAuthToken";
+  function getStoredAuthToken() {
+    try { return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || "").trim(); } catch (e) { return ""; }
+  }
+  function tasklyFetch(url, init) {
+    init = init || {};
+    var headers = new Headers(init.headers || {});
+    var t = getStoredAuthToken();
+    if (t) headers.set("X-OfficeCopilot-Token", t);
+    return fetch(url, Object.assign({}, init, { headers: headers }));
+  }
+  function ensureBootstrapAuthToken() {
+    return tasklyEnsureWpsApiBase().then(function () {
+    return fetch(API_BASE + "/api/bootstrap/local-service-auth")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        var t = (j.webSocketAuthToken || "").trim();
+        if (!t || getStoredAuthToken()) return;
+        try { localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t); } catch (e) {}
+      })
+      .catch(function () {});
+    });
+  }
   const RECONNECT_BASE_MS = 1000;
   const RECONNECT_MAX_MS = 16000;
   const CLIENT_TYPE = "wps";
 
   (function tasklySyncThemeFromBackend() {
     try {
-      fetch(API_BASE + "/api/config")
+      tasklyEnsureWpsApiBase().then(function () {
+      tasklyFetch(API_BASE + "/api/config")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j || typeof TasklyTheme === "undefined") return;
@@ -18,6 +52,7 @@
           if (id) TasklyTheme.setTheme(id);
         })
         .catch(function () {});
+      }).catch(function () {});
     } catch (e) {}
   })();
 
@@ -488,7 +523,9 @@
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     sessionId = getSessionId();
-    var url = WS_URL + "?sessionId=" + encodeURIComponent(sessionId) + "&token=" + encodeURIComponent(AUTH_TOKEN) + "&clientType=" + encodeURIComponent(CLIENT_TYPE);
+    ensureBootstrapAuthToken().then(function () {
+    var tok = getStoredAuthToken();
+    var url = WS_URL + "?sessionId=" + encodeURIComponent(sessionId) + "&clientType=" + encodeURIComponent(CLIENT_TYPE) + (tok ? "&token=" + encodeURIComponent(tok) : "");
     ws = new WebSocket(url);
     ws.onopen = function () {
       reconnectDelay = RECONNECT_BASE_MS;
@@ -510,6 +547,9 @@
       scheduleReconnect();
     };
     ws.onerror = function () { ws.close(); };
+    }).catch(function (err) {
+      addSystemMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)));
+    });
   }
 
   function scheduleReconnect() {
@@ -580,7 +620,8 @@
 
   function fetchPlanAndShow(planId, title, createdBy) {
     if (createdBy !== CLIENT_TYPE) return;
-    fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId))
+    tasklyEnsureWpsApiBase().then(function () {
+    return tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId))
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
           if (!res.ok) return Promise.reject(new Error((data && data.message) || ("请求失败 " + res.status)));
@@ -610,6 +651,7 @@
         console.error("fetch plan failed", e);
         alert(e.message || "加载计划失败");
       });
+    });
   }
 
   function showPlanEdit() {
@@ -767,7 +809,8 @@
     $planSaveBtn.addEventListener("click", function () {
       if (!currentPlanId) return;
       var content = $planContentEdit.value;
-      fetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
+      tasklyEnsureWpsApiBase().then(function () {
+      return tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })
@@ -784,6 +827,7 @@
       }).catch(function (e) {
         console.error("save plan failed", e);
         alert(e.message || "保存失败");
+      });
       });
     });
   }

@@ -315,6 +315,19 @@
     
     <!-- 大模型设置 -->
     <div id="tab-ai" class="tab-content active">
+      <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
+        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">本地服务访问密钥</h4>
+        <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：填写后与 AI 等配置一起点「保存配置」会写入服务端 user-config（字段 <code>webSocketAuthToken</code>）；若未填写 user-config，则使用 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。侧栏、Workspace 会在本机自动从引导接口同步到 <code>chrome.storage.local</code>；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥，一般无需在各端再填一遍。</p>
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label for="localServiceAuthToken">访问密钥（与服务端当前生效值一致）</label>
+          <input type="password" id="localServiceAuthToken" autocomplete="off" placeholder="留空则服务端未强制密钥时可不携带" style="max-width: 480px; width: 100%;">
+        </div>
+        <p class="help-text" style="margin-bottom: 10px;">保存配置后密钥会进入本机 user-config；扩展仍会把它写入 <code>chrome.storage.local</code>，供侧栏与 Workspace 发请求时使用。</p>
+        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="allowPrivateEndpointTests" style="margin-top: 4px;">
+          <span class="help-text" style="margin: 0;">允许「测试连接」访问 localhost / 内网地址（降低 SSRF 防护，仅供调试；会写入本机 user-config）</span>
+        </label>
+      </div>
       <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
         <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">麦克风权限（会议监听）</h4>
         <p class="help-text" style="margin: 0;">会议监听需要麦克风权限。若提示无法访问麦克风：（1）请再次点击侧栏的「会议监听」按钮，在浏览器弹出的权限窗口中选择「允许」；（2）若曾选择「阻止」，请点击侧栏所在页地址栏左侧的锁或信息图标，将麦克风改为「允许」后重试。</p>
@@ -602,7 +615,7 @@
       </div>
 
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
-      <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。</p>
+      <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。<strong>RunEverything</strong> 会放行该端上的 CLI 命令与预定义页面脚本，请仅在完全信任环境与模型时使用。</p>
       <div id="cliScriptEndTabs" class="cli-script-end-tabs">
         <!-- 端 Tab：Chrome | 后台 | Office | WPS 由 JS 注入 -->
       </div>
@@ -617,6 +630,10 @@
       </div>
       
       <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">外部 MCP 组件</h3>
+      <div class="skill-card" style="margin-bottom: 16px; border-color: var(--danger); background: rgba(239, 68, 68, 0.06);">
+        <div class="skill-title" style="color: var(--danger);">安全风险</div>
+        <p class="help-text" style="margin: 8px 0 0;">此处配置的 <strong>启动命令（Command）与参数（Args）</strong> 会由后端在本机直接启动进程，<strong>等价于在您的电脑上执行对应命令行</strong>。请勿添加不信任来源的配置。CLI 插件使用 <code>cmd /c</code>：在「RunEverything」模式下模型可发起任意命令；在其它模式下仍会弹出确认，但误点「允许」也会导致命令执行——请勿在不可信模型下使用 RunEverything。</p>
+      </div>
       <p class="help-text" style="font-size: 14px; margin-bottom: 12px;">配置第三方 MCP 服务器（如数据库查询工具），拓展 AI 能力。开关关闭后该组件不会随对话启动。</p>
 
       <h4 style="margin: 16px 0 8px; font-size: 13px; color: var(--text-secondary);">推荐组件</h4>
@@ -948,6 +965,7 @@ postgresql://localhost/mydb"></textarea>
     
   </div>
 
+  <script src="local-service-resolve.js"></script>
   <script src="vendor-presets.js"></script>
   <script src="options.js"></script>
 </body>

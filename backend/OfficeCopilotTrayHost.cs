@@ -9,22 +9,6 @@ namespace OfficeCopilot.Server;
 /// <summary>Windows 托盘：同进程内启动 WebApplication.RunAsync 并跑 WinForms 消息循环。</summary>
 internal static class OfficeCopilotTrayHost
 {
-    private static Mutex? _traySingleInstanceMutex;
-
-    /// <summary>在启动 Kestrel 之前调用；若已有托盘实例则返回 false。</summary>
-    public static bool TryAcquireTraySingleInstance()
-    {
-        var m = new Mutex(true, @"Local\OfficeCopilot.Server.TraySingleInstance", out var createdNew);
-        if (!createdNew)
-        {
-            m.Dispose();
-            return false;
-        }
-
-        _traySingleInstanceMutex = m;
-        return true;
-    }
-
     public static void Run(WebApplication app, string logViewerUrl)
     {
         ApplicationConfiguration.Initialize();

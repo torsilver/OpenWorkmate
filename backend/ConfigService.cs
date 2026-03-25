@@ -308,6 +308,10 @@ public class AppConfig
     public string? UiThemeId { get; set; }
     /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘「设置」用于打开 chrome-extension://…/options.html；也可用环境变量 OFFICECOPILOT_CHROME_EXTENSION_ID。</summary>
     public string? ChromeExtensionId { get; set; }
+    /// <summary>为 true 时，设置页「测试连接」可向 localhost、RFC1918 等地址发请求（默认 false，降低 SSRF 风险）。</summary>
+    public bool AllowPrivateEndpointTests { get; set; }
+    /// <summary>本地 HTTP/WebSocket 访问密钥；非空时优先于 appsettings 的 WebSocket:AuthToken。在扩展选项页保存后写入 user-config，各端可从本机引导接口自动同步。</summary>
+    public string? WebSocketAuthToken { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>
@@ -385,6 +389,17 @@ public sealed class ConfigService
     }
 
     public AppConfig Current => _currentConfig;
+
+    /// <summary>供 WebSocket 与 HTTP API 鉴权：user-config 中的 <see cref="AppConfig.WebSocketAuthToken"/> 优先，否则使用 appsettings 的 WebSocket:AuthToken。</summary>
+    public string GetEffectiveWebSocketAuthToken()
+    {
+        lock (_lock)
+        {
+            var fromUser = (_currentConfig.WebSocketAuthToken ?? "").Trim();
+            if (!string.IsNullOrEmpty(fromUser)) return fromUser;
+            return (_defaultConfiguration["WebSocket:AuthToken"] ?? "").Trim();
+        }
+    }
 
     /// <summary>从磁盘重新加载 user-config.json（或回退默认），不写盘。用于 --build-tool-index 阶段 2 恢复真实 MCP/模型配置。</summary>
     public void ReloadConfigFromDisk()
@@ -932,6 +947,7 @@ public sealed class ConfigService
                 if (newConfig.OcrModels == null) newConfig.OcrModels = _currentConfig.OcrModels ?? new List<OcrModelEntry>();
                 if (newConfig.ActiveOcrModelId == null) newConfig.ActiveOcrModelId = _currentConfig.ActiveOcrModelId;
                 if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
+                if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {

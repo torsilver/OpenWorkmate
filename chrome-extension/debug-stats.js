@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const API_BASE = "http://localhost:8765";
+  let API_BASE = "http://127.0.0.1:8765";
 
   const $err = document.getElementById("err");
   const $dl = document.getElementById("tool-selection-dl");
@@ -245,5 +245,12 @@
     $chkAuto.addEventListener("change", () => setAuto($chkAuto.checked));
   }
 
-  load();
+  TasklyLocalService.tasklyResolveLocalServiceBase(null)
+    .then(function (r) {
+      API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      return load();
+    })
+    .catch(function (e) {
+      showErr(e.message || String(e));
+    });
 })();

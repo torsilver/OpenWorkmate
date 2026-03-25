@@ -1,9 +1,42 @@
 (function () {
   "use strict";
 
-  const WS_URL = "ws://localhost:8765/ws";
-  const API_BASE = "http://localhost:8765";
-  const AUTH_TOKEN = "office-copilot-dev-token";
+  var WS_URL = "ws://127.0.0.1:8765/ws";
+  var API_BASE = "http://127.0.0.1:8765";
+  var tasklyOfficeApiReady = null;
+  function tasklyEnsureOfficeApiBase() {
+    if (tasklyOfficeApiReady) return tasklyOfficeApiReady;
+    tasklyOfficeApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(null).then(function (r) {
+      var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+      API_BASE = hw.apiBase;
+      WS_URL = hw.wsUrl;
+    });
+    return tasklyOfficeApiReady;
+  }
+  var TASKLY_AUTH_TOKEN_KEY = "tasklyLocalServiceAuthToken";
+  function getStoredAuthToken() {
+    try { return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || "").trim(); } catch (e) { return ""; }
+  }
+  function tasklyFetch(url, init) {
+    init = init || {};
+    var headers = new Headers(init.headers || {});
+    var t = getStoredAuthToken();
+    if (t) headers.set("X-OfficeCopilot-Token", t);
+    return fetch(url, Object.assign({}, init, { headers: headers }));
+  }
+  function ensureBootstrapAuthToken() {
+    return tasklyEnsureOfficeApiBase().then(function () {
+    return fetch(API_BASE + "/api/bootstrap/local-service-auth")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        var t = (j.webSocketAuthToken || "").trim();
+        if (!t || getStoredAuthToken()) return;
+        try { localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t); } catch (e) {}
+      })
+      .catch(function () {});
+    });
+  }
   const RECONNECT_BASE_MS = 1000;
   const RECONNECT_MAX_MS = 16000;
 
@@ -11,7 +44,8 @@
 
   (function tasklySyncThemeFromBackend() {
     try {
-      fetch(API_BASE + "/api/config")
+      tasklyEnsureOfficeApiBase().then(function () {
+      tasklyFetch(API_BASE + "/api/config")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j || typeof TasklyTheme === "undefined") return;
@@ -20,6 +54,7 @@
           if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
         })
         .catch(function () {});
+      }).catch(function () {});
     } catch (e) {}
   })();
 
@@ -339,9 +374,10 @@
   function loadAtModeCandidates() {
     if (atModeLoaded) return Promise.resolve();
     if (atModeLoadingPromise) return atModeLoadingPromise;
-    atModeLoadingPromise = fetch(API_BASE + "/api/tools/builtin")
+    atModeLoadingPromise = tasklyEnsureOfficeApiBase().then(function () {
+    return tasklyFetch(API_BASE + "/api/tools/builtin")
       .then(function (builtinRes) {
-        return fetch(API_BASE + "/api/skills").then(function (skillsRes) {
+        return tasklyFetch(API_BASE + "/api/skills").then(function (skillsRes) {
           return { builtinRes: builtinRes, skillsRes: skillsRes };
         });
       })
@@ -422,6 +458,7 @@
       .then(function () {
         atModeLoadingPromise = null;
       });
+    });
     return atModeLoadingPromise;
   }
 
@@ -958,7 +995,9 @@
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
     sessionId = getSessionId();
-    const url = WS_URL + "?sessionId=" + encodeURIComponent(sessionId) + "&token=" + encodeURIComponent(AUTH_TOKEN) + "&clientType=" + encodeURIComponent(OFFICE_CLIENT_TYPE);
+    ensureBootstrapAuthToken().then(function () {
+    var tok = getStoredAuthToken();
+    var url = WS_URL + "?sessionId=" + encodeURIComponent(sessionId) + "&clientType=" + encodeURIComponent(OFFICE_CLIENT_TYPE) + (tok ? "&token=" + encodeURIComponent(tok) : "");
     ws = new WebSocket(url);
 
     ws.onopen = function () {
@@ -984,6 +1023,9 @@
     };
 
     ws.onerror = function () { ws.close(); };
+    }).catch(function (err) {
+      addSystemMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)));
+    });
   }
 
   function scheduleReconnect() {
@@ -1061,7 +1103,8 @@
   async function fetchPlanAndShow(planId, title, createdBy) {
     if (createdBy !== OFFICE_CLIENT_TYPE) return;
     try {
-      const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+      await tasklyEnsureOfficeApiBase();
+      const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
       if (!res.ok) return;
       const data = await res.json();
       currentPlanId = planId;
@@ -1285,7 +1328,8 @@
       if (!currentPlanId) return;
       const content = $planContentEdit.value;
       try {
-        const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
+        await tasklyEnsureOfficeApiBase();
+        const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })

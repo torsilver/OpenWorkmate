@@ -13,6 +13,7 @@
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <Compile Remove="OfficeCopilotTrayHost.cs" />
+    <Compile Remove="OfficeCopilotSingleInstance.cs" />
   </ItemGroup>
 
   <ItemGroup>

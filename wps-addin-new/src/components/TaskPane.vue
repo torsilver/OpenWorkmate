@@ -19,7 +19,7 @@
       </div>
     </header>
     <p class="config-hint">
-      本机后台与 AI 的<strong>完整设置</strong>请仅在 <strong>Chrome 扩展</strong> 的选项页完成；此处仅使用已启动的后台服务（<span class="config-hint-link">http://localhost:8765</span>）。
+      本机后台与 AI 的<strong>完整设置</strong>请仅在 <strong>Chrome 扩展</strong> 的选项页完成并保存（默认 <span class="config-hint-link">127.0.0.1:8765</span> 起若端口被占用会自动顺延，扩展会自动发现）。访问密钥会在本机首次连接时自动从后台同步到当前源；若仍无法连接，可在控制台手动 <code>localStorage.setItem('tasklyLocalServiceAuthToken','密钥')</code> 后刷新。
     </p>
 
     <div v-if="planChecklistSteps && planChecklistSteps.length > 0" class="plan-checklist-wrap">

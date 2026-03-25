@@ -1,6 +1,73 @@
-const API_URL = "http://localhost:8765/api/config";
-const SKILLS_API_URL = "http://localhost:8765/api/skills";
-const BUILTIN_TOOLS_URL = "http://localhost:8765/api/tools/builtin";
+var API_URL = "http://127.0.0.1:8765/api/config";
+var SKILLS_API_URL = "http://127.0.0.1:8765/api/skills";
+var BUILTIN_TOOLS_URL = "http://127.0.0.1:8765/api/tools/builtin";
+/** 与后端有效访问密钥一致；保存配置会写入 user-config，并同步到 chrome.storage.local 供侧栏/Workspace 使用 */
+var COPILOT_TOKEN_STORAGE_KEY = 'localServiceAuthToken';
+
+function tasklySetOptionsApiUrls(apiBase) {
+  var b = TasklyLocalService.normalizeBase(apiBase);
+  API_URL = b + "/api/config";
+  SKILLS_API_URL = b + "/api/skills";
+  BUILTIN_TOOLS_URL = b + "/api/tools/builtin";
+}
+
+var tasklyOptionsApiReady = null;
+function tasklyEnsureOptionsApiBase() {
+  if (tasklyOptionsApiReady) return tasklyOptionsApiReady;
+  tasklyOptionsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(chrome.storage.local).then(function (r) {
+    tasklySetOptionsApiUrls(r.baseUrl);
+  });
+  return tasklyOptionsApiReady;
+}
+
+function tasklyMergeAuthHeaders(init) {
+  init = init ? Object.assign({}, init) : {};
+  return new Promise(function (resolve) {
+    try {
+      chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          resolve(init);
+          return;
+        }
+        var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || '').trim();
+        var headers = Object.assign({}, init.headers || {});
+        if (t) headers['X-OfficeCopilot-Token'] = t;
+        init.headers = headers;
+        resolve(init);
+      });
+    } catch (e) {
+      resolve(init);
+    }
+  });
+}
+
+function tasklyFetch(url, init) {
+  return tasklyMergeAuthHeaders(init).then(function (merged) { return fetch(url, merged); });
+}
+
+/** 本机 loopback 从后台拉取密钥并写入 chrome.storage（仅当本地尚未保存时），便于 WPS/侧栏与选项页共用同一配置源 */
+function ensureLocalServiceTokenFromBootstrap() {
+  return tasklyEnsureOptionsApiBase().then(function () {
+  var base = API_URL.replace('/api/config', '');
+  return fetch(base + '/api/bootstrap/local-service-auth')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.ok) return;
+      var t = (j.webSocketAuthToken || '').trim();
+      if (!t) return;
+      return new Promise(function (resolve) {
+        chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (cur) {
+          var existing = (cur && cur[COPILOT_TOKEN_STORAGE_KEY] || '').trim();
+          if (existing) { resolve(); return; }
+          var o = {};
+          o[COPILOT_TOKEN_STORAGE_KEY] = t;
+          chrome.storage.local.set(o, function () { resolve(); });
+        });
+      });
+    })
+    .catch(function () {});
+  });
+}
 
 /** User Scripts（自定义页面脚本）是否可用：需 Chrome 135+ 且在扩展详情页开启 Allow User Scripts。 */
 function isUserScriptsAvailable() {
@@ -30,7 +97,7 @@ function messageForBackendUnreachable(err) {
   if (!err) return null;
   var msg = (err && err.message) ? String(err.message) : '';
   if (msg === 'Failed to fetch' || (err.name === 'TypeError' && msg && msg.indexOf('fetch') !== -1))
-    return '无法连接到本地服务（localhost:8765），请确保已启动 OfficeCopilot.Server。';
+    return '无法连接到本地服务（默认扫描 127.0.0.1:8765 起连续端口），请确保已启动 OfficeCopilot.Server。';
   return null;
 }
 
@@ -887,7 +954,7 @@ function loadMemoryList() {
   var url = baseUrl + '/api/memory?skip=0&take=50&scope=' + encodeURIComponent(urlScope);
   if (scope === 'session' && sessionId !== undefined) url += '&sessionId=' + encodeURIComponent(sessionId);
   if (scope === 'agent' && agentName) url += '&agentName=' + encodeURIComponent(agentName);
-  fetch(url).then(async function (r) {
+  tasklyFetch(url).then(async function (r) {
     var data = await r.json().catch(function () { return {}; });
     if (!r.ok) {
       var el = document.getElementById('memoryList');
@@ -934,7 +1001,7 @@ function openMemoryEditor(id) {
     if (title) title.textContent = '编辑记忆';
     if (editId) editId.value = id;
     var baseUrl = API_URL.replace('/api/config', '');
-    fetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(async function (r) {
+    tasklyFetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(async function (r) {
       var data = await r.json().catch(function () { return {}; });
       if (!r.ok) {
         alert('加载失败：' + (data && data.message ? data.message : r.status));
@@ -980,7 +1047,7 @@ function saveMemoryFromEditor() {
   var body = id
     ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared })
     : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared });
-  fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
+  tasklyFetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
     if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '保存失败'); });
     closeMemoryEditor();
     loadMemoryList();
@@ -990,7 +1057,7 @@ function saveMemoryFromEditor() {
 function deleteMemory(id) {
   if (!id || !confirm('确定删除这条记忆？')) return;
   var baseUrl = API_URL.replace('/api/config', '');
-  fetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
+  tasklyFetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
     if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '删除失败'); });
     loadMemoryList();
   }).catch(function (e) { alert('删除失败: ' + (e.message || e)); });
@@ -1023,7 +1090,7 @@ async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl, ve
     var baseUrl = API_URL.replace('/api/config', '');
     var body = { endpoint: endpoint, apiKey: apiKey, modelId: modelId };
     if (vendorId) body.vendorId = vendorId;
-    var res = await fetch(baseUrl + '/api/config/test-embedding', {
+    var res = await tasklyFetch(baseUrl + '/api/config/test-embedding', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1083,7 +1150,7 @@ async function doTestSttConnection(endpoint, apiKey, modelId, statusEl, opts) {
     var payload = { endpoint: endpoint, apiKey: apiKey, modelId: modelId || 'whisper-1' };
     if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
     if (opts.vendorId) payload.vendorId = opts.vendorId;
-    var res = await fetch(baseUrl + '/api/config/test-stt', {
+    var res = await tasklyFetch(baseUrl + '/api/config/test-stt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1143,7 +1210,7 @@ async function doTestOcrConnection(endpoint, apiKey, statusEl, opts) {
     if (opts.modelId) payload.modelId = opts.modelId;
     if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
     if (opts.vendorId) payload.vendorId = opts.vendorId;
-    var res = await fetch(baseUrl + '/api/config/test-ocr', {
+    var res = await tasklyFetch(baseUrl + '/api/config/test-ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1363,7 +1430,7 @@ async function loadSkillEnvSection() {
   const existing = skillEnv && typeof skillEnv === 'object' ? Object.keys(skillEnv) : [];
   let keysSet = new Set(existing);
   try {
-    const res = await fetch(SKILLS_API_URL);
+    const res = await tasklyFetch(SKILLS_API_URL);
     if (res.ok) {
       const skills = await res.json();
       if (Array.isArray(skills)) {
@@ -1438,13 +1505,28 @@ async function loadConfig() {
   try {
     setSaveConfigButtonsState(true, '加载中...');
     
-    const response = await fetch(API_URL);
+    const response = await tasklyFetch(API_URL);
     if (!response.ok) {
       var errData = await response.json().catch(function () { return {}; });
       throw new Error(errData.message || '加载配置失败');
     }
     fullConfig = await response.json();
     const data = fullConfig;
+    var apEl = document.getElementById('allowPrivateEndpointTests');
+    if (apEl) apEl.checked = !!(data.allowPrivateEndpointTests ?? data.AllowPrivateEndpointTests);
+    var srvTok = String((data.webSocketAuthToken ?? data.WebSocketAuthToken) ?? '').trim();
+    var tokInp = document.getElementById('localServiceAuthToken');
+    if (tokInp) {
+      if (srvTok) tokInp.value = srvTok;
+      else chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (sr) {
+        if (sr && sr[COPILOT_TOKEN_STORAGE_KEY] != null && !tokInp.value) tokInp.value = String(sr[COPILOT_TOKEN_STORAGE_KEY]);
+      });
+    }
+    if (srvTok) {
+      var o = {};
+      o[COPILOT_TOKEN_STORAGE_KEY] = srvTok;
+      chrome.storage.local.set(o);
+    }
     renderAiModelsList();
     renderCliScriptPerEndConfig();
     const mcps = data.mcpServers ?? data.McpServers;
@@ -1775,9 +1857,14 @@ async function saveConfig() {
       planConfirmation: planConfirmationPayload,
       activeContextPresetId: activeContextPresetId || undefined,
       contextOptimizationPresets: contextOptimizationPresets.length > 0 ? contextOptimizationPresets : undefined,
-      uiThemeId: uiThemeId
+      uiThemeId: uiThemeId,
+      allowPrivateEndpointTests: !!(document.getElementById('allowPrivateEndpointTests') && document.getElementById('allowPrivateEndpointTests').checked),
+      webSocketAuthToken: (function () {
+        var el = document.getElementById('localServiceAuthToken');
+        return el ? String(el.value || '').trim() : '';
+      })()
     };
-    const response = await fetch(API_URL, {
+    const response = await tasklyFetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1786,7 +1873,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -1983,7 +2070,7 @@ async function doTestAiConnection(fields, statusEl) {
       deploymentName: deploymentName
     };
     if (vendorId) testBody.vendorId = vendorId;
-    var res = await fetch(baseUrl + '/api/config/test-ai', {
+    var res = await tasklyFetch(baseUrl + '/api/config/test-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(testBody)
@@ -2011,7 +2098,7 @@ let currentSkills = [];
 
 async function loadSkills() {
   try {
-    const res = await fetch(SKILLS_API_URL);
+    const res = await tasklyFetch(SKILLS_API_URL);
     if (res.ok) {
       currentSkills = await res.json();
       renderSkills();
@@ -2106,7 +2193,7 @@ window.editSkill = (id) => {
 window.deleteSkill = async (id) => {
   if (!confirm('确定要删除这个技能吗？')) return;
   try {
-    const res = await fetch(`${SKILLS_API_URL}/${id}`, { method: 'DELETE' });
+    const res = await tasklyFetch(`${SKILLS_API_URL}/${id}`, { method: 'DELETE' });
     if (res.ok) await loadSkills();
     else {
       var data = await res.json().catch(function () { return {}; });
@@ -2151,7 +2238,7 @@ els.saveSkillBtn.addEventListener('click', async () => {
   
   try {
     els.saveSkillBtn.disabled = true;
-    const res = await fetch(SKILLS_API_URL, {
+    const res = await tasklyFetch(SKILLS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2185,7 +2272,7 @@ window.toggleSkillEnabled = async function (id) {
     enabled: nextEnabled
   };
   try {
-    const res = await fetch(SKILLS_API_URL, {
+    const res = await tasklyFetch(SKILLS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2399,7 +2486,24 @@ document.addEventListener('DOMContentLoaded', function () {
       debouncedSaveConfig();
     });
   }
-  loadConfig();
+  var localTok = document.getElementById('localServiceAuthToken');
+  if (localTok) {
+    localTok.addEventListener('change', function () {
+      var o = {};
+      o[COPILOT_TOKEN_STORAGE_KEY] = (localTok.value || '').trim();
+      chrome.storage.local.set(o);
+    });
+  }
+  var allowPrivEl = document.getElementById('allowPrivateEndpointTests');
+  if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
+  tasklyEnsureOptionsApiBase()
+    .then(function () { return ensureLocalServiceTokenFromBootstrap(); })
+    .then(function () { loadConfig(); })
+    .catch(function (err) {
+      var msg = (err && err.message) ? String(err.message) : String(err);
+      if (els.statusMessage) els.statusMessage.textContent = msg;
+      console.warn(msg);
+    });
   setupPassThroughContextToggle();
   updateUserScriptsSection();
 });
@@ -2410,7 +2514,7 @@ async function loadBuiltinTools() {
   if (!el) return;
   var disabledSet = (getDisabledBuiltIn() || []).map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
   try {
-    const res = await fetch(BUILTIN_TOOLS_URL);
+    const res = await tasklyFetch(BUILTIN_TOOLS_URL);
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">' + escapeHtml(data.message || ('无法加载内置插件列表（' + res.status + '）。请确认后端已启动且已更新至最新版本。')) + '</div>';
@@ -2642,7 +2746,7 @@ async function loadScheduledTasks() {
   const listEl = document.getElementById('scheduledTasksList');
   if (!listEl) return;
   try {
-    const res = await fetch(BASE_URL() + '/api/scheduled-tasks');
+    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks');
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -2718,7 +2822,7 @@ document.getElementById('scheduledTaskCancelBtn').addEventListener('click', () =
 
 async function editScheduledTask(id) {
   try {
-    const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
+    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
     if (!res.ok) {
       var errData = await res.json().catch(function () { return {}; });
       throw new Error(errData.message || '获取失败');
@@ -2754,7 +2858,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
   const deleteAfterRun = document.getElementById('scheduledTaskDeleteAfterRun').checked;
   try {
     if (id) {
-      const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
+      const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2766,7 +2870,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
       });
       if (!res.ok) throw new Error((await res.json().catch(function () { return {}; })).message || '更新失败');
     } else {
-      const res = await fetch(BASE_URL() + '/api/scheduled-tasks', {
+      const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2789,7 +2893,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
 async function deleteScheduledTask(id) {
   if (!confirm('确定要删除该定时任务吗？')) return;
   try {
-    const res = await fetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');
@@ -2809,7 +2913,7 @@ async function loadPlansList() {
   try {
     let url = BASE_URL() + '/api/plans';
     if (agentName) url += '?agentName=' + encodeURIComponent(agentName);
-    const res = await fetch(url);
+    const res = await tasklyFetch(url);
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -2850,7 +2954,7 @@ async function loadPlansList() {
 async function deletePlan(id) {
   if (!id || !confirm('确定要删除该计划吗？')) return;
   try {
-    const res = await fetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await tasklyFetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');
@@ -2865,7 +2969,7 @@ async function loadAccurateDataList() {
   const listEl = document.getElementById('accurateDataList');
   if (!listEl) return;
   try {
-    const res = await fetch(BASE_URL() + '/api/accurate-data');
+    const res = await tasklyFetch(BASE_URL() + '/api/accurate-data');
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -2901,7 +3005,7 @@ async function loadAccurateDataList() {
 async function deleteAccurateData(id) {
   if (!id || !confirm('确定要删除该准确数据条目吗？')) return;
   try {
-    const res = await fetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await tasklyFetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');

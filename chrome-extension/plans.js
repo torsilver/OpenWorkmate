@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const API_BASE = "http://localhost:8765";
+  let API_BASE = "http://127.0.0.1:8765";
   const STORAGE_EXECUTE_PLAN_ID = "copilot_execute_plan_id";
   const STORAGE_EXECUTE_PLAN_TITLE = "copilot_execute_plan_title";
 
@@ -247,16 +247,24 @@
 
   tasklyRefreshHljsLink();
 
-  fetch(API_BASE + "/api/config")
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (j) {
-      if (!j || typeof TasklyTheme === "undefined") return;
-      var id = j.uiThemeId || j.UiThemeId;
-      if (id) TasklyTheme.setTheme(id);
-      tasklyRefreshHljsLink();
-    })
-    .catch(function () {});
-
   const planId = getPlanIdFromUrl();
-  loadPlan(planId);
+  TasklyLocalService.tasklyResolveLocalServiceBase(
+    typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
+  )
+    .then(function (r) {
+      API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      fetch(API_BASE + "/api/config")
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (j) {
+          if (!j || typeof TasklyTheme === "undefined") return;
+          var id = j.uiThemeId || j.UiThemeId;
+          if (id) TasklyTheme.setTheme(id);
+          tasklyRefreshHljsLink();
+        })
+        .catch(function () {});
+      return loadPlan(planId);
+    })
+    .catch(function (err) {
+      showError(err.message || "无法连接本机 Office Copilot 服务。");
+    });
 })();
