@@ -266,6 +266,17 @@ public class ScheduledTaskCreateRequest
     public bool DeleteAfterRun { get; set; }
 }
 
+/// <summary>POST /api/meeting-transcript/segment 请求体（Chrome 会议监听实录落盘）。</summary>
+public class MeetingTranscriptSegmentRequest
+{
+    [JsonPropertyName("sessionId")]
+    public string? SessionId { get; set; }
+    [JsonPropertyName("sequence")]
+    public int Sequence { get; set; }
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+}
+
 /// <summary>PUT /api/scheduled-tasks/{id} 请求体。</summary>
 public class ScheduledTaskUpdateRequest
 {
@@ -342,6 +353,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(List<OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta>))]
 [JsonSerializable(typeof(ScheduledTaskCreateRequest))]
 [JsonSerializable(typeof(ScheduledTaskUpdateRequest))]
+[JsonSerializable(typeof(MeetingTranscriptSegmentRequest))]
 [JsonSerializable(typeof(AgentDebugStatsResponse))]
 [JsonSerializable(typeof(ToolSelectionDebugStatsDto))]
 [JsonSerializable(typeof(ToolInvocationDebugStatDto))]

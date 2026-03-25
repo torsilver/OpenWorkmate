@@ -41,8 +41,8 @@ public sealed class LocalApiAuthMiddleware
             return;
         }
 
-        // wwwroot/debug 下的统计页无扩展环境；本机 loopback 访问时与 Map 内校验一致，不再要求 Token
-        if (IsAgentStatsPath(context.Request.Path) && DebugLogHelper.IsDebugLogLoopback(context))
+        // 本机 loopback：调试统计与调试日志网页（logs.html）调用的 API 不便带头；Map 内仍有 IsDebugLogLoopback 校验
+        if (IsDebugLoopbackDiagnosticsPath(context.Request.Path) && DebugLogHelper.IsDebugLogLoopback(context))
         {
             await _next(context);
             return;
@@ -118,10 +118,16 @@ public sealed class LocalApiAuthMiddleware
         return false;
     }
 
-    private static bool IsAgentStatsPath(PathString path)
+    private static bool IsDebugLoopbackDiagnosticsPath(PathString path)
     {
         var p = path.Value ?? "";
-        return p.StartsWith("/api/debug/agent-stats", StringComparison.OrdinalIgnoreCase);
+        if (p.StartsWith("/api/debug/agent-stats", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.Equals(p, "/api/debug/log-files", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.Equals(p, "/api/debug/log-tail", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
     }
 
     private static bool IsBootstrapLocalServiceAuthPath(PathString path)

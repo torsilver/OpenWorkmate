@@ -101,6 +101,47 @@ function messageForBackendUnreachable(err) {
   return null;
 }
 
+(function () {
+  function openDebugStatsFromOptions() {
+    if (!chrome.runtime || !chrome.runtime.getURL || !chrome.tabs || !chrome.tabs.create) {
+      alert('当前环境无法打开扩展页。');
+      return;
+    }
+    var url = chrome.runtime.getURL('debug-stats.html');
+    chrome.tabs.create({ url: url }, function () {
+      if (chrome.runtime.lastError)
+        alert('打开失败：' + (chrome.runtime.lastError.message || String(chrome.runtime.lastError)));
+    });
+  }
+  function openDebugLogsPageFromOptions() {
+    if (!chrome.tabs || !chrome.tabs.create) {
+      alert('当前环境无法打开标签页。');
+      return;
+    }
+    tasklyEnsureOptionsApiBase()
+      .then(function () {
+        var base = API_URL.replace('/api/config', '');
+        if (!base) {
+          alert('未能解析本机服务地址，请确认 Office Copilot 后台已启动。');
+          return;
+        }
+        var url = base + '/debug/logs.html';
+        chrome.tabs.create({ url: url }, function () {
+          if (chrome.runtime.lastError)
+            alert('打开失败：' + (chrome.runtime.lastError.message || String(chrome.runtime.lastError)));
+        });
+      })
+      .catch(function (err) {
+        var m = messageForBackendUnreachable(err);
+        alert(m || (err && err.message) || '未能解析本机服务地址，请确认 Office Copilot 后台已启动。');
+      });
+  }
+  var sBtn = document.getElementById('openDebugStatsFromOptionsBtn');
+  var lBtn = document.getElementById('openDebugLogsPageBtn');
+  if (sBtn) sBtn.addEventListener('click', openDebugStatsFromOptions);
+  if (lBtn) lBtn.addEventListener('click', openDebugLogsPageFromOptions);
+})();
+
 const els = {
   statusMessage: document.getElementById('statusMessage'),
   aiModelsList: document.getElementById('aiModelsList'),
@@ -390,20 +431,16 @@ els.tabs.forEach(tab => {
     tab.classList.add('active');
     document.getElementById(tab.dataset.target).classList.add('active');
     
-    if (tab.dataset.target === 'tab-skills') {
+    if (tab.dataset.target === 'tab-skills-mcp') {
       loadSkills();
-    }
-    if (tab.dataset.target === 'tab-mcp') {
       loadBuiltinTools();
       updateUserScriptsSection();
     }
-    if (tab.dataset.target === 'tab-memory') {
+    if (tab.dataset.target === 'tab-memory-storage') {
       loadMemoryList();
     }
-    if (tab.dataset.target === 'tab-scheduled-tasks') {
+    if (tab.dataset.target === 'tab-plans-automation') {
       loadScheduledTasks();
-    }
-    if (tab.dataset.target === 'tab-plans-accurate') {
       loadPlansList();
       loadAccurateDataList();
     }
@@ -1115,37 +1152,51 @@ if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('s
 
 (function wireMicExtOriginHelp() {
   var disp = document.getElementById('micExtOriginDisplay');
-  var btn = document.getElementById('copyMicExtOriginBtn');
+  var btn = document.getElementById('openMicSiteSettingsBtn');
   if (!disp && !btn) return;
   var id = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? chrome.runtime.id : '';
   var origin = id ? ('chrome-extension://' + id + '/') : '';
   if (disp) {
     disp.textContent = id
-      ? ('本扩展站点：' + origin + '（扩展 ID：' + id + '）')
+      ? ('当前扩展站点：' + origin)
       : '无法读取扩展 ID（非扩展环境）';
   }
-  function copyMicExtOriginHelp() {
-    var text =
-      '在 Chrome「设置 → 隐私与安全 → 网站设置 → 麦克风」中查找并允许以下站点：\n' +
-      (origin || '（请在 chrome://extensions 查看本扩展 ID）') +
-      '\n\n或重新在侧栏点击「会议监听」并在弹窗中选择「允许」。';
+  function openMicSiteSettings() {
     function fail(msg) {
-      alert(msg || '复制失败，请手动选择上方灰色框内的站点地址复制。');
+      alert(
+        msg ||
+          '无法自动打开设置页。请手动打开 Chrome「设置 → 隐私与安全 → 网站设置 → 麦克风」，找到 ' +
+            (origin || '本扩展') +
+            ' 并允许麦克风。'
+      );
     }
-    if (!origin) {
-      fail('扩展 ID 不可用，无法生成地址。');
+    if (!id || !origin) {
+      fail('扩展 ID 不可用。');
       return;
     }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(
-        function () { alert('已复制到剪贴板。'); },
-        function () { fail(); }
-      );
-    } else {
-      fail('浏览器不支持剪贴板 API。');
+    if (!chrome.tabs || !chrome.tabs.create) {
+      fail('tabs API 不可用。');
+      return;
     }
+    var siteParam = encodeURIComponent(origin);
+    var urls = [
+      'chrome://settings/content/siteDetails?site=' + siteParam,
+      'chrome://extensions/?id=' + encodeURIComponent(id)
+    ];
+    function tryUrl(index) {
+      if (index >= urls.length) {
+        fail();
+        return;
+      }
+      chrome.tabs.create({ url: urls[index] }, function () {
+        if (chrome.runtime.lastError) {
+          tryUrl(index + 1);
+        }
+      });
+    }
+    tryUrl(0);
   }
-  if (btn) btn.addEventListener('click', copyMicExtOriginHelp);
+  if (btn) btn.addEventListener('click', openMicSiteSettings);
 })();
 
 function testSttConnection() {

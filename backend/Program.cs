@@ -98,6 +98,7 @@ try
 builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();
+    builder.Services.AddSingleton<IMeetingTranscriptStore, MeetingTranscriptStore>();
     builder.Services.AddSingleton<SttTranscriberProvider>();
     builder.Services.AddSingleton<OcrExtractorProvider>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
@@ -821,6 +822,7 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
         new() { Id = "Memory", Name = "Memory", Description = "长期记忆：用户可点名「记住」；也可主动保存/检索习惯、取向与关键事实（需配置 Embedding）" },
         new() { Id = "AccurateData", Name = "AccurateData", Description = "准确数据：用户可点名按 id 存取；复杂任务中可主动落盘大块结构化中间结果以减上下文" },
+        new() { Id = "MeetingTranscript", Name = "MeetingTranscript", Description = "会议实录：按会话 id 分块读取 Chrome 会议监听落盘的转写全文，用于超长会议总结" },
         new() { Id = "Plan", Name = "Plan", Description = "计划：用户可点名列计划；复杂多步任务可主动生成/按步执行已保存的实现计划" },
         new() { Id = "UserOptions", Name = "UserOptions", Description = "候选项确认（ask_options）：侧栏分步单选让用户确认方案/格式等；需在 Chrome 扩展侧栏连接（WPS 等端若未接 UI 则可能超时）" },
         new() { Id = "SkillAuthor", Name = "SkillAuthor", Description = "技能撰写：根据目标与对话摘要生成 SKILL.md 并保存为用户技能，与设置页技能列表一致" }
@@ -841,6 +843,8 @@ app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transc
     {
         return Results.Json(new { ok = false, message = "未收到音频文件或文件为空，请选择文件后上传（表单字段 file）。" }, statusCode: 400);
     }
+    var languageField = form["language"].ToString();
+    var language = string.IsNullOrWhiteSpace(languageField) ? null : languageField.Trim();
     const long whisperLimit = 25 * 1024 * 1024; // 25 MB
     if (file.Length > whisperLimit)
     {
@@ -849,7 +853,7 @@ app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transc
     try
     {
         await using var stream = file.OpenReadStream();
-        var text = await transcribeService.TranscribeAsync(stream, file.ContentType, null, ctx.RequestAborted);
+        var text = await transcribeService.TranscribeAsync(stream, file.ContentType, language, ctx.RequestAborted);
         return Results.Json(new { ok = true, text });
     }
     catch (InvalidOperationException ex)
@@ -862,6 +866,57 @@ app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transc
         return Results.Json(new { ok = false, message = "语音转写失败: " + ex.Message }, statusCode: 502);
     }
 });
+
+app.MapPost("/api/meeting-transcript/segment", async (HttpContext ctx, IMeetingTranscriptStore meetingStore, ILogger<Program> logger) =>
+{
+    MeetingTranscriptSegmentRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync(ctx.Request.Body, JsonCtx.Default.MeetingTranscriptSegmentRequest, ctx.RequestAborted).ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        logger.LogDebug(ex, "meeting-transcript segment body parse failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认 JSON 格式与字段 sessionId、sequence、text。" }, statusCode: 400);
+    }
+    if (body == null || string.IsNullOrWhiteSpace(body.SessionId))
+        return Results.Json(new { ok = false, message = "请求参数无效：缺少 sessionId。" }, statusCode: 400);
+    if (body.Sequence < 0)
+        return Results.Json(new { ok = false, message = "请求参数无效：sequence 不能为负。" }, statusCode: 400);
+    try
+    {
+        await meetingStore.AppendSegmentAsync(body.SessionId.Trim(), body.Sequence, body.Text ?? "", ctx.RequestAborted).ConfigureAwait(false);
+        return Results.Json(new { ok = true });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "meeting-transcript segment append failed");
+        return Results.Json(new { ok = false, message = "落盘失败: " + ex.Message }, statusCode: 500);
+    }
+});
+
+app.MapGet("/api/meeting-transcript/{sessionId}/meta", async (string sessionId, IMeetingTranscriptStore meetingStore, CancellationToken ct) =>
+{
+    var m = await meetingStore.GetMetaAsync(sessionId, ct).ConfigureAwait(false);
+    return Results.Json(new { ok = true, totalChars = m.TotalChars, segmentCount = m.SegmentCount });
+});
+
+app.MapGet("/api/meeting-transcript/{sessionId}/segments", async (string sessionId, int? afterSeq, IMeetingTranscriptStore meetingStore, CancellationToken ct) =>
+{
+    var after = afterSeq ?? -1;
+    var r = await meetingStore.ListSegmentsAfterAsync(sessionId, after, ct).ConfigureAwait(false);
+    return Results.Json(new
+    {
+        ok = true,
+        segments = r.Segments.Select(s => new { sequence = s.Sequence, text = s.Text }).ToList(),
+        maxSequenceInFile = r.MaxSequenceInFile
+    });
+});
+
 app.MapGet("/api/skills", (SkillService skills) => Results.Json(skills.GetAllSkills(), JsonCtx.Default.ListSkillDefinition));
 app.MapPost("/api/skills", async (HttpContext ctx, SkillService skills) =>
 {

@@ -358,6 +358,12 @@ public sealed class ChatService : IDisposable
         if (!disabledBuiltIn.Contains("accuratedata"))
             newKernel.Plugins.AddFromObject(new AccurateDataPlugin(_configService), "AccurateData");
 
+        if (!disabledBuiltIn.Contains("meetingtranscript"))
+        {
+            var meetingStore = _serviceProvider.GetRequiredService<IMeetingTranscriptStore>();
+            newKernel.Plugins.AddFromObject(new MeetingTranscriptPlugin(meetingStore), "MeetingTranscript");
+        }
+
         if (!disabledBuiltIn.Contains("scheduledtask"))
         {
             var scheduledTaskStore = _serviceProvider.GetRequiredService<IScheduledTaskStore>();

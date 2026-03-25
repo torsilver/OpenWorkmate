@@ -993,6 +993,19 @@ html, body {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+.meeting-secondary-btn {
+  background: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #e2e8f0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.meeting-secondary-btn:hover {
+  opacity: 0.9;
+}
 .meeting-stop-btn {
   background: #ef4444;
   color: #fff;
@@ -1006,14 +1019,37 @@ html, body {
 .meeting-stop-btn:hover {
   opacity: 0.85;
 }
+.meeting-hint {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
 .meeting-preview {
-  max-height: 120px;
+  max-height: 160px;
   overflow-y: auto;
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+.meeting-line {
+  border-left: 2px solid var(--accent, #60a5fa);
+  padding: 4px 0 4px 8px;
+  margin-bottom: 6px;
+}
+.meeting-line-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  display: block;
+  margin-bottom: 2px;
+}
+.meeting-line-text {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 .meeting-btn.active {
   color: #ef4444;

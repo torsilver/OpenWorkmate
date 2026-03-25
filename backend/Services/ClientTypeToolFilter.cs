@@ -17,6 +17,7 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(pluginName, "CrossAgentTask")
             || PluginComparer.Equals(pluginName, "ClawhubSkill")
             || PluginComparer.Equals(pluginName, "AccurateData")
+            || PluginComparer.Equals(pluginName, "MeetingTranscript")
             || PluginComparer.Equals(pluginName, "ScheduledTask")
             || PluginComparer.Equals(pluginName, "SkillAuthor")
             || pluginName.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)

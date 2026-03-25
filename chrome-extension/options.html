@@ -106,6 +106,41 @@
       display: block;
     }
 
+    /* 设置页：线框 + 可折叠功能块 */
+    .settings-block {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      background: var(--bg-panel);
+      overflow: hidden;
+    }
+    .settings-block > summary {
+      padding: 12px 14px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-primary);
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .settings-block > summary::-webkit-details-marker { display: none; }
+    .settings-block > summary::marker { content: none; }
+    .settings-block[open] > summary {
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-block-inner {
+      padding: 14px 16px 16px;
+    }
+    .settings-block.settings-block--flush > .settings-block-inner {
+      padding-top: 0;
+    }
+    /* 块内再嵌套原有 details（如 Embedding）时，去掉顶部分割线与多余 margin */
+    .settings-block .settings-block-inner > details:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+
     .cli-script-end-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
     .cli-script-end-tab {
       padding: 8px 16px;
@@ -322,24 +357,40 @@
         <option value="sketch">手绘</option>
       </select>
     </header>
-    <p class="help-text" style="margin-bottom: 16px; max-width: 52rem;">
-      <strong>多端说明</strong>：本页为<strong>全局配置唯一入口</strong>（模型、技能、Embedding、MCP、User Scripts 等）。
-      WPS / Office 任务窗格仅连接同一本地后台，<strong>不提供</strong>重复设置页；浏览器侧能力（标签页脚本注入、可见区域截图、侧栏 Debug / workspace 等）仅存在于 Chrome 扩展。
-    </p>
 
     <div class="tabs">
-      <div class="tab active" data-target="tab-ai">大模型设置</div>
-      <div class="tab" data-target="tab-memory">记忆与 RAG</div>
-      <div class="tab" data-target="tab-skills">自定义技能 (Skills)</div>
-      <div class="tab" data-target="tab-mcp">外部组件 (MCP)</div>
-      <div class="tab" data-target="tab-scheduled-tasks">定时任务</div>
-      <div class="tab" data-target="tab-plans-accurate">计划与准确数据</div>
+      <div class="tab active" data-target="tab-general">连接与杂项</div>
+      <div class="tab" data-target="tab-models">模型与多模态</div>
+      <div class="tab" data-target="tab-memory-storage">记忆与存储</div>
+      <div class="tab" data-target="tab-skills-mcp">技能与 MCP</div>
+      <div class="tab" data-target="tab-plans-automation">计划与自动化</div>
     </div>
 
-    <!-- 大模型设置 -->
-    <div id="tab-ai" class="tab-content active">
-      <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
-        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">本地服务访问密钥</h4>
+    <!-- 连接与杂项 -->
+    <div id="tab-general" class="tab-content active">
+      <details class="settings-block">
+        <summary>多端说明</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin: 0; max-width: 52rem;">
+            <strong>多端说明</strong>：本页为<strong>全局配置唯一入口</strong>（模型、技能、Embedding、MCP、User Scripts 等）。
+            WPS / Office 任务窗格仅连接同一本地后台，<strong>不提供</strong>重复设置页；浏览器侧能力（标签页脚本注入、可见区域截图、侧栏 Debug / workspace 等）仅存在于 Chrome 扩展。
+          </p>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>调试工具</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin-bottom: 10px;">仅供本机联调：在新标签页打开调试统计页，或打开本机服务上的日志查看网页（需已启动 Office Copilot 后台）。</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button type="button" id="openDebugStatsFromOptionsBtn" class="btn-secondary">调试统计</button>
+            <button type="button" id="openDebugLogsPageBtn" class="btn-secondary">调试日志（网页）</button>
+          </div>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>本地服务访问密钥</summary>
+        <div class="settings-block-inner">
+      <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
         <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：填写后与 AI 等配置一起点「保存配置」会写入服务端 user-config（字段 <code>webSocketAuthToken</code>）；若未填写 user-config，则使用 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。侧栏、Workspace 会在本机自动从引导接口同步到 <code>chrome.storage.local</code>；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥，一般无需在各端再填一遍。</p>
         <div class="form-group" style="margin-bottom: 8px;">
           <label for="localServiceAuthToken">访问密钥（与服务端当前生效值一致）</label>
@@ -351,15 +402,27 @@
           <span class="help-text" style="margin: 0;">允许「测试连接」访问 localhost / 内网地址（降低 SSRF 防护，仅供调试；会写入本机 user-config）</span>
         </label>
       </div>
-      <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
-        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">麦克风权限（会议监听）</h4>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>麦克风权限（会议监听）</summary>
+        <div class="settings-block-inner">
+      <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
         <p class="help-text" style="margin: 0 0 10px 0;"><strong>本选项页不能授予麦克风。</strong>麦克风由 Chrome 按站点（<code>chrome-extension://…</code>）单独授权，与下方 AI 等配置无关。</p>
-        <p class="help-text" style="margin: 0 0 10px 0;">若提示无法访问麦克风：（1）请再次点击侧栏的「会议监听」，在浏览器弹窗中选「允许」；（2）若曾选「阻止」，打开 Chrome「设置 → 隐私与安全 → 网站设置 → 麦克风」，在列表中找到本扩展对应站点并改为「允许」；（3）也可在侧栏所在网页地址栏左侧的锁/信息图标中检查站点权限。</p>
-        <p class="help-text" style="margin: 0 0 8px 0; font-family: monospace; font-size: 12px; word-break: break-all;" id="micExtOriginDisplay"></p>
-        <button type="button" id="copyMicExtOriginBtn" class="btn-secondary" style="margin-top: 4px;">复制扩展站点地址与排查说明</button>
+        <p class="help-text" style="margin: 0 0 10px 0;">若提示无法访问麦克风：（1）请再次点击侧栏的「会议监听」，在浏览器弹窗中选「允许」；（2）若曾选「阻止」，点击下方按钮会在新标签页打开 Chrome 中<strong>本扩展的站点详情</strong>，将「麦克风」改为「允许」；（3）也可在侧栏所在网页地址栏左侧的锁/信息图标中检查站点权限。</p>
+        <p class="help-text" style="margin: 0 0 8px 0; font-size: 12px; color: var(--text-secondary);" id="micExtOriginDisplay"></p>
+        <button type="button" id="openMicSiteSettingsBtn" class="btn-secondary" style="margin-top: 4px;">打开本扩展的站点设置（麦克风）</button>
       </div>
-      <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-secondary);">AI 模型列表</h4>
-      <p class="help-text" style="margin-top: -4px; margin-bottom: 12px;">点击某条目的「启用」即设为当前使用模型，其它模型自动停用；所有对话将使用当前启用的模型。</p>
+        </div>
+      </details>
+    </div>
+
+    <!-- 模型与多模态 -->
+    <div id="tab-models" class="tab-content">
+      <details class="settings-block">
+        <summary>对话大模型</summary>
+        <div class="settings-block-inner">
+      <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">点击某条目的「启用」即设为当前使用模型，其它模型自动停用；所有对话将使用当前启用的模型。</p>
       <div id="aiModelsList" class="ai-models-list"></div>
       <button type="button" id="addAiModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加新 AI</button>
 
@@ -433,10 +496,12 @@
           </div>
         </form>
       </div>
+        </div>
+      </details>
 
-      <details id="embeddingModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <summary id="embeddingModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">Embedding 模型（未配置）</summary>
-        <div style="margin-top: 12px;">
+      <details class="settings-block" id="embeddingModelDetails">
+        <summary id="embeddingModelSummary">Embedding 模型（未配置）</summary>
+        <div class="settings-block-inner">
           <p class="help-text" style="margin-bottom: 12px;">用于长期记忆与知识库 RAG 的向量化，与对话大模型独立配置。仅支持远程 Embedding API；不配置则记忆/RAG 不生效。点击「设为当前」即使用该模型。</p>
           <p class="help-text" style="margin-bottom: 12px; color: var(--danger);">注意：更换不同向量模型可能导致<strong>向量维度不一致</strong>，已有记忆/RAG 需重新嵌入后再用。</p>
           <div id="embeddingModelsList" class="ai-models-list"></div>
@@ -475,9 +540,9 @@
         </div>
       </details>
 
-      <details id="sttModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <summary id="sttModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">语音转文字 (STT) 模型</summary>
-        <div style="margin-top: 12px;">
+      <details class="settings-block" id="sttModelDetails">
+        <summary id="sttModelSummary">语音转文字 (STT) 模型</summary>
+        <div class="settings-block-inner">
               <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字。请先选择<strong>供应商</strong>，程序会按供应商选择识别方式（Whisper 或通义百炼等）；仍可按厂商文档修改地址与模型 ID。</p>
           <div id="sttModelsList" class="ai-models-list"></div>
           <button type="button" id="addSttModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 STT 模型</button>
@@ -519,9 +584,9 @@
         </div>
       </details>
 
-      <details id="ocrModelDetails" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <summary id="ocrModelSummary" style="cursor: pointer; font-size: 14px; color: var(--text-secondary);">OCR 模型</summary>
-        <div style="margin-top: 12px;">
+      <details class="settings-block" id="ocrModelDetails">
+        <summary id="ocrModelSummary">OCR 模型</summary>
+        <div class="settings-block-inner">
           <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具从图片提取文字（内置 MCP_OCR）。与对话大模型独立配置；不配置则 MCP_OCR 工具不可用。点击「设为当前」即使用该模型。</p>
           <div id="ocrModelsList" class="ai-models-list"></div>
           <button type="button" id="addOcrModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 OCR 模型</button>
@@ -563,33 +628,17 @@
         </div>
       </details>
 
-      <div id="ragStorageSection" style="margin-top: 16px;">
-        <label style="font-size: 13px; color: var(--text-secondary);">向量存储</label>
-        <select id="ragStorageType" style="margin-top: 4px; padding: 6px 10px; border-radius: 6px;">
-          <option value="Sqlite" selected>SQLite 文件（持久化）</option>
-          <option value="Memory">内存（仅测试/临时，进程重启后清空）</option>
-        </select>
-        <div id="ragStoragePathGroup" style="display: none; margin-top: 8px;">
-          <label for="ragStoragePath">数据库路径</label>
-          <input type="text" id="ragStoragePath" placeholder="留空则用 %LocalAppData%/OfficeCopilot/rag.db">
-        </div>
-      </div>
-
-      <div id="skillEnvSection" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">技能所需环境变量</h4>
-        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>
-        <div id="skillEnvList"></div>
-      </div>
-
       <div class="actions">
         <span id="statusMessage" class="status save-config-status">已自动保存</span>
       </div>
     </div>
     
-    <!-- 记忆与 RAG -->
-    <div id="tab-memory" class="tab-content">
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">记忆管理（增删改查）</h3>
-      <p class="help-text" style="margin-bottom: 12px;">需先在「大模型设置」中配置 Embedding 模型（与对话大模型独立）。此处可查看、新增、编辑、删除长期记忆。共享记忆跨端可见（Chrome/Word 等均可检索）。</p>
+    <!-- 记忆与存储 -->
+    <div id="tab-memory-storage" class="tab-content">
+      <details class="settings-block">
+        <summary>记忆管理（增删改查）</summary>
+        <div class="settings-block-inner">
+      <p class="help-text" style="margin-bottom: 12px;">需先在「模型与多模态」中配置 Embedding 模型（与对话大模型独立）。此处可查看、新增、编辑、删除长期记忆。共享记忆跨端可见（Chrome/Word 等均可检索）。</p>
       <div style="margin-bottom: 12px;">
         <button type="button" id="addMemoryBtn" class="btn-secondary">+ 新增记忆</button>
         <label style="margin-left: 12px;">范围：</label>
@@ -626,21 +675,83 @@
           <button type="button" id="cancelMemoryEditBtn" class="btn-secondary">取消</button>
         </div>
       </div>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>向量存储（RAG）</summary>
+        <div class="settings-block-inner">
+      <div id="ragStorageSection">
+        <label style="font-size: 13px; color: var(--text-secondary);">向量存储</label>
+        <select id="ragStorageType" style="margin-top: 4px; padding: 6px 10px; border-radius: 6px;">
+          <option value="Sqlite" selected>SQLite 文件（持久化）</option>
+          <option value="Memory">内存（仅测试/临时，进程重启后清空）</option>
+        </select>
+        <div id="ragStoragePathGroup" style="display: none; margin-top: 8px;">
+          <label for="ragStoragePath">数据库路径</label>
+          <input type="text" id="ragStoragePath" placeholder="留空则用 %LocalAppData%/OfficeCopilot/rag.db">
+        </div>
+      </div>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>技能所需环境变量</summary>
+        <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>
+        <div id="skillEnvList"></div>
+        </div>
+      </details>
       <div class="actions">
         <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
-    <!-- MCP 管理 -->
-    <div id="tab-mcp" class="tab-content">
-      <div id="userScriptsSection" class="skill-card" style="margin-bottom: 20px;">
-        <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">自定义页面脚本（User Scripts）</h4>
+    <!-- 技能与 MCP -->
+    <div id="tab-skills-mcp" class="tab-content">
+      <details class="settings-block">
+        <summary>自定义技能 (Skills)</summary>
+        <div class="settings-block-inner">
+      <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
+        <p class="help-text" style="font-size: 14px; margin: 0;">你可以用自然语言编写业务流程，AI 会将它视为一个独立的高级技能。</p>
+        <button id="newSkillBtn" class="btn-secondary">新增技能</button>
+      </div>
+      <div id="skillsList"></div>
+      <div id="skillEditor" style="display:none; border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px;">
+        <h3 style="margin-bottom: 16px;" id="skillEditorTitle">新增技能</h3>
+        <input type="hidden" id="skillId">
+        <div class="form-group">
+          <label>技能名称 (仅限英文/拼音，用于工具注册)</label>
+          <input type="text" id="skillName" placeholder="例如: GenerateWeeklyReport">
+        </div>
+        <div class="form-group">
+          <label>触发描述 (告诉 AI 什么时候调用这个技能)</label>
+          <input type="text" id="skillDesc" placeholder="例如: 当用户要求生成周报时调用">
+        </div>
+        <div class="form-group">
+          <label>处理逻辑 (Prompt)</label>
+          <textarea id="skillPrompt" style="min-height:120px;" placeholder="例如: 请读取 {{log_path}} 的内容，提取重点并保存到 {{output_path}}..."></textarea>
+          <div class="help-text">支持使用 {{参数名}} 来定义需要大模型传入的参数。这些参数将被自动填充为工具的入参。</div>
+        </div>
+        <div class="actions" style="margin-top: 16px;">
+          <button id="cancelSkillBtn" class="btn-secondary">取消</button>
+          <button id="saveSkillBtn">完成</button>
+        </div>
+      </div>
+        </div>
+      </details>
+      <details class="settings-block">
+        <summary>自定义页面脚本（User Scripts）</summary>
+        <div class="settings-block-inner">
+      <div id="userScriptsSection" class="skill-card" style="margin-bottom: 0;">
         <p class="help-text" style="margin-bottom: 10px;">需开启「Allow User Scripts」才能在任意页面执行 AI 生成的脚本（如 run_custom_page_script）。</p>
         <p style="font-size: 14px; margin-bottom: 8px;">状态：<span id="userScriptsStatusText">检测中…</span></p>
         <a id="userScriptsExtensionLink" href="#" target="_blank" rel="noopener" style="font-size: 14px; color: var(--accent);">打开扩展详情页</a>
       </div>
+        </div>
+      </details>
 
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
+      <details class="settings-block">
+        <summary>安全与确认（按端配置）</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。<strong>RunEverything</strong> 会放行该端上的 CLI 命令与预定义页面脚本，请仅在完全信任环境与模型时使用。</p>
       <p class="help-text" style="margin-bottom: 16px;"><strong>后台</strong>端无浏览器界面，但同样适用上述模式与白名单：<strong>定时任务</strong>到点由本机服务触发 Agent 执行时，CLI/页面脚本策略使用<strong>本页「后台」</strong>的配置；到点执行<strong>不会</strong>弹出人工确认，<strong>AskEverytime</strong> 在定时路径上等效于仅允许白名单内命令/脚本（名单外直接拦截）。若需定时任务执行非常规命令，请将命令加入后台 CLI 白名单或把后台设为 RunEverything。</p>
       <div id="cliScriptEndTabs" class="cli-script-end-tabs">
@@ -649,14 +760,22 @@
       <div id="cliScriptPerEndConfig">
         <!-- 当前选中端的模式与白名单由 JS 注入 -->
       </div>
+        </div>
+      </details>
 
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">内置能力（自带的 MCP）</h3>
+      <details class="settings-block">
+        <summary>内置能力（自带的 MCP）</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置，无需配置即可使用。</p>
       <div id="builtinToolsList">
         <!-- 内置插件列表由 JS 注入，Browser 卡片内含页面脚本白名单 -->
       </div>
-      
-      <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">外部 MCP 组件</h3>
+        </div>
+      </details>
+
+      <details class="settings-block">
+        <summary>外部 MCP 组件</summary>
+        <div class="settings-block-inner">
       <div class="skill-card" style="margin-bottom: 16px; border-color: var(--danger); background: rgba(239, 68, 68, 0.06);">
         <div class="skill-title" style="color: var(--danger);">安全风险</div>
         <p class="help-text" style="margin: 8px 0 0;">此处配置的 <strong>启动命令（Command）与参数（Args）</strong> 会由后端在本机直接启动进程，<strong>等价于在您的电脑上执行对应命令行</strong>。请勿添加不信任来源的配置。CLI 插件使用 <code>cmd /c</code>：在「RunEverything」模式下模型可发起任意命令；在其它模式下仍会弹出确认，但误点「允许」也会导致命令执行——请勿在不可信模型下使用 RunEverything。</p>
@@ -723,14 +842,18 @@ postgresql://localhost/mydb"></textarea>
           <button id="saveMcpBtn">完成</button>
         </div>
       </div>
+        </div>
+      </details>
       <div class="actions">
         <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
 
-    <!-- 定时任务 -->
-    <div id="tab-scheduled-tasks" class="tab-content">
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">定时任务</h3>
+    <!-- 计划与自动化 -->
+    <div id="tab-plans-automation" class="tab-content">
+      <details class="settings-block">
+        <summary>定时任务</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 16px;">到点后后台会将任务内容（MD）发给 AI 执行。与内置定时任务插件共用同一批任务数据。</p>
       <div style="margin-bottom: 16px;">
         <button type="button" id="scheduledTaskNewBtn" class="btn-secondary">新建定时任务</button>
@@ -777,14 +900,12 @@ postgresql://localhost/mydb"></textarea>
           <button type="button" id="scheduledTaskSaveBtn">完成</button>
         </div>
       </div>
-      <div class="actions">
-        <span class="status save-config-status">已自动保存</span>
-      </div>
-    </div>
+        </div>
+      </details>
 
-    <!-- 计划与准确数据（仅列表 + 删除） -->
-    <div id="tab-plans-accurate" class="tab-content">
-      <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">模型优化策略</h3>
+      <details class="settings-block">
+        <summary>模型优化策略</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 12px;">选择上下文优化预设（如公司内部 64K、Kimi K2.5），或新建自定义预设。切换后会话/上下文/计划确认参数将随之生效。</p>
       <div class="form-group">
         <label for="activeContextPreset">当前优化预设</label>
@@ -915,8 +1036,12 @@ postgresql://localhost/mydb"></textarea>
         </div>
         </div>
       </div>
+        </div>
+      </details>
 
-      <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">计划确认规则</h3>
+      <details class="settings-block">
+        <summary>计划确认规则</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 12px;">由后台规则决定生成的计划是否需要用户确认后再执行。步数不超过阈值且未涉及敏感工具时可直接执行，否则需用户确认。</p>
       <div class="form-group">
         <label for="autoExecuteMaxSteps">直接执行的最大步数（步数 ≤ 此值且未涉及敏感工具时不弹确认）</label>
@@ -930,8 +1055,12 @@ postgresql://localhost/mydb"></textarea>
         <label for="sensitiveToolIds">敏感工具 ID 列表（每行一个，如 CLI:run_command；留空则仅按步数判断）</label>
         <textarea id="sensitiveToolIds" rows="3" placeholder="CLI:run_command&#10;File:write_file" style="font-family: monospace; font-size: 12px;"></textarea>
       </div>
+        </div>
+      </details>
 
-      <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">计划</h3>
+      <details class="settings-block">
+        <summary>计划</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 12px;">由 AI 生成的计划，此处仅支持查看列表与删除。查看/编辑单条请从侧边栏打开计划页。</p>
       <div style="margin-bottom: 12px;">
         <label style="margin-right: 8px;">按 Agent 名称筛选：</label>
@@ -941,50 +1070,18 @@ postgresql://localhost/mydb"></textarea>
       <div id="plansListContainer">
         <div id="plansList"></div>
       </div>
-      <h3 style="margin: 24px 0 8px; font-size: 14px; color: var(--text-secondary);">准确数据</h3>
+        </div>
+      </details>
+
+      <details class="settings-block">
+        <summary>准确数据</summary>
+        <div class="settings-block-inner">
       <p class="help-text" style="margin-bottom: 12px;">由 AI 通过准确数据 MCP 写入的条目，此处仅支持查看列表与删除。新增与编辑由 AI 完成。</p>
       <div id="accurateDataListContainer">
         <div id="accurateDataList"></div>
       </div>
-      <div class="actions">
-        <span class="status save-config-status">已自动保存</span>
-      </div>
-    </div>
-
-    <div id="tab-skills" class="tab-content">
-      <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
-        <p class="help-text" style="font-size: 14px;">你可以用自然语言编写业务流程，AI 会将它视为一个独立的高级技能。</p>
-        <button id="newSkillBtn" class="btn-secondary">新增技能</button>
-      </div>
-      
-      <div id="skillsList">
-        <!-- Skills injected here -->
-      </div>
-      
-      <!-- 编辑框 -->
-      <div id="skillEditor" style="display:none; border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px;">
-        <h3 style="margin-bottom: 16px;" id="skillEditorTitle">新增技能</h3>
-        <input type="hidden" id="skillId">
-        
-        <div class="form-group">
-          <label>技能名称 (仅限英文/拼音，用于工具注册)</label>
-          <input type="text" id="skillName" placeholder="例如: GenerateWeeklyReport">
         </div>
-        <div class="form-group">
-          <label>触发描述 (告诉 AI 什么时候调用这个技能)</label>
-          <input type="text" id="skillDesc" placeholder="例如: 当用户要求生成周报时调用">
-        </div>
-        <div class="form-group">
-          <label>处理逻辑 (Prompt)</label>
-          <textarea id="skillPrompt" style="min-height:120px;" placeholder="例如: 请读取 {{log_path}} 的内容，提取重点并保存到 {{output_path}}..."></textarea>
-          <div class="help-text">支持使用 {{参数名}} 来定义需要大模型传入的参数。这些参数将被自动填充为工具的入参。</div>
-        </div>
-        
-        <div class="actions" style="margin-top: 16px;">
-          <button id="cancelSkillBtn" class="btn-secondary">取消</button>
-          <button id="saveSkillBtn">完成</button>
-        </div>
-      </div>
+      </details>
       <div class="actions">
         <span class="status save-config-status">已自动保存</span>
       </div>

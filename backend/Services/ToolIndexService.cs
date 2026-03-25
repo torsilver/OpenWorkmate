@@ -20,7 +20,7 @@ public sealed class ToolIndexService : IToolIndexService
         "CLI", "Excel", "Word", "Ppt", "Browser", "File", "System",
         "MCP_STT", "MCP_OCR", "CurrentDocument", "Tavily", "ClawhubSkill",
         "Memory", "Context", "Subagent", "CrossAgentTask", "Plan", "SkillAuthor",
-        "UserOptions", "AccurateData", "ScheduledTask"
+        "UserOptions", "AccurateData", "MeetingTranscript", "ScheduledTask"
     };
 
     private static bool IsUserPlugin(string pluginName)

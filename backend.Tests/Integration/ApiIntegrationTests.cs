@@ -696,6 +696,100 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             }
         }
     }
+
+    [Fact]
+    public async Task PostMeetingTranscriptSegment_ThenMeta_ReturnsOkAndTotalChars()
+    {
+        var sid = "testmt_" + Guid.NewGuid().ToString("N")[..12];
+        var body1 = new { sessionId = sid, sequence = 0, text = "hello" };
+        var r1 = await _client.PostAsync(
+            "/api/meeting-transcript/segment",
+            new StringContent(JsonSerializer.Serialize(body1), Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
+        var j1 = await r1.Content.ReadAsStringAsync();
+        Assert.Contains("\"ok\":true", j1, StringComparison.Ordinal);
+
+        var body2 = new { sessionId = sid, sequence = 1, text = "world" };
+        var r2 = await _client.PostAsync(
+            "/api/meeting-transcript/segment",
+            new StringContent(JsonSerializer.Serialize(body2), Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
+
+        var rMeta = await _client.GetAsync("/api/meeting-transcript/" + Uri.EscapeDataString(sid) + "/meta");
+        Assert.Equal(HttpStatusCode.OK, rMeta.StatusCode);
+        var doc = JsonDocument.Parse(await rMeta.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok) && ok.GetBoolean());
+        Assert.True(root.TryGetProperty("totalChars", out var tc));
+        Assert.True(tc.GetInt32() > 0);
+
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
+    [Fact]
+    public async Task GetMeetingTranscriptSegments_AfterSeq_ReturnsIncremental()
+    {
+        var sid = "testmtseg_" + Guid.NewGuid().ToString("N")[..10];
+        var body0 = new { sessionId = sid, sequence = 0, text = "alpha" };
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync(
+            "/api/meeting-transcript/segment",
+            new StringContent(JsonSerializer.Serialize(body0), Encoding.UTF8, "application/json"))).StatusCode);
+        var body1 = new { sessionId = sid, sequence = 1, text = "beta" };
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync(
+            "/api/meeting-transcript/segment",
+            new StringContent(JsonSerializer.Serialize(body1), Encoding.UTF8, "application/json"))).StatusCode);
+
+        var rAll = await _client.GetAsync("/api/meeting-transcript/" + Uri.EscapeDataString(sid) + "/segments?afterSeq=-1");
+        Assert.Equal(HttpStatusCode.OK, rAll.StatusCode);
+        var docAll = JsonDocument.Parse(await rAll.Content.ReadAsStringAsync());
+        var rootAll = docAll.RootElement;
+        Assert.True(rootAll.TryGetProperty("segments", out var segs) && segs.GetArrayLength() == 2);
+
+        var rAfter = await _client.GetAsync("/api/meeting-transcript/" + Uri.EscapeDataString(sid) + "/segments?afterSeq=0");
+        Assert.Equal(HttpStatusCode.OK, rAfter.StatusCode);
+        var docAfter = JsonDocument.Parse(await rAfter.Content.ReadAsStringAsync());
+        Assert.True(docAfter.RootElement.TryGetProperty("segments", out var segs2) && segs2.GetArrayLength() == 1);
+        Assert.True(segs2[0].TryGetProperty("sequence", out var sq) && sq.GetInt32() == 1);
+
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
+    [Fact]
+    public async Task PostMeetingTranscriptSegment_InvalidSessionId_Returns400()
+    {
+        var body = new { sessionId = "bad id!", sequence = 0, text = "x" };
+        var r = await _client.PostAsync(
+            "/api/meeting-transcript/segment",
+            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        var json = await r.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.TryGetProperty("ok", out var ok));
+        Assert.False(ok.GetBoolean());
+        Assert.True(doc.RootElement.TryGetProperty("message", out _));
+    }
 }
 
 public sealed class SttFakeHttpMessageHandler : HttpMessageHandler

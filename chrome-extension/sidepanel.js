@@ -78,6 +78,8 @@ const $meetingBtn = document.getElementById("meeting-btn");
 const $meetingPanel = document.getElementById("meeting-panel");
 const $meetingTimer = document.getElementById("meeting-timer");
 const $meetingStopBtn = document.getElementById("meeting-stop-btn");
+const $meetingDownloadBtn = document.getElementById("meeting-download-btn");
+const $meetingExportHintBtn = document.getElementById("meeting-export-hint-btn");
 const $meetingPreview = document.getElementById("meeting-preview");
 
 const STORAGE_PLAN_ID = "copilot_plan_id";
@@ -904,6 +906,7 @@ function connect() {
       send("请按当前绑定的计划执行");
     }
     flushCrossAgentAutoRunAfterReconnect();
+    flushPendingMeetingSummaryFromStorage();
   });
 
   ws.addEventListener("message", (e) => {
@@ -961,6 +964,42 @@ function send(text, attachmentsPayload = null, sendOptions = {}) {
   const payload = JSON.stringify(base);
   ws.send(payload);
   debugLog("WS Send", "type=text planId=" + (planId || "-") + " step=" + (planId ? getPlanCurrentStepIndex() : "-") + " len=" + (text || "").length, "send");
+}
+
+var MEETING_SUMMARY_STORAGE_KEY = "meetingSummaryPending";
+
+function tasklyMeetingSummaryUserContent(sid, leadIn) {
+  var pre = (leadIn || "").trim();
+  if (pre && !pre.endsWith("。") && !pre.endsWith(".")) pre += "。";
+  return (
+    pre +
+    "实录已按会话落盘，会话 ID（sessionId）：" + sid + "。\n\n" +
+    "请使用 MeetingTranscript 插件：先调用 meeting_transcript_meta 查看 totalChars；再反复调用 meeting_transcript_read，" +
+    "参数 sessionId=\"" + sid + "\"、offsetChars 从 0 开始，之后每次使用上一段返回的 nextOffset，直到 hasMore 为 false。\n" +
+    "在**读完所有分块**后，生成会议纪要（会议主题、讨论要点、决议、待办事项）。不要猜测未读取的内容。\n\n" +
+    "说明：此为正式总结任务；会中侧栏与实录页展示仅为语音转写实录。"
+  );
+}
+
+function flushPendingMeetingSummaryFromStorage() {
+  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
+  chrome.storage.local.get([MEETING_SUMMARY_STORAGE_KEY], function (r) {
+    var v = r && r[MEETING_SUMMARY_STORAGE_KEY];
+    if (!v || !v.sessionId) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    addSystemMessage("正在根据 sessionId=" + v.sessionId + " 生成会议纪要（实录页请求）…");
+    send(tasklyMeetingSummaryUserContent(String(v.sessionId), "会议实录页请求生成会议纪要"));
+    chrome.storage.local.remove([MEETING_SUMMARY_STORAGE_KEY], function () {});
+  });
+}
+
+if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== "local" || !changes[MEETING_SUMMARY_STORAGE_KEY]) return;
+    var nv = changes[MEETING_SUMMARY_STORAGE_KEY].newValue;
+    if (!nv || !nv.sessionId) return;
+    setTimeout(flushPendingMeetingSummaryFromStorage, 0);
+  });
 }
 
 function scheduleCrossAgentAutoRun() {
@@ -2702,24 +2741,47 @@ $input.addEventListener("input", () => {
   scheduleAtModeSync();
 });
 
-// ───── Meeting Listener ─────
+// ───── Meeting Listener（固定时间片 PCM→WAV + 块间重叠 + STT 串行落盘）─────
 
 (function initMeetingListener() {
   if (!$meetingBtn || !$meetingPanel || !$meetingStopBtn) return;
 
-  let mediaRecorder = null;
+  /** 每块窗口时长（ms），约 2～3s 较均衡。 */
+  const MEETING_PCM_WINDOW_MS = 2500;
+  /** 相邻两块重叠（ms），减轻切在词中间的影响；建议 100～300。 */
+  const MEETING_PCM_OVERLAP_MS = 250;
+  /** 结束时尚未凑满一窗时，至少这么多 ms 的样本才单独送 STT，避免极小尾块触发上游 empty。 */
+  const MEETING_TAIL_MIN_MS = 400;
+  const MEETING_TRANSCRIBE_LANGUAGE = "zh";
+
   let audioStream = null;
-  let meetingTranscript = "";
+  let audioContext = null;
+  let meetingSourceNode = null;
+  let meetingScriptNode = null;
+  let meetingGainNode = null;
   let meetingStartTime = null;
   let timerInterval = null;
-  let chunkInterval = null;
   let isProcessing = false;
+  let meetingSessionId = "";
+  let sttQueue = [];
+  let sttWorkerRunning = false;
+  let nextSegmentSeq = 0;
+  let persistedSegmentCount = 0;
+  let meetingListenActive = false;
+  /** 为 true 表示正在结束会议（ drain 前），防止侧栏按钮误判为可重新开始。 */
+  let meetingStopping = false;
+  /** @type {Float32Array} */
+  let meetingPcmAccum = new Float32Array(0);
 
   function formatTime(ms) {
     const s = Math.floor(ms / 1000);
-    const mm = String(Math.floor(s / 60)).padStart(2, "0");
-    const ss = String(s % 60).padStart(2, "0");
-    return mm + ":" + ss;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) {
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+    }
+    return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
   }
 
   function updateTimer() {
@@ -2727,21 +2789,216 @@ $input.addEventListener("input", () => {
     $meetingTimer.textContent = formatTime(Date.now() - meetingStartTime);
   }
 
+  function writeAscii(view, offset, str) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  /** 单声道 float32 [-1,1] → WAV Blob */
+  function float32ToWavBlob(samples, sampleRate) {
+    const n = samples.length;
+    const buf = new ArrayBuffer(44 + n * 2);
+    const view = new DataView(buf);
+    writeAscii(view, 0, "RIFF");
+    view.setUint32(4, 36 + n * 2, true);
+    writeAscii(view, 8, "WAVE");
+    writeAscii(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(view, 36, "data");
+    view.setUint32(40, n * 2, true);
+    let o = 44;
+    for (let i = 0; i < n; i++) {
+      let v = samples[i];
+      if (v > 1) v = 1;
+      else if (v < -1) v = -1;
+      const s16 = v < 0 ? Math.round(v * 0x8000) : Math.round(v * 0x7fff);
+      view.setInt16(o, Math.max(-32768, Math.min(32767, s16)), true);
+      o += 2;
+    }
+    return new Blob([buf], { type: "audio/wav" });
+  }
+
+  function appendMeetingPcmMono(floatMono) {
+    const n = floatMono.length;
+    if (n === 0) return;
+    const next = new Float32Array(meetingPcmAccum.length + n);
+    next.set(meetingPcmAccum);
+    next.set(floatMono, meetingPcmAccum.length);
+    meetingPcmAccum = next;
+  }
+
+  function emitOverlappingWindows(sr) {
+    const windowSamples = Math.max(1, Math.floor((MEETING_PCM_WINDOW_MS / 1000) * sr));
+    const stepSamples = Math.max(1, Math.floor(((MEETING_PCM_WINDOW_MS - MEETING_PCM_OVERLAP_MS) / 1000) * sr));
+    while (meetingPcmAccum.length >= windowSamples) {
+      const slice = meetingPcmAccum.slice(0, windowSamples);
+      const wav = float32ToWavBlob(slice, sr);
+      enqueueStt(wav);
+      const rest = meetingPcmAccum.subarray(stepSamples);
+      meetingPcmAccum = new Float32Array(rest.length);
+      meetingPcmAccum.set(rest);
+    }
+  }
+
+  function flushMeetingPcmTail(sr) {
+    const minTail = Math.floor((MEETING_TAIL_MIN_MS / 1000) * sr);
+    if (meetingPcmAccum.length >= minTail) {
+      const slice = meetingPcmAccum.slice(0);
+      meetingPcmAccum = new Float32Array(0);
+      enqueueStt(float32ToWavBlob(slice, sr));
+    } else {
+      meetingPcmAccum = new Float32Array(0);
+    }
+  }
+
   async function transcribeChunk(blob) {
     await tasklyEnsureApiBase();
     const formData = new FormData();
-    formData.append("file", blob, "chunk.webm");
+    formData.append("file", blob, "chunk.wav");
+    formData.append("language", MEETING_TRANSCRIBE_LANGUAGE);
     try {
       const res = await tasklyFetch(API_BASE + "/api/transcribe", { method: "POST", body: formData });
-      if (!res.ok) return "";
-      const data = await res.json();
-      return (data.ok !== false && data.text) ? data.text : "";
-    } catch {
-      return "";
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        return { ok: false, text: "", message: (data && data.message) ? String(data.message) : ("HTTP " + res.status) };
+      }
+      if (data.ok === false) {
+        return { ok: false, text: "", message: (data && data.message) ? String(data.message) : "语音转写失败" };
+      }
+      return { ok: true, text: (data.text != null ? String(data.text) : ""), message: "" };
+    } catch (e) {
+      return { ok: false, text: "", message: e && e.message ? String(e.message) : "网络错误" };
+    }
+  }
+
+  const previewLines = [];
+
+  function appendMeetingLineIncremental(seq, text) {
+    previewLines.push({ seq: seq, text: text });
+    const wrap = document.createElement("div");
+    wrap.className = "meeting-line";
+    const timeEl = document.createElement("span");
+    timeEl.className = "meeting-line-time";
+    timeEl.textContent = "#" + (seq + 1);
+    const p = document.createElement("p");
+    p.className = "meeting-line-text";
+    p.textContent = text;
+    wrap.appendChild(timeEl);
+    wrap.appendChild(p);
+    $meetingPreview.appendChild(wrap);
+    $meetingPreview.scrollTop = $meetingPreview.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function buildMeetingHtmlDocument() {
+    let body = "";
+    for (let i = 0; i < previewLines.length; i++) {
+      body += "<section class=\"meeting-segment\" data-seq=\"" + previewLines[i].seq + "\"><p>" + escapeHtml(previewLines[i].text) + "</p></section>\n";
+    }
+    return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>会议实录 " + escapeHtml(meetingSessionId) + "</title></head><body><h1>会议实录</h1><p>sessionId: " + escapeHtml(meetingSessionId) + "</p>" + body + "</body></html>";
+  }
+
+  function downloadMeetingHtml() {
+    if (!previewLines.length) {
+      addSystemMessage("当前没有可下载的实录段落。");
+      return;
+    }
+    const blob = new Blob([buildMeetingHtmlDocument()], { type: "text/html;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (meetingSessionId || "meeting") + "_实录.html";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function persistSegment(seq, text) {
+    await tasklyEnsureApiBase();
+    try {
+      const res = await tasklyFetch(API_BASE + "/api/meeting-transcript/segment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: meetingSessionId, sequence: seq, text: text })
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.ok === false) {
+        addSystemMessage("实录落盘失败：" + ((data && data.message) ? data.message : ("HTTP " + res.status)));
+        return;
+      }
+      persistedSegmentCount++;
+    } catch (e) {
+      addSystemMessage("实录落盘失败：" + (e && e.message ? e.message : String(e)));
+    }
+  }
+
+  async function runSttWorker() {
+    if (sttWorkerRunning) return;
+    sttWorkerRunning = true;
+    while (sttQueue.length) {
+      const item = sttQueue.shift();
+      const result = await transcribeChunk(item.blob);
+      if (!result.ok) {
+        addSystemMessage("会议转写失败（段 " + (item.seq + 1) + "）：" + (result.message || "未知错误"));
+        continue;
+      }
+      if (result.text && result.text.trim()) {
+        await persistSegment(item.seq, result.text.trim());
+        appendMeetingLineIncremental(item.seq, result.text.trim());
+      }
+    }
+    sttWorkerRunning = false;
+  }
+
+  function enqueueStt(blob) {
+    if (!blob || blob.size === 0) return;
+    const seq = nextSegmentSeq++;
+    sttQueue.push({ seq: seq, blob: blob });
+    runSttWorker();
+  }
+
+  function disconnectMeetingAudioGraph() {
+    try {
+      if (meetingScriptNode) {
+        meetingScriptNode.onaudioprocess = null;
+        meetingScriptNode.disconnect();
+        meetingScriptNode = null;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (meetingGainNode) {
+        meetingGainNode.disconnect();
+        meetingGainNode = null;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (meetingSourceNode) {
+        meetingSourceNode.disconnect();
+        meetingSourceNode = null;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function drainSttQueue() {
+    for (let i = 0; i < 600 && (sttQueue.length || sttWorkerRunning); i++) {
+      await new Promise(function (r) { setTimeout(r, 100); });
     }
   }
 
   async function startMeeting() {
+    if (isProcessing || meetingStopping) return;
     try {
       audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
@@ -2769,88 +3026,126 @@ $input.addEventListener("input", () => {
       return;
     }
 
-    meetingTranscript = "";
+    meetingSessionId = "meeting_" + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "").slice(0, 16) : String(Date.now()));
+    meetingPcmAccum = new Float32Array(0);
+    previewLines.length = 0;
+    persistedSegmentCount = 0;
+    nextSegmentSeq = 0;
+    sttQueue = [];
+    meetingListenActive = false;
     meetingStartTime = Date.now();
     $meetingPanel.style.display = "block";
-    $meetingPreview.textContent = "";
+    $meetingPreview.innerHTML = "";
     $meetingBtn.classList.add("active");
     timerInterval = setInterval(updateTimer, 1000);
 
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-    mediaRecorder = new MediaRecorder(audioStream, { mimeType });
-
-    mediaRecorder.ondataavailable = async (e) => {
-      if (e.data.size === 0) return;
-      const text = await transcribeChunk(e.data);
-      if (text) {
-        meetingTranscript += (meetingTranscript ? "\n" : "") + text;
-        $meetingPreview.textContent = meetingTranscript.slice(-500);
-        $meetingPreview.scrollTop = $meetingPreview.scrollHeight;
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      await audioContext.resume();
+    } catch (e) { /* ignore */ }
+    meetingSourceNode = audioContext.createMediaStreamSource(audioStream);
+    const chIn = Math.max(1, Math.min(2, meetingSourceNode.channelCount || 1));
+    meetingScriptNode = audioContext.createScriptProcessor(4096, chIn, 1);
+    meetingScriptNode.onaudioprocess = function (e) {
+      if (!meetingListenActive) return;
+      const inBuf = e.inputBuffer;
+      const n = inBuf.length;
+      const mono = new Float32Array(n);
+      if (inBuf.numberOfChannels >= 2) {
+        const ch0 = inBuf.getChannelData(0);
+        const ch1 = inBuf.getChannelData(1);
+        for (let i = 0; i < n; i++) {
+          mono[i] = (ch0[i] + ch1[i]) * 0.5;
+        }
+      } else {
+        mono.set(inBuf.getChannelData(0));
       }
+      appendMeetingPcmMono(mono);
+      emitOverlappingWindows(audioContext.sampleRate);
+      e.outputBuffer.getChannelData(0).fill(0);
     };
+    meetingGainNode = audioContext.createGain();
+    meetingGainNode.gain.value = 0;
+    meetingSourceNode.connect(meetingScriptNode);
+    meetingScriptNode.connect(meetingGainNode);
+    meetingGainNode.connect(audioContext.destination);
+    meetingListenActive = true;
 
-    mediaRecorder.start();
-    chunkInterval = setInterval(() => {
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.requestData();
-      }
-    }, 30000);
-
-    addSystemMessage("会议监听已开始，每 30 秒自动转录一次");
+    addSystemMessage(
+      "会议监听已开始（固定 " +
+        MEETING_PCM_WINDOW_MS +
+        "ms 切片，重叠 " +
+        MEETING_PCM_OVERLAP_MS +
+        "ms，PCM→WAV 上传）。会话 ID：" +
+        meetingSessionId +
+        "。下方为语音实录，非 AI 总结；点「结束并总结」或实录页「AI 总结」后再生成纪要。"
+    );
+    addSystemMessage("已尝试打开「会议实录」标签页（大屏逐条刷新）；请保持本侧栏开启以继续录音。导出 Word/Excel：在对话中说明「根据会议实录 sessionId=" + meetingSessionId + " …」。");
+    try {
+      chrome.runtime.sendMessage({ type: "OPEN_MEETING_LIVE_TAB", sessionId: meetingSessionId }, function () {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) { /* ignore */ }
   }
 
   async function stopMeeting() {
     if (isProcessing) return;
     isProcessing = true;
+    meetingStopping = true;
     $meetingStopBtn.disabled = true;
     $meetingStopBtn.textContent = "处理中…";
 
-    if (chunkInterval) { clearInterval(chunkInterval); chunkInterval = null; }
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    meetingListenActive = false;
 
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      await new Promise(resolve => {
-        mediaRecorder.onstop = resolve;
-        mediaRecorder.requestData();
-        setTimeout(() => mediaRecorder.stop(), 200);
-      });
-      await new Promise(r => setTimeout(r, 500));
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    const duration = meetingStartTime ? formatTime(Date.now() - meetingStartTime) : "??:??";
+    meetingStartTime = null;
+
+    const sr = audioContext ? audioContext.sampleRate : 48000;
+    disconnectMeetingAudioGraph();
+    flushMeetingPcmTail(sr);
+
+    if (audioContext) {
+      try {
+        await audioContext.close();
+      } catch (e) { /* ignore */ }
+      audioContext = null;
     }
 
     if (audioStream) {
-      audioStream.getTracks().forEach(t => t.stop());
+      audioStream.getTracks().forEach(function (t) {
+        t.stop();
+      });
       audioStream = null;
     }
+
+    await drainSttQueue();
 
     $meetingPanel.style.display = "none";
     $meetingBtn.classList.remove("active");
     $meetingStopBtn.disabled = false;
     $meetingStopBtn.textContent = "结束并总结";
     isProcessing = false;
+    meetingStopping = false;
 
-    if (!meetingTranscript.trim()) {
-      addSystemMessage("会议监听已结束，未识别到语音内容");
+    const sid = meetingSessionId;
+
+    if (persistedSegmentCount === 0) {
+      addSystemMessage("会议监听已结束（" + duration + "），未识别到可落盘的语音内容。");
       return;
     }
 
-    const duration = meetingStartTime ? formatTime(Date.now() - meetingStartTime) : "??:??";
-    meetingStartTime = null;
+    addSystemMessage("会议监听已结束（" + duration + "），正在请求生成会议纪要（基于已落盘转写）…");
 
-    const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "").replace(/(\d{8})(\d{4})/, "$1_$2");
-    const dataId = "meeting_" + timestamp;
-
-    addSystemMessage("会议监听已结束（" + duration + "），正在生成会议纪要…");
-
-    if (meetingTranscript.length > 3000) {
-      const saveMsg = `请先使用 accurate_data_write 将以下会议录音文本保存（id=${dataId}），然后基于该内容生成会议纪要（包括会议主题、讨论要点、决议和待办事项）。\n\n录音文本：\n${meetingTranscript}`;
-      send(saveMsg);
-    } else {
-      send("请根据以下会议录音内容生成会议纪要，包括会议主题、讨论要点、决议和待办事项：\n\n" + meetingTranscript);
-    }
+    send(tasklyMeetingSummaryUserContent(sid, "会议监听已结束"));
   }
 
   $meetingBtn.addEventListener("click", () => {
-    if (mediaRecorder && mediaRecorder.state === "recording") {
+    if (meetingListenActive || meetingStopping) {
       stopMeeting();
     } else {
       startMeeting();
@@ -2860,6 +3155,26 @@ $input.addEventListener("input", () => {
   $meetingStopBtn.addEventListener("click", () => {
     stopMeeting();
   });
+
+  if ($meetingDownloadBtn) {
+    $meetingDownloadBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      downloadMeetingHtml();
+    });
+  }
+  if ($meetingExportHintBtn) {
+    $meetingExportHintBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (!meetingSessionId) {
+        addSystemMessage("请先开始会议监听。");
+        return;
+      }
+      addSystemMessage(
+        "导出 Word：在下方输入框发送例如「根据会议实录 sessionId=" + meetingSessionId + " 用 Word 工具生成一份纪要文档并保存到下载文件夹」。\n" +
+        "导出 Excel：可请助手将待办事项写成表格并保存到下载文件夹。Chrome 侧无「当前 Word 文档」时，以生成文件 + 下载为主。"
+      );
+    });
+  }
 })();
 
 // ───── Boot ─────

@@ -42,6 +42,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["MCP_OCR"] = "内置图片 OCR，非外接 MCP",
         ["Memory"] = "长期记忆：用户可点名「记住…」；你也可在需延续习惯、偏好与关键事实时主动 save/search。非大块中间数据、非步骤清单",
         ["AccurateData"] = "准确数据：用户可点名按 id 存取；多步复杂任务中有大块结构化中间结果需精确读写、减上下文时主动使用。非语义记忆、非计划正文",
+        ["MeetingTranscript"] = "会议实录：用户消息含 Chrome 会议监听会话 sessionId、需按分块读取落盘转写再总结时，用 meeting_transcript_read 直至读完",
         ["Plan"] = "计划：用户可点名「写计划/分步」；任务明显多步且需落库拆解执行时主动 create/get/execute。非 AccurateData 存数、非 Memory 记偏好",
         ["UserOptions"] = "侧栏候选项确认（ask_options）：多种合理解法或需用户分步选方案/格式时弹出侧栏单选，勿让用户在聊天里回 A/B",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
@@ -77,6 +78,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["Context"] = "对话上下文管理：在换任务或已总结完后主动压缩对话以释放上下文",
         ["Subagent"] = "同会话内子代理：将多步或会产出大量中间结果的任务交给子代理，仅收回最终总结",
         ["AccurateData"] = "准确数据：复杂任务中按 id 精确读写大块结构化中间结果、减上下文；用户可点名存取，你也可在多步推理需落盘时再选",
+        ["MeetingTranscript"] = "会议实录：Chrome 会议监听落盘全文；含 sessionId 且需生成纪要时 meeting_transcript_read/meta 分块读取",
         ["Memory"] = "长期记忆：用户习惯、取向、偏好与关键事实；用户可点名「记住」，你也可在需跨轮延续用户取向时主动 save/search",
         ["Plan"] = "计划：多步骤拆解与落库执行（Markdown 步骤）；用户可点名列计划，你也可在任务明显复杂多步时主动 create/execute",
         ["UserOptions"] = "候选项确认：任务有多种输出或路径需用户拍板时，用 ask_options 在侧栏分步选择；Chrome 侧栏可用，WPS 等端可能无 UI",
@@ -156,6 +158,7 @@ public sealed class ToolSelectionService : IToolSelector
             ["Context"] = new List<(string, string)> { ("Context", "compact_conversation") },
             ["Subagent"] = new List<(string, string)> { ("Subagent", "run_subtask") },
             ["AccurateData"] = new List<(string, string)> { ("AccurateData", "accurate_data_write"), ("AccurateData", "accurate_data_read"), ("AccurateData", "accurate_data_list"), ("AccurateData", "accurate_data_delete") },
+            ["MeetingTranscript"] = new List<(string, string)> { ("MeetingTranscript", "meeting_transcript_read"), ("MeetingTranscript", "meeting_transcript_meta") },
             ["Memory"] = new List<(string, string)> { ("Memory", "save_memory"), ("Memory", "search_memory") },
             ["Plan"] = new List<(string, string)>
             {
@@ -394,6 +397,7 @@ public sealed class ToolSelectionService : IToolSelector
             "决策要点（用户可点名某子类；你也应在符合条件时主动选）：",
             "- Memory：用户说「记住/以后都按…」等→必选 Memory。未明说但需延续其习惯、偏好、长期关键事实→也选 Memory。",
             "- AccurateData：用户说「存成准确数据/按 id 取回」等→必选 AccurateData。多步任务中有大块结构化中间结果需精确读写、减轻上下文→也选 AccurateData。",
+            "- MeetingTranscript：用户消息明确含会议监听会话 sessionId、要求根据落盘转写生成纪要→必选 MeetingTranscript（先 meta 再 read 分块直至 hasMore=false）。",
             "- Plan：用户说「列计划/分步骤/出个实现计划」等→必选 Plan。任务明显多步且需落库拆解执行→也选 Plan。",
             "- UserOptions：需用户在多种方案/格式/路径中选一个且不宜代答时→选 UserOptions（侧栏 ask_options）。",
             "- 多媒体：语音转文字、图片 OCR→多媒体（常与 File 同选）。外接 MCP 仅当选「外部」。",
@@ -401,7 +405,7 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。Chrome 会议监听结束且含 sessionId、要生成纪要→MeetingTranscript。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
         return string.Join("\n", lines);
     }
 
@@ -595,7 +599,7 @@ public sealed class ToolSelectionService : IToolSelector
             "你是一个工具选择助手。根据用户当前消息，从下面列出的插件中选出本轮可能用到的插件名。",
             "只输出插件名，多个用英文逗号分隔；若无法判断或需要全部工具则只输出：全部。",
             "如果用户消息中出现形如 `[TOOL:<插件名>]` 的显式 token，请把 `<插件名>` 视为必须选择的插件名（去重后只输出插件名），并优先使用它们作为本轮候选集合。",
-            "内置插件分工（用户可点名；符合条件时你也应主动选）：Memory=习惯偏好与长期事实；AccurateData=大块中间结果按 id 精确读写；Plan=复杂多步计划与按步执行；UserOptions=侧栏候选项确认 ask_options。",
+            "内置插件分工（用户可点名；符合条件时你也应主动选）：Memory=习惯偏好与长期事实；AccurateData=大块中间结果按 id 精确读写；MeetingTranscript=Chrome 会议实录按 sessionId 分块读取再总结；Plan=复杂多步计划与按步执行；UserOptions=侧栏候选项确认 ask_options。",
             "可用插件："
         };
         foreach (var name in availablePluginNames)
@@ -604,7 +608,7 @@ public sealed class ToolSelectionService : IToolSelector
             var desc = PluginDescriptions.TryGetValue(name, out var d) ? d : (name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase) ? "用户技能" : name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) ? "MCP 工具" : name);
             lines.Add($"- {name}: {desc}");
         }
-        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户说「记住我以后…」→ Memory。用户说「存成准确数据」→ AccurateData。用户说「列个实现计划」→ Plan。用户说「给我两个方案让我选」或存在明显歧义需确认→ UserOptions。多步复杂任务未明说→可输出 Plan, AccurateData。用户说「把刚才聊的做成技能」→ SkillAuthor。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
+        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户说「记住我以后…」→ Memory。用户说「存成准确数据」→ AccurateData。用户说「会议监听 sessionId=… 生成纪要」→ MeetingTranscript。用户说「列个实现计划」→ Plan。用户说「给我两个方案让我选」或存在明显歧义需确认→ UserOptions。多步复杂任务未明说→可输出 Plan, AccurateData。用户说「把刚才聊的做成技能」→ SkillAuthor。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
         return string.Join("\n", lines);
     }
 
