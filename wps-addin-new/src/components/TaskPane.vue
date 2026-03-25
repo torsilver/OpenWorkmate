@@ -228,7 +228,7 @@
           ref="inputAreaRef"
           v-model="inputText"
           class="input-box"
-          placeholder="输入消息…（@ 可选工具/技能；列表打开时 ↑↓ 切换）"
+          placeholder="输入消息…（@ 可选工具/技能，@ 后用关键字过滤；↑↓ 切换、回车确认）"
           rows="1"
           :disabled="!inputEnabled"
           @keydown="onChatKeydown"
@@ -253,37 +253,26 @@
       </div>
 
       <div v-show="atModeOpen" class="at-mode-panel" role="dialog" aria-label="工具与技能选择">
-        <div class="at-mode-filter-row">
-          <span class="at-mode-filter-hint">过滤</span>
-          <input
-            ref="atModeFilterInputRef"
-            v-model="atModeFilter"
-            class="at-mode-filter-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="输入关键字…（此处可用 ↑↓ 选择）"
-            @input="onAtModeFilterInput"
-            @keydown="onAtModeFilterKeydown"
-          />
-        </div>
-        <div class="at-mode-list" role="listbox" aria-label="工具/技能列表">
+        <div ref="atModeListRef" class="at-mode-list" role="listbox" aria-label="工具/技能列表">
           <div v-if="!atModeTopList.length" class="at-mode-empty">{{ atModeListPlaceholder }}</div>
           <template v-else>
-            <div
-              v-for="(c, idx) in atModeTopList"
-              :key="(c.internal || '') + '-' + idx"
-              class="at-mode-item"
-              :class="{ 'at-mode-item--active': idx === atModeActiveIndex }"
-              role="option"
-              :aria-selected="idx === atModeActiveIndex"
-              @mousedown.prevent="insertAtCandidate(c)"
-            >
-              <div class="at-mode-item-title">{{ c.label || c.internal }}</div>
-              <div class="at-mode-item-meta">
-                {{ c.group === 'Tools' ? '工具' : '技能' }} · [TOOL:{{ c.internal }}]
+            <template v-for="(c, idx) in atModeTopList" :key="(c.internal || '') + '-' + idx">
+              <div
+                v-if="idx > 0 && c.group === 'Tools' && atModeTopList[idx - 1].group === 'Skills'"
+                class="at-mode-separator"
+                role="separator"
+                aria-hidden="true"
+              />
+              <div
+                class="at-mode-item"
+                :class="{ 'at-mode-item--active': idx === atModeActiveIndex }"
+                role="option"
+                :aria-selected="idx === atModeActiveIndex"
+                @mousedown.prevent="insertAtCandidate(c)"
+              >
+                <div class="at-mode-item-title">{{ c.label || c.internal }}</div>
               </div>
-            </div>
+            </template>
           </template>
         </div>
       </div>
@@ -1031,36 +1020,17 @@ export default {
   max-height: 320px;
 }
 
-.at-mode-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.at-mode-filter-hint {
-  font-size: 12px;
-  color: var(--copilot-text-secondary, #999);
-  flex-shrink: 0;
-}
-
-.at-mode-filter-input {
-  width: 100%;
-  border: 1px solid var(--copilot-border, #333);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 13px;
-  background: var(--copilot-bg-tertiary, #252525);
-  color: var(--copilot-text-primary, #e8e8e8);
-}
-
-.at-mode-filter-input::placeholder {
-  color: var(--copilot-text-secondary, #999);
-}
-
 .at-mode-list {
   max-height: 240px;
   overflow-y: auto;
+}
+
+.at-mode-separator {
+  height: 0;
+  margin: 8px 4px;
+  border: none;
+  border-top: 1px solid var(--copilot-border, #333);
+  pointer-events: none;
 }
 
 .at-mode-item {

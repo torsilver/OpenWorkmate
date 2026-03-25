@@ -881,7 +881,7 @@ public sealed class ChatService : IDisposable
             }
             else
             {
-                selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType);
+                selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
                 if (planResult != null && selectedFunctions != null)
                     selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
                 var pairsCount = selectedPairs?.Count ?? 0;
@@ -1063,7 +1063,7 @@ public sealed class ChatService : IDisposable
             return "[错误] 未找到对话服务。";
         var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
         var clientType = sessionManager.GetClientType(sessionId);
-        var allFunctions = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+        var allFunctions = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType, sessionId);
         // 排除 run_subtask（防递归）和 compact_conversation（防子代理操作主会话历史）
         var allowedFunctions = allFunctions
             .Where(f => !string.Equals(f.Name, "run_subtask", StringComparison.OrdinalIgnoreCase)
@@ -1313,17 +1313,18 @@ public sealed class ChatService : IDisposable
     private static IReadOnlyList<KernelFunction>? ResolveFunctionsByClientType(
         Kernel kernel,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
-        string? clientType)
+        string? clientType,
+        string? sessionId)
     {
         IReadOnlyList<KernelFunction>? result = null;
         if (selectedPairs is { Count: > 0 })
         {
-            var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType);
+            var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType, sessionId);
             if (filtered.Count > 0)
                 result = GetFunctionsByPluginAndFunctionNames(kernel, filtered);
         }
         if (result == null)
-            result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType);
+            result = ClientTypeToolFilter.GetAllowedFunctions(kernel, clientType, sessionId);
 
         // 保底工具追加（顺序：Office/WPS 文档脚本 → Chrome 页面脚本 → 所有端 CLI）
         if (result != null)

@@ -62,6 +62,7 @@ const $attachBtn = document.getElementById("attach-btn");
 const $fileInput = document.getElementById("file-input");
 const $attachmentsPreview = document.getElementById("attachments-preview");
 const $voiceBtn = document.getElementById("voice-btn");
+const $voiceHint = document.getElementById("voice-hint");
 const $status = document.getElementById("status");
 const $settingsBtn = document.getElementById("settings-btn");
 const $currentPlanLabel = document.getElementById("current-plan-label");
@@ -539,7 +540,6 @@ let atTokenStart = -1; // index of '@'
 let atTokenEnd = -1; // caret index at open time (exclusive)
 
 let $atModePanel = null;
-let $atModeFilterInput = null;
 let $atModeListEl = null;
 
 function getTextareaCaret() {
@@ -576,18 +576,41 @@ function findAtTokenInTextarea() {
   };
 }
 
-function openAtMode(filter, startIdx, endIdx) {
-  if (!$atModePanel || !$atModeFilterInput || !$atModeListEl) return;
+function buildAtModeTopList(filterRaw) {
+  const filter = (filterRaw || "").trim().toLowerCase();
+  const list = atModeCandidates || [];
+  if (!list.length) return [];
+  const scored = [];
+  for (const c of list) {
+    const label = String(c.label || "").toLowerCase();
+    const internal = String(c.internal || "").toLowerCase();
+    const text = `${label} ${internal}`;
+    if (filter && !text.includes(filter)) continue;
+    let score = 0;
+    if (!filter) score = 1;
+    else if (label.startsWith(filter) || internal.startsWith(filter)) score = 100;
+    else if (label.includes(filter) || internal.includes(filter)) score = 50;
+    scored.push({ c, score });
+  }
+  scored.sort((a, b) => {
+    const g1 = a.c.group === "Skills" ? 0 : 1;
+    const g2 = b.c.group === "Skills" ? 0 : 1;
+    if (g1 !== g2) return g1 - g2;
+    if (b.score !== a.score) return b.score - a.score;
+    return String(a.c.label).localeCompare(String(b.c.label), "zh-Hans");
+  });
+  return scored.map(x => x.c);
+}
+
+function openAtModeWithTop(top, startIdx, endIdx) {
+  if (!$atModePanel || !$atModeListEl) return;
+  if (!top.length) return;
   atModeOpen = true;
   atTokenStart = startIdx;
   atTokenEnd = endIdx;
-
-  $atModeFilterInput.value = filter || "";
-  $atModePanel.style.display = "block";
-  // Don't steal focus for arrow-key navigation UX; allow user to keep typing in textarea.
-  // But if user clicks on the filter input, we can still allow focus.
   atModeActiveIndex = 0;
-  renderAtModeList($atModeFilterInput.value || "");
+  $atModePanel.style.display = "block";
+  renderAtModeListTop(top);
 }
 
 function closeAtMode() {
@@ -607,14 +630,10 @@ function setAtActiveIndex(idx) {
     if (i === clamped) el.classList.add("at-mode-item--active");
     else el.classList.remove("at-mode-item--active");
   });
-}
-
-function getCandidateDisplayParts(c) {
-  const internal = c.internal || "";
-  return {
-    title: c.label || internal || "",
-    meta: internal ? `[TOOL:${internal}]` : ""
-  };
+  const activeEl = items[clamped];
+  if (activeEl && typeof activeEl.scrollIntoView === "function") {
+    activeEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 function escapeHtmlAttr(s) {
@@ -648,62 +667,28 @@ function scheduleAtModeSync() {
   });
 }
 
-function renderAtModeList(filterRaw) {
-  if (!$atModeListEl) return;
-  const filter = (filterRaw || "").trim().toLowerCase();
-  const list = atModeCandidates || [];
-  if (!list.length) {
-    const hint = atModeLoadError ? escapeHtml(atModeLoadError) : "暂无可用工具/技能";
-    $atModeListEl.innerHTML = `<div class="at-mode-empty">${hint}</div>`;
-    atModeActiveIndex = 0;
-    return;
-  }
-
-  const scored = [];
-  for (const c of list) {
-    const label = String(c.label || "").toLowerCase();
-    const internal = String(c.internal || "").toLowerCase();
-    const text = `${label} ${internal}`;
-    if (filter && !text.includes(filter)) continue;
-    let score = 0;
-    if (!filter) score = 1;
-    else if (label.startsWith(filter) || internal.startsWith(filter)) score = 100;
-    else if (label.includes(filter) || internal.includes(filter)) score = 50;
-    scored.push({ c, score });
-  }
-
-  scored.sort((a, b) => {
-    // Keep Tools first for UX, then score.
-    const g1 = a.c.group === "Tools" ? 0 : 1;
-    const g2 = b.c.group === "Tools" ? 0 : 1;
-    if (g1 !== g2) return g1 - g2;
-    if (b.score !== a.score) return b.score - a.score;
-    return String(a.c.label).localeCompare(String(b.c.label), "zh-Hans");
-  });
-
-  const top = scored.slice(0, 30).map(x => x.c);
-  if (!top.length) {
-    $atModeListEl.innerHTML = `<div class="at-mode-empty">无匹配结果</div>`;
-    atModeActiveIndex = 0;
-    return;
-  }
-
-  // When the list changes (filter typed), reset highlight to the first result.
+function renderAtModeListTop(top) {
+  if (!$atModeListEl || !top.length) return;
   atModeActiveIndex = 0;
-
-  $atModeListEl.innerHTML = top.map((c, idx) => {
-    const parts = getCandidateDisplayParts(c);
-    const groupTag = c.group === "Tools" ? "工具" : "技能";
-    const safeLabel = escapeHtml(parts.title);
-    const safeMeta = escapeHtml(parts.meta);
+  const chunks = [];
+  for (let idx = 0; idx < top.length; idx++) {
+    const c = top[idx];
+    if (idx > 0 && c.group === "Tools" && top[idx - 1].group === "Skills") {
+      chunks.push('<div class="at-mode-separator" role="separator" aria-hidden="true"></div>');
+    }
+    const safeLabel = escapeHtml(String(c.label || c.internal || ""));
     const activeCls = idx === atModeActiveIndex ? " at-mode-item--active" : "";
-    return `
+    chunks.push(`
       <div class="at-mode-item${activeCls}" data-at-idx="${idx}" data-internal="${escapeHtmlAttr(c.internal || "")}" role="option" aria-selected="${idx === atModeActiveIndex ? "true" : "false"}">
         <div class="at-mode-item-title">${safeLabel}</div>
-        <div class="at-mode-item-meta">${groupTag} · ${safeMeta}</div>
       </div>
-    `;
-  }).join("");
+    `);
+  }
+  $atModeListEl.innerHTML = chunks.join("");
+  const first = $atModeListEl.querySelector(".at-mode-item--active");
+  if (first && typeof first.scrollIntoView === "function") {
+    first.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 function insertAtCandidate(candidate) {
@@ -733,38 +718,38 @@ async function updateAtModeFromTextarea() {
     return;
   }
 
-  // Only open when the '@' is preceded by start or non-word boundary, to avoid
-  // triggering in email addresses etc. MVP: allow if previous char is whitespace/punct/start.
+  // Allow @ after start or non-ASCII-alnum (e.g. CJK); block typical user@domain (prev is [A-Za-z0-9_]).
   const value = $input.value || "";
   const prev = token.atIndex > 0 ? value[token.atIndex - 1] : "";
-  const allow = token.atIndex === 0 || isWhitespace(prev) || /[.,;:!?()[\]{}]/.test(prev);
+  const allow = token.atIndex === 0 || !/[A-Za-z0-9_]/.test(prev);
   if (!allow) {
     if (atModeOpen) closeAtMode();
     return;
   }
 
-  // Ensure candidates are ready before opening list.
   if (!atModeLoaded) await loadAtModeCandidates();
 
   const filter = token.filter || "";
-  // 若 @ 区间与过滤串未变（例如仅按了方向键切换列表高亮），不要再次 openAtMode/render，
-  // 否则会重置 atModeActiveIndex，表现为「上下箭头无法切换选择」。
-  if (
-    atModeOpen &&
-    atTokenStart === token.atIndex &&
-    atTokenEnd === token.caret &&
-    ($atModeFilterInput?.value || "") === filter
-  ) {
+  const top = buildAtModeTopList(filter);
+  if (!top.length) {
+    if (atModeOpen) closeAtMode();
+    if (!atModeCandidates.length && atModeLoadError) {
+      debugLog("AtMode", atModeLoadError, "warn");
+    }
     return;
   }
-  openAtMode(filter, token.atIndex, token.caret);
+
+  // 仅按 ↑↓ 时 caret 与 @ 片段未变，不要再次 render（否则会重置高亮）。
+  if (atModeOpen && atTokenStart === token.atIndex && atTokenEnd === token.caret) {
+    return;
+  }
+  openAtModeWithTop(top, token.atIndex, token.caret);
 }
 
 function initAtModeUI() {
   $atModePanel = document.getElementById("at-mode-panel");
-  $atModeFilterInput = document.getElementById("at-mode-filter-input");
   $atModeListEl = document.getElementById("at-mode-list");
-  if (!$atModePanel || !$atModeFilterInput || !$atModeListEl) return;
+  if (!$atModePanel || !$atModeListEl || !$input) return;
 
   // Click item to insert
   $atModeListEl.addEventListener("mousedown", (e) => {
@@ -777,44 +762,7 @@ function initAtModeUI() {
     if (candidate) insertAtCandidate(candidate);
   });
 
-  // Filter input changes (keep textarea token in sync)
-  $atModeFilterInput.addEventListener("input", () => {
-    if (!atModeOpen || atTokenStart < 0 || atTokenEnd < 0) return;
-    const newFilter = $atModeFilterInput.value || "";
-    const value = $input.value || "";
-    const tokenStart = atTokenStart + 1;
-    // Replace the old token text area with newFilter
-    const newValue = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd);
-    $input.value = newValue;
-    atTokenEnd = tokenStart + newFilter.length;
-    renderAtModeList(newFilter);
-    // Keep textarea caret at end of token for consistent insertion.
-    $input.setSelectionRange(atTokenEnd, atTokenEnd);
-  });
-
-  // Keyboard navigation inside filter input
-  $atModeFilterInput.addEventListener("keydown", (e) => {
-    if (!atModeOpen) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setAtActiveIndex(atModeActiveIndex + 1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setAtActiveIndex(atModeActiveIndex - 1);
-    } else if (e.key === "Enter" || e.key === "Tab") {
-      e.preventDefault();
-      pickActiveAtCandidate();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      closeAtMode();
-      $input.focus();
-    }
-  });
-
-  // Keep list in sync with textarea edits
   $input.addEventListener("keyup", () => {
-    // Ignore when user is interacting with filter input (we already update list there).
-    if (document.activeElement === $atModeFilterInput) return;
     void updateAtModeFromTextarea();
   });
 }
@@ -2439,13 +2387,24 @@ function setStatus(state) {
     failed: { cls: "status status--disconnected", text: "无法连接" }
   };
   const s = map[state] || map.disconnected;
-  $status.className = s.cls;
-  const $text = $status.querySelector(".status-text");
-  if ($text) $text.textContent = s.text;
+  if ($status) {
+    $status.className = s.cls;
+    let $text = $status.querySelector(".status-text");
+    if (!$text) {
+      $status.textContent = "";
+      const dot = document.createElement("span");
+      dot.className = "status-dot";
+      $text = document.createElement("span");
+      $text.className = "status-text";
+      $status.appendChild(dot);
+      $status.appendChild($text);
+    }
+    $text.textContent = s.text;
+  }
   if (state === "failed") {
-    $status.title = "无法连接到后台服务，请确认 OfficeCopilot.Server 已启动";
+    if ($status) $status.title = "无法连接到后台服务，请确认 OfficeCopilot.Server 已启动";
   } else {
-    $status.title = "连接状态";
+    if ($status) $status.title = "连接状态";
   }
 }
 
@@ -2583,6 +2542,27 @@ if ($attachBtn && $fileInput) {
 
   let recognition = null;
   let isListening = false;
+  let voiceShowingListeningHint = false;
+
+  function clearVoiceInputHint() {
+    voiceShowingListeningHint = false;
+    if ($voiceHint) $voiceHint.textContent = "";
+    if ($voiceBtn) $voiceBtn.title = "语音输入";
+  }
+
+  function showVoiceListeningHint() {
+    voiceShowingListeningHint = true;
+    const t = "正在听… 再次点击麦克风可停止";
+    if ($voiceHint) $voiceHint.textContent = t;
+    if ($voiceBtn) $voiceBtn.title = "停止语音输入";
+  }
+
+  function setVoiceInputErrorHint(msg) {
+    voiceShowingListeningHint = false;
+    if ($voiceHint) $voiceHint.textContent = msg;
+    else alert(msg);
+    if ($voiceBtn) $voiceBtn.title = "语音输入";
+  }
 
   function setListening(flag) {
     isListening = flag;
@@ -2593,6 +2573,7 @@ if ($attachBtn && $fileInput) {
     if (isListening) {
       if (recognition) recognition.stop();
       setListening(false);
+      clearVoiceInputHint();
       return;
     }
 
@@ -2621,19 +2602,20 @@ if ($attachBtn && $fileInput) {
             : e.error === "network"
               ? "网络错误，请检查后重试。"
               : "语音识别错误：" + (e.error || "未知");
-        if ($status) $status.textContent = msg;
-        else alert(msg);
+        setVoiceInputErrorHint(msg);
       };
 
-      recognition.onend = () => setListening(false);
+      recognition.onend = () => {
+        setListening(false);
+        if (voiceShowingListeningHint) clearVoiceInputHint();
+      };
 
       recognition.start();
       setListening(true);
-      if ($status) $status.textContent = "正在听… 再次点击麦克风可停止";
+      showVoiceListeningHint();
     } catch (err) {
       const msg = "无法启动语音识别：" + (err && err.message ? err.message : String(err));
-      if ($status) $status.textContent = msg;
-      else alert(msg);
+      setVoiceInputErrorHint(msg);
     }
   });
 })();

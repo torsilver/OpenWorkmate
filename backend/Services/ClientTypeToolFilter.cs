@@ -65,10 +65,25 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(functionName, "current_ppt_slide_duplicate");
     }
 
+    /// <summary>定时任务 Runner 使用的会话：禁止在执行轮次内再创建/改/删任务，避免套娃。</summary>
+    public static bool IsScheduledTaskRunnerSession(string? sessionId) =>
+        !string.IsNullOrEmpty(sessionId) && sessionId.StartsWith("scheduled:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsScheduledTaskMutationFunction(string functionName) =>
+        PluginComparer.Equals(functionName, "scheduled_task_create")
+        || PluginComparer.Equals(functionName, "scheduled_task_update")
+        || PluginComparer.Equals(functionName, "scheduled_task_delete");
+
     /// <summary>判断该 (Plugin, Function) 是否允许暴露给给定 clientType 的会话。</summary>
-    public static bool IsAllowed(string pluginName, string functionName, string? clientType)
+    /// <param name="sessionId">非空且以 <c>scheduled:</c> 开头时，屏蔽 ScheduledTask 的创建/更新/删除工具。</param>
+    public static bool IsAllowed(string pluginName, string functionName, string? clientType, string? sessionId = null)
     {
         if (string.IsNullOrEmpty(pluginName) || string.IsNullOrEmpty(functionName))
+            return false;
+
+        if (IsScheduledTaskRunnerSession(sessionId)
+            && PluginComparer.Equals(pluginName, "ScheduledTask")
+            && IsScheduledTaskMutationFunction(functionName))
             return false;
 
         var ct = (clientType ?? "").Trim();
@@ -116,7 +131,7 @@ public static class ClientTypeToolFilter
     }
 
     /// <summary>从 Kernel 中取出该 clientType 允许的全部函数，用于「全量工具」路径的按端过滤。</summary>
-    public static IReadOnlyList<KernelFunction> GetAllowedFunctions(Kernel kernel, string? clientType)
+    public static IReadOnlyList<KernelFunction> GetAllowedFunctions(Kernel kernel, string? clientType, string? sessionId = null)
     {
         if (kernel == null) return Array.Empty<KernelFunction>();
         var list = new List<KernelFunction>();
@@ -124,7 +139,7 @@ public static class ClientTypeToolFilter
         {
             foreach (KernelFunction func in plugin)
             {
-                if (IsAllowed(plugin.Name, func.Name, clientType))
+                if (IsAllowed(plugin.Name, func.Name, clientType, sessionId))
                     list.Add(func);
             }
         }
@@ -134,13 +149,14 @@ public static class ClientTypeToolFilter
     /// <summary>过滤 (PluginName, FunctionName) 列表，只保留该 clientType 允许的项。</summary>
     public static IReadOnlyList<(string PluginName, string FunctionName)> Filter(
         IReadOnlyList<(string PluginName, string FunctionName)> pairs,
-        string? clientType)
+        string? clientType,
+        string? sessionId = null)
     {
         if (pairs == null || pairs.Count == 0) return Array.Empty<(string, string)>();
         var list = new List<(string, string)>();
         foreach (var (p, f) in pairs)
         {
-            if (IsAllowed(p, f, clientType))
+            if (IsAllowed(p, f, clientType, sessionId))
                 list.Add((p, f));
         }
         return list;

@@ -1668,12 +1668,11 @@ export function useCopilot() {
 
   // ───── @ 模式（工具/技能选择，与 chrome-extension 侧行为对齐）─────
   const inputAreaRef = ref(null)
-  const atModeFilterInputRef = ref(null)
+  const atModeListRef = ref(null)
   const atModeOpen = ref(false)
   const atModeActiveIndex = ref(0)
   const atTokenStart = ref(-1)
   const atTokenEnd = ref(-1)
-  const atModeFilter = ref('')
   const atModeCandidates = ref([])
   const atModeTopList = ref([])
   const atModeLoaded = ref(false)
@@ -1820,23 +1819,22 @@ export function useCopilot() {
       scored.push({ c, score })
     }
     scored.sort((a, b) => {
-      const g1 = a.c.group === 'Tools' ? 0 : 1
-      const g2 = b.c.group === 'Tools' ? 0 : 1
+      const g1 = a.c.group === 'Skills' ? 0 : 1
+      const g2 = b.c.group === 'Skills' ? 0 : 1
       if (g1 !== g2) return g1 - g2
       if (b.score !== a.score) return b.score - a.score
       return String(a.c.label).localeCompare(String(b.c.label), 'zh-Hans')
     })
-    atModeTopList.value = scored.slice(0, 30).map((x) => x.c)
+    atModeTopList.value = scored.map((x) => x.c)
     atModeActiveIndex.value = 0
   }
 
-  function openAtMode(filter, startIdx, endIdx) {
+  function openAtModePanel(startIdx, endIdx) {
     atModeOpen.value = true
     atTokenStart.value = startIdx
     atTokenEnd.value = endIdx
-    atModeFilter.value = filter || ''
     atModeActiveIndex.value = 0
-    rebuildAtModeList(atModeFilter.value)
+    nextTick(() => scrollAtModeActiveItemIntoView())
   }
 
   function closeAtMode() {
@@ -1844,14 +1842,23 @@ export function useCopilot() {
     atModeActiveIndex.value = 0
     atTokenStart.value = -1
     atTokenEnd.value = -1
-    atModeFilter.value = ''
     atModeTopList.value = []
+  }
+
+  function scrollAtModeActiveItemIntoView() {
+    const root = atModeListRef.value
+    if (!root) return
+    const el = root.querySelector('.at-mode-item--active')
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
   }
 
   function setAtActiveIndex(idx) {
     const n = atModeTopList.value.length
     if (!n) return
     atModeActiveIndex.value = Math.max(0, Math.min(n - 1, idx))
+    nextTick(() => scrollAtModeActiveItemIntoView())
   }
 
   function insertAtCandidate(candidate) {
@@ -1890,8 +1897,7 @@ export function useCopilot() {
     }
     const value = inputText.value || ''
     const prev = token.atIndex > 0 ? value[token.atIndex - 1] : ''
-    const allow =
-      token.atIndex === 0 || isWhitespace(prev) || /[.,;:!?()[\]{}]/.test(prev)
+    const allow = token.atIndex === 0 || !/[A-Za-z0-9_]/.test(prev)
     if (!allow) {
       if (atModeOpen.value) closeAtMode()
       return
@@ -1908,12 +1914,16 @@ export function useCopilot() {
     if (
       atModeOpen.value &&
       atTokenStart.value === token.atIndex &&
-      atTokenEnd.value === token.caret &&
-      (atModeFilter.value || '') === filter
+      atTokenEnd.value === token.caret
     ) {
       return
     }
-    openAtMode(filter, token.atIndex, token.caret)
+    rebuildAtModeList(filter)
+    if (!atModeBootstrapping.value && atModeTopList.value.length === 0) {
+      if (atModeOpen.value) closeAtMode()
+      return
+    }
+    openAtModePanel(token.atIndex, token.caret)
   }
 
   function scheduleAtModeSync() {
@@ -1923,38 +1933,6 @@ export function useCopilot() {
       atModeSyncScheduled = false
       void updateAtModeFromTextarea()
     })
-  }
-
-  function onAtModeFilterInput() {
-    if (!atModeOpen.value || atTokenStart.value < 0 || atTokenEnd.value < 0) return
-    const newFilter = atModeFilter.value
-    const value = inputText.value || ''
-    const tokenStart = atTokenStart.value + 1
-    inputText.value = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd.value)
-    atTokenEnd.value = tokenStart + newFilter.length
-    rebuildAtModeList(newFilter)
-    nextTick(() => {
-      const ta = inputAreaRef.value
-      if (ta) ta.setSelectionRange(atTokenEnd.value, atTokenEnd.value)
-    })
-  }
-
-  function onAtModeFilterKeydown(e) {
-    if (!atModeOpen.value) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setAtActiveIndex(atModeActiveIndex.value + 1)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setAtActiveIndex(atModeActiveIndex.value - 1)
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      pickAtModeActive()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      closeAtMode()
-      inputAreaRef.value?.focus()
-    }
   }
 
   function onChatKeydown(e) {
@@ -1987,8 +1965,6 @@ export function useCopilot() {
   }
 
   function onChatKeyup() {
-    const fe = atModeFilterInputRef.value
-    if (fe && document.activeElement === fe) return
     void updateAtModeFromTextarea()
   }
 
@@ -2001,7 +1977,6 @@ export function useCopilot() {
     if (!atModeCandidates.value.length) {
       return atModeLoadError.value || '暂无可用工具/技能'
     }
-    if (!atModeTopList.value.length) return '无匹配结果'
     return ''
   })
 
@@ -2058,15 +2033,12 @@ export function useCopilot() {
     escapeHtml,
     marked,
     inputAreaRef,
-    atModeFilterInputRef,
+    atModeListRef,
     atModeOpen,
     atModeActiveIndex,
-    atModeFilter,
     atModeTopList,
     atModeListPlaceholder,
     insertAtCandidate,
-    onAtModeFilterInput,
-    onAtModeFilterKeydown,
     onChatKeydown,
     onChatKeyup,
     onChatInput

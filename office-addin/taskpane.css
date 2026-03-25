@@ -452,26 +452,17 @@ html, body {
   display: flex;
   flex-direction: column;
 }
-.at-mode-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.at-mode-filter-hint { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
-.at-mode-filter-input {
-  flex: 1;
-  padding: 6px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
 .at-mode-list {
   overflow-y: auto;
   max-height: 140px;
   font-size: 12px;
+}
+.at-mode-separator {
+  height: 0;
+  margin: 6px 2px;
+  border: none;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
 }
 .at-mode-item {
   padding: 6px 8px;

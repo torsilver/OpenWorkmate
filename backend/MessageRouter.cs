@@ -252,6 +252,10 @@ public class ScheduledTaskCreateRequest
     public string? CronExpression { get; set; }
     [JsonPropertyName("intervalMinutes")]
     public int? IntervalMinutes { get; set; }
+    [JsonPropertyName("intervalSeconds")]
+    public int? IntervalSeconds { get; set; }
+    [JsonPropertyName("runAt")]
+    public DateTimeOffset? RunAt { get; set; }
     [JsonPropertyName("timeZone")]
     public string? TimeZone { get; set; }
     [JsonPropertyName("endAt")]
@@ -275,6 +279,10 @@ public class ScheduledTaskUpdateRequest
     public string? CronExpression { get; set; }
     [JsonPropertyName("intervalMinutes")]
     public int? IntervalMinutes { get; set; }
+    [JsonPropertyName("intervalSeconds")]
+    public int? IntervalSeconds { get; set; }
+    [JsonPropertyName("runAt")]
+    public DateTimeOffset? RunAt { get; set; }
     [JsonPropertyName("enabled")]
     public bool? Enabled { get; set; }
     [JsonPropertyName("timeZone")]

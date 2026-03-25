@@ -77,6 +77,14 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
 
         meta.LastRunAt = DateTimeOffset.UtcNow;
         meta.RunCount = meta.RunCount + 1;
+
+        if (string.Equals(meta.ScheduleType, "once", StringComparison.OrdinalIgnoreCase))
+        {
+            await _store.DeleteAsync(taskId).ConfigureAwait(false);
+            _logger.LogInformation("Scheduled task deleted after run (once): {TaskId}", taskId);
+            return;
+        }
+
         if (meta.MaxRuns.HasValue && meta.RunCount >= meta.MaxRuns)
             meta.Enabled = false;
         if (meta.EndAt.HasValue && meta.LastRunAt >= meta.EndAt)
@@ -86,7 +94,12 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
         meta.NextRunAt = nextRun;
 
         if (string.Equals(meta.ScheduleType, "interval", StringComparison.OrdinalIgnoreCase) && nextRun == null)
-            meta.NextRunAt = meta.LastRunAt.Value.AddMinutes(meta.IntervalMinutes ?? 60);
+        {
+            if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                meta.NextRunAt = meta.LastRunAt.Value.AddSeconds(meta.IntervalSeconds.Value);
+            else
+                meta.NextRunAt = meta.LastRunAt.Value.AddMinutes(meta.IntervalMinutes ?? 60);
+        }
 
         if (meta.DeleteAfterRun)
         {

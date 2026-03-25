@@ -366,6 +366,109 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostScheduledTasks_IntervalSeconds_Returns200_WithIdAndNextRunAt()
+    {
+        var payload = new
+        {
+            title = "t-int-sec",
+            content = "ping",
+            scheduleType = "interval",
+            intervalSeconds = 42
+        };
+        var body = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/scheduled-tasks", content);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok) && ok.GetBoolean());
+        Assert.True(root.TryGetProperty("id", out var idEl));
+        Assert.False(string.IsNullOrWhiteSpace(idEl.GetString()));
+
+        var getOne = await _client.GetAsync("/api/scheduled-tasks/" + Uri.EscapeDataString(idEl.GetString()!));
+        getOne.EnsureSuccessStatusCode();
+        var getJson = await getOne.Content.ReadAsStringAsync();
+        var getDoc = JsonDocument.Parse(getJson);
+        var meta = getDoc.RootElement.GetProperty("meta");
+        Assert.True(meta.TryGetProperty("intervalSeconds", out var isec));
+        Assert.Equal(42, isec.GetInt32());
+        Assert.True(meta.TryGetProperty("nextRunAt", out var nra));
+        Assert.NotEqual(JsonValueKind.Null, nra.ValueKind);
+    }
+
+    [Fact]
+    public async Task PostScheduledTasks_Once_WithIntervalSeconds_Returns200_AndDeleteAfterRunTrue()
+    {
+        var payload = new
+        {
+            title = "t-once-delay",
+            content = "once",
+            scheduleType = "once",
+            intervalSeconds = 77
+        };
+        var body = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/scheduled-tasks", content);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("id", out var idEl));
+        var id = idEl.GetString()!;
+
+        var getOne = await _client.GetAsync("/api/scheduled-tasks/" + Uri.EscapeDataString(id));
+        getOne.EnsureSuccessStatusCode();
+        var getJson = await getOne.Content.ReadAsStringAsync();
+        var meta = JsonDocument.Parse(getJson).RootElement.GetProperty("meta");
+        Assert.True(meta.TryGetProperty("scheduleType", out var st));
+        Assert.Equal("once", st.GetString());
+        Assert.True(meta.TryGetProperty("deleteAfterRun", out var dar));
+        Assert.True(dar.GetBoolean());
+    }
+
+    [Fact]
+    public async Task PostScheduledTasks_Once_WithoutTrigger_Returns400_WithMessage()
+    {
+        var payload = new { title = "t-once-bad", content = "x", scheduleType = "once" };
+        var body = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/scheduled-tasks", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(json).RootElement;
+        Assert.True(root.TryGetProperty("message", out var msg));
+        Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
+    }
+
+    [Fact]
+    public async Task PutScheduledTasks_BecomeOnce_WithoutFire_Returns400_WithMessage()
+    {
+        var createPayload = new
+        {
+            title = "t-to-once",
+            content = "c",
+            scheduleType = "interval",
+            intervalSeconds = 600
+        };
+        var createBody = JsonSerializer.Serialize(createPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var createContent = new StringContent(createBody, Encoding.UTF8, "application/json");
+        var createRes = await _client.PostAsync("/api/scheduled-tasks", createContent);
+        createRes.EnsureSuccessStatusCode();
+        var id = JsonDocument.Parse(await createRes.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetString()!;
+
+        var putPayload = new { scheduleType = "once" };
+        var putBody = JsonSerializer.Serialize(putPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var putContent = new StringContent(putBody, Encoding.UTF8, "application/json");
+        var putRes = await _client.PutAsync("/api/scheduled-tasks/" + Uri.EscapeDataString(id), putContent);
+        Assert.Equal(HttpStatusCode.BadRequest, putRes.StatusCode);
+        var putJson = await putRes.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(putJson).RootElement;
+        Assert.True(root.TryGetProperty("message", out var msg));
+        Assert.Contains("once", msg.GetString()!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GetMemory_Returns200_WithItemsOrOkFalse()
     {
         var response = await _client.GetAsync("/api/memory?skip=0&take=10");

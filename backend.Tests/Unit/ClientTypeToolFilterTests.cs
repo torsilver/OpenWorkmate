@@ -75,4 +75,28 @@ public class ClientTypeToolFilterTests
         Assert.True(ClientTypeToolFilter.IsAllowed("Memory", "recall", null));
         Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", null));
     }
+
+    [Fact]
+    public void ScheduledRunnerSession_BlocksScheduledTaskMutations()
+    {
+        const string sid = "scheduled:task-abc";
+        Assert.False(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_create", "chrome", sid));
+        Assert.False(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_update", "office-word", sid));
+        Assert.False(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_delete", "wps", sid));
+    }
+
+    [Fact]
+    public void ScheduledRunnerSession_AllowsScheduledTaskReadAndList()
+    {
+        const string sid = "scheduled:task-abc";
+        Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_list", "chrome", sid));
+        Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_read", "chrome", sid));
+    }
+
+    [Fact]
+    public void NonScheduledSession_AllowsScheduledTaskCreate()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_create", "chrome", null));
+        Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_create", "chrome", "user-session-1"));
+    }
 }

@@ -642,6 +642,7 @@
 
       <h3 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">安全与确认（按端配置）</h3>
       <p class="help-text" style="margin-bottom: 16px;">每个端可单独选择运行模式：RunEverything（不校验、不弹确认）、AskEverytime（每次执行前确认）、UseAllowList（仅白名单内不弹确认，名单外可确认或加入白名单）。<strong>RunEverything</strong> 会放行该端上的 CLI 命令与预定义页面脚本，请仅在完全信任环境与模型时使用。</p>
+      <p class="help-text" style="margin-bottom: 16px;"><strong>后台</strong>端无浏览器界面，但同样适用上述模式与白名单：<strong>定时任务</strong>到点由本机服务触发 Agent 执行时，CLI/页面脚本策略使用<strong>本页「后台」</strong>的配置；到点执行<strong>不会</strong>弹出人工确认，<strong>AskEverytime</strong> 在定时路径上等效于仅允许白名单内命令/脚本（名单外直接拦截）。若需定时任务执行非常规命令，请将命令加入后台 CLI 白名单或把后台设为 RunEverything。</p>
       <div id="cliScriptEndTabs" class="cli-script-end-tabs">
         <!-- 端 Tab：Chrome | 后台 | Office | WPS 由 JS 注入 -->
       </div>
@@ -689,7 +690,7 @@
         <div class="skill-header">
           <div class="skill-title">定时任务</div>
         </div>
-        <div class="skill-desc">供 AI 创建与管理定时任务（.task.md + meta）；到点后由后台将任务内容发给 AI 执行。已作为内置插件提供，无需在 MCP 列表中添加。数据目录由设置中的「定时任务目录」或配置 ScheduledTasksDirectory 指定。</div>
+        <div class="skill-desc">供 AI 创建与管理定时任务（.task.md + meta）；到点后由本机后台将任务内容发给 AI 执行（使用<strong>安全与确认 → 后台</strong>的 CLI/脚本模式与白名单，无浏览器人工确认）。已作为内置插件提供，无需在 MCP 列表中添加。数据目录由设置中的「定时任务目录」或配置 ScheduledTasksDirectory 指定。</div>
       </div>
 
       <h4 style="margin: 16px 0 8px; font-size: 13px; color: var(--text-secondary);">已安装的 MCP 服务器</h4>

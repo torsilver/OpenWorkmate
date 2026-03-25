@@ -105,6 +105,20 @@ public class CronNextRunTests
     }
 
     [Fact]
+    public void GetNextRunAt_Once_ReturnsNull()
+    {
+        var from = new DateTimeOffset(2025, 3, 14, 10, 0, 0, TimeSpan.Zero);
+        var meta = new ScheduledTaskMeta
+        {
+            ScheduleType = "once",
+            NextRunAt = from,
+            IntervalSeconds = 60
+        };
+        var next = CronNextRun.GetNextRunAt(meta, from);
+        Assert.Null(next);
+    }
+
+    [Fact]
     public void GetNextRunAt_UnknownScheduleType_ReturnsNull()
     {
         var from = DateTimeOffset.UtcNow;
@@ -128,5 +142,68 @@ public class CronNextRunTests
         var next = CronNextRun.GetNextRunAt(meta, from);
         Assert.NotNull(next);
         Assert.Equal(from.AddMinutes(60), next);
+    }
+
+    [Fact]
+    public void GetNextRunAt_IntervalSeconds_ReturnsBasePlusSeconds()
+    {
+        var from = new DateTimeOffset(2025, 3, 14, 10, 0, 0, TimeSpan.Zero);
+        var meta = new ScheduledTaskMeta
+        {
+            ScheduleType = "interval",
+            IntervalSeconds = 45,
+            LastRunAt = null
+        };
+        var next = CronNextRun.GetNextRunAt(meta, from);
+        Assert.NotNull(next);
+        Assert.Equal(from.AddSeconds(45), next);
+    }
+
+    [Fact]
+    public void GetNextRunAt_IntervalSeconds_PrecedenceOverMinutes()
+    {
+        var from = new DateTimeOffset(2025, 3, 14, 10, 0, 0, TimeSpan.Zero);
+        var meta = new ScheduledTaskMeta
+        {
+            ScheduleType = "interval",
+            IntervalSeconds = 30,
+            IntervalMinutes = 120,
+            LastRunAt = null
+        };
+        var next = CronNextRun.GetNextRunAt(meta, from);
+        Assert.NotNull(next);
+        Assert.Equal(from.AddSeconds(30), next);
+    }
+
+    [Fact]
+    public void GetNextRunAt_IntervalSeconds_UsesLastRunAtAsBaseWhenSet()
+    {
+        var from = new DateTimeOffset(2025, 3, 14, 10, 0, 0, TimeSpan.Zero);
+        var lastRun = new DateTimeOffset(2025, 3, 14, 9, 30, 0, TimeSpan.Zero);
+        var meta = new ScheduledTaskMeta
+        {
+            ScheduleType = "interval",
+            IntervalSeconds = 90,
+            LastRunAt = lastRun
+        };
+        var next = CronNextRun.GetNextRunAt(meta, from);
+        Assert.NotNull(next);
+        Assert.Equal(lastRun.AddSeconds(90), next);
+    }
+
+    [Fact]
+    public void GetNextRunAt_IntervalSecondsZero_FallsBackToMinutes()
+    {
+        var from = new DateTimeOffset(2025, 3, 14, 10, 0, 0, TimeSpan.Zero);
+        var meta = new ScheduledTaskMeta
+        {
+            ScheduleType = "interval",
+            IntervalSeconds = 0,
+            IntervalMinutes = 5,
+            LastRunAt = null
+        };
+        var next = CronNextRun.GetNextRunAt(meta, from);
+        Assert.NotNull(next);
+        Assert.Equal(from.AddMinutes(5), next);
     }
 }

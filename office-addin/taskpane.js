@@ -79,7 +79,6 @@
   const $fileInput = document.getElementById("file-input");
   const $attachmentsPreview = document.getElementById("attachments-preview");
   const $atModePanel = document.getElementById("at-mode-panel");
-  const $atModeFilterInput = document.getElementById("at-mode-filter-input");
   const $atModeList = document.getElementById("at-mode-list");
 
   const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
@@ -483,13 +482,13 @@
       scored.push({ c: c, score: score });
     }
     scored.sort(function (a, b) {
-      const g1 = a.c.group === "Tools" ? 0 : 1;
-      const g2 = b.c.group === "Tools" ? 0 : 1;
+      const g1 = a.c.group === "Skills" ? 0 : 1;
+      const g2 = b.c.group === "Skills" ? 0 : 1;
       if (g1 !== g2) return g1 - g2;
       if (b.score !== a.score) return b.score - a.score;
       return String(a.c.label).localeCompare(String(b.c.label), "zh-Hans");
     });
-    atModeTopList = scored.slice(0, 30).map(function (x) {
+    atModeTopList = scored.map(function (x) {
       return x.c;
     });
     atModeActiveIndex = 0;
@@ -501,7 +500,7 @@
     let placeholder = "";
     if (atModeBootstrapping) placeholder = "正在加载工具/技能列表…";
     else if (!atModeCandidates.length) placeholder = atModeLoadError || "暂无可用工具/技能";
-    else if (!atModeTopList.length) placeholder = "无匹配结果";
+    else if (!atModeTopList.length) placeholder = "";
     if (placeholder) {
       const empty = document.createElement("div");
       empty.className = "at-mode-empty";
@@ -511,6 +510,13 @@
     }
     for (let idx = 0; idx < atModeTopList.length; idx++) {
       const c = atModeTopList[idx];
+      if (idx > 0 && c.group === "Tools" && atModeTopList[idx - 1].group === "Skills") {
+        const sep = document.createElement("div");
+        sep.className = "at-mode-separator";
+        sep.setAttribute("role", "separator");
+        sep.setAttribute("aria-hidden", "true");
+        $atModeList.appendChild(sep);
+      }
       const div = document.createElement("div");
       div.className = "at-mode-item" + (idx === atModeActiveIndex ? " at-mode-item--active" : "");
       div.setAttribute("role", "option");
@@ -518,29 +524,27 @@
       const t = document.createElement("div");
       t.className = "at-mode-item-title";
       t.textContent = c.label || c.internal || "";
-      const m = document.createElement("div");
-      m.className = "at-mode-item-meta";
-      m.textContent = (c.group || "") + " · " + (c.internal || "");
       div.appendChild(t);
-      div.appendChild(m);
       $atModeList.appendChild(div);
+    }
+    var activeEl = $atModeList.querySelector(".at-mode-item--active");
+    if (activeEl && typeof activeEl.scrollIntoView === "function") {
+      activeEl.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   }
 
   function openAtMode(filter, startIdx, endIdx) {
-    atModeOpen = true;
     atTokenStart = startIdx;
     atTokenEnd = endIdx;
     atModeFilterStr = filter || "";
     atModeActiveIndex = 0;
     rebuildAtModeList(atModeFilterStr);
-    if ($atModePanel) $atModePanel.style.display = "flex";
-    if ($atModeFilterInput) {
-      $atModeFilterInput.value = atModeFilterStr;
-      setTimeout(function () {
-        $atModeFilterInput.focus();
-      }, 0);
+    if (!atModeBootstrapping && atModeTopList.length === 0) {
+      closeAtMode();
+      return;
     }
+    atModeOpen = true;
+    if ($atModePanel) $atModePanel.style.display = "flex";
     renderAtModeListUI();
   }
 
@@ -552,7 +556,6 @@
     atModeFilterStr = "";
     atModeTopList = [];
     if ($atModePanel) $atModePanel.style.display = "none";
-    if ($atModeFilterInput) $atModeFilterInput.value = "";
   }
 
   function setAtActiveIndex(idx) {
@@ -593,8 +596,7 @@
     }
     const value = $input.value || "";
     const prev = token.atIndex > 0 ? value[token.atIndex - 1] : "";
-    const allow =
-      token.atIndex === 0 || isWhitespaceCh(prev) || /[.,;:!?()[\]{}]/.test(prev);
+    var allow = token.atIndex === 0 || !/[A-Za-z0-9_]/.test(prev);
     if (!allow) {
       if (atModeOpen) closeAtMode();
       return;
@@ -606,18 +608,24 @@
         atModeBootstrapping = false;
         if (atModeOpen) {
           rebuildAtModeList(atModeFilterStr);
-          renderAtModeListUI();
+          if (!atModeTopList.length) {
+            closeAtMode();
+          } else {
+            renderAtModeListUI();
+          }
         }
       });
     }
     const filter = token.filter || "";
-    if (
-      atModeOpen &&
-      atTokenStart === token.atIndex &&
-      atTokenEnd === token.caret &&
-      atModeFilterStr === filter
-    ) {
+    if (atModeOpen && atTokenStart === token.atIndex && atTokenEnd === token.caret) {
       return;
+    }
+    if (atModeLoaded && !atModeBootstrapping) {
+      rebuildAtModeList(filter);
+      if (!atModeTopList.length) {
+        if (atModeOpen) closeAtMode();
+        return;
+      }
     }
     openAtMode(filter, token.atIndex, token.caret);
   }
@@ -629,21 +637,6 @@
       atModeSyncScheduled = false;
       updateAtModeFromTextarea();
     });
-  }
-
-  function onAtModeFilterInputSync() {
-    if (!atModeOpen || atTokenStart < 0 || atTokenEnd < 0 || !$input || !$atModeFilterInput) return;
-    const newFilter = $atModeFilterInput.value || "";
-    const value = $input.value || "";
-    const tokenStart = atTokenStart + 1;
-    $input.value = value.slice(0, tokenStart) + newFilter + value.slice(atTokenEnd);
-    atTokenEnd = tokenStart + newFilter.length;
-    atModeFilterStr = newFilter;
-    rebuildAtModeList(newFilter);
-    renderAtModeListUI();
-    setTimeout(function () {
-      $input.setSelectionRange(atTokenEnd, atTokenEnd);
-    }, 0);
   }
 
   function resetOfficeConversation() {
@@ -2067,27 +2060,6 @@
       if (!isNaN(idx) && atModeTopList[idx]) insertAtCandidate(atModeTopList[idx]);
     });
   }
-  if ($atModeFilterInput) {
-    $atModeFilterInput.addEventListener("input", onAtModeFilterInputSync);
-    $atModeFilterInput.addEventListener("keydown", function (e) {
-      if (!atModeOpen) return;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setAtActiveIndex(atModeActiveIndex + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setAtActiveIndex(atModeActiveIndex - 1);
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        pickAtModeActive();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closeAtMode();
-        if ($input) $input.focus();
-      }
-    });
-  }
-
   if ($sendBtn) $sendBtn.addEventListener("click", handleSend);
   if ($stopBtn) {
     $stopBtn.addEventListener("click", function () {
@@ -2126,7 +2098,6 @@
       }
     });
     $input.addEventListener("keyup", function () {
-      if ($atModeFilterInput && document.activeElement === $atModeFilterInput) return;
       scheduleAtModeSync();
     });
     $input.addEventListener("input", function () {

@@ -31,7 +31,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         {
             var sessionId = SessionContext.GetSessionId();
             var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
-            var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+            var endKey = IsScheduledTaskSession(sessionId) ? CliScriptEndKeys.Backend : CliScriptEndKeys.ResolveEndKey(clientType);
             var mode = _configService.GetCliRunModeForEnd(endKey);
 
             if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
@@ -46,6 +46,19 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
             var allowedCli = _configService.GetAllowedCliCommandsForEnd(endKey);
             var cliList = (allowedCli != null && allowedCli.Count > 0) ? allowedCli : CliScriptEndKeys.DefaultAllowedCommands;
             var cliSet = cliList.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
+
+            // 定时任务到点执行：无前端，不弹 HITL；AskEverytime 降级为仅白名单放行（与 UseAllowList 行为一致）。
+            if (IsScheduledTaskSession(sessionId))
+            {
+                if (cmdName != null && cliSet.Contains(cmdName))
+                {
+                    await next(context);
+                    return;
+                }
+                context.Result = new FunctionResult(context.Function,
+                    "[系统拦截] 定时任务到点执行无法弹出人工确认。请将命令加入设置「安全与确认 → 后台」的 CLI 白名单，或将后台运行模式设为 RunEverything。");
+                return;
+            }
 
             var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
                 || (cmdName == null || !cliSet.Contains(cmdName));
@@ -77,7 +90,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         {
             var sessionId = SessionContext.GetSessionId();
             var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
-            var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+            var endKey = IsScheduledTaskSession(sessionId) ? CliScriptEndKeys.Backend : CliScriptEndKeys.ResolveEndKey(clientType);
             var mode = _configService.GetCliRunModeForEnd(endKey);
 
             if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
@@ -91,6 +104,18 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
             var allowedScripts = _configService.GetAllowedPageScriptIdsForEnd(endKey);
             var list = (allowedScripts != null && allowedScripts.Count > 0) ? allowedScripts : CliScriptEndKeys.DefaultAllowedScriptIds;
             var normalized = list.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
+
+            if (IsScheduledTaskSession(sessionId))
+            {
+                if (!string.IsNullOrEmpty(scriptId) && normalized.Contains(scriptId.ToLowerInvariant()))
+                {
+                    await next(context);
+                    return;
+                }
+                context.Result = new FunctionResult(context.Function,
+                    "[系统拦截] 定时任务到点执行无法弹出人工确认。请将脚本 id 加入设置「安全与确认 → 后台」的页面脚本白名单，或将后台运行模式设为 RunEverything。");
+                return;
+            }
 
             var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
                 || (string.IsNullOrEmpty(scriptId) || !normalized.Contains(scriptId.ToLowerInvariant()));
@@ -121,6 +146,12 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         if (functionName == "run_custom_page_script" && context.Arguments.TryGetValue("scriptCode", out var scriptCodeObj))
         {
             var sessionId = SessionContext.GetSessionId();
+            if (IsScheduledTaskSession(sessionId))
+            {
+                context.Result = new FunctionResult(context.Function,
+                    "[系统拦截] 定时任务到点执行不支持自定义页面脚本（需人工确认且无浏览器会话）。");
+                return;
+            }
             if (string.IsNullOrEmpty(sessionId))
             {
                 context.Result = new FunctionResult(context.Function,
@@ -145,6 +176,12 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         if (functionName == "current_run_custom_document_script" && context.Arguments.TryGetValue("scriptCode", out var docScriptCodeObj))
         {
             var sessionId = SessionContext.GetSessionId();
+            if (IsScheduledTaskSession(sessionId))
+            {
+                context.Result = new FunctionResult(context.Function,
+                    "[系统拦截] 定时任务到点执行不支持自定义文档脚本（需人工确认）。");
+                return;
+            }
             if (string.IsNullOrEmpty(sessionId))
             {
                 context.Result = new FunctionResult(context.Function,
@@ -169,4 +206,8 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         _logger.LogInformation("Invoking tool: {Name}", functionName);
         await next(context);
     }
+
+    /// <summary>定时任务 Runner 使用的会话 id 前缀；无 WebSocket，不按前台端走 HITL。</summary>
+    private static bool IsScheduledTaskSession(string? sessionId) =>
+        !string.IsNullOrEmpty(sessionId) && sessionId.StartsWith("scheduled:", StringComparison.OrdinalIgnoreCase);
 }

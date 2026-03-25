@@ -5,10 +5,17 @@ public static class CronNextRun
 {
     public static DateTimeOffset? GetNextRunAt(ScheduledTaskMeta meta, DateTimeOffset fromUtc)
     {
-        if (string.Equals(meta.ScheduleType, "interval", StringComparison.OrdinalIgnoreCase) && meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+        // 单次任务：不通过此处排下一次；首次 NextRunAt 在创建时写入，执行后由 Runner 删除。
+        if (string.Equals(meta.ScheduleType, "once", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        if (string.Equals(meta.ScheduleType, "interval", StringComparison.OrdinalIgnoreCase))
         {
             var baseTime = meta.LastRunAt ?? fromUtc;
-            return baseTime.AddMinutes(meta.IntervalMinutes.Value);
+            if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                return baseTime.AddSeconds(meta.IntervalSeconds.Value);
+            if (meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+                return baseTime.AddMinutes(meta.IntervalMinutes.Value);
         }
         if (string.Equals(meta.ScheduleType, "cron", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(meta.CronExpression))
         {

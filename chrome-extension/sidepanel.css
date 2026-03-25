@@ -688,6 +688,20 @@ html, body {
   opacity: 0.9;
 }
 
+/* 放在 input-row 外，避免参与 flex 挤占输入框宽度 */
+.voice-hint {
+  display: block;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  padding: 0 16px 4px;
+  min-height: 0;
+}
+
+.voice-hint:empty {
+  display: none;
+}
+
 .input-area--drag {
   border-color: var(--accent);
   background: var(--accent-dim);
@@ -801,35 +815,17 @@ html, body {
   display: none;
 }
 
-.at-mode-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.at-mode-filter-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-.at-mode-filter-input {
-  width: 100%;
-  border: 1px solid var(--border);
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: inherit;
-}
-.at-mode-filter-input::placeholder {
-  color: var(--text-secondary);
-}
-
 .at-mode-list {
   overflow-y: auto;
   max-height: 240px;
+}
+
+.at-mode-separator {
+  height: 0;
+  margin: 8px 4px;
+  border: none;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
 }
 
 .at-mode-item {

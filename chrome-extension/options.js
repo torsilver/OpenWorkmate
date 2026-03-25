@@ -2366,6 +2366,9 @@ function renderCliScriptPerEndConfig() {
     html += '<option value="' + escapeAttr(opt.value) + '"' + (mode === opt.value ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
   });
   html += '</select></div>';
+  if (endKey === 'backend') {
+    html += '<p class="help-text" style="margin-top:12px;">此处的模式与白名单适用于<strong>无浏览器会话</strong>的后台场景，包括<strong>定时任务到点执行</strong>时模型调用的 <code>run_command</code> / <code>run_page_script</code>。定时任务不会弹出确认框；非白名单命令会被拦截，除非后台为 RunEverything。</p>';
+  }
   html += '<div class="cli-allowlist-section" data-end="' + escapeAttr(endKey) + '" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (showAllowlist ? '' : ' display:none;') + '">';
   html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p>';
   html += '<div class="cli-allowlist-list" style="margin-bottom:12px;">';

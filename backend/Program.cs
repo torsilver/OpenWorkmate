@@ -1073,20 +1073,41 @@ app.MapPost("/api/scheduled-tasks", async (HttpContext ctx, IScheduledTaskStore 
     var body = await JsonSerializer.DeserializeAsync<ScheduledTaskCreateRequest>(ctx.Request.Body, JsonCtx.Default.ScheduledTaskCreateRequest);
     if (body == null || string.IsNullOrWhiteSpace(body.Title) || string.IsNullOrWhiteSpace(body.Content))
         return Results.BadRequest(new { ok = false, message = "需要 title 和 content。" });
+    var now = DateTimeOffset.UtcNow;
     var meta = new ScheduledTaskMeta
     {
         Title = body.Title.Trim(),
         ScheduleType = (body.ScheduleType ?? "cron").Trim(),
         CronExpression = body.CronExpression?.Trim(),
         IntervalMinutes = body.IntervalMinutes,
+        IntervalSeconds = body.IntervalSeconds,
         Enabled = true,
         TimeZone = body.TimeZone?.Trim(),
         EndAt = body.EndAt,
         MaxRuns = body.MaxRuns,
         DeleteAfterRun = body.DeleteAfterRun
     };
-    var nextRun = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
-    meta.NextRunAt = nextRun;
+    if (meta.ScheduleType.Equals("once", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!ScheduledTaskScheduling.TryResolveOnceFirstRun(now, null, body.RunAt, body.IntervalSeconds, body.IntervalMinutes, out var onceNext, out var onceErr))
+            return Results.BadRequest(new { ok = false, message = onceErr ?? "once 任务参数无效。" });
+        meta.RunOnceAt = onceNext;
+        meta.NextRunAt = onceNext;
+        meta.DeleteAfterRun = true;
+        meta.CronExpression = null;
+    }
+    else
+    {
+        meta.RunOnceAt = null;
+        meta.NextRunAt = CronNextRun.GetNextRunAt(meta, now);
+        if (meta.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null)
+        {
+            if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                meta.NextRunAt = now.AddSeconds(meta.IntervalSeconds.Value);
+            else if (meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+                meta.NextRunAt = now.AddMinutes(meta.IntervalMinutes.Value);
+        }
+    }
     var id = await taskStore.SaveAsync(null, body.Content.Trim(), meta, ct).ConfigureAwait(false);
     return Results.Json(new { ok = true, id });
 });
@@ -1098,17 +1119,51 @@ app.MapPut("/api/scheduled-tasks/{id}", async (string id, HttpContext ctx, ISche
     var existing = await taskStore.GetAsync(id, ct).ConfigureAwait(false);
     if (existing == null) return Results.Json(new { ok = false, message = "未找到该定时任务。" }, statusCode: 404);
     var meta = existing.Value.Meta;
+    var previousScheduleType = meta.ScheduleType;
     var content = body.Content ?? existing.Value.Content;
     if (!string.IsNullOrWhiteSpace(body.Title)) meta.Title = body.Title.Trim();
     if (body.Enabled.HasValue) meta.Enabled = body.Enabled.Value;
     if (body.ScheduleType != null) meta.ScheduleType = body.ScheduleType.Trim();
     if (body.CronExpression != null) meta.CronExpression = string.IsNullOrWhiteSpace(body.CronExpression) ? null : body.CronExpression.Trim();
     if (body.IntervalMinutes.HasValue) meta.IntervalMinutes = body.IntervalMinutes;
+    if (body.IntervalSeconds.HasValue) meta.IntervalSeconds = body.IntervalSeconds;
     if (body.TimeZone != null) meta.TimeZone = string.IsNullOrWhiteSpace(body.TimeZone) ? null : body.TimeZone.Trim();
     if (body.EndAt.HasValue) meta.EndAt = body.EndAt;
     if (body.MaxRuns.HasValue) meta.MaxRuns = body.MaxRuns;
     if (body.DeleteAfterRun.HasValue) meta.DeleteAfterRun = body.DeleteAfterRun.Value;
-    meta.NextRunAt = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
+    var nowPut = DateTimeOffset.UtcNow;
+    var becameOnce = body.ScheduleType != null
+        && body.ScheduleType.Trim().Equals("once", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(previousScheduleType, "once", StringComparison.OrdinalIgnoreCase);
+    var hasOnceFire = body.RunAt.HasValue
+        || (body.IntervalSeconds is { } s && s > 0)
+        || (body.IntervalMinutes is { } m && m > 0);
+    if (meta.ScheduleType.Equals("once", StringComparison.OrdinalIgnoreCase))
+    {
+        meta.DeleteAfterRun = true;
+        if (becameOnce || hasOnceFire)
+        {
+            if (becameOnce && !hasOnceFire)
+                return Results.BadRequest(new { ok = false, message = "转为 once 时须在请求体中提供 runAt 或 intervalSeconds/intervalMinutes（大于 0）之一。" });
+            if (!ScheduledTaskScheduling.TryResolveOnceFirstRun(nowPut, null, body.RunAt, body.IntervalSeconds, body.IntervalMinutes, out var onceNext, out var onceErr))
+                return Results.BadRequest(new { ok = false, message = onceErr ?? "once 任务参数无效。" });
+            meta.RunOnceAt = onceNext;
+            meta.NextRunAt = onceNext;
+            meta.CronExpression = null;
+        }
+    }
+    else
+    {
+        meta.RunOnceAt = null;
+        meta.NextRunAt = CronNextRun.GetNextRunAt(meta, nowPut);
+        if (meta.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null)
+        {
+            if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                meta.NextRunAt = nowPut.AddSeconds(meta.IntervalSeconds.Value);
+            else if (meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+                meta.NextRunAt = nowPut.AddMinutes(meta.IntervalMinutes.Value);
+        }
+    }
     await taskStore.SaveAsync(id, content, meta, ct).ConfigureAwait(false);
     return Results.Ok(new { ok = true });
 });

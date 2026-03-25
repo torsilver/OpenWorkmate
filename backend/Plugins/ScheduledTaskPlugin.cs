@@ -18,40 +18,68 @@ public sealed class ScheduledTaskPlugin
     }
 
     [KernelFunction("scheduled_task_create")]
-    [Description("Create a scheduled task. Writes .task.md (content) and .meta.json. Backend will run the task at nextRunAt and send the MD to AI. scheduleType: 'cron' or 'interval'. For cron use cronExpression (e.g. '0 9 * * 1-5'); for interval use intervalMinutes.")]
+    [Description(
+        "Create a scheduled task. Two kinds: (1) ONCE: scheduleType 'once' — run exactly one time. Provide runAt (ISO8601 absolute time) OR intervalSeconds/intervalMinutes (>0) as delay from now; do not pass both. Task is removed after run. (2) REPEATING: scheduleType 'interval' — repeat every intervalSeconds or intervalMinutes (recurring); OR scheduleType 'cron' with cronExpression. For interval repeating, deleteAfterRun defaults false. Backend runs at nextRunAt (backend CLI policy, no browser HITL). Omit id to auto-generate.")]
     public async Task<string> ScheduledTaskCreateAsync(
-        [Description("Unique id (alphanumeric, dash, underscore). Leave empty to auto-generate.")] string? id,
-        [Description("Short title for the task")] string title,
-        [Description("Markdown content describing what the AI should do when the task runs")] string content,
-        [Description("'cron' or 'interval'")] string scheduleType = "cron",
-        [Description("Cron expression (5 fields), e.g. '0 9 * * 1-5' for weekdays 9:00")] string? cronExpression = null,
-        [Description("When scheduleType is 'interval', run every N minutes")] int? intervalMinutes = null,
-        [Description("Optional timezone id, e.g. 'China Standard Time'")] string? timeZone = null,
+        [Description("Unique id (alphanumeric, dash, underscore). Omit or null to auto-generate.")] string? id = null,
+        [Description("Short title for the task")] string? title = null,
+        [Description("Markdown content describing what the AI should do when the task runs")] string? content = null,
+        [Description("'once' (single run), 'interval' (repeat every N min/sec), or 'cron'")] string scheduleType = "cron",
+        [Description("When scheduleType is 'cron', 5-field cron expression")] string? cronExpression = null,
+        [Description("When scheduleType is 'interval' (repeating): every N whole minutes. For 'once' with delay: use as delay minutes (mutually exclusive with runAt and intervalSeconds).")] int? intervalMinutes = null,
+        [Description("When scheduleType is 'interval' (repeating): every N seconds (precedence over intervalMinutes). For 'once': delay seconds (mutually exclusive with runAt and intervalMinutes).")] int? intervalSeconds = null,
+        [Description("When scheduleType is 'once': absolute first run time as ISO8601 (mutually exclusive with intervalSeconds/intervalMinutes).")] string? runAt = null,
+        [Description("Optional timezone id for cron, e.g. 'China Standard Time'")] string? timeZone = null,
         [Description("Optional end date for recurring task")] string? endAt = null,
         [Description("Optional max number of runs")] int? maxRuns = null,
-        [Description("If true, delete task after one run (one-shot)")] bool deleteAfterRun = false,
+        [Description("If true, delete after one run (for repeating types). Ignored for scheduleType 'once' (always one-shot).")] bool deleteAfterRun = false,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content))
+            return "[Error] title and content are required.";
         var safeId = FileScheduledTaskStore.SanitizeId(id);
         if (string.IsNullOrEmpty(safeId))
             safeId = Guid.NewGuid().ToString("N")[..12];
+        var st = (scheduleType ?? "cron").Trim();
+        var now = DateTimeOffset.UtcNow;
         var meta = new ScheduledTaskMeta
         {
             Id = safeId,
-            Title = title?.Trim() ?? safeId,
-            ScheduleType = (scheduleType ?? "cron").Trim(),
+            Title = title.Trim(),
+            ScheduleType = st,
             CronExpression = cronExpression?.Trim(),
             IntervalMinutes = intervalMinutes,
+            IntervalSeconds = intervalSeconds,
             Enabled = true,
             TimeZone = timeZone?.Trim(),
             EndAt = !string.IsNullOrWhiteSpace(endAt) && DateTimeOffset.TryParse(endAt, out var ea) ? ea : null,
             MaxRuns = maxRuns,
             DeleteAfterRun = deleteAfterRun
         };
-        meta.NextRunAt = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
-        if (meta.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null && meta.IntervalMinutes.HasValue)
-            meta.NextRunAt = DateTimeOffset.UtcNow.AddMinutes(meta.IntervalMinutes.Value);
-        var savedId = await _store.SaveAsync(safeId, content ?? "", meta, cancellationToken).ConfigureAwait(false);
+
+        if (st.Equals("once", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!ScheduledTaskScheduling.TryResolveOnceFirstRun(now, runAt, null, intervalSeconds, intervalMinutes, out var onceNext, out var onceErr))
+                return "[Error] " + (onceErr ?? "once 参数无效");
+            meta.RunOnceAt = onceNext;
+            meta.NextRunAt = onceNext;
+            meta.DeleteAfterRun = true;
+            meta.CronExpression = null;
+        }
+        else
+        {
+            meta.RunOnceAt = null;
+            meta.NextRunAt = CronNextRun.GetNextRunAt(meta, now);
+            if (st.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null)
+            {
+                if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                    meta.NextRunAt = now.AddSeconds(meta.IntervalSeconds.Value);
+                else if (meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+                    meta.NextRunAt = now.AddMinutes(meta.IntervalMinutes.Value);
+            }
+        }
+
+        var savedId = await _store.SaveAsync(safeId, content.Trim(), meta, cancellationToken).ConfigureAwait(false);
         return $"[OK] Scheduled task created: id={savedId}, nextRunAt={meta.NextRunAt?.ToString("O") ?? "-"}.";
     }
 
@@ -89,14 +117,16 @@ public sealed class ScheduledTaskPlugin
     }
 
     [KernelFunction("scheduled_task_update")]
-    [Description("Update a scheduled task. Omit optional params to keep current value.")]
+    [Description("Update a scheduled task. Omit optional params to keep current value. For scheduleType 'once', to change fire time pass runAt or intervalSeconds/intervalMinutes.")]
     public async Task<string> ScheduledTaskUpdateAsync(
         [Description("Task id")] string id,
         [Description("New title")] string? title = null,
         [Description("New markdown content")] string? content = null,
-        [Description("New schedule type")] string? scheduleType = null,
+        [Description("New schedule type: once | interval | cron")] string? scheduleType = null,
         [Description("New cron expression")] string? cronExpression = null,
-        [Description("New interval minutes")] int? intervalMinutes = null,
+        [Description("New interval minutes (repeating or once delay)")] int? intervalMinutes = null,
+        [Description("New interval seconds (repeating or once delay)")] int? intervalSeconds = null,
+        [Description("For once: ISO8601 absolute run time")] string? runAt = null,
         [Description("Enable or disable")] bool? enabled = null,
         CancellationToken cancellationToken = default)
     {
@@ -108,14 +138,48 @@ public sealed class ScheduledTaskPlugin
             return $"[Not found] id={safeId}.";
         var meta = existing.Value.Meta;
         var newContent = content ?? existing.Value.Content;
+        var prevType = meta.ScheduleType;
         if (title != null) meta.Title = title.Trim();
         if (scheduleType != null) meta.ScheduleType = scheduleType.Trim();
         if (cronExpression != null) meta.CronExpression = string.IsNullOrWhiteSpace(cronExpression) ? null : cronExpression.Trim();
         if (intervalMinutes != null) meta.IntervalMinutes = intervalMinutes;
+        if (intervalSeconds != null) meta.IntervalSeconds = intervalSeconds;
         if (enabled.HasValue) meta.Enabled = enabled.Value;
-        meta.NextRunAt = CronNextRun.GetNextRunAt(meta, DateTimeOffset.UtcNow);
-        if (meta.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null && meta.IntervalMinutes.HasValue)
-            meta.NextRunAt = DateTimeOffset.UtcNow.AddMinutes(meta.IntervalMinutes.Value);
+
+        var now = DateTimeOffset.UtcNow;
+        var becameOnce = meta.ScheduleType.Equals("once", StringComparison.OrdinalIgnoreCase)
+            && !prevType.Equals("once", StringComparison.OrdinalIgnoreCase);
+        var hasOnceFire = !string.IsNullOrWhiteSpace(runAt)
+            || (intervalSeconds is { } rs && rs > 0)
+            || (intervalMinutes is { } rm && rm > 0);
+
+        if (meta.ScheduleType.Equals("once", StringComparison.OrdinalIgnoreCase))
+        {
+            meta.DeleteAfterRun = true;
+            if (becameOnce || hasOnceFire)
+            {
+                if (becameOnce && !hasOnceFire)
+                    return "[Error] 转为 once 时须提供 runAt 或 intervalSeconds/intervalMinutes（大于 0）之一。";
+                if (!ScheduledTaskScheduling.TryResolveOnceFirstRun(now, runAt, null, intervalSeconds, intervalMinutes, out var onceNext, out var onceErr))
+                    return "[Error] " + (onceErr ?? "once 参数无效");
+                meta.RunOnceAt = onceNext;
+                meta.NextRunAt = onceNext;
+                meta.CronExpression = null;
+            }
+        }
+        else
+        {
+            meta.RunOnceAt = null;
+            meta.NextRunAt = CronNextRun.GetNextRunAt(meta, now);
+            if (meta.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase) && meta.NextRunAt == null)
+            {
+                if (meta.IntervalSeconds.HasValue && meta.IntervalSeconds.Value > 0)
+                    meta.NextRunAt = now.AddSeconds(meta.IntervalSeconds.Value);
+                else if (meta.IntervalMinutes.HasValue && meta.IntervalMinutes.Value > 0)
+                    meta.NextRunAt = now.AddMinutes(meta.IntervalMinutes.Value);
+            }
+        }
+
         await _store.SaveAsync(safeId, newContent, meta, cancellationToken).ConfigureAwait(false);
         return $"[OK] Updated task id={safeId}, nextRunAt={meta.NextRunAt?.ToString("O") ?? "-"}.";
     }
