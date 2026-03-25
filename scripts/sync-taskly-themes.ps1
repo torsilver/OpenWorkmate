@@ -13,4 +13,12 @@ foreach ($f in @("chat-themes.css", "taskly-theme-boot.js")) {
         Copy-Item -LiteralPath $from -Destination (Join-Path $t $f) -Force
     }
 }
-Write-Host "Synced chat-themes.css and taskly-theme-boot.js to chrome-extension, wps-addin-new/public, office-addin."
+$fontDir = Join-Path $src "fonts"
+if (Test-Path $fontDir) {
+    foreach ($t in $targets) {
+        $destFonts = Join-Path $t "fonts"
+        New-Item -ItemType Directory -Force -Path $destFonts | Out-Null
+        Copy-Item -Path (Join-Path $fontDir "*") -Destination $destFonts -Force
+    }
+}
+Write-Host "Synced chat-themes.css, taskly-theme-boot.js, and shared-ui/fonts (if present) to chrome-extension, wps-addin-new/public, office-addin."

@@ -353,7 +353,10 @@
       </div>
       <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
         <h4 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">麦克风权限（会议监听）</h4>
-        <p class="help-text" style="margin: 0;">会议监听需要麦克风权限。若提示无法访问麦克风：（1）请再次点击侧栏的「会议监听」按钮，在浏览器弹出的权限窗口中选择「允许」；（2）若曾选择「阻止」，请点击侧栏所在页地址栏左侧的锁或信息图标，将麦克风改为「允许」后重试。</p>
+        <p class="help-text" style="margin: 0 0 10px 0;"><strong>本选项页不能授予麦克风。</strong>麦克风由 Chrome 按站点（<code>chrome-extension://…</code>）单独授权，与下方 AI 等配置无关。</p>
+        <p class="help-text" style="margin: 0 0 10px 0;">若提示无法访问麦克风：（1）请再次点击侧栏的「会议监听」，在浏览器弹窗中选「允许」；（2）若曾选「阻止」，打开 Chrome「设置 → 隐私与安全 → 网站设置 → 麦克风」，在列表中找到本扩展对应站点并改为「允许」；（3）也可在侧栏所在网页地址栏左侧的锁/信息图标中检查站点权限。</p>
+        <p class="help-text" style="margin: 0 0 8px 0; font-family: monospace; font-size: 12px; word-break: break-all;" id="micExtOriginDisplay"></p>
+        <button type="button" id="copyMicExtOriginBtn" class="btn-secondary" style="margin-top: 4px;">复制扩展站点地址与排查说明</button>
       </div>
       <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-secondary);">AI 模型列表</h4>
       <p class="help-text" style="margin-top: -4px; margin-bottom: 12px;">点击某条目的「启用」即设为当前使用模型，其它模型自动停用；所有对话将使用当前启用的模型。</p>

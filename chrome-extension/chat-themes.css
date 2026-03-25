@@ -4,6 +4,15 @@
  * 由 taskly-theme-boot.js 从 localStorage tasklyUiTheme 或后端配置同步。
  */
 
+/* 站酷快乐体（OFL，fonts/OFL.txt）— 手绘主题中文与西文手写气质一致 */
+@font-face {
+  font-family: "ZCOOL KuaiLe";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ZCOOLKuaiLe-Regular.ttf") format("truetype");
+}
+
 html[data-theme="dark"] {
   color-scheme: dark;
   --bg-primary: #0f0f0f;
@@ -156,7 +165,7 @@ html[data-theme="sketch"] {
   --danger: #dc2626;
   --radius: 18px;
   --transition: 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  --font-ui: "Segoe Print", "Comic Sans MS", "PingFang SC", "Microsoft YaHei", cursive, sans-serif;
+  --font-ui: "ZCOOL KuaiLe", "Segoe Print", "Comic Sans MS", "PingFang SC", "Microsoft YaHei", cursive, sans-serif;
   --chat-code-bg: #fff7ed;
 }
 

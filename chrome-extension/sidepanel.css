@@ -458,6 +458,7 @@ html, body {
 .msg-action-btn {
   display: inline-block;
   margin-top: 8px;
+  margin-right: 8px;
   padding: 6px 12px;
   font-size: 13px;
   background: var(--accent);
@@ -465,6 +466,9 @@ html, body {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+.msg-action-btn:last-child {
+  margin-right: 0;
 }
 .msg-action-btn:hover {
   opacity: 0.9;

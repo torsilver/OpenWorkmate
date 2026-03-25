@@ -83,9 +83,92 @@ const STORAGE_PLAN_ID = "copilot_plan_id";
 const STORAGE_PLAN_TITLE = "copilot_plan_title";
 const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
 
+/**
+ * 在浏览器中打开与本扩展相关的权限/站点设置（麦克风等）。
+ * 优先打开 Chrome「网站设置」中本扩展条目；若被策略拦截则打开扩展程序详情页。不再 fallback 到扩展选项页（与麦克风无关，易误导）。
+ */
+function openTasklyExtensionPermissionSettings() {
+  function reportFailure(message) {
+    const msg = message || "无法打开权限设置页。";
+    try {
+      addSystemMessage(msg);
+    } catch {
+      alert(msg);
+    }
+  }
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) {
+    reportFailure("当前环境无法打开权限设置。");
+    return;
+  }
+  if (!chrome.tabs || !chrome.tabs.create) {
+    reportFailure("无法打开权限页：tabs API 不可用。请手动在 Chrome 中打开「设置 → 隐私与安全 → 网站设置 → 麦克风」，找到本扩展对应站点并允许。");
+    return;
+  }
+  const id = chrome.runtime.id;
+  const siteParam = encodeURIComponent(`chrome-extension://${id}/`);
+  const origin = `chrome-extension://${id}/`;
+  const urls = [
+    `chrome://settings/content/siteDetails?site=${siteParam}`,
+    `chrome://extensions/?id=${id}`
+  ];
+  function tryUrl(index) {
+    if (index >= urls.length) {
+      reportFailure(
+        "无法在浏览器中自动打开权限页（可能被策略拦截）。请手动：打开 Chrome「设置 → 隐私与安全 → 网站设置 → 麦克风」，在列表中找到 " +
+          origin +
+          " 并允许麦克风；或在地址栏访问 chrome://extensions/ 进入本扩展详情检查权限。"
+      );
+      return;
+    }
+    chrome.tabs.create({ url: urls[index] }, () => {
+      if (chrome.runtime.lastError) {
+        tryUrl(index + 1);
+      }
+    });
+  }
+  tryUrl(0);
+}
+
+/** 打开扩展选项页：优先 openOptionsPage，失败则用新标签打开 options.html，并暴露错误（避免静默失败）。 */
+function openTasklyOptionsPage() {
+  function reportFailure(message) {
+    const msg = message || "无法打开设置页。";
+    try {
+      addSystemMessage(msg);
+    } catch {
+      alert(msg);
+    }
+  }
+  if (typeof chrome === "undefined" || !chrome.runtime) {
+    reportFailure("当前环境无法打开扩展设置（chrome.runtime 不可用）。");
+    return;
+  }
+  const optionsUrl = chrome.runtime.getURL("options.html");
+  function tryTabsCreate() {
+    if (!chrome.tabs || !chrome.tabs.create) {
+      reportFailure("无法打开设置页：tabs API 不可用。");
+      return;
+    }
+    chrome.tabs.create({ url: optionsUrl }, () => {
+      if (chrome.runtime.lastError) {
+        reportFailure(chrome.runtime.lastError.message || "新标签页打开 options.html 失败。");
+      }
+    });
+  }
+  if (chrome.runtime.openOptionsPage) {
+    chrome.runtime.openOptionsPage(() => {
+      if (chrome.runtime.lastError) {
+        tryTabsCreate();
+      }
+    });
+  } else {
+    tryTabsCreate();
+  }
+}
+
 if ($settingsBtn) {
   $settingsBtn.addEventListener("click", () => {
-    chrome.runtime.openOptionsPage();
+    openTasklyOptionsPage();
   });
 }
 
@@ -1520,7 +1603,7 @@ function handleMessage(raw) {
             btn.textContent = "前往设置";
             btn.type = "button";
             btn.style.cssText = "margin-top:8px;padding:6px 12px;font-size:12px;cursor:pointer;background:var(--accent, #3b82f6);color:#fff;border:none;border-radius:6px;";
-            btn.addEventListener("click", () => { if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage(); });
+            btn.addEventListener("click", () => { openTasklyOptionsPage(); });
             block.appendChild(btn);
           }
         }
@@ -2297,13 +2380,18 @@ function addBotMessage(text, isError = false, actionButton = null) {
   } else {
     div.textContent = displayText;
   }
-  if (isError && actionButton && actionButton.label && typeof actionButton.onClick === 'function') {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'msg-action-btn';
-    btn.textContent = actionButton.label;
-    btn.addEventListener('click', actionButton.onClick);
-    div.appendChild(btn);
+  if (isError && actionButton) {
+    const list = Array.isArray(actionButton) ? actionButton : [actionButton];
+    for (const ab of list) {
+      if (ab && ab.label && typeof ab.onClick === "function") {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "msg-action-btn" + (ab.className ? " " + ab.className : "");
+        btn.textContent = ab.label;
+        btn.addEventListener("click", ab.onClick);
+        div.appendChild(btn);
+      }
+    }
   }
 }
 
@@ -2691,8 +2779,11 @@ $input.addEventListener("input", () => {
       } else {
         userMessage = "无法使用麦克风：权限被拒绝或设备不可用，请检查浏览器设置后重试。";
       }
-      const openOptions = () => { if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage(); };
-      addBotMessage(userMessage, true, { label: "打开扩展设置", onClick: openOptions });
+      userMessage += "\n\n点击下方按钮将在 Chrome 中打开本扩展的站点权限页（可改麦克风）；若被拦截会再尝试打开扩展程序详情页。";
+      addBotMessage(userMessage, true, {
+        label: "打开权限设置",
+        onClick: () => openTasklyExtensionPermissionSettings()
+      });
       return;
     }
 

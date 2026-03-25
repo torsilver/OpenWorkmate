@@ -12,26 +12,13 @@
     return IDS[t] ? t : "dark";
   }
 
-  /** 与 #taskly-hljs-theme 同步（扩展 CSP 禁止内联 script，逻辑由原 head 内联块迁入） */
-  function syncHljsStylesheetLink() {
-    try {
-      if (!global.TasklyTheme) return;
-      var el = document.getElementById("taskly-hljs-theme");
-      if (!el) return;
-      var t = document.documentElement.getAttribute("data-theme") || "dark";
-      el.href = global.TasklyTheme.getHljsStylesheetHref(t);
-    } catch (e) { /* ignore */ }
-  }
-
   function applyFromStorage() {
     try {
       var t = normalize(global.localStorage.getItem(KEY));
       document.documentElement.setAttribute("data-theme", t);
-      syncHljsStylesheetLink();
       return t;
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "dark");
-      syncHljsStylesheetLink();
       return "dark";
     }
   }
@@ -42,7 +29,6 @@
       global.localStorage.setItem(KEY, t);
     } catch (e) { /* ignore */ }
     document.documentElement.setAttribute("data-theme", t);
-    syncHljsStylesheetLink();
     return t;
   }
 
@@ -50,7 +36,6 @@
   function applyThemeDomOnly(t) {
     t = normalize(t);
     document.documentElement.setAttribute("data-theme", t);
-    syncHljsStylesheetLink();
     return t;
   }
 
@@ -74,10 +59,4 @@
   };
 
   applyFromStorage();
-  syncHljsStylesheetLink();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", syncHljsStylesheetLink);
-  } else {
-    syncHljsStylesheetLink();
-  }
 })(typeof self !== "undefined" ? self : this);
