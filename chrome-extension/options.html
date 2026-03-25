@@ -33,12 +33,39 @@
       margin: 0 auto;
     }
 
-    h1 {
-      font-size: 24px;
+    .console-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
       margin-bottom: 24px;
+    }
+
+    .console-header h1 {
+      font-size: 24px;
+      margin-bottom: 0;
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    .console-header-theme-select {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      min-width: 8rem;
+      transition: border-color 0.2s;
+    }
+
+    .console-header-theme-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
     }
 
     /* Tabs */
@@ -281,14 +308,26 @@
 </head>
 <body>
   <div class="container">
-    <h1>⚙️ Office Copilot 控制台</h1>
+    <header class="console-header">
+      <h1>⚙️ Office Copilot 控制台</h1>
+      <select id="uiThemeId" name="uiThemeId" class="console-header-theme-select"
+        aria-label="对话界面主题"
+        title="侧栏、WPS/Office 任务窗格、计划与 Workspace 等对话相关页面将使用同一主题；保存后写入本机配置并同步 localStorage。">
+        <option value="dark">暗色</option>
+        <option value="light">浅色</option>
+        <option value="blocks">色块</option>
+        <option value="modern">现代</option>
+        <option value="minimal">简约</option>
+        <option value="lines">线条</option>
+        <option value="sketch">手绘</option>
+      </select>
+    </header>
     <p class="help-text" style="margin-bottom: 16px; max-width: 52rem;">
       <strong>多端说明</strong>：本页为<strong>全局配置唯一入口</strong>（模型、技能、Embedding、MCP、User Scripts 等）。
       WPS / Office 任务窗格仅连接同一本地后台，<strong>不提供</strong>重复设置页；浏览器侧能力（标签页脚本注入、可见区域截图、侧栏 Debug / workspace 等）仅存在于 Chrome 扩展。
     </p>
 
     <div class="tabs">
-      <div class="tab" data-target="tab-appearance">外观</div>
       <div class="tab active" data-target="tab-ai">大模型设置</div>
       <div class="tab" data-target="tab-memory">记忆与 RAG</div>
       <div class="tab" data-target="tab-skills">自定义技能 (Skills)</div>
@@ -297,22 +336,6 @@
       <div class="tab" data-target="tab-plans-accurate">计划与准确数据</div>
     </div>
 
-    <div id="tab-appearance" class="tab-content">
-      <div class="form-group">
-        <label for="uiThemeId">对话界面主题</label>
-        <select id="uiThemeId" name="uiThemeId">
-          <option value="dark">暗色</option>
-          <option value="light">浅色</option>
-          <option value="blocks">色块</option>
-          <option value="modern">现代</option>
-          <option value="minimal">简约</option>
-          <option value="lines">线条</option>
-          <option value="sketch">手绘</option>
-        </select>
-        <p class="help-text">侧栏、WPS/Office 任务窗格、计划与 Workspace 等对话相关页面将使用同一主题；保存后写入本机配置并同步 localStorage。</p>
-      </div>
-    </div>
-    
     <!-- 大模型设置 -->
     <div id="tab-ai" class="tab-content active">
       <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
