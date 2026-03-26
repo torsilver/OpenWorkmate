@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskly.local/schemas/skill-debugger-trace.json",
+  "title": "SkillDebuggerTrace",
+  "description": "脚本式 Skill VM 调试器录制的确定性回放轨迹（与宿主 SkillVmState / skill_step 语义对齐）。",
+  "type": "object",
+  "required": ["schemaVersion", "skillId", "entries"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "轨迹格式版本；与附录 A 同步递增。"
+    },
+    "recordedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "可选：录制结束时间（ISO 8601）。"
+    },
+    "skillId": {
+      "type": "string",
+      "description": "入口技能 id（与 skill.manifest.json 的 skillId 一致）。"
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "可选：关联宿主会话 id，仅作标注。"
+    },
+    "entries": {
+      "type": "array",
+      "description": "按时间顺序的步进记录；回放时依次应用 skillStep 与期望状态。",
+      "items": { "$ref": "#/$defs/traceEntry" }
+    }
+  },
+  "$defs": {
+    "traceEntry": {
+      "type": "object",
+      "required": ["kind", "skillStep"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["skill_step", "host_snapshot", "comment"],
+          "description": "skill_step：一次 skill_step 决策；host_snapshot：宿主在某边界的完整状态快照；comment：仅人类可读，回放可忽略。"
+        },
+        "timestampUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "skillStep": {
+          "type": "object",
+          "description": "与 SkillVmStepArgs / 工具参数一致（camelCase）。",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["next", "goto", "finish", "return", "pause"]
+            },
+            "targetSkillId": { "type": ["string", "null"] },
+            "targetSegmentId": { "type": ["string", "null"] },
+            "reason": { "type": ["string", "null"] }
+          },
+          "required": ["action"]
+        },
+        "stateAfter": {
+          "$ref": "#/$defs/skillVmState",
+          "description": "可选：本步之后的状态快照，用于校验回放。"
+        },
+        "injectionPreviewChars": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "可选：本边界上「将注入模型」的正文长度（字符），用于 Memory 面板 token 曲线。"
+        },
+        "pauseBoundary": {
+          "$ref": "#/$defs/pauseBoundary",
+          "description": "可选：本步对应的宿主暂停边界（见附录 Pause 枚举）。"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "skillVmState": {
+      "type": "object",
+      "description": "与 SkillVmState JSON 形状一致（camelCase）。",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "activeSkillId": { "type": "string" },
+        "currentSegmentId": { "type": "string" },
+        "stack": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "skillId": { "type": "string" },
+              "segmentId": { "type": "string" },
+              "returnSegmentId": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "variables": { "type": "object" },
+        "completedSegmentIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "finished": { "type": "boolean" },
+        "paused": { "type": "boolean" }
+      }
+    },
+    "pauseBoundary": {
+      "type": "string",
+      "enum": [
+        "none",
+        "beforeModelRound",
+        "afterSkillStep",
+        "beforeInject",
+        "onGoto",
+        "onFinish",
+        "onPauseTool"
+      ],
+      "description": "与调试器/宿主约定的暂停语义；默认值见附录。"
+    }
+  }
+}

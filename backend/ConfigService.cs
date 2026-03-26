@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using OfficeCopilot.Server.Mcp;
+using OfficeCopilot.Server.Services.SkillVm;
 
 namespace OfficeCopilot.Server;
 
@@ -305,6 +306,8 @@ public class AppConfig
     public bool AllowPrivateEndpointTests { get; set; }
     /// <summary>本地 HTTP/WebSocket 访问密钥；非空时优先于 appsettings 的 WebSocket:AuthToken。在扩展选项页保存后写入 user-config，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
+    /// <summary>脚本化 Skill VM：分段执行与 skill_step 工具。</summary>
+    public SkillVmConfig? SkillVm { get; set; }
 }
 
 /// <summary>四端键名：chrome、backend、office、wps。</summary>

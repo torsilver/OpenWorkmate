@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Plan;
+using OfficeCopilot.Server.Services.SkillVm;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -100,6 +101,16 @@ public class WsMessage
     [JsonPropertyName("planCurrentStepIndex")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? PlanCurrentStepIndex { get; set; }
+
+    /// <summary>为 true 时启用脚本化 Skill VM：仅注入当前段与状态快照，需配合 <see cref="SkillVmSkillId"/>。</summary>
+    [JsonPropertyName("skillVmMode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SkillVmMode { get; set; }
+
+    /// <summary>脚本化 Skill 的技能 ID（与 SKILL frontmatter name / manifest 一致）。</summary>
+    [JsonPropertyName("skillVmSkillId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SkillVmSkillId { get; set; }
 
     /// <summary>set_context 时：当前页面/Agent 名称（如页面 title），用于会话 DisplayName。</summary>
     [JsonPropertyName("pageTitle")]
@@ -362,4 +373,12 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(VectorSearchClientTypeStatDto))]
 [JsonSerializable(typeof(List<VectorSearchClientTypeStatDto>))]
 [JsonSerializable(typeof(DebugStatsResetResponse))]
+[JsonSerializable(typeof(SkillVmConfig))]
+[JsonSerializable(typeof(SkillVmManifest))]
+[JsonSerializable(typeof(SkillVmSegmentDef))]
+[JsonSerializable(typeof(SkillVmState))]
+[JsonSerializable(typeof(SkillVmStackFrame))]
+[JsonSerializable(typeof(SkillVmDebugFlags))]
+[JsonSerializable(typeof(SkillVmDebugFlagsRequest))]
+[JsonSerializable(typeof(SkillVmDebugSessionResponse))]
 internal partial class JsonCtx : JsonSerializerContext;

@@ -1,0 +1,8 @@
+{
+  "skillId": "skill-vm-demo",
+  "version": "1",
+  "segments": [
+    { "id": "intro", "order": 1, "source": "segments/intro.md" },
+    { "id": "outro", "order": 2, "source": "segments/outro.md" }
+  ]
+}

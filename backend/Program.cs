@@ -11,6 +11,7 @@ using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.CrossAgentTask;
+using OfficeCopilot.Server.Services.SkillVm;
 using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
 using OfficeCopilot.Server.Mcp;
@@ -61,6 +62,8 @@ try
     builder.Services.AddHttpClient();
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
+    builder.Services.AddSingleton<ISkillVmStateStore, MemorySkillVmStateStore>();
+    builder.Services.AddSingleton<SkillVmDebugSessionService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
     builder.Services.AddSingleton<IKernelAccessor, KernelAccessor>();
@@ -417,6 +420,92 @@ app.MapGet("/api/debug/log-tail", (HttpContext ctx, int? lines, string? file) =>
     if (err != null)
         return Results.Json(new { ok = false, message = err, fileName, lines = tailLines }, statusCode: 400);
     return Results.Json(new { ok = true, fileName, lines = tailLines });
+});
+
+app.MapGet("/api/debug/skill-vm/{sessionId}", (
+    HttpContext ctx,
+    string sessionId,
+    ISkillVmStateStore skillVmStore,
+    SkillService skills,
+    ConfigService config,
+    SkillVmDebugSessionService debug) =>
+{
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+    {
+        return Results.Json(
+            new SkillVmDebugSessionResponse { Ok = false, Message = "仅允许本机 loopback 访问该调试接口。" },
+            JsonCtx.Default.SkillVmDebugSessionResponse,
+            statusCode: 403);
+    }
+
+    SkillVmState? state = null;
+    if (!skillVmStore.TryGet(sessionId, out state) || state == null)
+        skillVmStore.TryLoadPersisted(sessionId, out state);
+    if (state == null)
+    {
+        return Results.Json(
+            new SkillVmDebugSessionResponse { Ok = false, Message = "未找到该会话的 Skill VM 状态。" },
+            JsonCtx.Default.SkillVmDebugSessionResponse,
+            statusCode: 404);
+    }
+
+    var (injectionBlock, est) = SkillVmInjectionPreviewBuilder.Build(state, skills, config);
+    return Results.Json(
+        new SkillVmDebugSessionResponse
+        {
+            Ok = true,
+            State = state,
+            InjectionPreview = injectionBlock,
+            EstimatedTokens = est,
+            Flags = debug.GetFlags(sessionId)
+        },
+        JsonCtx.Default.SkillVmDebugSessionResponse);
+});
+
+app.MapPost("/api/debug/skill-vm/{sessionId}/flags", async (
+    HttpContext ctx,
+    string sessionId,
+    SkillVmDebugSessionService debug,
+    CancellationToken ct) =>
+{
+    if (!DebugLogHelper.IsDebugLogLoopback(ctx))
+    {
+        return Results.Json(
+            new SkillVmDebugSessionResponse { Ok = false, Message = "仅允许本机 loopback 访问该调试接口。" },
+            JsonCtx.Default.SkillVmDebugSessionResponse,
+            statusCode: 403);
+    }
+
+    SkillVmDebugFlagsRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync(ctx.Request.Body, JsonCtx.Default.SkillVmDebugFlagsRequest, ct)
+            .ConfigureAwait(false);
+    }
+    catch (Exception)
+    {
+        return Results.Json(
+            new SkillVmDebugSessionResponse { Ok = false, Message = "请求体解析失败，请确认 JSON 格式。" },
+            JsonCtx.Default.SkillVmDebugSessionResponse,
+            statusCode: 400);
+    }
+
+    if (body == null)
+    {
+        return Results.Json(
+            new SkillVmDebugSessionResponse { Ok = false, Message = "请求体解析失败，请确认 JSON 格式。" },
+            JsonCtx.Default.SkillVmDebugSessionResponse,
+            statusCode: 400);
+    }
+
+    debug.SetFlags(
+        sessionId,
+        new SkillVmDebugFlags
+        {
+            PauseBeforeInject = body.PauseBeforeInject,
+            PauseAfterSkillStep = body.PauseAfterSkillStep
+        });
+    return Results.Json(new { ok = true, flags = debug.GetFlags(sessionId) });
 });
 
 {
@@ -1434,7 +1523,7 @@ static async Task HandleChatStream(
         string prompt = incoming.Content ?? "";
         var reasoningParser = new ReasoningTagStreamParser();
 
-        await foreach (var item in chatService.StreamChatAsync(sessionId, prompt, attachmentRefs?.Count > 0 ? null : incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, attachmentRefs, ct))
+        await foreach (var item in chatService.StreamChatAsync(sessionId, prompt, attachmentRefs?.Count > 0 ? null : incoming.Attachments, incoming.KnowledgeBaseId, incoming.Mode, incoming.PlanId, incoming.PlanCurrentStepIndex, attachmentRefs, incoming.SkillVmMode == true, incoming.SkillVmSkillId, ct))
         {
             if (item.IsWarning)
             {

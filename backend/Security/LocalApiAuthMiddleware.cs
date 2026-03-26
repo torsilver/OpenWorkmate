@@ -127,6 +127,8 @@ public sealed class LocalApiAuthMiddleware
             return true;
         if (string.Equals(p, "/api/debug/log-tail", StringComparison.OrdinalIgnoreCase))
             return true;
+        if (p.StartsWith("/api/debug/skill-vm", StringComparison.OrdinalIgnoreCase))
+            return true;
         return false;
     }
 

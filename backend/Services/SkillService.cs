@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using OfficeCopilot.Server.Services.SkillVm;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -24,6 +25,11 @@ public class SkillDefinition
     public string? PrimaryEnv { get; set; }
     /// <summary>是否为可执行技能（有 requires.bins 或 scripts）。</summary>
     public bool IsExecutable { get; set; }
+    /// <summary>若存在 skill.manifest.json 则解析为脚本化 VM 技能；此时不应将整份 PromptTemplate 注册为单一 prompt 函数。</summary>
+    public SkillVmManifest? VmManifest { get; set; }
+    /// <summary>是否启用脚本化分段（全局开关 + manifest 存在）。由宿主计算。</summary>
+    public bool UsesSkillVm(bool skillVmGloballyEnabled) =>
+        skillVmGloballyEnabled && VmManifest != null && VmManifest.Segments.Count > 0;
 }
 
 public sealed class SkillService
@@ -66,6 +72,23 @@ public sealed class SkillService
                     var skill = ParseSkillMd(skillMd, Path.GetFileName(dir), dir);
                     if (skill != null && !string.IsNullOrEmpty(skill.Id))
                     {
+                        var manifestPath = Path.Combine(dir, "skill.manifest.json");
+                        var vm = SkillVmManifestLoader.TryLoad(manifestPath, _logger);
+                        if (vm != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(vm.SkillId) &&
+                                !string.Equals(vm.SkillId, skill.Id, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogWarning(
+                                    "skill.manifest.json skillId {VmId} mismatches SKILL name {SkillId}, ignoring VM manifest.",
+                                    vm.SkillId, skill.Id);
+                            }
+                            else
+                            {
+                                if (string.IsNullOrWhiteSpace(vm.SkillId)) vm.SkillId = skill.Id;
+                                skill.VmManifest = vm;
+                            }
+                        }
                         byId[skill.Id] = skill;
                     }
                 }
@@ -99,6 +122,21 @@ public sealed class SkillService
 
             return byId.Values.OrderBy(s => s.Id).ToList();
         }
+    }
+
+    /// <summary>按 Id 查找技能（扫描目录，与 <see cref="GetAllSkills"/> 同代价）。</summary>
+    public SkillDefinition? TryGetSkillById(string skillId)
+    {
+        if (string.IsNullOrWhiteSpace(skillId)) return null;
+        return GetAllSkills().FirstOrDefault(s => string.Equals(s.Id, skillId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>解析脚本化 VM 某段正文；无 manifest 或无正文时返回 null。</summary>
+    public string? GetSkillVmSegmentText(string skillId, string segmentId)
+    {
+        var skill = TryGetSkillById(skillId);
+        if (skill?.VmManifest == null || string.IsNullOrEmpty(skill.BaseDir)) return null;
+        return SkillVmSegmentContent.GetSegmentText(skill.BaseDir, segmentId, skill.PromptTemplate, skill.VmManifest);
     }
 
     /// <summary>解析 Agent Skills 格式的 SKILL.md 文本：YAML frontmatter + Markdown body；支持 Clawhub metadata。</summary>

@@ -458,6 +458,32 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(JsonValueKind.Array, list.ValueKind);
     }
 
+    /// <summary>脚本化 Skill VM：带 skill.manifest.json 的技能应序列化出 vmManifest（camelCase）。</summary>
+    [Fact]
+    public async Task GetSkills_IncludesVmManifest_ForSkillVmDemo()
+    {
+        var response = await _client.GetAsync("/api/skills");
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        var list = JsonDocument.Parse(json).RootElement;
+        Assert.Equal(JsonValueKind.Array, list.ValueKind);
+        JsonElement demo = default;
+        var found = false;
+        foreach (var el in list.EnumerateArray())
+        {
+            if (el.TryGetProperty("id", out var id) && string.Equals(id.GetString(), "skill-vm-demo", StringComparison.Ordinal))
+            {
+                demo = el;
+                found = true;
+                break;
+            }
+        }
+        Assert.True(found, "expected skill-vm-demo under backend/Skills");
+        Assert.True(demo.TryGetProperty("vmManifest", out var vm), "vmManifest should be present");
+        Assert.True(vm.TryGetProperty("segments", out var segs));
+        Assert.True(segs.GetArrayLength() >= 2);
+    }
+
     [Fact]
     public async Task GetAccurateData_Returns200_WithArray()
     {

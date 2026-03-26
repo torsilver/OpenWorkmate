@@ -13,6 +13,7 @@ using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.ScheduledTask;
+using OfficeCopilot.Server.Services.SkillVm;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -37,9 +38,10 @@ public sealed class ChatService : IDisposable
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly AgentDebugStatsService _agentDebugStats;
+    private readonly ISkillVmStateStore _skillVmStore;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, ISkillVmStateStore skillVmStore)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -53,6 +55,7 @@ public sealed class ChatService : IDisposable
         _kernelAccessor = kernelAccessor;
         _embeddingProvider = embeddingProvider;
         _planStore = planStore;
+        _skillVmStore = skillVmStore;
         _agentDebugStats = agentDebugStats;
 
         var session = configService.Current.Session ?? new SessionConfig();
@@ -317,6 +320,15 @@ public sealed class ChatService : IDisposable
         if (!disabledBuiltIn.Contains("clawhub"))
             newKernel.Plugins.AddFromObject(new ClawhubSkillPlugin(_skillService, clawhubRunner, _configService, _loggerFactory.CreateLogger<ClawhubSkillPlugin>()), "ClawhubSkill");
 
+        if (!disabledBuiltIn.Contains("skillvm"))
+        {
+            var skillVmStore = _serviceProvider.GetRequiredService<ISkillVmStateStore>();
+            var skillVmDebug = _serviceProvider.GetRequiredService<SkillVmDebugSessionService>();
+            newKernel.Plugins.AddFromObject(
+                new SkillVmPlugin(_skillService, skillVmStore, _configService, skillVmDebug, _loggerFactory.CreateLogger<SkillVmPlugin>()),
+                "SkillVm");
+        }
+
         // 阶段 3：记忆插件（仅当已配置 Embedding 时注册）
         if (_embeddingProvider.IsConfigured && !disabledBuiltIn.Contains("memory"))
         {
@@ -378,7 +390,9 @@ public sealed class ChatService : IDisposable
             if (!skill.Enabled || string.IsNullOrWhiteSpace(skill.PromptTemplate)) continue;
             if (skill.IsExecutable && string.Equals(skill.Id, "tavily", StringComparison.OrdinalIgnoreCase))
                 continue;
-            
+            if (skill.UsesSkillVm(_configService.Current.SkillVm?.Enabled != false))
+                continue;
+
             try 
             {
                 var safeName = SanitizeSkillFunctionName(skill.Id);
@@ -505,7 +519,7 @@ public sealed class ChatService : IDisposable
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, null, null, null, null, null, null, false, null, ct))
             yield return item;
     }
 
@@ -515,7 +529,7 @@ public sealed class ChatService : IDisposable
         IReadOnlyList<AttachmentDto>? attachments,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, null, null, null, null, null, false, null, ct))
             yield return item;
     }
 
@@ -526,7 +540,7 @@ public sealed class ChatService : IDisposable
         string? knowledgeBaseId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, null, ct))
+        await foreach (var item in StreamChatAsync(sessionId, userMessage, attachments, knowledgeBaseId, null, null, null, null, false, null, ct))
             yield return item;
     }
 
@@ -539,6 +553,8 @@ public sealed class ChatService : IDisposable
         string? planId,
         int? planCurrentStepIndex = null,
         IReadOnlyList<string>? attachmentRefs = null,
+        bool skillVmMode = false,
+        string? skillVmSkillId = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         Kernel kernel;
@@ -600,8 +616,12 @@ public sealed class ChatService : IDisposable
 
                 // 摘要优先：先判断是否触发摘要（基于原始内容），避免截断后摘要质量下降
                 var summarized = false;
-                if (ctxConfig.SummarizationEnabled && state.History.Count > 5
-                    && totalTokens >= (int)(historyBudget * ctxConfig.SummarizationTriggerRatio))
+                var minTurnsForSummary = skillVmMode ? 3 : 5;
+                var ratio = skillVmMode
+                    ? Math.Min(ctxConfig.SummarizationTriggerRatio * 0.85, 0.45)
+                    : ctxConfig.SummarizationTriggerRatio;
+                if (ctxConfig.SummarizationEnabled && state.History.Count > minTurnsForSummary
+                    && totalTokens >= (int)(historyBudget * ratio))
                 {
                     try
                     {
@@ -757,7 +777,7 @@ public sealed class ChatService : IDisposable
                     currentSystem += "\n\n[当前为计划模式] 请根据用户描述仅生成实现计划（Markdown），并调用 create_plan 工具保存。不要执行具体操作，不要调用其他工具。";
                     systemModified = true;
                 }
-                if (!string.IsNullOrWhiteSpace(planId) && !isPlanMode)
+                if (!string.IsNullOrWhiteSpace(planId) && !isPlanMode && !skillVmMode)
                 {
                     planResult = await _planStore.GetAsync(planId.Trim(), ct).ConfigureAwait(false);
                     if (planResult != null)
@@ -783,6 +803,59 @@ public sealed class ChatService : IDisposable
                 {
                     state.History.RemoveAt(0);
                     state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem));
+                }
+            }
+
+            // 脚本化 Skill VM：注入状态快照 + 当前段（与计划模式互斥由前端保证；此处不重复注入计划）
+            if (skillVmMode && !isPlanMode && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            {
+                var sid = (skillVmSkillId ?? "").Trim();
+                if (!string.IsNullOrEmpty(sid))
+                {
+                    var sk = _skillService.TryGetSkillById(sid);
+                    if (sk?.VmManifest == null)
+                    {
+                        warnings.Add("Skill VM：技能 " + sid + " 未配置 skill.manifest.json 或无效。");
+                    }
+                    else
+                    {
+                        var first = SkillVmSegmentContent.GetFirstSegmentId(sk.VmManifest);
+                        if (string.IsNullOrEmpty(first))
+                            warnings.Add("Skill VM：manifest 中无有效段。");
+                        else
+                        {
+                            SkillVmState vmState;
+                            if (!_skillVmStore.TryGet(sessionId, out var existing) || existing == null)
+                            {
+                                if (!_skillVmStore.TryLoadPersisted(sessionId, out var persisted) || persisted == null)
+                                    vmState = _skillVmStore.GetOrCreate(sessionId, sk.Id, first);
+                                else
+                                    vmState = persisted;
+                            }
+                            else if (!string.Equals(existing.ActiveSkillId, sk.Id, StringComparison.OrdinalIgnoreCase))
+                                vmState = _skillVmStore.GetOrCreate(sessionId, sk.Id, first);
+                            else
+                                vmState = existing;
+
+                            var segText = _skillService.GetSkillVmSegmentText(vmState.ActiveSkillId, vmState.CurrentSegmentId) ?? "";
+                            var maxSeg = _configService.Current.SkillVm?.MaxSegmentChars ?? 0;
+                            if (maxSeg <= 0) maxSeg = 12000;
+                            if (segText.Length > maxSeg)
+                                segText = segText.AsSpan(0, maxSeg).ToString() + "\n…（已截断）";
+
+                            var snap = "[Skill VM]\n技能=" + vmState.ActiveSkillId + " 当前段=" + vmState.CurrentSegmentId
+                                + (vmState.Finished ? " （已完成）" : "")
+                                + (vmState.Paused ? " （已暂停）" : "")
+                                + "\n请使用 skill_step 工具推进（next/goto/finish/return/pause）。";
+                            if (vmState.CompletedSegmentIds.Count > 0)
+                                snap += "\n已完成段：" + string.Join(", ", vmState.CompletedSegmentIds);
+
+                            var block = snap + "\n\n[当前段]\n" + segText;
+                            var cs = state.History[0].Content ?? "";
+                            state.History.RemoveAt(0);
+                            state.History.Insert(0, new ChatMessageContent(AuthorRole.System, cs + "\n\n" + block));
+                        }
+                    }
                 }
             }
 
@@ -890,6 +963,8 @@ public sealed class ChatService : IDisposable
                 selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
                 if (planResult != null && selectedFunctions != null)
                     selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
+                if (skillVmMode && selectedFunctions != null)
+                    selectedFunctions = MergeSkillVmFunctions(kernel, selectedFunctions);
                 var pairsCount = selectedPairs?.Count ?? 0;
                 var funcsCount = selectedFunctions?.Count ?? 0;
                 var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
@@ -1467,6 +1542,26 @@ public sealed class ChatService : IDisposable
                     string.Equals(func.Name, "update_plan", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(func.Name, "execute_plan_step", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(func.Name, "complete_plan", StringComparison.OrdinalIgnoreCase))
+                {
+                    var key = plugin.Name + "." + func.Name;
+                    if (!set.Contains(key)) { set.Add(key); list.Add(func); }
+                }
+            }
+            break;
+        }
+        return list;
+    }
+
+    private static IReadOnlyList<KernelFunction> MergeSkillVmFunctions(Kernel kernel, IReadOnlyList<KernelFunction> existing)
+    {
+        var set = new HashSet<string>(existing.Select(f => f.PluginName + "." + f.Name), StringComparer.OrdinalIgnoreCase);
+        var list = new List<KernelFunction>(existing);
+        foreach (var plugin in kernel.Plugins)
+        {
+            if (!string.Equals(plugin.Name, "SkillVm", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (KernelFunction func in plugin)
+            {
+                if (string.Equals(func.Name, "skill_step", StringComparison.OrdinalIgnoreCase))
                 {
                     var key = plugin.Name + "." + func.Name;
                     if (!set.Contains(key)) { set.Add(key); list.Add(func); }

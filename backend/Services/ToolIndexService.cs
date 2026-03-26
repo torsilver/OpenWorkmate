@@ -19,7 +19,7 @@ public sealed class ToolIndexService : IToolIndexService
     {
         "CLI", "Excel", "Word", "Ppt", "Browser", "File", "System",
         "MCP_STT", "MCP_OCR", "CurrentDocument", "Tavily", "ClawhubSkill",
-        "Memory", "Context", "Subagent", "CrossAgentTask", "Plan", "SkillAuthor",
+        "Memory", "Context", "Subagent", "CrossAgentTask", "Plan", "SkillAuthor", "SkillVm",
         "UserOptions", "AccurateData", "MeetingTranscript", "ScheduledTask"
     };
 
