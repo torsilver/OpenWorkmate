@@ -1,25 +1,35 @@
-using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services.Stt;
 
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>语音转文字：委托 <see cref="SttTranscriberProvider"/>，支持 connectionKind / vendorId 与 URL 自动识别。</summary>
+/// <summary>语音转文字：仅支持已配置百炼实时识别（v1/inference WebSocket 文件流）。</summary>
 public sealed class TranscribeService : ITranscribeService
 {
     private readonly ConfigService _configService;
-    private readonly SttTranscriberProvider _sttTranscriberProvider;
+    private readonly DashScopeInferenceFileTranscriber _dashScopeFile;
 
-    public TranscribeService(ConfigService configService, SttTranscriberProvider sttTranscriberProvider)
+    public TranscribeService(ConfigService configService, DashScopeInferenceFileTranscriber dashScopeFile)
     {
         _configService = configService;
-        _sttTranscriberProvider = sttTranscriberProvider;
+        _dashScopeFile = dashScopeFile;
     }
 
-    public Task<string> TranscribeAsync(Stream audioStream, string? contentType, string? language, CancellationToken ct = default)
+    public async Task<string> TranscribeAsync(Stream audioStream, string? contentType, string? language, CancellationToken ct = default)
     {
-        var entry = _configService.GetActiveSttEntry();
-        if (entry == null || string.IsNullOrWhiteSpace(entry.Endpoint) || string.IsNullOrWhiteSpace(entry.ApiKey))
-            throw new InvalidOperationException("未配置语音转文字。请在设置中配置 STT 模型的 endpoint 与 API Key。");
-        return _sttTranscriberProvider.TranscribeAsync(audioStream, contentType, language, entry, ct);
+        var ra = _configService.Current.RealtimeAsr;
+        if (ra == null || string.IsNullOrWhiteSpace(ra.ApiKey))
+        {
+            throw new InvalidOperationException(
+                "未配置百炼实时语音识别 API Key。语音输入、会议监听与文件转写（含 MCP_STT、POST /api/transcribe）均依赖此项；请在设置「百炼实时语音识别」中填写有效的 API Key。");
+        }
+
+        byte[] bytes;
+        await using (var ms = new MemoryStream())
+        {
+            await audioStream.CopyToAsync(ms, ct).ConfigureAwait(false);
+            bytes = ms.ToArray();
+        }
+
+        return await _dashScopeFile.TranscribeAsync(bytes, contentType, language, ra, ct).ConfigureAwait(false);
     }
 }

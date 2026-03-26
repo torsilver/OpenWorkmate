@@ -2574,14 +2574,20 @@ if ($attachBtn && $fileInput) {
   });
 }
 
-// ───── 语音输入（Web Speech API）─────
+// ───── 语音输入（本机 WebSocket → 百炼实时 ASR）─────
 (function initVoiceInput() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition || !$voiceBtn || !$input) return;
+  if (!$voiceBtn || !$input) return;
 
-  let recognition = null;
+  const STT_OUT_RATE = 16000;
   let isListening = false;
   let voiceShowingListeningHint = false;
+  let voiceSttWs = null;
+  let voiceAudioStream = null;
+  let voiceAudioContext = null;
+  let voiceSourceNode = null;
+  let voiceScriptNode = null;
+  let voiceGainNode = null;
+  let voiceSttReady = false;
 
   function clearVoiceInputHint() {
     voiceShowingListeningHint = false;
@@ -2608,54 +2614,245 @@ if ($attachBtn && $fileInput) {
     if ($voiceBtn) $voiceBtn.classList.toggle("recording", flag);
   }
 
-  $voiceBtn.addEventListener("click", () => {
+  function tasklyResampleFloat32Mono(input, inputRate, outputRate) {
+    if (inputRate === outputRate || input.length === 0) return input;
+    const ratio = inputRate / outputRate;
+    const outLen = Math.max(1, Math.floor(input.length / ratio));
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcPos = i * ratio;
+      const j = Math.floor(srcPos);
+      const f = srcPos - j;
+      const a = input[j] || 0;
+      const b = input[Math.min(j + 1, input.length - 1)] || 0;
+      out[i] = a + (b - a) * f;
+    }
+    return out;
+  }
+
+  function tasklyFloatToPcm16leBytes(floatMono) {
+    const buf = new ArrayBuffer(floatMono.length * 2);
+    const view = new DataView(buf);
+    for (let i = 0; i < floatMono.length; i++) {
+      let v = floatMono[i];
+      if (v > 1) v = 1;
+      else if (v < -1) v = -1;
+      const s16 = v < 0 ? Math.round(v * 0x8000) : Math.round(v * 0x7fff);
+      view.setInt16(i * 2, Math.max(-32768, Math.min(32767, s16)), true);
+    }
+    return new Uint8Array(buf);
+  }
+
+  function stopVoiceGraph() {
+    try {
+      if (voiceScriptNode) {
+        voiceScriptNode.onaudioprocess = null;
+        voiceScriptNode.disconnect();
+        voiceScriptNode = null;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (voiceGainNode) {
+        voiceGainNode.disconnect();
+        voiceGainNode = null;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (voiceSourceNode) {
+        voiceSourceNode.disconnect();
+        voiceSourceNode = null;
+      }
+    } catch (e) { /* ignore */ }
+    if (voiceAudioContext) {
+      voiceAudioContext.close().catch(function () {});
+      voiceAudioContext = null;
+    }
+    if (voiceAudioStream) {
+      voiceAudioStream.getTracks().forEach(function (t) {
+        t.stop();
+      });
+      voiceAudioStream = null;
+    }
+  }
+
+  function closeVoiceSttWs() {
+    return new Promise(function (resolve) {
+      const w = voiceSttWs;
+      voiceSttWs = null;
+      voiceSttReady = false;
+      if (!w || w.readyState !== WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      try {
+        w.send(JSON.stringify({ type: "stop" }));
+      } catch (e) { /* ignore */ }
+      const done = function () {
+        resolve();
+      };
+      const t = setTimeout(done, 2500);
+      w.addEventListener(
+        "close",
+        function once() {
+          w.removeEventListener("close", once);
+          clearTimeout(t);
+          done();
+        },
+        { once: true }
+      );
+      try {
+        w.close();
+      } catch (e) {
+        clearTimeout(t);
+        done();
+      }
+    });
+  }
+
+  async function startVoiceSttSession() {
+    await tasklyEnsureApiBase();
+    const token = await new Promise(function (resolve) {
+      chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+        resolve((r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim());
+      });
+    });
+    const qs = new URLSearchParams();
+    if (token) qs.set("token", token);
+    qs.set("mode", "inline");
+    const url = TasklyLocalService.tasklySttStreamWsUrl(API_BASE, qs.toString());
+    return await new Promise(function (resolve, reject) {
+      let settled = false;
+      const w = new WebSocket(url);
+      voiceSttWs = w;
+      w.onmessage = function (ev) {
+        let data;
+        try {
+          data = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (data.type === "ready") {
+          voiceSttReady = true;
+          if (!settled) {
+            settled = true;
+            resolve(w);
+          }
+          return;
+        }
+        if (data.type === "error" && data.message) {
+          if (!settled) {
+            settled = true;
+            reject(new Error(String(data.message)));
+          } else {
+            setVoiceInputErrorHint(String(data.message));
+          }
+          return;
+        }
+        if (data.type === "final" && data.text) {
+          const transcript = String(data.text).trim();
+          if (transcript) {
+            const cur = $input.value || "";
+            $input.value = (cur ? cur + " " : "") + transcript;
+          }
+        }
+      };
+      w.onerror = function () {
+        if (!settled) {
+          settled = true;
+          reject(new Error("WebSocket 错误"));
+        }
+      };
+      w.onclose = function () {
+        if (!settled) {
+          settled = true;
+          reject(new Error("连接已关闭（请检查本机服务与「百炼实时语音识别」配置）。"));
+        }
+      };
+    });
+  }
+
+  $voiceBtn.addEventListener("click", async () => {
     if (isListening) {
-      if (recognition) recognition.stop();
+      stopVoiceGraph();
+      await closeVoiceSttWs();
       setListening(false);
       clearVoiceInputHint();
       return;
     }
 
     try {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "zh-CN";
-
-      recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (!e.results[i].isFinal) continue;
-          const transcript = e.results[i][0].transcript;
-          if (!transcript) continue;
-          const cur = $input.value || "";
-          $input.value = (cur ? cur + " " : "") + transcript;
-        }
-      };
-
-      recognition.onerror = (e) => {
-        setListening(false);
-        const msg = e.error === "not-allowed"
-          ? "语音输入被拒绝（请允许麦克风权限）。"
-          : e.error === "no-speech"
-            ? "未检测到语音，已停止。"
-            : e.error === "network"
-              ? "网络错误，请检查后重试。"
-              : "语音识别错误：" + (e.error || "未知");
-        setVoiceInputErrorHint(msg);
-      };
-
-      recognition.onend = () => {
-        setListening(false);
-        if (voiceShowingListeningHint) clearVoiceInputHint();
-      };
-
-      recognition.start();
-      setListening(true);
-      showVoiceListeningHint();
+      voiceAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      const msg = "无法启动语音识别：" + (err && err.message ? err.message : String(err));
-      setVoiceInputErrorHint(msg);
+      const msg = (err && String(err.message || "")).toLowerCase();
+      const name = (err && err.name) || "";
+      let userMessage;
+      if (name === "NotAllowedError") {
+        userMessage = "无法使用麦克风：权限被拒绝。请在扩展权限设置中允许麦克风。";
+      } else if (name === "NotFoundError") {
+        userMessage = "无法使用麦克风：未检测到麦克风设备。";
+      } else {
+        userMessage = "无法使用麦克风：" + (err && err.message ? err.message : String(err));
+      }
+      userMessage += "\n\n可点击下方按钮打开本扩展的站点权限页。";
+      addBotMessage(userMessage, true, {
+        label: "打开权限设置",
+        onClick: () => openTasklyExtensionPermissionSettings()
+      });
+      return;
     }
+
+    setListening(true);
+    showVoiceListeningHint();
+
+    try {
+      await startVoiceSttSession();
+    } catch (e) {
+      stopVoiceGraph();
+      if (voiceAudioStream) {
+        voiceAudioStream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+        voiceAudioStream = null;
+      }
+      setListening(false);
+      setVoiceInputErrorHint(e && e.message ? e.message : "无法连接语音识别服务。");
+      return;
+    }
+
+    voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      await voiceAudioContext.resume();
+    } catch (e) { /* ignore */ }
+    voiceSourceNode = voiceAudioContext.createMediaStreamSource(voiceAudioStream);
+    const chIn = Math.max(1, Math.min(2, voiceSourceNode.channelCount || 1));
+    voiceScriptNode = voiceAudioContext.createScriptProcessor(4096, chIn, 1);
+    voiceScriptNode.onaudioprocess = function (e) {
+      if (!voiceSttReady || !voiceSttWs || voiceSttWs.readyState !== WebSocket.OPEN) {
+        e.outputBuffer.getChannelData(0).fill(0);
+        return;
+      }
+      const inBuf = e.inputBuffer;
+      const n = inBuf.length;
+      const mono = new Float32Array(n);
+      if (inBuf.numberOfChannels >= 2) {
+        const ch0 = inBuf.getChannelData(0);
+        const ch1 = inBuf.getChannelData(1);
+        for (let i = 0; i < n; i++) mono[i] = (ch0[i] + ch1[i]) * 0.5;
+      } else {
+        mono.set(inBuf.getChannelData(0));
+      }
+      const resampled = tasklyResampleFloat32Mono(mono, voiceAudioContext.sampleRate, STT_OUT_RATE);
+      const pcm = tasklyFloatToPcm16leBytes(resampled);
+      try {
+        voiceSttWs.send(pcm);
+      } catch (err) { /* ignore */ }
+      e.outputBuffer.getChannelData(0).fill(0);
+    };
+    voiceGainNode = voiceAudioContext.createGain();
+    voiceGainNode.gain.value = 0;
+    voiceSourceNode.connect(voiceScriptNode);
+    voiceScriptNode.connect(voiceGainNode);
+    voiceGainNode.connect(voiceAudioContext.destination);
   });
 })();
 
@@ -2741,18 +2938,12 @@ $input.addEventListener("input", () => {
   scheduleAtModeSync();
 });
 
-// ───── Meeting Listener（固定时间片 PCM→WAV + 块间重叠 + STT 串行落盘）─────
+// ───── Meeting Listener（WebSocket → 百炼实时 ASR，句末由后端落盘）─────
 
 (function initMeetingListener() {
   if (!$meetingBtn || !$meetingPanel || !$meetingStopBtn) return;
 
-  /** 每块窗口时长（ms），约 2～3s 较均衡。 */
-  const MEETING_PCM_WINDOW_MS = 2500;
-  /** 相邻两块重叠（ms），减轻切在词中间的影响；建议 100～300。 */
-  const MEETING_PCM_OVERLAP_MS = 250;
-  /** 结束时尚未凑满一窗时，至少这么多 ms 的样本才单独送 STT，避免极小尾块触发上游 empty。 */
-  const MEETING_TAIL_MIN_MS = 400;
-  const MEETING_TRANSCRIBE_LANGUAGE = "zh";
+  const STT_OUT_RATE = 16000;
 
   let audioStream = null;
   let audioContext = null;
@@ -2763,15 +2954,14 @@ $input.addEventListener("input", () => {
   let timerInterval = null;
   let isProcessing = false;
   let meetingSessionId = "";
-  let sttQueue = [];
-  let sttWorkerRunning = false;
-  let nextSegmentSeq = 0;
-  let persistedSegmentCount = 0;
+  let meetingFinalCount = 0;
   let meetingListenActive = false;
   /** 为 true 表示正在结束会议（ drain 前），防止侧栏按钮误判为可重新开始。 */
   let meetingStopping = false;
-  /** @type {Float32Array} */
-  let meetingPcmAccum = new Float32Array(0);
+  let meetingSttWs = null;
+  let meetingSttReady = false;
+  /** @type {HTMLElement | null} */
+  let meetingPartialWrap = null;
 
   function formatTime(ms) {
     const s = Math.floor(ms / 1000);
@@ -2789,93 +2979,33 @@ $input.addEventListener("input", () => {
     $meetingTimer.textContent = formatTime(Date.now() - meetingStartTime);
   }
 
-  function writeAscii(view, offset, str) {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
+  function tasklyResampleFloat32MonoMeeting(input, inputRate, outputRate) {
+    if (inputRate === outputRate || input.length === 0) return input;
+    const ratio = inputRate / outputRate;
+    const outLen = Math.max(1, Math.floor(input.length / ratio));
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcPos = i * ratio;
+      const j = Math.floor(srcPos);
+      const f = srcPos - j;
+      const a = input[j] || 0;
+      const b = input[Math.min(j + 1, input.length - 1)] || 0;
+      out[i] = a + (b - a) * f;
     }
+    return out;
   }
 
-  /** 单声道 float32 [-1,1] → WAV Blob */
-  function float32ToWavBlob(samples, sampleRate) {
-    const n = samples.length;
-    const buf = new ArrayBuffer(44 + n * 2);
+  function tasklyFloatToPcm16leBytesMeeting(floatMono) {
+    const buf = new ArrayBuffer(floatMono.length * 2);
     const view = new DataView(buf);
-    writeAscii(view, 0, "RIFF");
-    view.setUint32(4, 36 + n * 2, true);
-    writeAscii(view, 8, "WAVE");
-    writeAscii(view, 12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeAscii(view, 36, "data");
-    view.setUint32(40, n * 2, true);
-    let o = 44;
-    for (let i = 0; i < n; i++) {
-      let v = samples[i];
+    for (let i = 0; i < floatMono.length; i++) {
+      let v = floatMono[i];
       if (v > 1) v = 1;
       else if (v < -1) v = -1;
       const s16 = v < 0 ? Math.round(v * 0x8000) : Math.round(v * 0x7fff);
-      view.setInt16(o, Math.max(-32768, Math.min(32767, s16)), true);
-      o += 2;
+      view.setInt16(i * 2, Math.max(-32768, Math.min(32767, s16)), true);
     }
-    return new Blob([buf], { type: "audio/wav" });
-  }
-
-  function appendMeetingPcmMono(floatMono) {
-    const n = floatMono.length;
-    if (n === 0) return;
-    const next = new Float32Array(meetingPcmAccum.length + n);
-    next.set(meetingPcmAccum);
-    next.set(floatMono, meetingPcmAccum.length);
-    meetingPcmAccum = next;
-  }
-
-  function emitOverlappingWindows(sr) {
-    const windowSamples = Math.max(1, Math.floor((MEETING_PCM_WINDOW_MS / 1000) * sr));
-    const stepSamples = Math.max(1, Math.floor(((MEETING_PCM_WINDOW_MS - MEETING_PCM_OVERLAP_MS) / 1000) * sr));
-    while (meetingPcmAccum.length >= windowSamples) {
-      const slice = meetingPcmAccum.slice(0, windowSamples);
-      const wav = float32ToWavBlob(slice, sr);
-      enqueueStt(wav);
-      const rest = meetingPcmAccum.subarray(stepSamples);
-      meetingPcmAccum = new Float32Array(rest.length);
-      meetingPcmAccum.set(rest);
-    }
-  }
-
-  function flushMeetingPcmTail(sr) {
-    const minTail = Math.floor((MEETING_TAIL_MIN_MS / 1000) * sr);
-    if (meetingPcmAccum.length >= minTail) {
-      const slice = meetingPcmAccum.slice(0);
-      meetingPcmAccum = new Float32Array(0);
-      enqueueStt(float32ToWavBlob(slice, sr));
-    } else {
-      meetingPcmAccum = new Float32Array(0);
-    }
-  }
-
-  async function transcribeChunk(blob) {
-    await tasklyEnsureApiBase();
-    const formData = new FormData();
-    formData.append("file", blob, "chunk.wav");
-    formData.append("language", MEETING_TRANSCRIBE_LANGUAGE);
-    try {
-      const res = await tasklyFetch(API_BASE + "/api/transcribe", { method: "POST", body: formData });
-      const data = await res.json().catch(function () { return {}; });
-      if (!res.ok) {
-        return { ok: false, text: "", message: (data && data.message) ? String(data.message) : ("HTTP " + res.status) };
-      }
-      if (data.ok === false) {
-        return { ok: false, text: "", message: (data && data.message) ? String(data.message) : "语音转写失败" };
-      }
-      return { ok: true, text: (data.text != null ? String(data.text) : ""), message: "" };
-    } catch (e) {
-      return { ok: false, text: "", message: e && e.message ? String(e.message) : "网络错误" };
-    }
+    return new Uint8Array(buf);
   }
 
   const previewLines = [];
@@ -2925,48 +3055,138 @@ $input.addEventListener("input", () => {
     URL.revokeObjectURL(a.href);
   }
 
-  async function persistSegment(seq, text) {
-    await tasklyEnsureApiBase();
+  function clearMeetingPartial() {
+    if (meetingPartialWrap && meetingPartialWrap.parentNode) {
+      meetingPartialWrap.remove();
+    }
+    meetingPartialWrap = null;
+  }
+
+  function setMeetingPartialText(text) {
+    if (!meetingPartialWrap) {
+      meetingPartialWrap = document.createElement("div");
+      meetingPartialWrap.className = "meeting-line meeting-line--partial";
+      const timeEl = document.createElement("span");
+      timeEl.className = "meeting-line-time";
+      timeEl.textContent = "…";
+      const p = document.createElement("p");
+      p.className = "meeting-line-text";
+      meetingPartialWrap.appendChild(timeEl);
+      meetingPartialWrap.appendChild(p);
+      $meetingPreview.appendChild(meetingPartialWrap);
+    }
+    const p = meetingPartialWrap.querySelector(".meeting-line-text");
+    if (p) p.textContent = text;
+    $meetingPreview.scrollTop = $meetingPreview.scrollHeight;
+  }
+
+  function onMeetingSttMessage(ev) {
+    let data;
     try {
-      const res = await tasklyFetch(API_BASE + "/api/meeting-transcript/segment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: meetingSessionId, sequence: seq, text: text })
+      data = JSON.parse(ev.data);
+    } catch (e) {
+      return;
+    }
+    if (data.type === "error" && data.message) {
+      addSystemMessage("会议转写：" + String(data.message));
+      return;
+    }
+    if (data.type === "partial" && data.text != null) {
+      setMeetingPartialText(String(data.text));
+      return;
+    }
+    if (data.type === "final" && data.text != null) {
+      const t = String(data.text).trim();
+      if (!t) return;
+      clearMeetingPartial();
+      const seq = typeof data.sequence === "number" ? data.sequence : meetingFinalCount;
+      meetingFinalCount++;
+      appendMeetingLineIncremental(seq, t);
+    }
+  }
+
+  function openMeetingSttWs() {
+    return new Promise(function (resolve, reject) {
+      let settled = false;
+      tasklyEnsureApiBase().then(function () {
+        chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+          const token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+          const qs = new URLSearchParams();
+          if (token) qs.set("token", token);
+          qs.set("mode", "meeting");
+          qs.set("meetingSessionId", meetingSessionId);
+          const url = TasklyLocalService.tasklySttStreamWsUrl(API_BASE, qs.toString());
+          meetingSttWs = new WebSocket(url);
+          meetingSttWs.onmessage = function bootstrap(ev) {
+            let d;
+            try {
+              d = JSON.parse(ev.data);
+            } catch (e) {
+              return;
+            }
+            if (d.type === "ready") {
+              meetingSttReady = true;
+              meetingSttWs.onmessage = onMeetingSttMessage;
+              if (!settled) {
+                settled = true;
+                resolve();
+              }
+              return;
+            }
+            if (d.type === "error") {
+              if (!settled) {
+                settled = true;
+                reject(new Error(String(d.message || "连接失败")));
+              }
+            }
+          };
+          meetingSttWs.onerror = function () {
+            if (!settled) {
+              settled = true;
+              reject(new Error("WebSocket 错误"));
+            }
+          };
+          meetingSttWs.onclose = function () {
+            if (!settled) {
+              settled = true;
+              reject(new Error("连接已关闭（请检查本机服务与「百炼实时语音识别」配置）。"));
+            }
+          };
+        });
       });
-      const data = await res.json().catch(function () { return {}; });
-      if (!res.ok || data.ok === false) {
-        addSystemMessage("实录落盘失败：" + ((data && data.message) ? data.message : ("HTTP " + res.status)));
+    });
+  }
+
+  function closeMeetingSttWs() {
+    return new Promise(function (resolve) {
+      const w = meetingSttWs;
+      meetingSttWs = null;
+      meetingSttReady = false;
+      if (!w || w.readyState !== WebSocket.OPEN) {
+        resolve();
         return;
       }
-      persistedSegmentCount++;
-    } catch (e) {
-      addSystemMessage("实录落盘失败：" + (e && e.message ? e.message : String(e)));
-    }
-  }
-
-  async function runSttWorker() {
-    if (sttWorkerRunning) return;
-    sttWorkerRunning = true;
-    while (sttQueue.length) {
-      const item = sttQueue.shift();
-      const result = await transcribeChunk(item.blob);
-      if (!result.ok) {
-        addSystemMessage("会议转写失败（段 " + (item.seq + 1) + "）：" + (result.message || "未知错误"));
-        continue;
+      try {
+        w.send(JSON.stringify({ type: "stop" }));
+      } catch (e) { /* ignore */ }
+      const t = setTimeout(function () {
+        resolve();
+      }, 4000);
+      w.addEventListener(
+        "close",
+        function once() {
+          clearTimeout(t);
+          resolve();
+        },
+        { once: true }
+      );
+      try {
+        w.close();
+      } catch (e) {
+        clearTimeout(t);
+        resolve();
       }
-      if (result.text && result.text.trim()) {
-        await persistSegment(item.seq, result.text.trim());
-        appendMeetingLineIncremental(item.seq, result.text.trim());
-      }
-    }
-    sttWorkerRunning = false;
-  }
-
-  function enqueueStt(blob) {
-    if (!blob || blob.size === 0) return;
-    const seq = nextSegmentSeq++;
-    sttQueue.push({ seq: seq, blob: blob });
-    runSttWorker();
+    });
   }
 
   function disconnectMeetingAudioGraph() {
@@ -2989,12 +3209,6 @@ $input.addEventListener("input", () => {
         meetingSourceNode = null;
       }
     } catch (e) { /* ignore */ }
-  }
-
-  async function drainSttQueue() {
-    for (let i = 0; i < 600 && (sttQueue.length || sttWorkerRunning); i++) {
-      await new Promise(function (r) { setTimeout(r, 100); });
-    }
   }
 
   async function startMeeting() {
@@ -3027,17 +3241,36 @@ $input.addEventListener("input", () => {
     }
 
     meetingSessionId = "meeting_" + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "").slice(0, 16) : String(Date.now()));
-    meetingPcmAccum = new Float32Array(0);
     previewLines.length = 0;
-    persistedSegmentCount = 0;
-    nextSegmentSeq = 0;
-    sttQueue = [];
+    meetingFinalCount = 0;
     meetingListenActive = false;
+    meetingSttReady = false;
+    clearMeetingPartial();
     meetingStartTime = Date.now();
     $meetingPanel.style.display = "block";
     $meetingPreview.innerHTML = "";
     $meetingBtn.classList.add("active");
     timerInterval = setInterval(updateTimer, 1000);
+
+    try {
+      await openMeetingSttWs();
+    } catch (e) {
+      if (audioStream) {
+        audioStream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+        audioStream = null;
+      }
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      $meetingPanel.style.display = "none";
+      $meetingBtn.classList.remove("active");
+      meetingStartTime = null;
+      addSystemMessage("无法启动会议转写：" + (e && e.message ? e.message : String(e)));
+      return;
+    }
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     try {
@@ -3047,7 +3280,14 @@ $input.addEventListener("input", () => {
     const chIn = Math.max(1, Math.min(2, meetingSourceNode.channelCount || 1));
     meetingScriptNode = audioContext.createScriptProcessor(4096, chIn, 1);
     meetingScriptNode.onaudioprocess = function (e) {
-      if (!meetingListenActive) return;
+      if (!meetingListenActive) {
+        e.outputBuffer.getChannelData(0).fill(0);
+        return;
+      }
+      if (!meetingSttReady || !meetingSttWs || meetingSttWs.readyState !== WebSocket.OPEN) {
+        e.outputBuffer.getChannelData(0).fill(0);
+        return;
+      }
       const inBuf = e.inputBuffer;
       const n = inBuf.length;
       const mono = new Float32Array(n);
@@ -3060,8 +3300,11 @@ $input.addEventListener("input", () => {
       } else {
         mono.set(inBuf.getChannelData(0));
       }
-      appendMeetingPcmMono(mono);
-      emitOverlappingWindows(audioContext.sampleRate);
+      const resampled = tasklyResampleFloat32MonoMeeting(mono, audioContext.sampleRate, STT_OUT_RATE);
+      const pcm = tasklyFloatToPcm16leBytesMeeting(resampled);
+      try {
+        meetingSttWs.send(pcm);
+      } catch (err) { /* ignore */ }
       e.outputBuffer.getChannelData(0).fill(0);
     };
     meetingGainNode = audioContext.createGain();
@@ -3072,11 +3315,7 @@ $input.addEventListener("input", () => {
     meetingListenActive = true;
 
     addSystemMessage(
-      "会议监听已开始（固定 " +
-        MEETING_PCM_WINDOW_MS +
-        "ms 切片，重叠 " +
-        MEETING_PCM_OVERLAP_MS +
-        "ms，PCM→WAV 上传）。会话 ID：" +
+      "会议监听已开始（实时语音经本机 WebSocket 转写至百炼 ASR）。会话 ID：" +
         meetingSessionId +
         "。下方为语音实录，非 AI 总结；点「结束并总结」或实录页「AI 总结」后再生成纪要。"
     );
@@ -3105,9 +3344,7 @@ $input.addEventListener("input", () => {
     const duration = meetingStartTime ? formatTime(Date.now() - meetingStartTime) : "??:??";
     meetingStartTime = null;
 
-    const sr = audioContext ? audioContext.sampleRate : 48000;
     disconnectMeetingAudioGraph();
-    flushMeetingPcmTail(sr);
 
     if (audioContext) {
       try {
@@ -3123,7 +3360,8 @@ $input.addEventListener("input", () => {
       audioStream = null;
     }
 
-    await drainSttQueue();
+    await closeMeetingSttWs();
+    clearMeetingPartial();
 
     $meetingPanel.style.display = "none";
     $meetingBtn.classList.remove("active");
@@ -3134,7 +3372,7 @@ $input.addEventListener("input", () => {
 
     const sid = meetingSessionId;
 
-    if (persistedSegmentCount === 0) {
+    if (meetingFinalCount === 0) {
       addSystemMessage("会议监听已结束（" + duration + "），未识别到可落盘的语音内容。");
       return;
     }

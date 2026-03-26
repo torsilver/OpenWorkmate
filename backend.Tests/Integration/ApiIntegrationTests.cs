@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net;
 using System.IO;
 using System.Linq;
@@ -11,8 +12,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.DependencyInjection;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Integration;
@@ -26,6 +27,10 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var tempUserConfigPath = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+        // 空 ScheduledTasksDirectory 会回退到 LocalAppData\OfficeCopilot\ScheduledTasks，与正式环境共用目录；集成测试必须隔离。
+        var tempScheduledTasksDir = Path.Combine(
+            Path.GetTempPath(),
+            "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
         _client = factory.WithWebHostBuilder(builder =>
         {
@@ -36,16 +41,10 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                 {
                     ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = "",
+                    ["ScheduledTasksDirectory"] = tempScheduledTasksDir,
                     ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
                     ["WebSocket:AuthToken"] = "",
                 });
-            });
-            builder.ConfigureServices(services =>
-            {
-                // 用于拦截 /api/config/test-stt 等外部 STT 请求，避免真实调用三方接口。
-                services.AddHttpClient("STT")
-                    .ConfigurePrimaryHttpMessageHandler(() => new SttFakeHttpMessageHandler());
             });
         }).CreateClient();
     }
@@ -106,124 +105,15 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task PostConfigTestStt_MissingEndpoint_Returns400_WithMessage()
+    public async Task PostConfigTestRealtimeAsr_DisallowedHost_Returns400()
     {
-        var body = new { apiKey = "sk-x", modelId = "whisper-1" };
+        var body = new { apiKey = "sk-x", webSocketBaseUrl = "wss://evil.example/api-ws/v1/inference" };
         var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync("/api/config/test-stt", content);
+        var response = await _client.PostAsync("/api/config/test-realtime-asr", content);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        Assert.True(root.TryGetProperty("ok", out var ok));
-        Assert.False(ok.GetBoolean());
-        Assert.True(root.TryGetProperty("message", out var msg));
-        Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
-    }
-
-    [Fact]
-    public async Task PostConfigTestStt_EmptyBody_Returns400_WithMessage()
-    {
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync("/api/config/test-stt", content);
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        Assert.True(root.TryGetProperty("ok", out var ok));
-        Assert.False(ok.GetBoolean());
-        Assert.True(root.TryGetProperty("message", out var msg));
-    }
-
-    [Fact]
-    public async Task PostConfigTestStt_DashScopeCompatible_ReturnsOkTrue()
-    {
-        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
-        try
-        {
-            SttFakeHttpMessageHandler.LastRequestUri = null;
-            SttFakeHttpMessageHandler.LastRequestBody = null;
-            SttFakeHttpMessageHandler.OnSendAsync = _ =>
-            {
-                var responseText = """
-                {
-                  "choices": [
-                    { "message": { "content": "识别结果" } }
-                  ]
-                }
-                """;
-                var resp = new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(responseText, Encoding.UTF8, "application/json")
-                };
-                return Task.FromResult(resp);
-            };
-
-            var body = new { endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKey = "sk-x", modelId = "qwen3-asr-flash" };
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-
-            var response = await _client.PostAsync("/api/config/test-stt", content);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-            var json = await response.Content.ReadAsStringAsync();
-            var doc = JsonDocument.Parse(json);
-            Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
-            var message = doc.RootElement.GetProperty("message").GetString() ?? "";
-            Assert.Contains("DashScope", message, StringComparison.OrdinalIgnoreCase);
-
-            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestUri);
-            Assert.EndsWith("/chat/completions", SttFakeHttpMessageHandler.LastRequestUri, StringComparison.OrdinalIgnoreCase);
-
-            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestBody);
-            using var reqDoc = JsonDocument.Parse(SttFakeHttpMessageHandler.LastRequestBody!);
-            Assert.Equal("qwen3-asr-flash", reqDoc.RootElement.GetProperty("model").GetString());
-            var messages = reqDoc.RootElement.GetProperty("messages");
-            var content0 = messages[0].GetProperty("content")[0];
-            Assert.Equal("input_audio", content0.GetProperty("type").GetString());
-        }
-        finally
-        {
-            SttFakeHttpMessageHandler.OnSendAsync = null;
-            SttFakeHttpMessageHandler.Mutex.Release();
-        }
-    }
-
-    [Fact]
-    public async Task PostConfigTestStt_DashScopeCompatible_Upstream404_ReturnsOkFalse()
-    {
-        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
-        try
-        {
-            SttFakeHttpMessageHandler.LastRequestUri = null;
-            SttFakeHttpMessageHandler.LastRequestBody = null;
-            SttFakeHttpMessageHandler.OnSendAsync = _ =>
-            {
-                var resp = new HttpResponseMessage(HttpStatusCode.NotFound)
-                {
-                    ReasonPhrase = "Not Found",
-                    Content = new StringContent("not found", Encoding.UTF8, "text/plain")
-                };
-                return Task.FromResult(resp);
-            };
-
-            var body = new { endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKey = "sk-x", modelId = "qwen3-asr-flash" };
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-
-            var response = await _client.PostAsync("/api/config/test-stt", content);
-            Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-
-            var json = await response.Content.ReadAsStringAsync();
-            var doc = JsonDocument.Parse(json);
-            Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
-            var message = doc.RootElement.GetProperty("message").GetString() ?? "";
-            Assert.Contains("请求失败", message, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("404", message);
-        }
-        finally
-        {
-            SttFakeHttpMessageHandler.OnSendAsync = null;
-            SttFakeHttpMessageHandler.Mutex.Release();
-        }
+        Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
     }
 
     [Fact]
@@ -257,21 +147,6 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task PostConfigTestStt_InvalidConnectionKind_Returns400()
-    {
-        var body = new
-        {
-            endpoint = "https://api.openai.com/v1",
-            apiKey = "k",
-            modelId = "whisper-1",
-            connectionKind = "not_a_valid_kind"
-        };
-        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync("/api/config/test-stt", content);
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
     public async Task PostConfigTestOcr_InvalidConnectionKind_Returns400()
     {
         var body = new
@@ -283,52 +158,6 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         var response = await _client.PostAsync("/api/config/test-ocr", content);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task PostConfigTestStt_DashScopeCompatible_CustomModelId_SentInUpstreamJson()
-    {
-        await SttFakeHttpMessageHandler.Mutex.WaitAsync();
-        try
-        {
-            SttFakeHttpMessageHandler.LastRequestUri = null;
-            SttFakeHttpMessageHandler.LastRequestBody = null;
-            SttFakeHttpMessageHandler.OnSendAsync = _ =>
-            {
-                var responseText = """
-                {
-                  "choices": [
-                    { "message": { "content": "x" } }
-                  ]
-                }
-                """;
-                var resp = new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(responseText, Encoding.UTF8, "application/json")
-                };
-                return Task.FromResult(resp);
-            };
-
-            var body = new
-            {
-                endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                apiKey = "sk-x",
-                modelId = "my-custom-asr-model",
-                connectionKind = "dashscope_openai_chat_audio"
-            };
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-
-            var response = await _client.PostAsync("/api/config/test-stt", content);
-            response.EnsureSuccessStatusCode();
-            Assert.NotNull(SttFakeHttpMessageHandler.LastRequestBody);
-            using var reqDoc = JsonDocument.Parse(SttFakeHttpMessageHandler.LastRequestBody!);
-            Assert.Equal("my-custom-asr-model", reqDoc.RootElement.GetProperty("model").GetString());
-        }
-        finally
-        {
-            SttFakeHttpMessageHandler.OnSendAsync = null;
-            SttFakeHttpMessageHandler.Mutex.Release();
-        }
     }
 
     [Fact]
@@ -511,6 +340,23 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             Assert.True(root.TryGetProperty("message", out var msg));
             Assert.False(string.IsNullOrWhiteSpace(msg.GetString()));
         }
+    }
+
+    [Fact]
+    public async Task PostTranscribe_WithWav_WithoutRealtimeAsrKey_Returns400_WithBailianHint()
+    {
+        using var form = new MultipartFormDataContent();
+        var wav = SttUpstreamAdapter.BuildMinimalWavPcm16kMono(80);
+        var fileContent = new ByteArrayContent(wav);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        form.Add(fileContent, "file", "probe.wav");
+        var response = await _client.PostAsync("/api/transcribe", form);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json);
+        Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
+        var msg = doc.RootElement.GetProperty("message").GetString() ?? "";
+        Assert.Contains("百炼", msg, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -789,29 +635,5 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(doc.RootElement.TryGetProperty("ok", out var ok));
         Assert.False(ok.GetBoolean());
         Assert.True(doc.RootElement.TryGetProperty("message", out _));
-    }
-}
-
-public sealed class SttFakeHttpMessageHandler : HttpMessageHandler
-{
-    public static readonly SemaphoreSlim Mutex = new(1, 1);
-
-    public static Func<HttpRequestMessage, Task<HttpResponseMessage>>? OnSendAsync;
-
-    public static string? LastRequestUri;
-    public static string? LastRequestBody;
-
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        LastRequestUri = request.RequestUri?.ToString();
-        if (request.Content != null)
-            LastRequestBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        else
-            LastRequestBody = null;
-
-        var handler = OnSendAsync;
-        if (handler == null)
-            return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("No fake handler") };
-        return await handler(request).ConfigureAwait(false);
     }
 }

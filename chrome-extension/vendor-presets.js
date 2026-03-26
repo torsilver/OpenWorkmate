@@ -2,7 +2,7 @@
  * 与后端 VendorModelDefaults / connectionKind 一致；vendorId 与 ConfigService 持久化字段对齐。
  *
  * chat 项可选 providerChoices：对接类型下拉显示的取值列表；省略时视为 [provider] 单一协议，设置页默认隐藏主对接类型行。
- * other_auto 须列出全部可选协议供用户自选。
+ * other_auto 须列出全部可选协议供用户自选。语音识别仅百炼实时 ASR，无独立 stt 预设表。
  */
 window.OFFICE_COPILOT_VENDOR_PRESETS = {
   chat: [
@@ -38,14 +38,6 @@ window.OFFICE_COPILOT_VENDOR_PRESETS = {
     { id: 'ollama', label: 'Ollama（本地）', provider: 'Ollama', defaultEndpoint: 'http://localhost:11434/v1', defaultModelId: 'llama3' },
     { id: 'lm_studio', label: 'LM Studio（本地）', provider: 'OpenAI', defaultEndpoint: 'http://localhost:1234/v1', defaultModelId: '' },
     { id: 'other_auto', label: '其他（自行填写地址）', provider: 'OpenAI', providerChoices: ['OpenAI', 'Azure', 'Ollama', 'Anthropic'], defaultEndpoint: '', defaultModelId: '' }
-  ],
-  stt: [
-    { id: 'other_auto', label: '其他（根据网址自动识别）', connectionKind: '', defaultEndpoint: '', defaultModelId: 'whisper-1' },
-    { id: 'openai', label: 'OpenAI', connectionKind: 'openai_whisper_multipart', defaultEndpoint: 'https://api.openai.com/v1', defaultModelId: 'whisper-1' },
-    { id: 'azure_openai', label: '微软 Azure OpenAI', connectionKind: 'openai_whisper_multipart', defaultEndpoint: '', defaultModelId: 'whisper-1' },
-    { id: 'aliyun_bailian', label: '阿里巴巴 通义百炼', connectionKind: 'dashscope_openai_chat_audio', defaultEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModelId: 'qwen3-asr-flash' },
-    { id: 'groq', label: 'Groq', connectionKind: 'openai_whisper_multipart', defaultEndpoint: 'https://api.groq.com/openai/v1', defaultModelId: 'whisper-large-v3' },
-    { id: 'deepseek', label: 'DeepSeek', connectionKind: 'openai_whisper_multipart', defaultEndpoint: 'https://api.deepseek.com/v1', defaultModelId: 'whisper-1' }
   ],
   ocr: [
     { id: 'other_auto', label: '其他（根据网址自动识别）', connectionKind: '', defaultEndpoint: '', defaultModelId: '' },

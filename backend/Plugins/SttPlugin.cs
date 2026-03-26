@@ -5,13 +5,13 @@ using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
 
-/// <summary>内置语音转文字（STT）能力，以 MCP 风格插件名 MCP_STT 注册，供主模型按需调用 transcribe_audio。</summary>
+/// <summary>内置语音转文字能力（百炼实时 ASR 文件通道），以 MCP_STT 注册 transcribe_audio。</summary>
 public sealed class SttPlugin
 {
     private readonly ITranscribeService _transcribeService;
     private readonly ILogger<SttPlugin> _logger;
 
-    private const long WhisperSizeLimit = 25 * 1024 * 1024; // 25 MB
+    private const long MaxAudioBytes = 25 * 1024 * 1024; // 25 MB
 
     public SttPlugin(ITranscribeService transcribeService, ILogger<SttPlugin> logger)
     {
@@ -20,7 +20,7 @@ public sealed class SttPlugin
     }
 
     [KernelFunction("transcribe_audio")]
-    [Description("Transcribe an audio file at the given local path to text using Whisper. Use when the user asks to convert speech/audio to text or to produce a document from a recording. Path must be accessible from this machine. Returns the recognized text or an error message.")]
+    [Description("Transcribe an audio file at the given local path to text using Alibaba DashScope real-time ASR (v1/inference). Requires realtime ASR API key in settings. Use when the user asks to convert speech/audio to text. Path must be accessible from this machine.")]
     public async Task<string> TranscribeAudioAsync(
         [Description("Full local path to the audio file (e.g. C:\\recordings\\meeting.mp3)")] string filePath,
         [Description("Optional language code for recognition, e.g. zh, en; leave empty for auto-detect")] string? language = null,
@@ -35,7 +35,7 @@ public sealed class SttPlugin
             return "失败：文件不存在或路径不可访问（" + path + "）。";
         }
         var fi = new FileInfo(path);
-        if (fi.Length > WhisperSizeLimit)
+        if (fi.Length > MaxAudioBytes)
             return "失败：单文件超过 25MB 限制，请使用更短的音频或先分片。";
         if (fi.Length == 0)
             return "失败：文件为空。";

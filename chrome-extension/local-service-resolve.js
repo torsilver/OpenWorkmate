@@ -140,12 +140,33 @@
     }
   }
 
+  /**
+   * 百炼实时语音识别桥接 WebSocket（与聊天 /ws 分离）。
+   * @param {string} baseUrl HTTP 基址，如 http://127.0.0.1:8765
+   * @param {string} query 查询串，勿含前导 ?，如 token=xx&mode=inline
+   */
+  function tasklySttStreamWsUrl(baseUrl, query) {
+    var b = normalizeBase(baseUrl);
+    if (!b) return "";
+    var q = query == null ? "" : String(query);
+    if (q.charAt(0) === "?") q = q.slice(1);
+    try {
+      var u = new URL(b + "/");
+      var wsProto = u.protocol === "https:" ? "wss:" : "ws:";
+      return wsProto + "//" + u.host + "/api/stt-stream" + (q ? "?" + q : "");
+    } catch (e) {
+      var hostPart = b.replace(/^https?:\/\//, "").split("/")[0];
+      return "ws://" + hostPart + "/api/stt-stream" + (q ? "?" + q : "");
+    }
+  }
+
   global.TasklyLocalService = {
     TASKLY_DEFAULT_PORT_START: TASKLY_DEFAULT_PORT_START,
     TASKLY_PORT_TRY_COUNT: TASKLY_PORT_TRY_COUNT,
     TASKLY_BASE_URL_STORAGE_KEY: TASKLY_BASE_URL_STORAGE_KEY,
     normalizeBase: normalizeBase,
     tasklyResolveLocalServiceBase: tasklyResolveLocalServiceBase,
-    tasklyHttpWsFromBase: tasklyHttpWsFromBase
+    tasklyHttpWsFromBase: tasklyHttpWsFromBase,
+    tasklySttStreamWsUrl: tasklySttStreamWsUrl
   };
 })(typeof self !== "undefined" ? self : this);

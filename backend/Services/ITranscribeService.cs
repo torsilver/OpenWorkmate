@@ -1,6 +1,6 @@
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>语音转文字（Whisper）服务，供 POST /api/transcribe 与内置工具 transcribe_audio 复用。</summary>
+/// <summary>语音转文字（百炼实时 ASR 文件通道），供 POST /api/transcribe 与 MCP_STT transcribe_audio 复用。</summary>
 public interface ITranscribeService
 {
     /// <summary>将音频流转写为文本。失败时抛出异常，消息可供用户展示。</summary>

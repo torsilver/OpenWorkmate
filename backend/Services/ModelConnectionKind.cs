@@ -1,26 +1,12 @@
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>STT/OCR 持久化 connectionKind 常量；与前端 options.js 保持一致。</summary>
+/// <summary>OCR 持久化 connectionKind 常量；与前端 options.js 保持一致。</summary>
 public static class ModelConnectionKind
 {
-    public static class Stt
-    {
-        public const string OpenAiWhisperMultipart = "openai_whisper_multipart";
-        public const string DashScopeOpenAiChatAudio = "dashscope_openai_chat_audio";
-    }
-
     public static class Ocr
     {
         public const string OpenAiCompatibleMultipart = "openai_compatible_multipart";
         public const string DashScopeOpenAiChatImage = "dashscope_openai_chat_image";
-    }
-
-    public static bool IsValidStt(string? value)
-    {
-        var v = (value ?? "").Trim();
-        if (string.IsNullOrEmpty(v)) return true;
-        return string.Equals(v, Stt.OpenAiWhisperMultipart, StringComparison.Ordinal)
-               || string.Equals(v, Stt.DashScopeOpenAiChatAudio, StringComparison.Ordinal);
     }
 
     public static bool IsValidOcr(string? value)

@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using OfficeCopilot.Server;
 using Xunit;
 
@@ -28,6 +27,9 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
         var tempUserConfigPath = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+        var tempScheduledTasksDir = Path.Combine(
+            Path.GetTempPath(),
+            "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -38,16 +40,11 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
                 {
                     ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = "",
+                    ["ScheduledTasksDirectory"] = tempScheduledTasksDir,
                     ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
                     ["WebSocket:AuthToken"] = string.IsNullOrEmpty(authToken) ? "" : authToken,
                 };
                 config.AddInMemoryCollection(dict);
-            });
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient("STT")
-                    .ConfigurePrimaryHttpMessageHandler(() => new SttFakeHttpMessageHandler());
             });
         });
     }

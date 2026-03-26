@@ -38,7 +38,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["Subagent"] = "同会话内子代理：将多步或耗上下文的子任务交给子代理执行，仅收回最终总结",
         ["System"] = "当前日期与时间，用于回答今天几号、现在几点等时间相关问题",
         ["SkillAuthor"] = "根据对话或目标生成并保存用户可复用技能（SKILL.md），与设置页技能列表一致",
-        ["MCP_STT"] = "内置语音转文字（Whisper），非外接 MCP",
+        ["MCP_STT"] = "内置语音转文字（百炼实时 ASR），非外接 MCP；需配置 realtimeAsr",
         ["MCP_OCR"] = "内置图片 OCR，非外接 MCP",
         ["Memory"] = "长期记忆：用户可点名「记住…」；你也可在需延续习惯、偏好与关键事实时主动 save/search。非大块中间数据、非步骤清单",
         ["AccurateData"] = "准确数据：用户可点名按 id 存取；多步复杂任务中有大块结构化中间结果需精确读写、减上下文时主动使用。非语义记忆、非计划正文",

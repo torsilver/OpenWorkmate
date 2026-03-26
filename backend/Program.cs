@@ -99,7 +99,8 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();
     builder.Services.AddSingleton<IMeetingTranscriptStore, MeetingTranscriptStore>();
-    builder.Services.AddSingleton<SttTranscriberProvider>();
+    builder.Services.AddSingleton<DashScopeInferenceFileTranscriber>();
+    builder.Services.AddSingleton<SttInferenceStreamWebSocket>();
     builder.Services.AddSingleton<OcrExtractorProvider>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
@@ -325,6 +326,49 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     }
 });
 
+app.Map("/api/stt-stream", async (HttpContext context, SttInferenceStreamWebSocket sttStream, ConfigService configService) =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsync("WebSocket connections only.");
+        return;
+    }
+
+    var origin = context.Request.Headers.Origin.ToString();
+    if (allowedOrigins.Length > 0
+        && !string.IsNullOrEmpty(origin)
+        && !allowedOrigins.Any(o => origin.StartsWith(o, StringComparison.OrdinalIgnoreCase)))
+    {
+        app.Logger.LogWarning("Rejected stt-stream connection from origin: {Origin}", origin);
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsync("Forbidden: invalid origin.");
+        return;
+    }
+
+    var authToken = configService.GetEffectiveWebSocketAuthToken();
+    var token = context.Request.Query["token"].ToString();
+    var tokenOk = string.IsNullOrEmpty(authToken)
+                  || token == authToken
+                  || (isDev && token == ProgramAuthConstants.DevelopmentWsToken);
+    if (!tokenOk)
+    {
+        app.Logger.LogWarning("Rejected stt-stream connection: invalid token");
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsync("Unauthorized: invalid token.");
+        return;
+    }
+
+    var mode = context.Request.Query["mode"].ToString();
+    if (string.IsNullOrEmpty(mode))
+        mode = "inline";
+    var meetingSessionId = context.Request.Query["meetingSessionId"].ToString();
+
+    using var ws = await context.WebSockets.AcceptWebSocketAsync();
+    var cfg = configService.Current.RealtimeAsr;
+    await sttStream.HandleAsync(ws, cfg, mode, meetingSessionId, context.RequestAborted);
+});
+
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
 
 app.MapGet("/api/debug/agent-stats", (HttpContext ctx, AgentDebugStatsService agentDebugStats, ConfigService config) =>
@@ -526,131 +570,62 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
     }
 });
 
-app.MapPost("/api/config/test-stt", async (HttpContext ctx, ILogger<Program> logger, IHttpClientFactory httpClientFactory, ConfigService configService) =>
+app.MapPost("/api/config/test-realtime-asr", async (HttpContext ctx, DashScopeInferenceFileTranscriber transcriber, ILogger<Program> logger) =>
 {
-    TestSttRequest? body;
+    TestRealtimeAsrRequest? body;
     try
     {
-        body = await JsonSerializer.DeserializeAsync<TestSttRequest>(ctx.Request.Body, JsonCtx.Default.TestSttRequest);
+        body = await JsonSerializer.DeserializeAsync<TestRealtimeAsrRequest>(ctx.Request.Body, JsonCtx.Default.TestRealtimeAsrRequest);
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Test STT: request body deserialize failed");
-        return Results.Json(new { ok = false, message = "请求体解析失败，请确认发送的是 JSON，字段为 endpoint、modelId、apiKey（小写驼峰）。" }, statusCode: 400);
-    }
-    if (body == null || string.IsNullOrWhiteSpace(body.Endpoint))
-    {
-        return Results.Json(new { ok = false, message = "请求参数无效：缺少或为空 endpoint。" }, statusCode: 400);
+        logger.LogWarning(ex, "Test realtime ASR: request body deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认 JSON 含 apiKey（小写驼峰）。" }, statusCode: 400);
     }
 
-    var endpoint = body.Endpoint.Trim().TrimEnd('/');
-    var modelId = string.IsNullOrWhiteSpace(body.ModelId) ? "whisper-1" : body.ModelId.Trim();
-    var apiKey = body.ApiKey?.Trim() ?? "";
-    if (string.IsNullOrEmpty(apiKey))
-    {
+    if (body == null || string.IsNullOrWhiteSpace(body.ApiKey))
         return Results.Json(new { ok = false, message = "请求参数无效：缺少 apiKey。" }, statusCode: 400);
-    }
 
-    if (!ModelConnectionKind.IsValidStt(body.ConnectionKind))
+    var wsUrl = string.IsNullOrWhiteSpace(body.WebSocketBaseUrl)
+        ? "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
+        : body.WebSocketBaseUrl.Trim();
+    if (!Uri.TryCreate(wsUrl, UriKind.Absolute, out var wsUri) || (wsUri.Scheme != "wss" && wsUri.Scheme != "ws"))
+        return Results.Json(new { ok = false, message = "webSocketBaseUrl 无效。" }, statusCode: 400);
+    var host = (wsUri.Host ?? "").Trim().ToLowerInvariant();
+    if (host != "dashscope.aliyuncs.com" && host != "dashscope-intl.aliyuncs.com")
+        return Results.Json(new { ok = false, message = "为降低 SSRF 风险，仅允许 dashscope.aliyuncs.com 或 dashscope-intl.aliyuncs.com 的 WebSocket 地址。" }, statusCode: 400);
+
+    var probe = new RealtimeAsrConfig
     {
-        return Results.Json(new { ok = false, message = "请求参数无效：connectionKind 取值无效，请留空或填写 openai_whisper_multipart、dashscope_openai_chat_audio。" }, statusCode: 400);
-    }
+        ApiKey = body.ApiKey.Trim(),
+        WebSocketBaseUrl = wsUrl,
+        ModelId = string.IsNullOrWhiteSpace(body.ModelId) ? "fun-asr-realtime" : body.ModelId.Trim(),
+        Heartbeat = true
+    };
 
-    SttUpstreamAdapter.UpstreamKind kind;
+    var minimalWav = SttUpstreamAdapter.BuildMinimalWavPcm16kMono(durationMs: 400);
     try
     {
-        kind = SttTranscriberResolver.Resolve(endpoint, body.ConnectionKind, body.VendorId);
+        var text = await transcriber.TranscribeAsync(minimalWav, "audio/wav", null, probe, ctx.RequestAborted);
+        return Results.Ok(new
+        {
+            ok = true,
+            message = "连接成功，百炼实时语音识别（v1/inference）可用。",
+            preview = text
+        });
     }
     catch (InvalidOperationException ex)
     {
-        return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
-    }
-
-    // 最小 WAV 头（44 字节）+ 无采样，用于测试连接
-    var minimalWav = SttUpstreamAdapter.BuildMinimalWavPcm16kMono(durationMs: 200);
-
-    using var http = httpClientFactory.CreateClient("STT");
-    http.Timeout = TimeSpan.FromSeconds(15);
-
-    try
-    {
-        if (kind == SttUpstreamAdapter.UpstreamKind.DashScopeQwenOpenAICompatible)
-        {
-            try
-            {
-                SttUpstreamAdapter.ValidateDashScopeModelIdPresent(modelId);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Json(new { ok = false, message = ex.Message }, statusCode: 400);
-            }
-
-            var urlDash = SttUpstreamAdapter.BuildDashScopeChatCompletionsUrl(endpoint);
-            if (!Uri.TryCreate(urlDash, UriKind.Absolute, out var uriDash) || (uriDash.Scheme != "http" && uriDash.Scheme != "https"))
-            {
-                return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
-            }
-            var ssrfDash = TestEndpointSecurity.GetBlockedReason(uriDash, configService.Current.AllowPrivateEndpointTests);
-            if (ssrfDash != null)
-                return Results.Json(new { ok = false, message = ssrfDash }, statusCode: 400);
-
-            var dataUrl = SttUpstreamAdapter.BuildAudioDataUrl(minimalWav, "audio/wav");
-            var jsonPayload = SttUpstreamAdapter.BuildDashScopeOpenAICompatibleRequestJson(modelId, dataUrl, language: null);
-            var requestDash = new HttpRequestMessage(HttpMethod.Post, uriDash);
-            requestDash.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
-            requestDash.Content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
-
-            var response = await http.SendAsync(requestDash);
-            var responseText = await response.Content.ReadAsStringAsync();
-            if (response.IsSuccessStatusCode)
-                return Results.Ok(new { ok = true, message = "连接成功，STT（DashScope Qwen/OpenAI 兼容）接口可用。" });
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
-
-            logger.LogWarning("Test STT failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
-            var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
-            return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
-        }
-
-        // Whisper 兼容
-        var urlWhisper = SttUpstreamAdapter.BuildWhisperTranscriptionsUrl(endpoint);
-        if (!Uri.TryCreate(urlWhisper, UriKind.Absolute, out var uriW) || (uriW.Scheme != "http" && uriW.Scheme != "https"))
-        {
-            return Results.Json(new { ok = false, message = "接口地址格式无效，请填写有效的 http(s) 地址。" }, statusCode: 400);
-        }
-        var ssrfW = TestEndpointSecurity.GetBlockedReason(uriW, configService.Current.AllowPrivateEndpointTests);
-        if (ssrfW != null)
-            return Results.Json(new { ok = false, message = ssrfW }, statusCode: 400);
-
-        using var content = new MultipartFormDataContent();
-        var fileContent = new StreamContent(new MemoryStream(minimalWav));
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(fileContent, "file", "test.wav");
-        content.Add(new StringContent(modelId), "model");
-
-        var requestWhisper = new HttpRequestMessage(HttpMethod.Post, uriW);
-        requestWhisper.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
-        requestWhisper.Content = content;
-
-        var responseW = await http.SendAsync(requestWhisper);
-        var responseTextW = await responseW.Content.ReadAsStringAsync();
-        if (responseW.IsSuccessStatusCode)
-            return Results.Ok(new { ok = true, message = "连接成功，STT（Whisper 兼容）接口可用。" });
-        if (responseW.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
-
-        logger.LogWarning("Test STT failed: {Status} {Body}", responseW.StatusCode, responseTextW.Length > 200 ? responseTextW[..200] + "..." : responseTextW);
-        var errW = responseTextW.Length > 300 ? responseTextW[..300] + "..." : responseTextW;
-        return Results.Json(new { ok = false, message = "请求失败: " + (int)responseW.StatusCode + " " + (responseW.ReasonPhrase ?? "") + (string.IsNullOrEmpty(errW) ? "" : " — " + errW) }, statusCode: 502);
+        return Results.Json(new { ok = false, message = ex.Message }, statusCode: 502);
     }
     catch (TaskCanceledException)
     {
-        return Results.Json(new { ok = false, message = "连接超时，请检查接口地址或网络。" }, statusCode: 504);
+        return Results.Json(new { ok = false, message = "连接或识别超时。" }, statusCode: 504);
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Test STT exception");
-        return Results.Json(new { ok = false, message = "连接失败: " + ex.Message }, statusCode: 502);
+        logger.LogWarning(ex, "Test realtime ASR exception");
+        return Results.Json(new { ok = false, message = "测试失败: " + ex.Message }, statusCode: 502);
     }
 });
 
@@ -811,7 +786,7 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "Browser", Name = "Browser", Description = "网页高亮、截图、运行页面脚本、整页截图等" },
         new() { Id = "File", Name = "File", Description = "附件路径解析、文件大小查询、保存截图到下载文件夹" },
         new() { Id = "System", Name = "System", Description = "当前时间等系统信息，用于回答用户关于日期、时间的问题" },
-        new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（Whisper）：将音频文件转成文字，供整理成文档等" },
+        new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（百炼实时 ASR）：将音频文件转成文字，需在设置中配置百炼实时语音识别 API Key" },
         new() { Id = "MCP_OCR", Name = "MCP_OCR", Description = "内置 OCR：从图片中提取文字，供整理成文档等（需在模型设置中配置 OCR）" },
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
@@ -845,8 +820,8 @@ app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transc
     }
     var languageField = form["language"].ToString();
     var language = string.IsNullOrWhiteSpace(languageField) ? null : languageField.Trim();
-    const long whisperLimit = 25 * 1024 * 1024; // 25 MB
-    if (file.Length > whisperLimit)
+    const long maxAudioBytes = 25 * 1024 * 1024; // 25 MB
+    if (file.Length > maxAudioBytes)
     {
         return Results.Json(new { ok = false, message = "单文件超过 25MB 限制，请使用更短的音频或先分片后再试。" }, statusCode: 413);
     }

@@ -187,7 +187,7 @@ let editingAiModelId = null;
 let testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: '' };
 
 function getVendorPresets() {
-  return window.OFFICE_COPILOT_VENDOR_PRESETS || { chat: [], stt: [], ocr: [] };
+  return window.OFFICE_COPILOT_VENDOR_PRESETS || { chat: [], ocr: [] };
 }
 
 function findChatPreset(id) {
@@ -277,12 +277,6 @@ function updateChatProviderUi(resetProviderToPreset) {
   toggleAzureFields();
 }
 
-function findSttPreset(id) {
-  var list = getVendorPresets().stt;
-  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
-  return null;
-}
-
 function findOcrPreset(id) {
   var list = getVendorPresets().ocr;
   for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -305,7 +299,6 @@ function initVendorPresetSelects() {
   var p = getVendorPresets();
   fillSelectFromPresets('aiModelVendor', p.chat);
   fillSelectFromPresets('embeddingEditorVendor', p.chat);
-  fillSelectFromPresets('sttEditorVendor', p.stt);
   fillSelectFromPresets('ocrEditorVendor', p.ocr);
 }
 
@@ -323,27 +316,6 @@ function resolveChatVendorId(entry) {
   }
   if (prov === 'Azure') return 'azure_openai';
   if (prov === 'Ollama') return 'ollama';
-  return 'other_auto';
-}
-
-function resolveSttVendorId(entry) {
-  if (!entry) return 'other_auto';
-  var vid = String(entry.vendorId || entry.VendorId || '').trim();
-  if (vid) return vid;
-  var ck = String(entry.connectionKind || entry.ConnectionKind || '').trim();
-  var ep = String(entry.endpoint || entry.Endpoint || '').trim().toLowerCase();
-  var list = getVendorPresets().stt;
-  var i;
-  for (i = 0; i < list.length; i++) {
-    if (ck && String(list[i].connectionKind || '') === ck) return list[i].id;
-  }
-  for (i = 0; i < list.length; i++) {
-    var de = String(list[i].defaultEndpoint || '').trim().toLowerCase().replace(/\/$/, '');
-    if (de && ep.indexOf(de) >= 0) return list[i].id;
-  }
-  if (ep.indexOf('dashscope') >= 0) return 'aliyun_bailian';
-  if (ep.indexOf('groq.com') >= 0) return 'groq';
-  if (ep.indexOf('openai.com') >= 0) return 'openai';
   return 'other_auto';
 }
 
@@ -378,17 +350,6 @@ function onAiVendorChange() {
   updateChatProviderUi(!!preset);
 }
 
-function onSttVendorChange() {
-  var el = document.getElementById('sttEditorVendor');
-  if (!el) return;
-  var preset = findSttPreset(el.value);
-  if (!preset) return;
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var modelEl = document.getElementById('sttEditorModelId');
-  if (preset.defaultEndpoint && endEl) endEl.value = preset.defaultEndpoint;
-  if (modelEl && preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '') modelEl.value = preset.defaultModelId;
-}
-
 function onOcrVendorChange() {
   var el = document.getElementById('ocrEditorVendor');
   if (!el) return;
@@ -414,8 +375,6 @@ function onEmbeddingVendorChange() {
 function wireVendorSelectListeners() {
   var a = document.getElementById('aiModelVendor');
   if (a) a.addEventListener('change', onAiVendorChange);
-  var s = document.getElementById('sttEditorVendor');
-  if (s) s.addEventListener('change', onSttVendorChange);
   var o = document.getElementById('ocrEditorVendor');
   if (o) o.addEventListener('change', onOcrVendorChange);
   var e = document.getElementById('embeddingEditorVendor');
@@ -557,165 +516,6 @@ function updateEmbeddingModelSummary() {
   } else {
     sum.textContent = 'Embedding 模型（未配置）';
   }
-}
-
-function getSttModels() {
-  var raw = fullConfig && (fullConfig.sttModels || fullConfig.SttModels);
-  return Array.isArray(raw) ? raw : [];
-}
-
-function renderSttModelsList() {
-  var listEl = document.getElementById('sttModelsList');
-  if (!listEl) return;
-  var list = getSttModels();
-  var activeId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
-  listEl.innerHTML = list.map(function (m) {
-    var id = m.id || m.Id || '';
-    var name = m.displayName || m.DisplayName || id || '(未命名)';
-    var modelId = m.modelId || m.ModelId || 'whisper-1';
-    var isActive = (activeId && id && activeId === id);
-    var setActiveBtn = isActive ? '' : ('<button type="button" class="btn-secondary set-active-stt-btn" data-id="' + escapeAttr(id) + '">设为当前</button>');
-    return '<div class="mcp-server-row" data-stt-id="' + escapeAttr(id) + '">' +
-      '<div class="mcp-icon">S</div>' +
-      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(name) + (isActive ? ' <span style="color:var(--success);font-size:12px;">当前</span>' : '') + '</div>' +
-      '<div class="mcp-desc">' + escapeHtml(modelId || '') + '</div></div>' +
-      '<div class="mcp-actions">' + setActiveBtn +
-      '<button type="button" class="btn-secondary test-stt-btn" data-id="' + escapeAttr(id) + '">测试</button>' +
-      '<button type="button" class="btn-secondary edit-stt-btn" data-id="' + escapeAttr(id) + '">编辑</button>' +
-      '<button type="button" class="btn-danger delete-stt-btn" data-id="' + escapeAttr(id) + '">删除</button>' +
-      '<span class="stt-row-test-status help-text" style="margin-left:8px;"></span></div></div>';
-  }).join('');
-  listEl.querySelectorAll('.set-active-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { setActiveSttModel(btn.dataset.id); }); });
-  listEl.querySelectorAll('.test-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { testSttById(btn.dataset.id); }); });
-  listEl.querySelectorAll('.edit-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { openSttEditor(btn.dataset.id); }); });
-  listEl.querySelectorAll('.delete-stt-btn').forEach(function (btn) { btn.addEventListener('click', function () { deleteSttModel(btn.dataset.id); }); });
-  updateSttModelSummary();
-}
-
-function updateSttModelSummary() {
-  var sum = document.getElementById('sttModelSummary');
-  if (!sum) return;
-  var list = getSttModels();
-  var activeId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
-  var active = list.find(function (m) { return (m.id || m.Id) === activeId; });
-  if (active) {
-    var name = active.displayName || active.DisplayName || active.modelId || active.ModelId || activeId;
-    sum.textContent = '语音转文字 (STT) 模型（当前：' + name + '）';
-  } else {
-    sum.textContent = '语音转文字 (STT) 模型';
-  }
-}
-
-var editingSttId = null;
-
-function openSttEditor(id) {
-  editingSttId = id || null;
-  var titleEl = document.getElementById('sttModelEditorTitle');
-  var editorEl = document.getElementById('sttModelEditor');
-  if (titleEl) titleEl.textContent = id ? '编辑 STT 模型' : '添加 STT 模型';
-  var list = getSttModels();
-  var entry = id ? list.find(function (m) { return (m.id || m.Id) === id; }) : null;
-  var dispEl = document.getElementById('sttEditorDisplayName');
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var keyEl = document.getElementById('sttEditorApiKey');
-  var modelEl = document.getElementById('sttEditorModelId');
-  var langEl = document.getElementById('sttEditorLanguage');
-  if (dispEl) dispEl.value = entry ? (entry.displayName || entry.DisplayName || '') : '';
-  if (endEl) endEl.value = entry ? (entry.endpoint || entry.Endpoint || '') : '';
-  if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
-  if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || 'whisper-1') : 'whisper-1';
-  if (langEl) langEl.value = entry ? (entry.language || entry.Language || '') : '';
-  var svEl = document.getElementById('sttEditorVendor');
-  if (svEl) svEl.value = entry ? resolveSttVendorId(entry) : 'other_auto';
-  var statusEl = document.getElementById('testSttStatus');
-  if (statusEl) statusEl.textContent = '';
-  if (editorEl) editorEl.style.display = 'block';
-}
-
-function closeSttEditor() {
-  editingSttId = null;
-  var editorEl = document.getElementById('sttModelEditor');
-  if (editorEl) editorEl.style.display = 'none';
-}
-
-function saveSttFromEditor() {
-  var dispEl = document.getElementById('sttEditorDisplayName');
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var keyEl = document.getElementById('sttEditorApiKey');
-  var modelEl = document.getElementById('sttEditorModelId');
-  var langEl = document.getElementById('sttEditorLanguage');
-  var displayName = (dispEl && dispEl.value && dispEl.value.trim()) || '';
-  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
-  var apiKey = (keyEl && keyEl.value) || '';
-  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || 'whisper-1';
-  var language = (langEl && langEl.value && langEl.value.trim()) || null;
-  if (!endpoint) {
-    alert('请填写接口地址');
-    return;
-  }
-  if (!apiKey) {
-    alert('请填写 API Key');
-    return;
-  }
-  var vendorEl = document.getElementById('sttEditorVendor');
-  var vendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto';
-  var sttPreset = findSttPreset(vendorId);
-  var connectionKind = sttPreset && typeof sttPreset.connectionKind === 'string' ? sttPreset.connectionKind : '';
-  var list = getSttModels();
-  var id = editingSttId || ('stt-' + Date.now());
-  var entry = { id: id, displayName: displayName || modelId, endpoint: endpoint, apiKey: apiKey, modelId: modelId, language: language || undefined, chunkMinutes: 2, vendorId: vendorId, connectionKind: connectionKind };
-  var idx = list.findIndex(function (m) { return (m.id || m.Id) === editingSttId; });
-  if (idx >= 0) list[idx] = entry;
-  else list.push(entry);
-  if (!fullConfig) fullConfig = {};
-  fullConfig.sttModels = fullConfig.SttModels = list;
-  if (list.length === 1 && !(fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) {
-    fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = id;
-  }
-  closeSttEditor();
-  renderSttModelsList();
-  saveConfig();
-}
-
-function setActiveSttModel(id) {
-  if (!id || !fullConfig) return;
-  fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = id;
-  renderSttModelsList();
-  saveConfig();
-}
-
-function deleteSttModel(id) {
-  if (!id || !fullConfig) return;
-  var list = getSttModels().filter(function (m) { return (m.id || m.Id) !== id; });
-  fullConfig.sttModels = fullConfig.SttModels = list;
-  if ((fullConfig.activeSttModelId || fullConfig.ActiveSttModelId) === id) {
-    fullConfig.activeSttModelId = fullConfig.ActiveSttModelId = list.length ? (list[0].id || list[0].Id) : '';
-  }
-  if (editingSttId === id) closeSttEditor();
-  renderSttModelsList();
-  saveConfig();
-}
-
-function testSttById(id) {
-  var list = getSttModels();
-  var entry = list.find(function (m) { return (m.id || m.Id) === id; });
-  if (!entry) return;
-  var endpoint = (entry.endpoint || entry.Endpoint || '').trim();
-  var apiKey = (entry.apiKey || entry.ApiKey || '') || '';
-  var modelId = (entry.modelId || entry.ModelId || 'whisper-1').trim();
-  var listEl = document.getElementById('sttModelsList');
-  var statusEl = null;
-  if (listEl) {
-    listEl.querySelectorAll('.mcp-server-row').forEach(function (row) {
-      if (row.getAttribute('data-stt-id') === id) statusEl = row.querySelector('.stt-row-test-status');
-    });
-  }
-  var connectionKind = (entry.connectionKind || entry.ConnectionKind || '').trim();
-  var vendorId = (entry.vendorId || entry.VendorId || '').trim();
-  doTestSttConnection(endpoint, apiKey, modelId, statusEl || undefined, {
-    connectionKind: connectionKind || undefined,
-    vendorId: vendorId || undefined
-  });
 }
 
 function getOcrModels() {
@@ -1199,31 +999,61 @@ if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('s
   if (btn) btn.addEventListener('click', openMicSiteSettings);
 })();
 
-function testSttConnection() {
-  var endEl = document.getElementById('sttEditorEndpoint');
-  var keyEl = document.getElementById('sttEditorApiKey');
-  var modelEl = document.getElementById('sttEditorModelId');
-  var vendorEl = document.getElementById('sttEditorVendor');
-  var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
-  var apiKey = (keyEl && keyEl.value) || '';
-  var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || 'whisper-1';
-  var sttPreset = findSttPreset(vendorEl && vendorEl.value);
-  var ck = sttPreset && typeof sttPreset.connectionKind === 'string' ? sttPreset.connectionKind : '';
-  doTestSttConnection(endpoint, apiKey, modelId, undefined, {
-    connectionKind: ck || undefined,
-    vendorId: (vendorEl && vendorEl.value) || undefined
-  });
+function fillRealtimeAsrInForm(data) {
+  var ra = data && (data.realtimeAsr || data.RealtimeAsr);
+  if (!ra) ra = {};
+  var apiEl = document.getElementById('realtimeAsrApiKey');
+  var wsEl = document.getElementById('realtimeAsrWsUrl');
+  var modelEl = document.getElementById('realtimeAsrModelId');
+  var hintsEl = document.getElementById('realtimeAsrLanguageHints');
+  var wsIdEl = document.getElementById('realtimeAsrWorkspaceId');
+  var hbEl = document.getElementById('realtimeAsrHeartbeat');
+  var semEl = document.getElementById('realtimeAsrSemanticPunctuation');
+  var disEl = document.getElementById('realtimeAsrDisfluencyRemoval');
+  if (apiEl) apiEl.value = ra.apiKey || ra.ApiKey || '';
+  if (wsEl) wsEl.value = ra.webSocketBaseUrl || ra.WebSocketBaseUrl || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+  if (modelEl) modelEl.value = ra.modelId || ra.ModelId || 'fun-asr-realtime';
+  var hints = ra.languageHints || ra.LanguageHints;
+  if (hintsEl) hintsEl.value = Array.isArray(hints) ? hints.join(', ') : '';
+  if (wsIdEl) wsIdEl.value = ra.workspaceId || ra.WorkspaceId || '';
+  if (hbEl) hbEl.checked = ra.heartbeat !== false && ra.Heartbeat !== false;
+  if (semEl) semEl.checked = ra.semanticPunctuationEnabled !== false && ra.SemanticPunctuationEnabled !== false;
+  if (disEl) disEl.checked = !!(ra.disfluencyRemovalEnabled || ra.DisfluencyRemovalEnabled);
 }
 
-async function doTestSttConnection(endpoint, apiKey, modelId, statusEl, opts) {
-  opts = opts || {};
-  statusEl = statusEl || document.getElementById('testSttStatus');
+function collectRealtimeAsrPayload() {
+  var apiEl = document.getElementById('realtimeAsrApiKey');
+  var wsEl = document.getElementById('realtimeAsrWsUrl');
+  var modelEl = document.getElementById('realtimeAsrModelId');
+  var hintsEl = document.getElementById('realtimeAsrLanguageHints');
+  var wsIdEl = document.getElementById('realtimeAsrWorkspaceId');
+  var hbEl = document.getElementById('realtimeAsrHeartbeat');
+  var semEl = document.getElementById('realtimeAsrSemanticPunctuation');
+  var disEl = document.getElementById('realtimeAsrDisfluencyRemoval');
+  var hintsRaw = (hintsEl && hintsEl.value) || '';
+  var hints = hintsRaw.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+  var wsUrl = (wsEl && wsEl.value.trim()) || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+  var o = {
+    apiKey: (apiEl && apiEl.value.trim()) || '',
+    webSocketBaseUrl: wsUrl,
+    modelId: (modelEl && modelEl.value.trim()) || 'fun-asr-realtime',
+    heartbeat: hbEl ? hbEl.checked : true,
+    semanticPunctuationEnabled: semEl ? semEl.checked : true,
+    disfluencyRemovalEnabled: disEl ? disEl.checked : false
+  };
+  if (hints.length) o.languageHints = hints;
+  var wid = wsIdEl && wsIdEl.value.trim();
+  if (wid) o.workspaceId = wid;
+  return o;
+}
+
+async function doTestRealtimeAsrConnection() {
+  var statusEl = document.getElementById('testRealtimeAsrStatus');
+  var apiEl = document.getElementById('realtimeAsrApiKey');
+  var wsEl = document.getElementById('realtimeAsrWsUrl');
+  var modelEl = document.getElementById('realtimeAsrModelId');
   if (!statusEl) return;
-  if (!endpoint) {
-    statusEl.textContent = '请先填写接口地址';
-    statusEl.style.color = 'var(--danger, #ef4444)';
-    return;
-  }
+  var apiKey = (apiEl && apiEl.value.trim()) || '';
   if (!apiKey) {
     statusEl.textContent = '请先填写 API Key';
     statusEl.style.color = 'var(--danger, #ef4444)';
@@ -1233,17 +1063,19 @@ async function doTestSttConnection(endpoint, apiKey, modelId, statusEl, opts) {
   statusEl.style.color = 'var(--text-secondary, #94a3b8)';
   try {
     var baseUrl = API_URL.replace('/api/config', '');
-    var payload = { endpoint: endpoint, apiKey: apiKey, modelId: modelId || 'whisper-1' };
-    if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
-    if (opts.vendorId) payload.vendorId = opts.vendorId;
-    var res = await tasklyFetch(baseUrl + '/api/config/test-stt', {
+    var payload = {
+      apiKey: apiKey,
+      webSocketBaseUrl: (wsEl && wsEl.value.trim()) || undefined,
+      modelId: (modelEl && modelEl.value.trim()) || undefined
+    };
+    var res = await tasklyFetch(baseUrl + '/api/config/test-realtime-asr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     var data = await res.json().catch(function () { return { ok: false, message: '响应解析失败' }; });
     if (res.ok && data.ok) {
-      statusEl.textContent = '连接成功';
+      statusEl.textContent = '连接成功' + (data.preview ? '（识别预览：' + String(data.preview).slice(0, 40) + '）' : '');
       statusEl.style.color = 'var(--success, #22c55e)';
     } else {
       statusEl.textContent = data.message || '测试失败';
@@ -1315,10 +1147,15 @@ async function doTestOcrConnection(endpoint, apiKey, statusEl, opts) {
   }
 }
 
-if (document.getElementById('addSttModelBtn')) document.getElementById('addSttModelBtn').addEventListener('click', function () { openSttEditor(null); });
-if (document.getElementById('closeSttEditorBtn')) document.getElementById('closeSttEditorBtn').addEventListener('click', closeSttEditor);
-if (document.getElementById('saveSttModelBtn')) document.getElementById('saveSttModelBtn').addEventListener('click', saveSttFromEditor);
-if (document.getElementById('testSttBtn')) document.getElementById('testSttBtn').addEventListener('click', testSttConnection);
+if (document.getElementById('testRealtimeAsrBtn')) document.getElementById('testRealtimeAsrBtn').addEventListener('click', doTestRealtimeAsrConnection);
+['realtimeAsrApiKey', 'realtimeAsrWsUrl', 'realtimeAsrModelId', 'realtimeAsrLanguageHints', 'realtimeAsrWorkspaceId'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('input', debouncedSaveConfig);
+});
+['realtimeAsrHeartbeat', 'realtimeAsrSemanticPunctuation', 'realtimeAsrDisfluencyRemoval'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', debouncedSaveConfig);
+});
 
 if (document.getElementById('addOcrModelBtn')) document.getElementById('addOcrModelBtn').addEventListener('click', function () { openOcrEditor(null); });
 if (document.getElementById('closeOcrEditorBtn')) document.getElementById('closeOcrEditorBtn').addEventListener('click', closeOcrEditor);
@@ -1620,7 +1457,7 @@ async function loadConfig() {
     await loadSkillEnvSection();
     await loadBuiltinTools();
     renderEmbeddingModelsList();
-    renderSttModelsList();
+    fillRealtimeAsrInForm(data);
     renderOcrModelsList();
     var ragType = data.ragStorageType ?? data.RagStorageType ?? 'Sqlite';
     var ragPath = data.ragStoragePath ?? data.RagStoragePath ?? '';
@@ -1914,8 +1751,6 @@ async function saveConfig() {
         }
       }
     }
-    var sttModelsToSave = getSttModels();
-    var activeSttModelId = (fullConfig && (fullConfig.activeSttModelId || fullConfig.ActiveSttModelId)) || '';
     var ocrModelsToSave = getOcrModels();
     var activeOcrModelId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
     var uiThemeEl = document.getElementById('uiThemeId');
@@ -1934,8 +1769,7 @@ async function saveConfig() {
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       embeddingModels: embeddingModelsToSave,
       activeEmbeddingModelId: activeEmbeddingModelId || undefined,
-      sttModels: sttModelsToSave,
-      activeSttModelId: activeSttModelId || undefined,
+      realtimeAsr: collectRealtimeAsrPayload(),
       ocrModels: ocrModelsToSave,
       activeOcrModelId: activeOcrModelId || undefined,
       ragStorageType: ragType,
@@ -1959,7 +1793,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, sttModels: payload.sttModels, activeSttModelId: payload.activeSttModelId, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';

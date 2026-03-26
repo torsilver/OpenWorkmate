@@ -540,46 +540,47 @@
         </div>
       </details>
 
-      <details class="settings-block" id="sttModelDetails">
-        <summary id="sttModelSummary">语音转文字 (STT) 模型</summary>
+      <details class="settings-block" id="realtimeAsrDetails">
+        <summary>百炼实时语音识别（语音输入 / 会议监听 / 文件转写）</summary>
         <div class="settings-block-inner">
-              <p class="help-text" style="margin-bottom: 12px;">用于对话中通过工具将音频转成文字。请先选择<strong>供应商</strong>，程序会按供应商选择识别方式（Whisper 或通义百炼等）；仍可按厂商文档修改地址与模型 ID。</p>
-          <div id="sttModelsList" class="ai-models-list"></div>
-          <button type="button" id="addSttModelBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 STT 模型</button>
-          <div id="sttModelEditor" class="skill-card" style="display: none; margin-top: 20px;">
-            <div class="skill-header">
-              <span id="sttModelEditorTitle" class="skill-title">添加 STT 模型</span>
-              <button type="button" id="closeSttEditorBtn" class="btn-secondary">取消</button>
-            </div>
-            <div class="form-group">
-              <label for="sttEditorDisplayName">展示名称</label>
-              <input type="text" id="sttEditorDisplayName" placeholder="例如: OpenAI Whisper">
-            </div>
-            <div class="form-group">
-              <label for="sttEditorVendor">供应商</label>
-              <select id="sttEditorVendor"></select>
-            </div>
-            <div class="form-group">
-              <label for="sttEditorEndpoint">接口地址 (Endpoint)</label>
-              <input type="text" id="sttEditorEndpoint" placeholder="https://api.openai.com/v1">
-            </div>
-            <div class="form-group">
-              <label for="sttEditorApiKey">API Key</label>
-              <input type="password" id="sttEditorApiKey" placeholder="sk-...">
-            </div>
-            <div class="form-group">
-              <label for="sttEditorModelId">模型 ID（默认 whisper-1）</label>
-              <input type="text" id="sttEditorModelId" placeholder="whisper-1">
-            </div>
-            <div class="form-group">
-              <label for="sttEditorLanguage">语言代码（可选，如 zh、en；留空自动检测）</label>
-              <input type="text" id="sttEditorLanguage" placeholder="留空则自动检测">
-            </div>
-            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-              <button type="button" id="testSttBtn" class="btn-secondary">测试连接</button>
-              <button type="button" id="saveSttModelBtn" class="btn-primary">完成</button>
-              <span id="testSttStatus" class="help-text" style="margin-left: 8px;"></span>
-            </div>
+          <p class="help-text" style="margin-bottom: 12px;"><strong>本项目语音识别只对接阿里云百炼「实时语音识别」WebSocket（v1/inference）</strong>，侧栏<strong>语音输入</strong>、<strong>会议监听</strong>、对话工具 <code>MCP_STT</code> 与 <code>POST /api/transcribe</code> 均走同一路径；未配置或效果异常时，请优先检查此处 API Key 与模型，<strong>不再支持 Whisper 等 HTTP 整文件转写作为替代</strong>。详见 <a href="https://help.aliyun.com/zh/model-studio/real-time-speech-recognition" target="_blank" rel="noopener">官方说明</a>。API Key 仅保存在本机服务端。默认模型 <code>fun-asr-realtime</code>；可选用 <code>paraformer-realtime-v2</code> 等。</p>
+          <div class="form-group">
+            <label for="realtimeAsrApiKey">API Key（百炼）</label>
+            <input type="password" id="realtimeAsrApiKey" placeholder="sk-..." autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="realtimeAsrWsUrl">WebSocket 地址</label>
+            <input type="text" id="realtimeAsrWsUrl" placeholder="wss://dashscope.aliyuncs.com/api-ws/v1/inference">
+          </div>
+          <div class="form-group">
+            <label for="realtimeAsrModelId">模型 ID</label>
+            <input type="text" id="realtimeAsrModelId" placeholder="fun-asr-realtime">
+          </div>
+          <div class="form-group">
+            <label for="realtimeAsrLanguageHints">语种提示（可选，逗号或换行分隔，如 zh,en；仅部分模型如 Paraformer v2 生效）</label>
+            <textarea id="realtimeAsrLanguageHints" rows="2" placeholder="zh"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="realtimeAsrWorkspaceId">业务空间 ID（可选，X-DashScope-WorkSpace）</label>
+            <input type="text" id="realtimeAsrWorkspaceId" placeholder="留空则不传">
+          </div>
+          <div class="form-group" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+            <label style="display: flex; align-items: center; gap: 6px; margin: 0;">
+              <input type="checkbox" id="realtimeAsrHeartbeat" checked>
+              长连接心跳（会议建议开启）
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; margin: 0;">
+              <input type="checkbox" id="realtimeAsrSemanticPunctuation" checked>
+              语义断句（Paraformer v2 等）
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; margin: 0;">
+              <input type="checkbox" id="realtimeAsrDisfluencyRemoval">
+              过滤语气词（Paraformer）
+            </label>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+            <button type="button" id="testRealtimeAsrBtn" class="btn-secondary">测试连接</button>
+            <span id="testRealtimeAsrStatus" class="help-text"></span>
           </div>
         </div>
       </details>
