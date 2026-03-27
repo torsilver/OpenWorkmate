@@ -55,7 +55,7 @@
 
 ### 4. MCP_STT（语音转文字，内置）
 
-以 MCP 风格命名的内置插件，供主模型按需调用；需在「模型设置」中配置语音转文字（如 Whisper）或回退使用当前 AI 模型 endpoint/apiKey。
+以 MCP 风格命名的内置插件，供主模型按需调用；需在选项页 **「百炼实时语音识别」**（`realtimeAsr`）中配置 API Key，与侧栏语音输入、`POST /api/transcribe` 同源；见 [streaming-asr-websocket-plan.md](./streaming-asr-websocket-plan.md)。
 
 | 工具名 | 中文介绍 |
 |--------|----------|
@@ -172,12 +172,12 @@
 | `current_ppt_slide_write` | 写入文本（slideIndex、placeholderType、text；可选 shapeIndex、shapeName）。 |
 | `current_ppt_slide_insert` | 插入新幻灯片（可选 position、titleText、bodyText）。 |
 | `current_ppt_slide_delete` | 删除指定序号的幻灯片。 |
-| `current_ppt_slide_image_add` | 插入图片（任务窗格端可能返回「请用 Chrome+文件路径」）。 |
-| `current_ppt_notes_read` / `current_ppt_notes_write` | 读/写备注（任务窗格端可能未实现）。 |
-| `current_ppt_slides_reorder` | 重排幻灯片（任务窗格端可能未实现）。 |
-| `current_ppt_table_create` / `current_ppt_table_write_cells` | 表格（任务窗格端可能未实现）。 |
-| `current_ppt_hyperlink_add` | 超链接（任务窗格端可能未实现）。 |
-| `current_ppt_slide_duplicate` | 复制幻灯片（任务窗格端可能未实现）。 |
+| `current_ppt_slide_image_add` | **WPS 演示**：`Shapes.AddPicture` 等；可选 `imageBase64` 经临时文件。**PowerPoint**：`shapes.addPicture(base64)`；后台可读同机 `imagePath` 时会附带 `imageBase64`。 |
+| `current_ppt_notes_read` / `current_ppt_notes_write` | **WPS 演示**：已实现。**PowerPoint**：Office.js 无演讲者备注 API，返回明确说明（非空成功）。 |
+| `current_ppt_slides_reorder` | **WPS**：`Slide.MoveTo`。**PowerPoint**：`slide.moveTo`（零基索引）。 |
+| `current_ppt_table_create` / `current_ppt_table_write_cells` | **WPS**：`Shapes.AddTable` / `Table.Cell`。**PowerPoint**：`addTable` / `getTable` + `getCellOrNullObject`。 |
+| `current_ppt_hyperlink_add` | **WPS**：`ActionSettings.Hyperlink`。**PowerPoint**：`shape.setHyperlink`（需 PowerPointApi 1.10+，见 `office-addin/manifest.xml`）。 |
+| `current_ppt_slide_duplicate` | **WPS**：`Slide.Duplicate`。**PowerPoint**：`exportAsBase64` + `insertSlidesFromBase64`（无嵌入图片的页等限制见宿主）。 |
 | `current_run_document_script` | 在当前打开的 Office/WPS 文档环境中执行预定义脚本（仅支持白名单内 scriptId）。 |
 
 ### 11. Tavily

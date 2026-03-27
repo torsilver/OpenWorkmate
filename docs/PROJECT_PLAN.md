@@ -5,7 +5,7 @@
 
 ### 核心技术栈
 - **前端 (UI/交互)**: Chrome 插件 (Manifest V3), HTML/CSS/JavaScript, 侧边栏 (Side Panel)。
-- **后端 (业务逻辑与 Agent)**: C# / .NET 8, ASP.NET Core (用于承载 WebSocket 服务)。
+- **后端 (业务逻辑与 Agent)**: C# / .NET 10, ASP.NET Core (用于承载 WebSocket 服务)。
 - **AI 编排框架**: Microsoft Semantic Kernel (SK)。
 - **Office 操控技术**: 优先使用 OpenXML SDK (`DocumentFormat.OpenXml`) 进行文件读写；需要操控 Office UI 时回退到 COM Interop (`NetOffice`)。
 - **系统操控技术**: `System.Diagnostics.Process` 执行 CLI 命令。
@@ -16,7 +16,7 @@
 ```
 ┌─────────────────────┐      WebSocket (ws://localhost:8765/ws)
 │  Chrome Extension    │  ◄────────────────────────────────────►  ┌──────────────────────┐
-│  (Manifest V3)       │     Origin 校验 + Token 认证              │  C# 本地服务 (.NET 8) │
+│  (Manifest V3)       │     Origin 校验 + Token 认证              │  C# 本地服务 (.NET 10) │
 │                      │                                           │                      │
 │  ┌───────────────┐   │                                           │  ┌────────────────┐  │
 │  │  Side Panel    │───┤  WebSocket 连接由 Side Panel 持有          │  │ Semantic Kernel │  │
@@ -42,7 +42,7 @@
 **目标**：建立可靠的前后端双向通信通道，包含基本安全校验，并实现多页面身份标识。
 
 - [x] **1.1 C# 本地服务端搭建**
-  - 创建基于 .NET 8 的 ASP.NET Core 最小化 Web API 项目。
+  - 创建基于 .NET 10 的 ASP.NET Core 最小化 Web API 项目。
   - 引入并配置 WebSocket 监听（监听 `ws://localhost:8765/ws`）。
   - 实现基于 `SessionID` 的连接管理器 (`ConcurrentDictionary<string, WebSocket>`)。
   - 创建 `appsettings.json` 配置文件，集中管理端口号、模型 API 地址等参数。
@@ -144,7 +144,7 @@
   - 全局异常捕获与日志记录（使用 `Serilog` 或内置 `ILogger`，输出到文件）。
   - COM Interop 场景的进程残留处理 (`Marshal.ReleaseComObject` + `GC.Collect` + 兜底进程检测)。
 - [x] **5.2 一键打包与分发**
-  - 使用 .NET 8 **`PublishSingleFile` + `SelfContained`** 模式打包成独立 `.exe`（兼容 COM Interop 和反射，比 AOT 更稳妥）。
+  - 使用 .NET 10 **`PublishSingleFile` + `SelfContained`** 模式打包成独立 `.exe`（兼容 COM Interop 和反射，比 AOT 更稳妥）。
   - 若未来移除 COM 依赖（全面使用 OpenXML），可切换为 AOT 编译以获得更小体积和更快启动。
   - 打包 Chrome 插件 (`.zip` 格式，配合开发者模式加载；或发布到 Chrome Web Store)。
   - 编写面向普通用户的快速安装使用文档。
@@ -171,21 +171,19 @@
   - 允许用户在设置页输入外部 MCP Server 的启动命令（例如 `npx @modelcontextprotocol/server-postgres ...`）。
   - C# 后端启动外部进程，使用 JSON-RPC 与子进程的 `stdio` 通信，拉取 `tools/list`，并将其动态注册到 Semantic Kernel 中，实现能力的无限扩展。
 
-### 阶段七：Web Action (网页反向控制) (新规划)
-**目标**：打破浏览器的隔离，让 AI 能够直接操作用户当前正在浏览的网页，实现高亮、划线、注入翻译等“智能体网页操作 (Agentic Web)”功能。采用后端桥接 (Proxy MCP) 架构。
+### 阶段七：Web Action (网页反向控制)
+**目标**：打破浏览器的隔离，让 AI 能够直接操作用户当前正在浏览的网页（高亮、便签、整页截图、白名单页面脚本等）。后端通过 `rpc_request` / `rpc_response` 与 Chrome 侧栏闭环。
 
-- [ ] **7.1 后端双向 RPC 通信协议升级**
-  - 扩展现有的 `WsMessage`，支持双向 RPC 调用：增加 `rpc_request` 和 `rpc_response` 消息类型。
-  - 在 C# 服务中实现一个等待机制（如 `TaskCompletionSource`），允许后端向前端发送指令并异步等待前端返回执行结果。
-- [ ] **7.2 开发 BrowserPlugin (后端 MCP 工具映射)**
-  - 在 C# 中开发 `BrowserPlugin`，将浏览器操作封装为 Semantic Kernel 函数（供 AI 作为工具调用）。
-  - 实现工具如 `highlight_text`，当 AI 调用时，触发向前端发送 `rpc_request`。
-- [ ] **7.3 前端 RPC 监听与调度 (侧边栏)**
-  - 修改 `sidepanel.js`，监听并解析 `rpc_request`。
-  - 根据收到的方法名（如 `highlight`），将任务路由给 `chrome.scripting.executeScript` 执行。
-- [ ] **7.4 前端 DOM 操作注入脚本 (Injector)**
-  - 编写具体的 DOM 操作逻辑：查找特定文本节点并使用 `<mark>` 包裹高亮。
-  - 将执行结果（成功或报错信息）封装为 `rpc_response` 返回给后端，完成调用闭环。
+- [x] **7.1 后端双向 RPC 通信协议**
+  - `WsMessage` 已支持 `rpc_request`、`rpc_response`；后端用等待机制在同一 WebSocket 连接上收发，避免阻塞消息循环（见 `Program.cs` 相关注释）。
+- [x] **7.2 BrowserPlugin（内核工具）**
+  - `BrowserPlugin` 已注册，例如 `highlight_webpage_text`、`add_floating_note`、`run_page_script`、`capture_full_page` 等；调用时向前端发送 `rpc_request`。
+- [x] **7.3 前端 RPC 监听与调度（侧栏）**
+  - 侧栏解析 `rpc_request`，按方法路由到 `chrome.scripting` 等执行。
+- [x] **7.4 前端注入与回传**
+  - 高亮、便签等由注入脚本完成，结果封装为 `rpc_response` 回后端。
+
+**后续可增强（非阻塞）**：更丰富的 DOM/翻译类能力、与阶段七原文「划线」等文案对齐的更多工具；以产品需求为准迭代。
 
 ---
 
@@ -201,8 +199,10 @@
 
 ---
 
-## 🛠️ 下一步行动建议
-建议从**阶段一 (1.1)** 开始：
-1. 在本工作区创建一个 C# ASP.NET Core 最小化 Web API 项目。
-2. 引入 WebSocket 中间件并跑通一个最简单的 Echo Server。
-3. 搭建 Chrome 插件骨架，在 Side Panel 中建立 WebSocket 连接并完成 Echo 联调。
+## 🛠️ 文档与维护
+
+基建与主线里程碑（阶段一至七）已在当前仓库落地。后续迭代请以代码为准，并参考：
+
+- [README.md](../README.md)：安装、安全说明、本地开发命令。
+- [未完成功能与能力缺口.md](./未完成功能与能力缺口.md)：宿主差异、配置边界与已知限制。
+- [MCP与工具清单.md](./MCP与工具清单.md)：后端工具名与能力说明。
