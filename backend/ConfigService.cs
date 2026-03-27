@@ -273,9 +273,9 @@ public class AppConfig
     public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
     /// <summary>已停用的内置插件 ID 列表（如 Browser、File、CLI、Excel、Word），这些插件不会注册到 Kernel。</summary>
     public List<string> DisabledBuiltInPlugins { get; set; } = new();
-    /// <summary>Tavily API Key，用于网页搜索技能；也可通过环境变量 TAVILY_API_KEY 提供。</summary>
+    /// <summary>Tavily API Key，用于网页搜索技能；请在 user-config.json 中填写。</summary>
     public string TavilyApiKey { get; set; } = "";
-    /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY、OPENAI_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取，若无则从系统环境变量读取。可在设置页或 user-config.json 中配置。</summary>
+    /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取。可在设置页或 user-config.json 中配置。</summary>
     public Dictionary<string, string> SkillEnv { get; set; } = new();
     // ----- 阶段 3：嵌入与 RAG / 记忆 -----
     /// <summary>Embedding 模型列表；支持多条，仅 Remote 远程 API。</summary>
@@ -302,11 +302,11 @@ public class AppConfig
     public string? ActiveOcrModelId { get; set; }
     /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch；空或未识别时前端按 dark 处理。</summary>
     public string? UiThemeId { get; set; }
-    /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘「设置」用于打开 chrome-extension://…/options.html；也可用环境变量 OFFICECOPILOT_CHROME_EXTENSION_ID。</summary>
+    /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘「设置」用于打开 chrome-extension://…/options.html。请在 user-config.json 中填写。</summary>
     public string? ChromeExtensionId { get; set; }
     /// <summary>为 true 时，设置页「测试连接」可向 localhost、RFC1918 等地址发请求（默认 false，降低 SSRF 风险）。</summary>
     public bool AllowPrivateEndpointTests { get; set; }
-    /// <summary>本地 HTTP/WebSocket 访问密钥；非空时优先于 appsettings 的 WebSocket:AuthToken。在扩展选项页保存后写入 user-config，各端可从本机引导接口自动同步。</summary>
+    /// <summary>本地 HTTP/WebSocket 访问密钥；在扩展选项页保存后写入 user-config.json，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
 }
 
@@ -347,14 +347,13 @@ public sealed class ConfigService
     private readonly string _configPath;
     private AppConfig _currentConfig;
     private readonly ILogger<ConfigService> _logger;
-    private readonly IConfiguration _defaultConfiguration;
     private readonly object _lock = new();
 
     public event Action? OnConfigChanged;
 
-    public ConfigService(IConfiguration defaultConfig, ILogger<ConfigService> logger)
+    /// <param name="hostConfiguration">仅用于解析 <c>OfficeCopilot:UserConfigPath</c>（测试指向临时文件）；应用配置内容一律来自该路径下的 JSON。</param>
+    public ConfigService(IConfiguration hostConfiguration, ILogger<ConfigService> logger)
     {
-        _defaultConfiguration = defaultConfig;
         _logger = logger;
         // 使用用户本地应用数据目录，与运行目录无关，避免 dotnet run/clean 后配置丢失
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -366,7 +365,7 @@ public sealed class ConfigService
         // 允许测试/开发环境覆盖配置落盘路径，避免互相污染本机配置。
         // Key: OfficeCopilot:UserConfigPath
         var configPath = Path.Combine(appDir, "user-config.json");
-        var overridePath = defaultConfig["OfficeCopilot:UserConfigPath"];
+        var overridePath = hostConfiguration["OfficeCopilot:UserConfigPath"];
         if (!string.IsNullOrWhiteSpace(overridePath))
         {
             overridePath = Environment.ExpandEnvironmentVariables(overridePath.Trim());
@@ -382,28 +381,38 @@ public sealed class ConfigService
 
         _configPath = configPath;
         _logger.LogInformation("Config file path: {Path} (exists: {Exists})", _configPath, File.Exists(_configPath));
-        _currentConfig = LoadConfig(defaultConfig);
+        if (!File.Exists(_configPath))
+        {
+            try
+            {
+                WriteInitialDefaultUserConfigFile();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to write default user-config.json to {Path}", _configPath);
+            }
+        }
+
+        _currentConfig = LoadConfigFromDisk();
     }
 
     public AppConfig Current => _currentConfig;
 
-    /// <summary>供 WebSocket 与 HTTP API 鉴权：user-config 中的 <see cref="AppConfig.WebSocketAuthToken"/> 优先，否则使用 appsettings 的 WebSocket:AuthToken。</summary>
+    /// <summary>供 WebSocket 与 HTTP API 鉴权：仅使用 <see cref="AppConfig.WebSocketAuthToken"/>（user-config.json）。</summary>
     public string GetEffectiveWebSocketAuthToken()
     {
         lock (_lock)
         {
-            var fromUser = (_currentConfig.WebSocketAuthToken ?? "").Trim();
-            if (!string.IsNullOrEmpty(fromUser)) return fromUser;
-            return (_defaultConfiguration["WebSocket:AuthToken"] ?? "").Trim();
+            return (_currentConfig.WebSocketAuthToken ?? "").Trim();
         }
     }
 
-    /// <summary>从磁盘重新加载 user-config.json（或回退默认），不写盘。用于 --build-tool-index 阶段 2 恢复真实 MCP/模型配置。</summary>
+    /// <summary>从磁盘重新加载 user-config.json，不写盘。用于 --build-tool-index 阶段 2 恢复真实 MCP/模型配置。</summary>
     public void ReloadConfigFromDisk()
     {
         lock (_lock)
         {
-            _currentConfig = LoadConfig(_defaultConfiguration);
+            _currentConfig = LoadConfigFromDisk();
         }
     }
 
@@ -536,83 +545,90 @@ public sealed class ConfigService
         return null;
     }
 
-    private AppConfig LoadConfig(IConfiguration defaultConfig)
+    private AppConfig LoadConfigFromDisk()
     {
-        if (File.Exists(_configPath))
+        if (!File.Exists(_configPath))
         {
-            try
-            {
-                var json = File.ReadAllText(_configPath);
-                var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigDeserializeOptions);
-                if (config != null && config.AI != null)
-                {
-                    PatchEmbeddingEndpointsFromRawJson(json, config);
-                    _logger.LogInformation("Loaded user config from {Path}", _configPath);
-                    if (string.IsNullOrWhiteSpace(config.TavilyApiKey))
-                        config.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
-                    config.SkillEnv ??= new Dictionary<string, string>();
-                    MigrateCliRunModeFromLegacyJson(json, config);
-                    config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
-                    config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
-                    config.AiModels ??= new List<AiModelEntry>();
-                    config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
-                    config.OcrModels ??= new List<OcrModelEntry>();
-                    config.Session ??= new SessionConfig();
-                    config.ContextWindow ??= new ContextWindowConfig();
-                    config.PlanConfirmation ??= new PlanConfirmationConfig();
-                    config.ContextOptimizationPresets ??= new List<ContextOptimizationPreset>();
-                    if (config.ContextOptimizationPresets.Count == 0)
-                    {
-                        var fromConfig = LoadPresetsFromConfiguration(defaultConfig);
-                        if (fromConfig != null && fromConfig.Count > 0)
-                            config.ContextOptimizationPresets.AddRange(fromConfig);
-                        else
-                            config.ContextOptimizationPresets.AddRange(GetBuiltInPresets());
-                    }
-                    ApplyActivePresetIfSet(config);
-                    MigrateLegacyAiIfNeeded(config);
-                    MigrateLegacyOcrIfNeeded(config);
-                    return config;
-                }
-                _logger.LogWarning("User config file was empty or invalid, using default.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to load user config. Falling back to default.");
-            }
-        }
-        else
-        {
-            _logger.LogInformation("No user config file at {Path}, using default.", _configPath);
+            _logger.LogWarning("User config file not found at {Path}, using in-memory defaults.", _configPath);
+            return CreateDefaultAppConfig();
         }
 
-        // Fallback to appsettings.json
-        var appConfig = new AppConfig();
-        defaultConfig.GetSection("AI").Bind(appConfig.AI);
-        appConfig.Session = new SessionConfig();
-        defaultConfig.GetSection("Session").Bind(appConfig.Session);
-        appConfig.ContextWindow = new ContextWindowConfig();
-        defaultConfig.GetSection("ContextWindow").Bind(appConfig.ContextWindow);
-        appConfig.PlanConfirmation = new PlanConfirmationConfig();
-        defaultConfig.GetSection("PlanConfirmation").Bind(appConfig.PlanConfirmation);
-        var presetsFromConfig = LoadPresetsFromConfiguration(defaultConfig);
-        appConfig.ContextOptimizationPresets = (presetsFromConfig != null && presetsFromConfig.Count > 0)
-            ? new List<ContextOptimizationPreset>(presetsFromConfig)
-            : new List<ContextOptimizationPreset>(GetBuiltInPresets());
-        if (string.IsNullOrWhiteSpace(appConfig.ActiveContextPresetId))
-            appConfig.ActiveContextPresetId = "internal-64k";
+        try
+        {
+            var json = File.ReadAllText(_configPath);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigDeserializeOptions);
+            if (config == null || config.AI == null)
+            {
+                _logger.LogWarning("User config at {Path} was empty or invalid, using defaults.", _configPath);
+                return CreateDefaultAppConfig();
+            }
+
+            ApplyLoadedUserConfigPostProcessing(json, config);
+            return config;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load user config from {Path}, using defaults.", _configPath);
+            return CreateDefaultAppConfig();
+        }
+    }
+
+    private void ApplyLoadedUserConfigPostProcessing(string json, AppConfig config)
+    {
+        PatchEmbeddingEndpointsFromRawJson(json, config);
+        _logger.LogInformation("Loaded user config from {Path}", _configPath);
+        config.SkillEnv ??= new Dictionary<string, string>();
+        MigrateCliRunModeFromLegacyJson(json, config);
+        config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
+        config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
+        config.AiModels ??= new List<AiModelEntry>();
+        config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
+        config.OcrModels ??= new List<OcrModelEntry>();
+        config.Session ??= new SessionConfig();
+        config.ContextWindow ??= new ContextWindowConfig();
+        config.PlanConfirmation ??= new PlanConfirmationConfig();
+        if (config.ContextOptimizationPresets == null || config.ContextOptimizationPresets.Count == 0)
+            config.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
+        ApplyActivePresetIfSet(config);
+        MigrateLegacyAiIfNeeded(config);
+        MigrateLegacyOcrIfNeeded(config);
+    }
+
+    private AppConfig CreateDefaultAppConfig()
+    {
+        var appConfig = new AppConfig
+        {
+            Session = new SessionConfig(),
+            ContextWindow = new ContextWindowConfig(),
+            PlanConfirmation = new PlanConfirmationConfig(),
+            ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets()),
+            ActiveContextPresetId = "internal-64k",
+            SkillEnv = new Dictionary<string, string>(),
+            AiModels = new List<AiModelEntry>(),
+            EmbeddingModels = new List<EmbeddingModelEntry>(),
+            OcrModels = new List<OcrModelEntry>(),
+            CliRunMode = "UseAllowList",
+            RagStorageType = "Sqlite",
+        };
         ApplyActivePresetIfSet(appConfig);
-        if (string.IsNullOrWhiteSpace(appConfig.TavilyApiKey))
-            appConfig.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
-        appConfig.SkillEnv ??= new Dictionary<string, string>();
-        appConfig.AiModels ??= new List<AiModelEntry>();
-        appConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
-        appConfig.OcrModels ??= new List<OcrModelEntry>();
-        if (string.IsNullOrWhiteSpace(appConfig.CliRunMode))
-            appConfig.CliRunMode = "UseAllowList";
         MigrateLegacyAiIfNeeded(appConfig);
         MigrateLegacyOcrIfNeeded(appConfig);
         return appConfig;
+    }
+
+    private void WriteInitialDefaultUserConfigFile()
+    {
+        var cfg = CreateDefaultAppConfig();
+        var options = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            TypeInfoResolver = JsonCtx.Default
+        };
+        var json = JsonSerializer.Serialize(cfg, typeof(AppConfig), options);
+        File.WriteAllText(_configPath, json);
+        _logger.LogInformation("Created default user-config at {Path}", _configPath);
     }
 
     /// <summary>从旧版 <c>cliRunModeByClient</c> 迁移到 <see cref="AppConfig.CliRunMode"/>（当 JSON 中尚无 <c>cliRunMode</c> 键时）。</summary>
@@ -697,31 +713,6 @@ public sealed class ConfigService
             if (current != null && !string.IsNullOrWhiteSpace(current.Endpoint))
                 entry.Endpoint = current.Endpoint;
         }
-    }
-
-    /// <summary>从 IConfiguration 的 ContextOptimizationPresets 节点加载预设列表；若节点为空或绑定失败则返回 null。</summary>
-    private static List<ContextOptimizationPreset>? LoadPresetsFromConfiguration(IConfiguration defaultConfig)
-    {
-        var section = defaultConfig.GetSection("ContextOptimizationPresets");
-        if (section == null || !section.GetChildren().Any()) return null;
-        var list = new List<ContextOptimizationPreset>();
-        foreach (var child in section.GetChildren())
-        {
-            var preset = new ContextOptimizationPreset();
-            try
-            {
-                child.Bind(preset);
-                if (preset.ContextWindow == null) preset.ContextWindow = new ContextWindowConfig();
-                if (preset.Session == null) preset.Session = new SessionConfig();
-                if (preset.PlanConfirmation == null) preset.PlanConfirmation = new PlanConfirmationConfig();
-                list.Add(preset);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-        return list.Count > 0 ? list : null;
     }
 
     /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）。</summary>

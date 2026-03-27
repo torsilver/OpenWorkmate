@@ -56,13 +56,18 @@ public sealed class ClawhubSkillPlugin
         var env = new Dictionary<string, string>();
         var skillEnv = _configService.Current.SkillEnv;
         var tavilyKey = (_configService.Current.TavilyApiKey ?? "").Trim();
-        if (string.IsNullOrEmpty(tavilyKey)) tavilyKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
+        if (string.IsNullOrEmpty(tavilyKey) && skillEnv != null && skillEnv.TryGetValue("TAVILY_API_KEY", out var tk) && !string.IsNullOrEmpty(tk))
+            tavilyKey = tk.Trim();
         foreach (var key in skill.RequiresEnv)
         {
             if (string.IsNullOrEmpty(key)) continue;
-            var value = (skillEnv != null && skillEnv.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v))
+            string? value = skillEnv != null && skillEnv.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v)
                 ? v
-                : (string.Equals(key, "TAVILY_API_KEY", StringComparison.OrdinalIgnoreCase) ? tavilyKey : null) ?? Environment.GetEnvironmentVariable(key);
+                : null;
+            if (value == null && string.Equals(key, "TAVILY_API_KEY", StringComparison.OrdinalIgnoreCase))
+                value = tavilyKey;
+            if (value == null)
+                value = Environment.GetEnvironmentVariable(key);
             if (!string.IsNullOrEmpty(value))
                 env[key] = value;
         }

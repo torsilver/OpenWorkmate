@@ -6,7 +6,7 @@ using OfficeCopilot.Server;
 namespace OfficeCopilot.Server.Security;
 
 /// <summary>
-/// 保护 <c>/api/*</c>：有效密钥为 user-config <c>webSocketAuthToken</c> 优先，否则 appsettings <c>WebSocket:AuthToken</c>。
+/// 保护 <c>/api/*</c>：有效密钥为 user-config.json 中的 <c>webSocketAuthToken</c>。
 /// 未配置有效密钥时仅允许本机回环（与 TestServer 中 RemoteIpAddress 为 null 时放行一致）。
 /// </summary>
 public sealed class LocalApiAuthMiddleware
@@ -58,7 +58,7 @@ public sealed class LocalApiAuthMiddleware
                 await context.Response.WriteAsync(JsonSerializer.Serialize(new
                 {
                     ok = false,
-                    message = "服务端未配置 WebSocket:AuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 appsettings.json 中设置强随机 WebSocket:AuthToken，并在扩展选项页填写相同密钥。"
+                    message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
                 }, _jsonOptions));
                 return;
             }
@@ -79,7 +79,7 @@ public sealed class LocalApiAuthMiddleware
                 await context.Response.WriteAsync(JsonSerializer.Serialize(new
                 {
                     ok = false,
-                    message = "未授权：请在请求头携带 X-OfficeCopilot-Token 或 Authorization: Bearer，值须与本机配置中的访问密钥一致（扩展选项页或 user-config 的 webSocketAuthToken / appsettings 的 WebSocket:AuthToken）。"
+                    message = "未授权：请在请求头携带 X-OfficeCopilot-Token 或 Authorization: Bearer，值须与 user-config.json 中的 webSocketAuthToken 一致（扩展选项页保存的本地服务访问密钥）。"
                 }, _jsonOptions));
                 return;
             }

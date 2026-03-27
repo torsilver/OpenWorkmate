@@ -25,5 +25,5 @@
 
 ## 连接参数
 
-- WebSocket 默认：`ws://localhost:8765/ws`。若服务端配置了 `WebSocket:AuthToken`，请在任务窗格所在源的开发者工具中执行 `localStorage.setItem('tasklyLocalServiceAuthToken','你的密钥')` 后刷新（与 WPS 任务窗格相同键名）。
+- WebSocket 默认：`ws://localhost:8765/ws`。若服务端在 `user-config.json` 中配置了 `webSocketAuthToken`，请在任务窗格所在源的开发者工具中执行 `localStorage.setItem('tasklyLocalServiceAuthToken','你的密钥')` 后刷新（与 WPS 任务窗格相同键名）。
 - 连接时携带 `clientType=office-word` 或 `clientType=office-excel`，便于后台识别客户端能力。

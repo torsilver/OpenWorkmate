@@ -301,12 +301,10 @@ public sealed class ChatService : IDisposable
             newKernel.Plugins.AddFromObject(new CurrentDocumentPlugin(sessionManager, rpcManager, currentDocLogger), "CurrentDocument");
         }
 
-        // Tavily 原生插件：未停用时始终注册；Key 来自配置 tavilyApiKey、skillEnv 或环境变量（与 OpenClaw 的通用 skill env 思路一致）
+        // Tavily 原生插件：未停用时始终注册；Key 来自 user-config 的 tavilyApiKey 或 skillEnv.TAVILY_API_KEY
         var tavilyApiKey = (_configService.Current.TavilyApiKey ?? "").Trim();
         if (string.IsNullOrEmpty(tavilyApiKey) && _configService.Current.SkillEnv != null && _configService.Current.SkillEnv.TryGetValue("TAVILY_API_KEY", out var fromSkillEnv) && !string.IsNullOrEmpty(fromSkillEnv))
             tavilyApiKey = fromSkillEnv.Trim();
-        if (string.IsNullOrEmpty(tavilyApiKey))
-            tavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
         if (!disabledBuiltIn.Contains("tavily"))
         {
             var tavilyLogger = _loggerFactory.CreateLogger<TavilyPlugin>();

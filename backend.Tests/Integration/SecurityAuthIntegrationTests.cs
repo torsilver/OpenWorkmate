@@ -40,20 +40,17 @@ internal sealed class IsolatedAuthWebAppFactory : IDisposable
             Path.GetTempPath(),
             "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
+        IntegrationTestUserConfigWriter.Write(userConfigPath, scheduledTasksDir, authToken);
+
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(Environments.Development);
             builder.ConfigureAppConfiguration((_, config) =>
             {
-                var dict = new Dictionary<string, string?>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["RagStorageType"] = "Memory",
-                    ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = scheduledTasksDir,
                     ["OfficeCopilot:UserConfigPath"] = userConfigPath,
-                    ["WebSocket:AuthToken"] = string.IsNullOrEmpty(authToken) ? "" : authToken,
-                };
-                config.AddInMemoryCollection(dict);
+                });
             });
         });
         return new IsolatedAuthWebAppFactory(factory, userConfigPath, scheduledTasksDir);

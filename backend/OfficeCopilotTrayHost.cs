@@ -94,23 +94,20 @@ internal static class OfficeCopilotTrayHost
 
         private void OpenSettings()
         {
-            var id = Environment.GetEnvironmentVariable("OFFICECOPILOT_CHROME_EXTENSION_ID")?.Trim();
-            if (string.IsNullOrEmpty(id))
+            string? id = null;
+            try
             {
-                try
-                {
-                    id = _app.Services.GetRequiredService<ConfigService>().Current.ChromeExtensionId?.Trim();
-                }
-                catch
-                {
-                    id = null;
-                }
+                id = _app.Services.GetRequiredService<ConfigService>().Current.ChromeExtensionId?.Trim();
+            }
+            catch
+            {
+                /* ignored */
             }
 
             if (string.IsNullOrEmpty(id))
             {
                 MessageBox.Show(
-                    "未配置 Chrome 扩展 ID。\n\n请在 user-config.json 中设置 chromeExtensionId，或设置环境变量 OFFICECOPILOT_CHROME_EXTENSION_ID。\n扩展 ID 可在 Chrome 打开 chrome://extensions 并开启「开发者模式」后从列表中复制。",
+                    "未配置 Chrome 扩展 ID。\n\n请在 user-config.json 中设置 chromeExtensionId。\n扩展 ID 可在 Chrome 打开 chrome://extensions 并开启「开发者模式」后从列表中复制。",
                     "Office Copilot",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);

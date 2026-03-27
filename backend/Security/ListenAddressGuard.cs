@@ -23,8 +23,8 @@ public static class ListenAddressGuard
 
             if (IsBindingOpenToNetwork(uri.Host))
             {
-                return "当前监听地址 \"" + raw + "\" 可能对局域网或公网开放，但未配置 WebSocket:AuthToken。"
-                       + " 请在本机 appsettings.json 或 user-config 同目录配置中设置强随机 AuthToken，"
+                return "当前监听地址 \"" + raw + "\" 可能对局域网或公网开放，但未在 user-config.json 中配置 webSocketAuthToken。"
+                       + " 请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，"
                        + " 或使用启动参数 --allow-public-bind 显式承担风险（不推荐）。";
             }
         }

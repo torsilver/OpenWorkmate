@@ -21,6 +21,7 @@ namespace backend.Tests.Integration;
 public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly HttpClient _client;
+    private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempUserConfigPath;
     private readonly string _tempScheduledTasksDir;
 
@@ -34,26 +35,26 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             Path.GetTempPath(),
             "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
-        _client = factory.WithWebHostBuilder(builder =>
+        IntegrationTestUserConfigWriter.Write(_tempUserConfigPath, _tempScheduledTasksDir, webSocketAuthToken: "");
+
+        _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(Environments.Development);
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["RagStorageType"] = "Memory",
-                    ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = _tempScheduledTasksDir,
                     ["OfficeCopilot:UserConfigPath"] = _tempUserConfigPath,
-                    ["WebSocket:AuthToken"] = "",
                 });
             });
-        }).CreateClient();
+        });
+        _client = _factory.CreateClient();
     }
 
     public void Dispose()
     {
         _client.Dispose();
+        _factory.Dispose();
         try
         {
             if (File.Exists(_tempUserConfigPath))

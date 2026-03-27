@@ -26,7 +26,7 @@ public sealed class TavilyPlugin
         [Description("主题：general 或 news")] string topic = "general")
     {
         if (string.IsNullOrEmpty(_apiKey))
-            return "[错误] 未配置 TAVILY_API_KEY，请在设置中填写 Tavily API Key 或设置环境变量 TAVILY_API_KEY。";
+            return "[错误] 未配置 Tavily API Key，请在 user-config.json 中填写 tavilyApiKey（或在 skillEnv 中配置 TAVILY_API_KEY）。";
 
         var body = new Dictionary<string, object>
         {
@@ -93,7 +93,7 @@ public sealed class TavilyPlugin
         [Description("要提取内容的网页 URL，可多个用逗号或空格分隔")] string urls)
     {
         if (string.IsNullOrEmpty(_apiKey))
-            return "[错误] 未配置 TAVILY_API_KEY。";
+            return "[错误] 未配置 Tavily API Key（user-config.json 中 tavilyApiKey 或 skillEnv.TAVILY_API_KEY）。";
 
         var urlList = urls.Split(new[] { ',', ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(u => u.Trim())
