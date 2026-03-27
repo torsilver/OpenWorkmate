@@ -1483,11 +1483,7 @@ async function loadConfig() {
     var pc = data.planConfirmation ?? data.PlanConfirmation;
     if (pc) {
       var aeEl = document.getElementById('autoExecuteMaxSteps');
-      var rcEl = document.getElementById('requireConfirmForSensitiveTools');
-      var stEl = document.getElementById('sensitiveToolIds');
       if (aeEl) aeEl.value = (pc.autoExecuteMaxSteps ?? pc.AutoExecuteMaxSteps ?? 3);
-      if (rcEl) rcEl.checked = !!(pc.requireConfirmForSensitiveTools ?? pc.RequireConfirmForSensitiveTools);
-      if (stEl) stEl.value = Array.isArray(pc.sensitiveToolIds ?? pc.SensitiveToolIds) ? (pc.sensitiveToolIds || pc.SensitiveToolIds).join('\n') : '';
     }
     var presets = data.contextOptimizationPresets ?? data.ContextOptimizationPresets;
     var activePresetId = data.activeContextPresetId ?? data.ActiveContextPresetId ?? '';
@@ -1741,16 +1737,12 @@ async function saveConfig() {
     var ragType = ragTypeEl ? ragTypeEl.value : 'Sqlite';
     var ragPath = ragPathEl ? ragPathEl.value : '';
     var aeEl = document.getElementById('autoExecuteMaxSteps');
-    var rcEl = document.getElementById('requireConfirmForSensitiveTools');
-    var stEl = document.getElementById('sensitiveToolIds');
     var autoExecuteMaxSteps = (aeEl && aeEl.value !== '') ? parseInt(aeEl.value, 10) : (fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.autoExecuteMaxSteps ?? fullConfig.planConfirmation.AutoExecuteMaxSteps)) || 3;
     if (isNaN(autoExecuteMaxSteps) || autoExecuteMaxSteps < 1) autoExecuteMaxSteps = 3;
-    var requireConfirmForSensitiveTools = rcEl ? rcEl.checked : !!(fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.requireConfirmForSensitiveTools ?? fullConfig.planConfirmation.RequireConfirmForSensitiveTools));
-    var sensitiveToolIds = (stEl && stEl.value) ? stEl.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean) : [];
     var presetSelectEl = document.getElementById('activeContextPreset');
     var activeContextPresetId = (presetSelectEl && presetSelectEl.value) ? presetSelectEl.value : (fullConfig && (fullConfig.activeContextPresetId ?? fullConfig.ActiveContextPresetId));
     var contextOptimizationPresets = (fullConfig && (fullConfig.contextOptimizationPresets ?? fullConfig.ContextOptimizationPresets)) || [];
-    var planConfirmationPayload = { autoExecuteMaxSteps: autoExecuteMaxSteps, requireConfirmForSensitiveTools: requireConfirmForSensitiveTools, sensitiveToolIds: sensitiveToolIds };
+    var planConfirmationPayload = { autoExecuteMaxSteps: autoExecuteMaxSteps };
     if (activeContextPresetId && contextOptimizationPresets.length > 0) {
       var activePreset = contextOptimizationPresets.find(function (p) { return (p.id || p.Id) === activeContextPresetId; });
       if (activePreset) {
@@ -1945,10 +1937,6 @@ if (deleteContextPresetBtn) {
 
 var autoExecuteMaxStepsEl = document.getElementById('autoExecuteMaxSteps');
 if (autoExecuteMaxStepsEl) autoExecuteMaxStepsEl.addEventListener('input', debouncedSaveConfig);
-var requireConfirmForSensitiveToolsEl = document.getElementById('requireConfirmForSensitiveTools');
-if (requireConfirmForSensitiveToolsEl) requireConfirmForSensitiveToolsEl.addEventListener('change', saveConfig);
-var sensitiveToolIdsEl = document.getElementById('sensitiveToolIds');
-if (sensitiveToolIdsEl) sensitiveToolIdsEl.addEventListener('input', debouncedSaveConfig);
 
 if (els.addAiModelBtn) els.addAiModelBtn.addEventListener('click', function () { openAiModelEditor(null); });
 if (els.closeAiModelEditorBtn) els.closeAiModelEditorBtn.addEventListener('click', closeAiModelEditor);

@@ -81,15 +81,11 @@ public class SessionConfig
     public int CleanupIntervalMinutes { get; set; } = 5;
 }
 
-/// <summary>计划确认规则：由后台规则决定计划是否需要用户确认后再执行；步数阈值与敏感工具可配置。</summary>
+/// <summary>计划确认规则：由后台规则决定计划生成后是否在 UI 中需用户确认；仅步数阈值（执行期高危工具由 cliRunMode + SecurityFilter 处理）。</summary>
 public class PlanConfirmationConfig
 {
-    /// <summary>步数 ≤ 该值时可不确认直接执行；大于则需确认。默认 3。</summary>
+    /// <summary>步数 ≤ 该值时可不确认直接继续；大于则需确认。默认 3。</summary>
     public int AutoExecuteMaxSteps { get; set; } = 3;
-    /// <summary>是否启用「涉及敏感工具则必须确认」。</summary>
-    public bool RequireConfirmForSensitiveTools { get; set; }
-    /// <summary>触发确认的工具标识（如 "CLI:run_command"、插件名:函数名），空则仅按步数判断。</summary>
-    public List<string> SensitiveToolIds { get; set; } = new();
 }
 
 /// <summary>上下文窗口配置：64K 优化及业内常用项，便于将来换硬件时改配置即可。</summary>
@@ -251,7 +247,7 @@ public class AppConfig
     public SessionConfig? Session { get; set; }
     /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
     public ContextWindowConfig? ContextWindow { get; set; }
-    /// <summary>计划确认规则（步数阈值、敏感工具等）；未配置时使用默认值。</summary>
+    /// <summary>计划确认规则（仅步数阈值）；未配置时使用默认值。</summary>
     public PlanConfirmationConfig? PlanConfirmation { get; set; }
     /// <summary>上下文优化预设列表（内置 64K/Kimi K2.5 + 用户自定义）；空时在加载时注入内置两条。</summary>
     public List<ContextOptimizationPreset>? ContextOptimizationPresets { get; set; }
@@ -763,7 +759,7 @@ public sealed class ConfigService
                     ToolSearchMinCount = 1
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
             },
             new ContextOptimizationPreset
             {
@@ -795,7 +791,7 @@ public sealed class ConfigService
                     ToolSearchMinCount = 1
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
             },
             new ContextOptimizationPreset
             {
@@ -828,7 +824,7 @@ public sealed class ConfigService
                     ToolSearchMinCount = 1
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 5000, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3, RequireConfirmForSensitiveTools = false, SensitiveToolIds = new List<string>() }
+                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
             }
         };
     }
@@ -875,9 +871,7 @@ public sealed class ConfigService
         };
         config.PlanConfirmation = new PlanConfirmationConfig
         {
-            AutoExecuteMaxSteps = preset.PlanConfirmation.AutoExecuteMaxSteps,
-            RequireConfirmForSensitiveTools = preset.PlanConfirmation.RequireConfirmForSensitiveTools,
-            SensitiveToolIds = preset.PlanConfirmation.SensitiveToolIds != null ? new List<string>(preset.PlanConfirmation.SensitiveToolIds) : new List<string>()
+            AutoExecuteMaxSteps = preset.PlanConfirmation.AutoExecuteMaxSteps
         };
     }
 

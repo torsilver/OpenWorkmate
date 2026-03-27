@@ -28,7 +28,7 @@ public class PlanMeta
     [JsonPropertyName("createdByDisplayName")]
     public string CreatedByDisplayName { get; set; } = "";
 
-    /// <summary>是否需用户确认后再执行（由后台规则根据步数阈值、敏感工具等计算）。</summary>
+    /// <summary>生成计划后是否在 UI 中需用户确认（由后台 <see cref="PlanConfirmationConfig.AutoExecuteMaxSteps"/> 与步数比较得出）。</summary>
     [JsonPropertyName("requiresUserConfirmation")]
     public bool RequiresUserConfirmation { get; set; }
 }

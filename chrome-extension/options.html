@@ -1041,18 +1041,10 @@ postgresql://localhost/mydb"></textarea>
       <details class="settings-block">
         <summary>计划确认规则</summary>
         <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 12px;">由后台规则决定生成的计划是否需要用户确认后再执行。步数不超过阈值且未涉及敏感工具时可直接执行，否则需用户确认。</p>
+      <p class="help-text" style="margin-bottom: 12px;">由后台规则决定<strong>生成计划后</strong>是否在侧栏先弹确认再打开计划页。仅按步数判断；执行阶段 CLI/页面脚本等仍由「安全与确认」中的运行模式与白名单控制。</p>
       <div class="form-group">
-        <label for="autoExecuteMaxSteps">直接执行的最大步数（步数 ≤ 此值且未涉及敏感工具时不弹确认）</label>
+        <label for="autoExecuteMaxSteps">不弹确认的最大步数（步数 ≤ 此值时生成计划后不弹确认）</label>
         <input type="number" id="autoExecuteMaxSteps" min="1" max="50" placeholder="3" style="width: 80px;">
-      </div>
-      <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-        <input type="checkbox" id="requireConfirmForSensitiveTools" style="width: auto; margin: 0;">
-        <label for="requireConfirmForSensitiveTools" style="margin: 0;">涉及敏感工具时必须用户确认</label>
-      </div>
-      <div class="form-group">
-        <label for="sensitiveToolIds">敏感工具 ID 列表（每行一个，如 CLI:run_command；留空则仅按步数判断）</label>
-        <textarea id="sensitiveToolIds" rows="3" placeholder="CLI:run_command&#10;File:write_file" style="font-family: monospace; font-size: 12px;"></textarea>
       </div>
         </div>
       </details>

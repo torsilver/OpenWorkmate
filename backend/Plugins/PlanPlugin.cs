@@ -77,7 +77,7 @@ public sealed class PlanPlugin
         var createdByDisplayName = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetDisplayName(sessionId) ?? "") : "";
         var steps = PlanStepParser.ParsePlanSteps(content);
         var pc = _configService.Current.PlanConfirmation ?? new PlanConfirmationConfig();
-        var requiresConfirm = ComputeRequiresUserConfirmation(content, steps.Count, pc);
+        var requiresConfirm = PlanConfirmationRules.RequiresUserConfirmation(steps.Count, pc.AutoExecuteMaxSteps);
         var meta = new PlanMeta
         {
             Id = planId,
@@ -167,22 +167,6 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("complete_plan: planId={PlanId}", planId);
         return "[计划已完成]";
-    }
-
-    /// <summary>根据后台配置规则计算该计划是否需要用户确认后再执行。</summary>
-    private static bool ComputeRequiresUserConfirmation(string content, int stepCount, PlanConfirmationConfig pc)
-    {
-        if (stepCount > pc.AutoExecuteMaxSteps)
-            return true;
-        if (pc.RequireConfirmForSensitiveTools && pc.SensitiveToolIds != null && pc.SensitiveToolIds.Count > 0)
-        {
-            foreach (var id in pc.SensitiveToolIds)
-            {
-                if (!string.IsNullOrWhiteSpace(id) && content.Contains(id, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-        return false;
     }
 
     private static string? ExtractFirstLine(string content)
