@@ -2618,7 +2618,13 @@ async function loadBuiltinTools() {
       const desc = p.description || p.Description || '';
       const disabled = disabledSet.indexOf(id) >= 0;
       const idAttr = escapeAttr(id);
-      var cardBody = `<div class="skill-header"><div class="skill-title">${escapeHtml(name)}${disabled ? ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>' : ''}</div><div><button type="button" class="btn-secondary builtin-toggle-btn" style="padding:4px 12px;font-size:12px;">${disabled ? '启用' : '停用'}</button></div></div><div class="skill-desc">${escapeHtml(desc)}</div>`;
+      var configHint = '';
+      if (id === 'mcp_ocr') {
+        configHint = '<p class="help-text" style="margin-top:8px;font-size:12px;">配置位置：<strong>模型与多模态 → OCR 模型</strong>。</p>';
+      } else if (id === 'mcp_stt') {
+        configHint = '<p class="help-text" style="margin-top:8px;font-size:12px;">配置位置：<strong>模型与多模态 → 百炼实时语音识别</strong>。</p>';
+      }
+      var cardBody = `<div class="skill-header"><div class="skill-title">${escapeHtml(name)}${disabled ? ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>' : ''}</div><div><button type="button" class="btn-secondary builtin-toggle-btn" style="padding:4px 12px;font-size:12px;">${disabled ? '启用' : '停用'}</button></div></div><div class="skill-desc">${escapeHtml(desc)}</div>${configHint}`;
       return `<div class="skill-card builtin-card" style="opacity:0.95;" data-builtin-id="${idAttr}">${cardBody}</div>`;
     }).join('');
     el.querySelectorAll('.builtin-toggle-btn').forEach(function (btn) {
@@ -2724,54 +2730,6 @@ function getMcpServers() {
   if (!fullConfig) return [];
   return fullConfig.mcpServers || fullConfig.McpServers || [];
 }
-
-const SALES_DB_MCP_PRESET = {
-  id: 'sales-db-mcp',
-  name: 'SalesDbMcp',
-  command: 'dotnet',
-  args: ['run', '--project', 'sales-db-mcp/SalesDbMcp.csproj']
-};
-
-const OCR_MCP_PRESET = {
-  id: 'ocr-mcp',
-  name: 'OCR',
-  command: 'uvx',
-  args: ['mcp-ocr']
-};
-
-document.getElementById('addSalesDbMcpBtn').addEventListener('click', async () => {
-  if (!fullConfig) {
-    alert('请先等待配置加载完成。');
-    return;
-  }
-  const list = getMcpServers();
-  const exists = list.some(s => (s.id || s.Id) === SALES_DB_MCP_PRESET.id);
-  if (exists) {
-    window.editMcp(SALES_DB_MCP_PRESET.id);
-    return;
-  }
-  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
-  fullConfig.mcpServers.push({ ...SALES_DB_MCP_PRESET });
-  await _saveFullConfig();
-  renderMcpList(getMcpServers());
-});
-
-document.getElementById('addOcrMcpBtn').addEventListener('click', async () => {
-  if (!fullConfig) {
-    alert('请先等待配置加载完成。');
-    return;
-  }
-  const list = getMcpServers();
-  const exists = list.some(s => (s.id || s.Id) === OCR_MCP_PRESET.id);
-  if (exists) {
-    window.editMcp(OCR_MCP_PRESET.id);
-    return;
-  }
-  if (!fullConfig.mcpServers) fullConfig.mcpServers = list.slice();
-  fullConfig.mcpServers.push({ ...OCR_MCP_PRESET });
-  await _saveFullConfig();
-  renderMcpList(getMcpServers());
-});
 
 window.editMcp = (id) => {
   const list = getMcpServers();

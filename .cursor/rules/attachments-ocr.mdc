@@ -13,7 +13,7 @@ alwaysApply: true
 ## 处理「把图片整理成文档」时
 
 1. **取路径**：对每个 `attachment:xxx` 调用 **File** 插件的 **get_attachment_path**，传入该引用，得到本机临时文件路径。
-2. **OCR**：若已配置 **OCR MCP**，调用其工具（如 `perform_ocr`）并传入上一步得到的路径，取得识别出的文本。
+2. **OCR**：若已在设置中配置 **「OCR 模型」**（内置插件 **`MCP_OCR`**），调用工具 **`ocr_image`** 并传入上一步得到的路径，取得识别出的文本。
 3. **组文档**：根据 OCR 返回的文本，用主模型整理、分段或生成 Markdown/Word（可配合 File、Word 等插件落盘）。
 
-不要尝试把图片数据或 base64 传给模型；仅通过工具链「get_attachment_path → OCR 工具」得到文本再继续。
+不要尝试把图片数据或 base64 传给模型；仅通过工具链「get_attachment_path → **ocr_image**」得到文本再继续。

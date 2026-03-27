@@ -1,14 +1,3 @@
 {
-  "servers": {
-    "SalesDbMcp": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "sales-db-mcp/SalesDbMcp.csproj"
-      ],
-      "env": {}
-    }
-  }
+  "servers": {}
 }

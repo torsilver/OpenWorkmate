@@ -5,17 +5,9 @@
 
 ---
 
-## 一、本仓库实现的 MCP 服务器（Cursor/VSCode 端）
+## 一、Cursor/VSCode 侧 MCP
 
-在 `.vscode/mcp.json` 中配置的、**本项目自己实现的** MCP 为 **SalesDbMcp**（`sales-db-mcp` 项目）。  
-连接串通过 `SalesDb:ConnectionString` 或环境变量 `SALES_DB_CONNECTION_STRING` 配置。
-
-| 工具名 | 中文介绍 |
-|--------|----------|
-| `SalesDbHealthAsync` | 检查销售数据库连接是否正常，返回成功或错误信息。 |
-| `SalesDbQueryAsync` | 对销售数据库执行只读 SELECT 查询，仅允许 SELECT 语句，返回结果行为 JSON 友好文本。 |
-| `SalesDbListTablesAsync` | 列出销售库中的表与视图名称，可按 schema（如 dbo）过滤。 |
-| `SalesDbGetSchemaAsync` | 获取指定表或视图的列名、类型及主键等信息，支持 TABLE_SCHEMA.TABLE_NAME 或 TABLE_NAME 形式。 |
+本仓库**不附带**独立 MCP 子项目。若需在 Cursor/VSCode 中接入数据库等工具，可在 `.vscode/mcp.json` 的 `servers` 中自行配置第三方 MCP（命令与参数以各 MCP 提供方为准）。
 
 ---
 
@@ -278,7 +270,13 @@
 
 ## 三、外部 MCP（后端可接入）
 
-在**设置**中通过「MCP 服务器」配置添加的 MCP（如 OCR、其他数据库等），其**工具名与数量由该 MCP 在运行时的 `tools/list` 返回**，本仓库代码中无固定列表。后端会以 `MCP_{配置的 Name}` 作为插件名注册到 Kernel，在工具选择中归为「外部 / MCP 工具」。
+**图片转文字**：默认应使用内置 **`MCP_OCR`** 工具 **`ocr_image`**，在「模型与多模态 → OCR 模型」中配置接口与密钥；**不必**、也不再作为仓库推荐项在「外部 MCP」里单独添加识图进程。
+
+**传输方式**：仅支持**本机 stdio MCP**（后端启动子进程，标准输入输出承载 JSON-RPC）；**不支持**远程 URL、HTTP/SSE 等连接。出于安全考虑不接入远程 MCP，避免服务端对任意网络地址发起 MCP 连接、降低攻击面与凭证泄露风险。
+
+**与 Cursor 对齐**：在 Cursor（`.vscode/mcp.json` 等）中为 **stdio** 的 MCP（`command` + `args` + `env`），与选项页「外部 MCP」配置维度一致，可在**同一套命令行**下在本机复用；实际进程运行在**安装 Office Copilot 服务端的本机**，该机器需具备与 Cursor 侧相同的运行时依赖。后端未单独设置子进程工作目录时，相对路径依赖服务端当前工作目录，可能与 Cursor 工作区不同，**建议使用绝对路径**。
+
+在**设置**中通过「MCP 服务器」自行添加的第三方 MCP（如数据库查询、或其它自定义工具），其**工具名与数量由该 MCP 在运行时的 `tools/list` 返回**，本仓库代码中无固定列表。后端会以 `MCP_{配置的 Name}` 作为插件名注册到 Kernel，在工具选择中归为「外部 / MCP 工具」。若确有特殊需求（例如本机 Tesseract 封装），可自行添加；仅用于普通识图时可删除重复项，只保留「OCR 模型」配置。
 
 ---
 

@@ -1,7 +1,7 @@
 # Chrome 端功能手工测试计划
 
 > **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Office Copilot Server**；测试素材与操作在 Chrome 内完成。  
-> **不包含**：Cursor/VSCode 侧的 MCP（如 SalesDb）、Office/WPS 任务窗格专属能力。  
+> **不包含**：Cursor/VSCode 侧自行配置的 MCP、Office/WPS 任务窗格专属能力。  
 > **内置工具定义**：与后端 Kernel 注册一致；**Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余内置插件在满足配置前提下均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。
 
 **通过标准（每条用例）**：行为符合描述；失败时 **HTTP 4xx/5xx 或工具返回中带明确原因**（见项目错误可见性约定），侧栏/选项页能展示服务端 `message`。
