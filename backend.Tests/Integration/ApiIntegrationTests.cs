@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net;
@@ -454,6 +455,32 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var root = JsonDocument.Parse(json).RootElement;
         Assert.True(root.TryGetProperty("uiThemeId", out var themeProp));
         Assert.Equal("minimal", themeProp.GetString());
+    }
+
+    [Fact]
+    public async Task PostConfig_AllowedDocumentScriptIdsByClient_RoundTrip()
+    {
+        var body = new
+        {
+            ai = new { },
+            allowedDocumentScriptIdsByClient = new Dictionary<string, string[]>
+            {
+                ["office"] = ["word_read_selection", "office_doc_meta"],
+                ["wps"] = ["wps_ppt_slide_glance"]
+            }
+        };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        (await _client.PostAsync("/api/config", content)).EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var root = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(root.TryGetProperty("allowedDocumentScriptIdsByClient", out var docObj));
+        Assert.Equal(JsonValueKind.Object, docObj.ValueKind);
+        Assert.True(docObj.TryGetProperty("office", out var officeArr));
+        Assert.Equal(2, officeArr.GetArrayLength());
+        Assert.True(docObj.TryGetProperty("wps", out var wpsArr));
+        Assert.Equal(1, wpsArr.GetArrayLength());
     }
 
     [Fact]

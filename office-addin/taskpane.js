@@ -1344,18 +1344,180 @@
     });
   }
 
-  // 预定义脚本注册表：仅执行已注册的 scriptId，供 run_document_script RPC 使用
+  /** @param {Record<string, unknown>} [p] */
+  function docScriptParseMaxLength(p, defaultLen, cap) {
+    var n = defaultLen;
+    if (p && p.maxLength != null) {
+      var x = parseInt(String(p.maxLength), 10);
+      if (!isNaN(x) && x > 0) n = Math.min(x, cap);
+    }
+    return n;
+  }
+  const DOC_SCRIPT_MAX_BODY = 32000;
+
+  // 预定义脚本注册表：仅执行已注册的 scriptId，供 run_document_script RPC 使用（Office.js，按宿主分支）
   const DOCUMENT_SCRIPTS = {
-    // 示例：读选区文本（Word 端可复用 word_read_selection 工具，此处仅作扩展示例）
     word_read_selection: function (p) {
-      if (typeof Word === "undefined") return Promise.resolve("当前环境不是 Word，无法执行。");
+      if (OFFICE_CLIENT_TYPE === "office-word") {
+        if (typeof Word === "undefined") return Promise.resolve("当前环境不是 Word，无法执行。");
+        return Word.run(function (context) {
+          const selection = context.document.getSelection();
+          selection.load("text");
+          return context.sync().then(function () {
+            var t = selection.text || "";
+            if (t.length > 8000) t = t.slice(0, 8000) + "\n...(已截断)";
+            return t || "(无选区)";
+          });
+        });
+      }
+      if (OFFICE_CLIENT_TYPE === "office-excel") {
+        if (typeof Excel === "undefined") return Promise.resolve("当前环境不是 Excel，无法执行。");
+        return Excel.run(function (context) {
+          var range = context.workbook.getSelectedRange();
+          range.load("address", "text");
+          return context.sync().then(function () {
+            var raw = range.text;
+            var s = "";
+            if (Array.isArray(raw)) {
+              s = raw.map(function (row) { return Array.isArray(row) ? row.join("\t") : String(row); }).join("\n");
+            } else {
+              s = raw != null ? String(raw) : "";
+            }
+            if (s.length > 8000) s = s.slice(0, 8000) + "\n...(已截断)";
+            return "[Excel 选区 " + (range.address || "") + "]\n" + (s || "(空)");
+          });
+        });
+      }
+      if (OFFICE_CLIENT_TYPE === "office-powerpoint") {
+        if (typeof PowerPoint === "undefined") return Promise.resolve("当前环境不是 PowerPoint，无法执行。");
+        return PowerPoint.run(function (context) {
+          var countResult = context.presentation.slides.getCount();
+          return context.sync().then(function () {
+            var total = countResult.value;
+            if (total < 1) return "(无幻灯片)";
+            var slides = context.presentation.getSelectedSlides();
+            slides.load("items");
+            return context.sync().then(function () {
+              var slide =
+                slides.items && slides.items.length > 0
+                  ? slides.items[0]
+                  : context.presentation.slides.getItemAt(0);
+              slide.load("shapes/items/textFrame/textRange/text");
+              return context.sync().then(function () {
+                return docScriptPptSlideText_(slide, 1, total);
+              });
+            });
+          });
+        });
+      }
+      return Promise.resolve("未知的 Office 宿主，无法读取选区。OFFICE_CLIENT_TYPE=" + OFFICE_CLIENT_TYPE);
+    },
+    office_doc_meta: function (p) {
+      var lines = [];
+      lines.push("OFFICE_CLIENT_TYPE: " + OFFICE_CLIENT_TYPE);
+      try {
+        if (typeof Office !== "undefined" && Office.context && Office.context.document && Office.context.document.url) {
+          lines.push("document.url: " + Office.context.document.url);
+        } else {
+          lines.push("document.url: （不可用或空）");
+        }
+      } catch (e) {
+        lines.push("document.url: （读取失败）");
+      }
+      return Promise.resolve(lines.join("\n"));
+    },
+    office_word_body_preview: function (p) {
+      if (OFFICE_CLIENT_TYPE !== "office-word") {
+        return Promise.resolve("office_word_body_preview 仅适用于 Word。当前为 " + OFFICE_CLIENT_TYPE + "。");
+      }
+      if (typeof Word === "undefined") return Promise.resolve("Word API 不可用。");
+      var maxLen = docScriptParseMaxLength(p, 2000, DOC_SCRIPT_MAX_BODY);
       return Word.run(function (context) {
-        const selection = context.document.getSelection();
-        selection.load("text");
-        return context.sync().then(function () { return selection.text || "(无选区)"; });
+        var range = context.document.body.getRange();
+        range.load("text");
+        return context.sync().then(function () {
+          var t = range.text || "";
+          var header = "[Word 正文摘录，最多 " + maxLen + " 字符]\n";
+          if (t.length > maxLen) t = t.slice(0, maxLen) + "\n...(已截断)";
+          return header + (t || "(无正文)");
+        });
       });
+    },
+    office_host_quick_glance: function (p) {
+      if (OFFICE_CLIENT_TYPE === "office-excel") {
+        if (typeof Excel === "undefined") return Promise.resolve("Excel API 不可用。");
+        return Excel.run(function (context) {
+          var sheet = context.workbook.worksheets.getActiveWorksheet();
+          sheet.load("name");
+          var range = context.workbook.getSelectedRange();
+          range.load("address", "values");
+          return context.sync().then(function () {
+            var vals = range.values;
+            var preview = "";
+            if (Array.isArray(vals)) {
+              var rows = [];
+              var maxR = Math.min(vals.length, 20);
+              for (var r = 0; r < maxR; r++) {
+                var row = vals[r];
+                if (!Array.isArray(row)) continue;
+                var maxC = Math.min(row.length, 16);
+                var cells = [];
+                for (var c = 0; c < maxC; c++) {
+                  var v = row[c];
+                  cells.push(v != null && v !== "" ? String(v) : "");
+                }
+                rows.push(cells.join("\t"));
+              }
+              preview = rows.join("\n");
+            }
+            if (preview.length > 6000) preview = preview.slice(0, 6000) + "\n...(已截断)";
+            return "[Excel 快览]\n工作表: " + sheet.name + "\n区域: " + (range.address || "") + "\n---\n" + (preview || "(空)");
+          });
+        });
+      }
+      if (OFFICE_CLIENT_TYPE === "office-powerpoint") {
+        if (typeof PowerPoint === "undefined") return Promise.resolve("PowerPoint API 不可用。");
+        return PowerPoint.run(function (context) {
+          var countResult = context.presentation.slides.getCount();
+          return context.sync().then(function () {
+            var total = countResult.value;
+            if (total < 1) return "[PowerPoint 快览]\n(无幻灯片)";
+            var slides = context.presentation.getSelectedSlides();
+            slides.load("items");
+            return context.sync().then(function () {
+              var slide = null;
+              var oneBased = 1;
+              if (slides.items && slides.items.length > 0) {
+                slide = slides.items[0];
+              } else {
+                slide = context.presentation.slides.getItemAt(0);
+              }
+              slide.load("shapes/items/textFrame/textRange/text");
+              return context.sync().then(function () {
+                return docScriptPptSlideText_(slide, oneBased, total);
+              });
+            });
+          });
+        });
+      }
+      return Promise.resolve("office_host_quick_glance 仅适用于 Excel 或 PowerPoint。当前为 " + OFFICE_CLIENT_TYPE + "。");
     }
   };
+
+  function docScriptPptSlideText_(slide, indexOneBased, totalSlides) {
+    var parts = [];
+    if (slide.shapes && slide.shapes.items) {
+      for (var i = 0; i < slide.shapes.items.length; i++) {
+        var sh = slide.shapes.items[i];
+        if (sh.textFrame && sh.textFrame.textRange && sh.textFrame.textRange.text) {
+          parts.push(sh.textFrame.textRange.text);
+        }
+      }
+    }
+    var txt = parts.join(" ").trim() || "(无文本)";
+    if (txt.length > 8000) txt = txt.slice(0, 8000) + "\n...(已截断)";
+    return "[PowerPoint 第 " + indexOneBased + " / " + totalSlides + " 页]\n" + txt;
+  }
 
   async function handleRpcRequest(msg) {
     const id = msg.id;

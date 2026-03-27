@@ -970,16 +970,99 @@ export function useCopilot() {
     if (planId.value) send('请按当前绑定的计划执行')
   }
 
+  function wpsDocScriptMaxLen(p, def, cap) {
+    let n = def
+    if (p && p.maxLength != null) {
+      const x = parseInt(String(p.maxLength), 10)
+      if (!isNaN(x) && x > 0) n = Math.min(x, cap)
+    }
+    return n
+  }
+
   const DOCUMENT_SCRIPTS = {
     word_read_selection() {
       if (!window.wps || !window.wps.ActiveDocument) return Promise.resolve('当前环境不可用。')
       try {
         const sel = window.wps.Selection
-        const t = sel && sel.Text ? sel.Text : ''
+        let t = sel && sel.Text ? sel.Text : ''
+        t = t || ''
+        if (t.length > 8000) t = t.slice(0, 8000) + '\n...(已截断)'
         return Promise.resolve(t || '(无选区)')
       } catch (e) {
         return Promise.resolve('WPS 暂不支持读取选区，请使用 word_read_body。')
       }
+    },
+    wps_doc_meta() {
+      return Promise.resolve().then(() => {
+        const lines = ['clientType: wps']
+        try {
+          if (!window.wps) {
+            lines.push('（WPS 对象不可用）')
+            return lines.join('\n')
+          }
+          if (window.wps.ActiveDocument && window.wps.ActiveDocument.Name) {
+            lines.push('文档名: ' + window.wps.ActiveDocument.Name)
+            if (window.wps.ActiveDocument.FullName) lines.push('路径: ' + window.wps.ActiveDocument.FullName)
+          } else if (window.wps.ActiveWorkbook && window.wps.ActiveWorkbook.Name) {
+            lines.push('工作簿: ' + window.wps.ActiveWorkbook.Name)
+          } else if (window.wps.Application && window.wps.Application.ActivePresentation) {
+            const pr = window.wps.Application.ActivePresentation
+            lines.push('演示文稿: ' + (pr.FullName || pr.Name || '(无名)'))
+          } else {
+            lines.push('（未能识别当前文档类型）')
+          }
+        } catch (e) {
+          lines.push('错误: ' + (e && e.message ? e.message : String(e)))
+        }
+        return lines.join('\n')
+      })
+    },
+    wps_word_body_preview(p) {
+      return Promise.resolve().then(() => {
+        if (!window.wps || !window.wps.Enum || !window.wps.Enum.wdStory) {
+          return 'wps_word_body_preview 仅适用于 WPS 文字。当前可能不是文字组件。'
+        }
+        const doc = window.wps.ActiveDocument
+        if (!doc || !doc.Content) return '无法获取正文。'
+        const maxLen = wpsDocScriptMaxLen(p, 2000, 32000)
+        let t = doc.Content.Text || ''
+        const header = '[WPS 正文摘录，最多 ' + maxLen + ' 字符]\n'
+        if (t.length > maxLen) t = t.slice(0, maxLen) + '\n...(已截断)'
+        return header + (t || '(无正文)')
+      })
+    },
+    wps_ppt_slide_glance() {
+      return Promise.resolve().then(() => {
+        try {
+          const app = window.wps && window.wps.Application
+          if (!app) return 'WPS Application 不可用。'
+          const pres = app.ActivePresentation
+          if (!pres) return '当前不是 WPS 演示，请在 WPS 演示中打开文稿后再试。'
+          const win = app.ActiveWindow
+          if (!win || !win.View || !win.View.Slide) return '无法获取当前幻灯片。'
+          const slide = win.View.Slide
+          const idx = slide.SlideIndex
+          let n = pres.Slides.Count
+          if (typeof n !== 'number') n = n != null && n.value !== undefined ? n.value : 0
+          const parts = []
+          if (slide.Shapes && slide.Shapes.Count) {
+            const sc = slide.Shapes.Count
+            for (let si = 1; si <= sc; si++) {
+              const sh = slide.Shapes.Item(si)
+              if (sh && sh.TextFrame && sh.TextFrame.TextRange && sh.TextFrame.TextRange.Text) {
+                let txt = String(sh.TextFrame.TextRange.Text)
+                if (txt.length > 800) txt = txt.slice(0, 800) + '...'
+                parts.push(txt)
+              }
+            }
+          }
+          let body = parts.join(' ').trim() || '(无文本)'
+          if (body.length > 8000) body = body.slice(0, 8000) + '...'
+          return '[WPS 演示 第 ' + idx + ' / ' + n + ' 页]\n' + body
+        } catch (e) {
+          return 'WPS 幻灯片快览失败：' + (e && e.message ? e.message : String(e))
+        }
+      })
     }
   }
 

@@ -751,10 +751,10 @@
       </details>
 
       <details class="settings-block">
-        <summary>安全与确认（按端配置）</summary>
+        <summary>安全与确认（按执行位置）</summary>
         <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 16px;">运行模式为全局一项（<code>cliRunMode</code>，三选一）；CLI / 页面脚本白名单仍按端分四段（<code>allowedCliCommandsByClient</code> / <code>allowedPageScriptIdsByClient</code>，键 <code>chrome</code> / <code>backend</code> / <code>office</code> / <code>wps</code>）。<strong>Office</strong> 对应 Word、Excel、PowerPoint（<code>office-*</code>）共用 <code>office</code> 键。</p>
-      <p class="help-text" style="margin-bottom: 16px;">定时任务路径不弹确认；页面脚本白名单仅在 <strong>Chrome</strong> 段编辑。<strong>RunEverything</strong> 请仅在完全信任环境与模型时使用。</p>
+      <p class="help-text" style="margin-bottom: 16px;">运行模式为全局一项（<code>cliRunMode</code>，三选一）。下方分区按<strong>工具实际执行位置</strong>排列（浏览器内脚本 / 本机 CMD / 各加载项），便于对照「这条命令跑在哪里」。<strong>同一类能力</strong>（例如 <code>run_command</code>）无论从 Chrome、Office 还是后台会话发起，<strong>物理上都在服务端本机 CMD 执行</strong>；四组白名单按<strong>连接来源</strong>分别存储（<code>chrome</code> / <code>backend</code> / <code>office</code> / <code>wps</code>），用于 UseAllowList 时判断<strong>当前会话</strong>是否免确认——条目表示「允许该命令」，并区分你从哪类客户端连接以便分场景配置（各端默认可不同，例如 Chrome 的 CMD 默认不含 <code>dir</code>）。<strong>Office</strong> 对应 Word、Excel、PowerPoint（<code>office-*</code>）共用 <code>office</code> 键。</p>
+      <p class="help-text" style="margin-bottom: 16px;">定时任务路径不弹确认；页面脚本白名单仅在「浏览器内」区块编辑。<strong>RunEverything</strong> 请仅在完全信任环境与模型时使用。</p>
       <div id="cliScriptEndTabs" class="cli-script-end-tabs" style="display:none;"></div>
       <div id="cliScriptPerEndConfig">
         <!-- 当前选中端的模式与白名单由 JS 注入 -->
@@ -765,7 +765,7 @@
       <details class="settings-block">
         <summary>内置能力（自带的 MCP）</summary>
         <div class="settings-block-inner">
-        <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置，无需配置即可使用。Browser 的页面脚本白名单在上方「安全与确认 → Chrome」中配置。</p>
+        <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置，无需配置即可使用。Browser 的页面脚本白名单在上方「安全与确认 → 浏览器内（页面脚本）」中配置。</p>
       <div id="builtinToolsList">
         <!-- 内置插件列表由 JS 注入 -->
       </div>

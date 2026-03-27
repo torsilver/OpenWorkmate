@@ -8,8 +8,8 @@ namespace OfficeCopilot.Server.Filters;
 
 /// <summary>
 /// 拦截需人工确认（HITL）或白名单策略的高危函数调用（任意 shell、任意页面/文档脚本代码）。
-/// <para><b>本过滤器处理的函数名</b>：<c>run_command</c>、<c>run_page_script</c>、<c>run_custom_page_script</c>、<c>current_run_custom_document_script</c>。</para>
-/// <para><b>有意不纳入</b>（由产品语义与其它约束承担）：Office/Word/Excel/PPT 等文档编辑类工具；<c>current_run_document_script</c>（仅允许任务窗格注册的 scriptId 白名单）；<c>run_clawhub_script</c>（仅技能包 scripts/ 下已存在脚本）。新增可执行任意用户输入或系统命令的工具时，应在此增加分支或更新本说明。</para>
+/// <para><b>本过滤器处理的函数名</b>：<c>run_command</c>、<c>run_page_script</c>、<c>run_custom_page_script</c>、<c>current_run_document_script</c>、<c>current_run_custom_document_script</c>。</para>
+/// <para><b>有意不纳入</b>：Office/Word/Excel/PPT 等其它文档编辑类工具；<c>run_clawhub_script</c>（仅技能包 scripts/ 下已存在脚本）。新增可执行任意用户输入或系统命令的工具时，应在此增加分支或更新本说明。</para>
 /// <para><b>定时任务会话</b>（<c>sessionId</c> 前缀 <c>scheduled:</c>）：无前端，无法弹 HITL；CLI/页面脚本/自定义文档脚本分支为白名单放行或拒绝并返回明确 <c>[系统拦截]</c> 文案，不静默越权执行。</para>
 /// </summary>
 public sealed class SecurityFilter : IFunctionInvocationFilter
@@ -50,7 +50,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
             var command = cmdObj?.ToString()?.Trim().ToLowerInvariant() ?? "";
             var cmdName = command.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
             var allowedCli = _configService.GetAllowedCliCommandsForEnd(endKey);
-            var cliList = (allowedCli != null && allowedCli.Count > 0) ? allowedCli : CliScriptEndKeys.DefaultAllowedCommands;
+            var cliList = (allowedCli != null && allowedCli.Count > 0) ? allowedCli : CliScriptEndKeys.GetDefaultAllowedCliCommands(CliScriptEndKeys.Backend);
             var cliSet = cliList.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
 
             // 定时任务到点执行：无前端，不弹 HITL；AskEverytime 降级为仅白名单放行（与 UseAllowList 行为一致）。
@@ -119,7 +119,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 context.Result = new FunctionResult(context.Function,
-                    "[系统拦截] 定时任务到点执行无法弹出人工确认。请将脚本 id 加入设置「安全与确认 → 后台」的页面脚本白名单，或将后台运行模式设为 RunEverything。");
+                    "[系统拦截] 定时任务到点执行无法弹出人工确认。请将脚本 id 加入设置「安全与确认 → Chrome」的页面脚本白名单，或将运行模式设为 RunEverything。");
                 return;
             }
 
@@ -143,6 +143,65 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 _logger.LogInformation("用户已允许执行页面脚本: {ScriptId}", scriptId);
+            }
+
+            await next(context);
+            return;
+        }
+
+        if (functionName == "current_run_document_script" && context.Arguments.TryGetValue("scriptId", out var docScriptIdObj))
+        {
+            var sessionId = SessionContext.GetSessionId();
+            if (IsScheduledTaskSession(sessionId))
+            {
+                context.Result = new FunctionResult(context.Function,
+                    "[系统拦截] 定时任务到点执行不支持 current_run_document_script（无文档宿主会话）。");
+                return;
+            }
+
+            var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+            var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+            if (!string.Equals(endKey, CliScriptEndKeys.Office, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(endKey, CliScriptEndKeys.Wps, StringComparison.OrdinalIgnoreCase))
+            {
+                await next(context);
+                return;
+            }
+
+            var mode = _configService.GetCliRunModeForEnd(endKey);
+
+            if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行文档脚本 {ScriptId}", endKey, docScriptIdObj?.ToString());
+                await next(context);
+                return;
+            }
+
+            var scriptId = docScriptIdObj?.ToString()?.Trim();
+            var allowedDoc = _configService.GetAllowedDocumentScriptIdsForEnd(endKey);
+            var docList = (allowedDoc != null && allowedDoc.Count > 0) ? allowedDoc : CliScriptEndKeys.GetDefaultAllowedDocumentScriptIds(endKey);
+            var docSet = docList.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
+
+            var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
+                || (string.IsNullOrEmpty(scriptId) || !docSet.Contains(scriptId.ToLowerInvariant()));
+
+            if (needHitl)
+            {
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "[系统拦截] 安全策略禁止执行该文档脚本，且当前无会话无法进行人工确认。");
+                    return;
+                }
+                var action = "执行文档预定义脚本: " + (scriptId ?? "");
+                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "current_run_document_script", scriptId ?? "");
+                if (!result.Allowed)
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "用户拒绝执行或未在限定时间内确认，已取消执行。");
+                    return;
+                }
+                _logger.LogInformation("用户已允许执行文档脚本: {ScriptId}", scriptId);
             }
 
             await next(context);

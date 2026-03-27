@@ -271,6 +271,11 @@ public class AppConfig
     /// 键同上。仅在会话会调用 Browser 插件时参与校验（主要为 <c>chrome</c>；Office/WPS 不向模型暴露 <c>run_page_script</c>，对应键多为保留项）。
     /// </summary>
     public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
+    /// <summary>
+    /// 按端 <c>current_run_document_script</c> 的预定义 scriptId 白名单；空则使用 <see cref="CliScriptEndKeys"/> 中与任务窗格注册表一致的默认列表。
+    /// 键主要为 <c>office</c>、<c>wps</c>（与宿主侧 <c>DOCUMENT_SCRIPTS</c> 对齐）。
+    /// </summary>
+    public Dictionary<string, List<string>> AllowedDocumentScriptIdsByClient { get; set; } = new();
     /// <summary>已停用的内置插件 ID 列表（如 Browser、File、CLI、Excel、Word），这些插件不会注册到 Kernel。</summary>
     public List<string> DisabledBuiltInPlugins { get; set; } = new();
     /// <summary>Tavily API Key，用于网页搜索技能；请在 user-config.json 中填写。</summary>
@@ -320,7 +325,39 @@ public static class CliScriptEndKeys
     public const string Wps = "wps";
 
     public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
+
     public static readonly string[] DefaultAllowedScriptIds = { "scroll_to_top", "scroll_to_bottom", "get_visible_text", "get_page_title" };
+
+    /// <summary>Office 任务窗格 <c>DOCUMENT_SCRIPTS</c> 预置 scriptId（与 <c>office-addin/taskpane.js</c> 对齐）。</summary>
+    public static readonly string[] DefaultAllowedDocumentScriptIdsOffice =
+    {
+        "word_read_selection", "office_doc_meta", "office_word_body_preview", "office_host_quick_glance"
+    };
+
+    /// <summary>WPS 任务窗格 <c>DOCUMENT_SCRIPTS</c> 预置 scriptId（与 <c>wps-addin-new</c> 对齐）。</summary>
+    public static readonly string[] DefaultAllowedDocumentScriptIdsWps =
+    {
+        "word_read_selection", "wps_doc_meta", "wps_word_body_preview", "wps_ppt_slide_glance"
+    };
+
+    /// <summary>
+    /// 某端未配置 <see cref="AppConfig.AllowedCliCommandsByClient"/> 时使用的默认 CMD 名列表（与设置页「后台」内置勾选项一致）。
+    /// 非 <c>backend</c> 端与后台共用同一套默认，便于设置页仅在「后台」维护 CLI；运行时仍按会话来源键解析白名单（空则回退到后台已配置列表，见 <see cref="ConfigService.GetAllowedCliCommandsForEnd"/>）。
+    /// </summary>
+    public static IReadOnlyList<string> GetDefaultAllowedCliCommands(string? endKey)
+    {
+        if (string.IsNullOrWhiteSpace(endKey)) return DefaultAllowedCommands;
+        if (string.Equals(endKey, Backend, StringComparison.OrdinalIgnoreCase)) return DefaultAllowedCommands;
+        return DefaultAllowedCommands;
+    }
+
+    /// <summary>某端未配置 <see cref="AppConfig.AllowedDocumentScriptIdsByClient"/> 时使用的默认预定义文档 scriptId。</summary>
+    public static IReadOnlyList<string> GetDefaultAllowedDocumentScriptIds(string? endKey)
+    {
+        if (string.Equals(endKey, Office, StringComparison.OrdinalIgnoreCase)) return DefaultAllowedDocumentScriptIdsOffice;
+        if (string.Equals(endKey, Wps, StringComparison.OrdinalIgnoreCase)) return DefaultAllowedDocumentScriptIdsWps;
+        return Array.Empty<string>();
+    }
 
     /// <summary>将 WebSocket 的 clientType 解析为四端键之一，用于查找 <see cref="AppConfig.AllowedCliCommandsByClient"/> 等。</summary>
     public static string ResolveEndKey(string? clientType)
@@ -468,13 +505,15 @@ public sealed class ConfigService
         return mode;
     }
 
-    /// <summary>获取指定端的命令白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
+    /// <summary>获取指定端的命令白名单；空或未配置时返回 null（调用方使用默认列表）。非 <c>backend</c> 键若未单独配置，则回退为 <c>backend</c> 键的列表（与设置页仅在「后台」维护 CLI 一致）。</summary>
     public IReadOnlyList<string>? GetAllowedCliCommandsForEnd(string endKey)
     {
         if (_currentConfig.AllowedCliCommandsByClient == null) return null;
-        if (!_currentConfig.AllowedCliCommandsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
-            return null;
-        return list;
+        if (_currentConfig.AllowedCliCommandsByClient.TryGetValue(endKey, out var list) && list != null && list.Count > 0)
+            return list;
+        if (!string.Equals(endKey, CliScriptEndKeys.Backend, StringComparison.OrdinalIgnoreCase))
+            return GetAllowedCliCommandsForEnd(CliScriptEndKeys.Backend);
+        return null;
     }
 
     /// <summary>获取指定端的页面脚本白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
@@ -482,6 +521,15 @@ public sealed class ConfigService
     {
         if (_currentConfig.AllowedPageScriptIdsByClient == null) return null;
         if (!_currentConfig.AllowedPageScriptIdsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
+            return null;
+        return list;
+    }
+
+    /// <summary>获取指定端 <c>current_run_document_script</c> 的 scriptId 白名单；空或未配置时返回 null（调用方使用 <see cref="CliScriptEndKeys.GetDefaultAllowedDocumentScriptIds"/>）。</summary>
+    public IReadOnlyList<string>? GetAllowedDocumentScriptIdsForEnd(string endKey)
+    {
+        if (_currentConfig.AllowedDocumentScriptIdsByClient == null) return null;
+        if (!_currentConfig.AllowedDocumentScriptIdsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
             return null;
         return list;
     }
@@ -581,6 +629,7 @@ public sealed class ConfigService
         MigrateCliRunModeFromLegacyJson(json, config);
         config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
         config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
+        config.AllowedDocumentScriptIdsByClient ??= new Dictionary<string, List<string>>();
         config.AiModels ??= new List<AiModelEntry>();
         config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
         config.OcrModels ??= new List<OcrModelEntry>();
@@ -928,6 +977,7 @@ public sealed class ConfigService
                 if (string.IsNullOrWhiteSpace(newConfig.CliRunMode)) newConfig.CliRunMode = _currentConfig.CliRunMode ?? "UseAllowList";
                 if (newConfig.AllowedCliCommandsByClient == null) newConfig.AllowedCliCommandsByClient = _currentConfig.AllowedCliCommandsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.AllowedPageScriptIdsByClient == null) newConfig.AllowedPageScriptIdsByClient = _currentConfig.AllowedPageScriptIdsByClient ?? new Dictionary<string, List<string>>();
+                if (newConfig.AllowedDocumentScriptIdsByClient == null) newConfig.AllowedDocumentScriptIdsByClient = _currentConfig.AllowedDocumentScriptIdsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.EmbeddingModels == null) newConfig.EmbeddingModels = _currentConfig.EmbeddingModels ?? new List<EmbeddingModelEntry>();
                 else
                     PreserveEmbeddingEndpointsFromCurrent(newConfig.EmbeddingModels, _currentConfig.EmbeddingModels);

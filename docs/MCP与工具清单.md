@@ -178,7 +178,25 @@
 | `current_ppt_table_create` / `current_ppt_table_write_cells` | **WPS**：`Shapes.AddTable` / `Table.Cell`。**PowerPoint**：`addTable` / `getTable` + `getCellOrNullObject`。 |
 | `current_ppt_hyperlink_add` | **WPS**：`ActionSettings.Hyperlink`。**PowerPoint**：`shape.setHyperlink`（需 PowerPointApi 1.10+，见 `office-addin/manifest.xml`）。 |
 | `current_ppt_slide_duplicate` | **WPS**：`Slide.Duplicate`。**PowerPoint**：`exportAsBase64` + `insertSlidesFromBase64`（无嵌入图片的页等限制见宿主）。 |
-| `current_run_document_script` | 在当前打开的 Office/WPS 文档环境中执行预定义脚本（仅支持白名单内 scriptId）。 |
+| `current_run_document_script` | 在当前打开的 Office/WPS 文档环境中执行预定义脚本；`scriptId` 必须在**当前宿主**任务窗格的注册表中存在（Office 与 WPS 清单**分别维护**，不必一致）。 |
+
+**`current_run_document_script` 预定义 `scriptId`（Office 加载项，`office-addin/taskpane.js`）**
+
+| scriptId | 说明 |
+|----------|------|
+| `word_read_selection` | Word：选区文本；Excel：当前选区地址与文本；PowerPoint：选中页或第 1 页形状文本（有长度上限）。 |
+| `office_doc_meta` | 输出 `OFFICE_CLIENT_TYPE` 与 `Office.context.document.url`（若可得）。 |
+| `office_word_body_preview` | 仅 Word；正文摘录，默认最多 2000 字符；`paramsJson` 可传 `maxLength`（上限 32000）。 |
+| `office_host_quick_glance` | 仅 Excel 或 PowerPoint：Excel 为当前活动表 + 选区地址与值预览；PowerPoint 为当前选中页或第 1 页文本快览。 |
+
+**`current_run_document_script` 预定义 `scriptId`（WPS 加载项，`wps-addin-new` 任务窗格）**
+
+| scriptId | 说明 |
+|----------|------|
+| `word_read_selection` | 当前选区文本（WPS 文字）。 |
+| `wps_doc_meta` | 文档名/路径或工作簿/演示文稿名（若可解析）。 |
+| `wps_word_body_preview` | 仅 WPS 文字；正文摘录；可选 `maxLength`。 |
+| `wps_ppt_slide_glance` | 仅 WPS 演示；当前幻灯片序号与页内文本预览。 |
 
 ### 11. Tavily
 
