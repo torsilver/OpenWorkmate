@@ -13,25 +13,34 @@ using Xunit;
 
 namespace backend.Tests.Integration;
 
-public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+/// <summary>与 ApiIntegrationTests 相同：隔离用户配置与定时任务目录；using 结束时删除临时文件，避免 Temp 下堆积。</summary>
+internal sealed class IsolatedAuthWebAppFactory : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    public WebApplicationFactory<Program> Factory { get; }
 
-    public SecurityAuthIntegrationTests(WebApplicationFactory<Program> factory)
+    private readonly string _userConfigPath;
+    private readonly string _scheduledTasksDir;
+
+    private IsolatedAuthWebAppFactory(
+        WebApplicationFactory<Program> factory,
+        string userConfigPath,
+        string scheduledTasksDir)
     {
-        _factory = factory;
+        Factory = factory;
+        _userConfigPath = userConfigPath;
+        _scheduledTasksDir = scheduledTasksDir;
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string? authToken)
+    public static IsolatedAuthWebAppFactory Create(string? authToken)
     {
-        var tempUserConfigPath = Path.Combine(
+        var userConfigPath = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
-        var tempScheduledTasksDir = Path.Combine(
+        var scheduledTasksDir = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(Environments.Development);
             builder.ConfigureAppConfiguration((_, config) =>
@@ -40,20 +49,49 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
                 {
                     ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = tempScheduledTasksDir,
-                    ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
+                    ["ScheduledTasksDirectory"] = scheduledTasksDir,
+                    ["OfficeCopilot:UserConfigPath"] = userConfigPath,
                     ["WebSocket:AuthToken"] = string.IsNullOrEmpty(authToken) ? "" : authToken,
                 };
                 config.AddInMemoryCollection(dict);
             });
         });
+        return new IsolatedAuthWebAppFactory(factory, userConfigPath, scheduledTasksDir);
     }
+
+    public void Dispose()
+    {
+        Factory.Dispose();
+        try
+        {
+            if (File.Exists(_userConfigPath))
+                File.Delete(_userConfigPath);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        try
+        {
+            if (Directory.Exists(_scheduledTasksDir))
+                Directory.Delete(_scheduledTasksDir, true);
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+}
+
+public class SecurityAuthIntegrationTests
+{
 
     [Fact]
     public async Task GetConfig_WhenAuthTokenConfigured_WithoutHeader_Returns401()
     {
-        using var fac = CreateFactory("integration-secret-token");
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create("integration-secret-token");
+        var client = fac.Factory.CreateClient();
         var res = await client.GetAsync("/api/config");
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
         var json = await res.Content.ReadAsStringAsync();
@@ -65,8 +103,8 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task GetConfig_WhenAuthTokenConfigured_WithXHeader_Returns200()
     {
-        using var fac = CreateFactory("integration-secret-token");
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create("integration-secret-token");
+        var client = fac.Factory.CreateClient();
         var req = new HttpRequestMessage(HttpMethod.Get, "/api/config");
         req.Headers.TryAddWithoutValidation("X-OfficeCopilot-Token", "integration-secret-token");
         var res = await client.SendAsync(req);
@@ -76,8 +114,8 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task GetConfig_WhenAuthTokenConfigured_WithBearer_Returns200()
     {
-        using var fac = CreateFactory("integration-secret-token");
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create("integration-secret-token");
+        var client = fac.Factory.CreateClient();
         var req = new HttpRequestMessage(HttpMethod.Get, "/api/config");
         req.Headers.TryAddWithoutValidation("Authorization", "Bearer integration-secret-token");
         var res = await client.SendAsync(req);
@@ -87,8 +125,8 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task PostTestAi_LocalhostEndpoint_Returns400_WithMessage()
     {
-        using var fac = CreateFactory(null);
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create(null);
+        var client = fac.Factory.CreateClient();
         var body = new { endpoint = "http://127.0.0.1:9999/v1", modelId = "m", apiKey = "k" };
         var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         var res = await client.PostAsync("/api/config/test-ai", content);
@@ -103,8 +141,8 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
     public async Task BootstrapLocalServiceAuth_WithoutHeader_Returns200_AndEffectiveToken()
     {
         const string secret = "bootstrap-test-token-xyz";
-        using var fac = CreateFactory(secret);
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create(secret);
+        var client = fac.Factory.CreateClient();
         var res = await client.GetAsync("/api/bootstrap/local-service-auth");
         res.EnsureSuccessStatusCode();
         var json = await res.Content.ReadAsStringAsync();
@@ -122,8 +160,8 @@ public class SecurityAuthIntegrationTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task BootstrapLocalServiceAuth_WhenNoServerToken_Returns200_WithNullOrEmptyToken()
     {
-        using var fac = CreateFactory(null);
-        var client = fac.CreateClient();
+        using var fac = IsolatedAuthWebAppFactory.Create(null);
+        var client = fac.Factory.CreateClient();
         var res = await client.GetAsync("/api/bootstrap/local-service-auth");
         res.EnsureSuccessStatusCode();
         var json = await res.Content.ReadAsStringAsync();

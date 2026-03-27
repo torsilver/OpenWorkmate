@@ -18,17 +18,19 @@ using Xunit;
 
 namespace backend.Tests.Integration;
 
-public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly HttpClient _client;
+    private readonly string _tempUserConfigPath;
+    private readonly string _tempScheduledTasksDir;
 
     public ApiIntegrationTests(WebApplicationFactory<Program> factory)
     {
-        var tempUserConfigPath = Path.Combine(
+        _tempUserConfigPath = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
         // 空 ScheduledTasksDirectory 会回退到 LocalAppData\OfficeCopilot\ScheduledTasks，与正式环境共用目录；集成测试必须隔离。
-        var tempScheduledTasksDir = Path.Combine(
+        _tempScheduledTasksDir = Path.Combine(
             Path.GetTempPath(),
             "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
@@ -41,12 +43,36 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                 {
                     ["RagStorageType"] = "Memory",
                     ["PlansDirectory"] = "",
-                    ["ScheduledTasksDirectory"] = tempScheduledTasksDir,
-                    ["OfficeCopilot:UserConfigPath"] = tempUserConfigPath,
+                    ["ScheduledTasksDirectory"] = _tempScheduledTasksDir,
+                    ["OfficeCopilot:UserConfigPath"] = _tempUserConfigPath,
                     ["WebSocket:AuthToken"] = "",
                 });
             });
         }).CreateClient();
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        try
+        {
+            if (File.Exists(_tempUserConfigPath))
+                File.Delete(_tempUserConfigPath);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        try
+        {
+            if (Directory.Exists(_tempScheduledTasksDir))
+                Directory.Delete(_tempScheduledTasksDir, true);
+        }
+        catch
+        {
+            /* ignore */
+        }
     }
 
     [Fact]

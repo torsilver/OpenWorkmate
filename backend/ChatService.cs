@@ -475,7 +475,7 @@ public sealed class ChatService : IDisposable
 - Memory：记录与检索用户的习惯、取向、偏好与长期关键事实；不用于存大块中间数据或任务步骤正文。
 - AccurateData：多步复杂任务中按固定 id 精确读写大块结构化中间结果以减轻上下文；不替代语义记忆或计划步骤流。
 - Plan：将复杂任务拆解为可保存、可按步执行的计划（Markdown 步骤）；不替代 AccurateData 存原始数据块，不替代 Memory 记偏好。
-- UserOptions（工具 ask_options）：当任务存在多种合理解法、输出格式或分步选择且不宜替用户拍板时，用侧栏分步单选让用户确认；用 stepsJson 描述每步问题与选项，勿要求用户在聊天里回复「选 A/B」。
+- UserOptions（工具 ask_options）：当存在多种合规路径、输出格式或分步选择，或缺少关键参数不宜替用户拍板时，优先用侧栏分步单选（stepsJson）让用户确认；勿在信息不足时猜测默认。勿要求用户在聊天里回复「选 A/B」。
 
 记忆、准确数据、计划与候选项确认可同时使用（例如：先 ask_options 定方案，再 Plan 执行并用 AccurateData 存中间结果）。
 """;
@@ -1375,6 +1375,7 @@ public sealed class ChatService : IDisposable
     /// </summary>
     private const string ToolResultEchoSystemInstruction =
         "[工具与回答方式] 用户对话界面中看不到工具的原始返回全文（执行过程里可能仅有简短摘要）。"
+        + "在调用工具前，可用一句简短说明本轮目标（便于用户理解你的意图）。"
         + "凡你调用了工具并从工具结果中获得了对用户有用的文字或数据，在本轮最终回复里必须用自然语言完整整理并复述给用户；"
         + "禁止仅用「已读取」「已完成」等占位描述而不给出实质内容。";
 
@@ -1413,15 +1414,15 @@ public sealed class ChatService : IDisposable
         var ct = (clientType ?? "").Trim();
         if (string.IsNullOrEmpty(ct)) return "";
         if (string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase))
-            return "你是浏览器侧助手，负责当前页面的标注、笔记、截图等；文档编辑请由用户在 Word/Excel 任务窗格端完成。";
+            return "你是浏览器侧助手，负责当前页面的标注、笔记、截图等；文档编辑请由用户在 Word/Excel 任务窗格端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-word", StringComparison.OrdinalIgnoreCase))
-            return "你是 Word 侧助手，负责当前打开的 Word 文档；网页相关操作请由用户在浏览器侧边栏端完成。";
+            return "你是 Word 侧助手，负责当前打开的 Word 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase))
-            return "你是 Excel 侧助手，负责当前打开的 Excel 工作簿；网页相关操作请由用户在浏览器侧边栏端完成。";
+            return "你是 Excel 侧助手，负责当前打开的 Excel 工作簿；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase))
-            return "你是 WPS 侧助手，负责当前打开的 WPS 文档；网页相关操作请由用户在浏览器侧边栏端完成。";
+            return "你是 WPS 侧助手，负责当前打开的 WPS 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase))
-            return "你是 PowerPoint 侧助手，负责当前打开的 PowerPoint 演示文稿；网页相关操作请由用户在浏览器侧边栏端完成。";
+            return "你是 PowerPoint 侧助手，负责当前打开的 PowerPoint 演示文稿；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         return "";
     }
 

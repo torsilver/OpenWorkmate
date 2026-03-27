@@ -12,7 +12,7 @@ public class AiConfig
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
-    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 中请用 Markdown 格式：以 # / ## / ### 开头的段落会自动变为对应级别标题，以 - 开头的段落会自动变为列表项，其余为正文段落（自动带首行缩进和专业排版）。创建 PPT 时，bodyText 中用换行分段，以 - 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。";
+    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 中请用 Markdown 格式：以 # / ## / ### 开头的段落会自动变为对应级别标题，以 - 开头的段落会自动变为列表项，其余为正文段落（自动带首行缩进和专业排版）。创建 PPT 时，bodyText 中用换行分段，以 - 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。";
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
 }
@@ -262,11 +262,18 @@ public class AppConfig
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
     public string ActiveModelId { get; set; } = "";
     public List<McpServerConfig> McpServers { get; set; } = new();
-    /// <summary>按端（chrome/backend/office/wps）CLI 与页面脚本运行模式：RunEverything | AskEverytime | UseAllowList。未配置的端默认 UseAllowList。</summary>
-    public Dictionary<string, string> CliRunModeByClient { get; set; } = new();
-    /// <summary>按端命令白名单（每项为命令名，如 dir、echo、type）；空则使用默认列表。</summary>
+    /// <summary>全局 CLI/页面脚本运行模式：RunEverything | AskEverytime | UseAllowList；全端共用。<see cref="ConfigService.GetCliRunModeForEnd"/> 对 <c>backend</c> 会将 AskEverytime 视为 UseAllowList（无 HITL）。</summary>
+    public string CliRunMode { get; set; } = "UseAllowList";
+    /// <summary>
+    /// 按端命令白名单（每项为命令名，如 dir、echo、type）；空则使用默认列表。
+    /// 键为 <see cref="CliScriptEndKeys"/> 中的四端：chrome、backend、office、wps（彼此独立）。
+    /// <see cref="CliScriptEndKeys.Office"/> 对应所有 clientType 以 <c>office-</c> 开头的会话（Word/Excel/PowerPoint 共用同一套）。
+    /// </summary>
     public Dictionary<string, List<string>> AllowedCliCommandsByClient { get; set; } = new();
-    /// <summary>按端页面脚本 ID 白名单；空则使用默认列表。</summary>
+    /// <summary>
+    /// 按端 <c>run_page_script</c> 的 scriptId 白名单；空则使用默认列表。
+    /// 键同上。仅在会话会调用 Browser 插件时参与校验（主要为 <c>chrome</c>；Office/WPS 不向模型暴露 <c>run_page_script</c>，对应键多为保留项）。
+    /// </summary>
     public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
     /// <summary>已停用的内置插件 ID 列表（如 Browser、File、CLI、Excel、Word），这些插件不会注册到 Kernel。</summary>
     public List<string> DisabledBuiltInPlugins { get; set; } = new();
@@ -307,18 +314,19 @@ public class AppConfig
     public string? WebSocketAuthToken { get; set; }
 }
 
-/// <summary>四端键名：chrome、backend、office、wps。</summary>
+/// <summary>CLI/页面脚本安全策略用的四端键名：chrome、backend、office、wps；配置中按端各有一份白名单。</summary>
 public static class CliScriptEndKeys
 {
     public const string Chrome = "chrome";
     public const string Backend = "backend";
+    /// <summary>对应 <c>office-word</c>、<c>office-excel</c>、<c>office-powerpoint</c>（共用此键）。若需按应用拆分白名单，需扩展键名并同步 <see cref="ResolveEndKey"/> 与设置 UI。</summary>
     public const string Office = "office";
     public const string Wps = "wps";
 
     public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
     public static readonly string[] DefaultAllowedScriptIds = { "scroll_to_top", "scroll_to_bottom", "get_visible_text", "get_page_title" };
 
-    /// <summary>将 clientType 解析为四端之一。</summary>
+    /// <summary>将 WebSocket 的 clientType 解析为四端键之一，用于查找 <see cref="AppConfig.AllowedCliCommandsByClient"/> 等。</summary>
     public static string ResolveEndKey(string? clientType)
     {
         var ct = (clientType ?? "").Trim();
@@ -444,11 +452,15 @@ public sealed class ConfigService
         }
     }
 
-    /// <summary>获取指定端的 CLI/脚本运行模式，未配置时默认 UseAllowList。</summary>
+    /// <summary>获取指定端的 CLI/脚本运行模式（全局 <see cref="AppConfig.CliRunMode"/>）。后台端无 HITL 时 AskEverytime 按 UseAllowList 处理。</summary>
     public string GetCliRunModeForEnd(string endKey)
     {
-        var mode = _currentConfig.CliRunModeByClient?.GetValueOrDefault(endKey)?.Trim();
-        return string.IsNullOrEmpty(mode) ? "UseAllowList" : mode;
+        var mode = (_currentConfig.CliRunMode ?? "").Trim();
+        if (string.IsNullOrEmpty(mode)) mode = "UseAllowList";
+        if (string.Equals(endKey, CliScriptEndKeys.Backend, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase))
+            return "UseAllowList";
+        return mode;
     }
 
     /// <summary>获取指定端的命令白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
@@ -543,7 +555,7 @@ public sealed class ConfigService
                     if (string.IsNullOrWhiteSpace(config.TavilyApiKey))
                         config.TavilyApiKey = Environment.GetEnvironmentVariable("TAVILY_API_KEY") ?? "";
                     config.SkillEnv ??= new Dictionary<string, string>();
-                    config.CliRunModeByClient ??= new Dictionary<string, string>();
+                    MigrateCliRunModeFromLegacyJson(json, config);
                     config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
                     config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
                     config.AiModels ??= new List<AiModelEntry>();
@@ -600,9 +612,55 @@ public sealed class ConfigService
         appConfig.AiModels ??= new List<AiModelEntry>();
         appConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
         appConfig.OcrModels ??= new List<OcrModelEntry>();
+        if (string.IsNullOrWhiteSpace(appConfig.CliRunMode))
+            appConfig.CliRunMode = "UseAllowList";
         MigrateLegacyAiIfNeeded(appConfig);
         MigrateLegacyOcrIfNeeded(appConfig);
         return appConfig;
+    }
+
+    /// <summary>从旧版 <c>cliRunModeByClient</c> 迁移到 <see cref="AppConfig.CliRunMode"/>（当 JSON 中尚无 <c>cliRunMode</c> 键时）。</summary>
+    private static void MigrateCliRunModeFromLegacyJson(string json, AppConfig config)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("cliRunMode", out var cmEl) && cmEl.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(cmEl.GetString()))
+                return;
+            if (root.TryGetProperty("cliRunModeByClient", out var by) && by.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var key in new[] { "chrome", "backend", "office", "wps" })
+                {
+                    if (by.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
+                    {
+                        var s = v.GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(s))
+                        {
+                            config.CliRunMode = s;
+                            return;
+                        }
+                    }
+                }
+                foreach (var p in by.EnumerateObject())
+                {
+                    if (p.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var s = p.Value.GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(s))
+                        {
+                            config.CliRunMode = s;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            /* ignored */
+        }
     }
 
     /// <summary>从原始 JSON 补全 embeddingModels 中缺失的 Endpoint，避免反序列化未正确映射 endpoint 时丢失。</summary>
@@ -882,7 +940,7 @@ public sealed class ConfigService
                 if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
                 if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();
-                if (newConfig.CliRunModeByClient == null) newConfig.CliRunModeByClient = _currentConfig.CliRunModeByClient ?? new Dictionary<string, string>();
+                if (string.IsNullOrWhiteSpace(newConfig.CliRunMode)) newConfig.CliRunMode = _currentConfig.CliRunMode ?? "UseAllowList";
                 if (newConfig.AllowedCliCommandsByClient == null) newConfig.AllowedCliCommandsByClient = _currentConfig.AllowedCliCommandsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.AllowedPageScriptIdsByClient == null) newConfig.AllowedPageScriptIdsByClient = _currentConfig.AllowedPageScriptIdsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.EmbeddingModels == null) newConfig.EmbeddingModels = _currentConfig.EmbeddingModels ?? new List<EmbeddingModelEntry>();

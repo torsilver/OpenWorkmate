@@ -1175,7 +1175,6 @@ if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveC
 
 var CLI_SCRIPT_END_KEYS = ['chrome', 'backend', 'office', 'wps'];
 var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Office', wps: 'WPS' };
-var currentCliScriptEnd = 'chrome';
 var DEFAULT_CLI_COMMANDS = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
 var DEFAULT_PAGE_SCRIPTS = ['scroll_to_top', 'scroll_to_bottom', 'get_visible_text', 'get_page_title'];
 var CLI_RUN_MODES = [
@@ -1183,6 +1182,20 @@ var CLI_RUN_MODES = [
   { value: 'AskEverytime', label: 'AskEverytime（每次执行前确认）' },
   { value: 'UseAllowList', label: 'UseAllowList（白名单内不弹，名单外确认）' }
 ];
+
+function getGlobalCliRunModeFromConfig() {
+  var g = fullConfig && (fullConfig.cliRunMode != null ? fullConfig.cliRunMode : fullConfig.CliRunMode);
+  if (g != null && String(g).trim()) return String(g).trim();
+  var legacy = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient);
+  if (legacy && typeof legacy === 'object') {
+    var order = ['chrome', 'backend', 'office', 'wps'];
+    for (var i = 0; i < order.length; i++) {
+      var v = legacy[order[i]];
+      if (v != null && String(v).trim()) return String(v).trim();
+    }
+  }
+  return 'UseAllowList';
+}
 
 if (document.getElementById('addMemoryBtn')) document.getElementById('addMemoryBtn').addEventListener('click', function () { openMemoryEditor(null); });
 if (document.getElementById('refreshMemoryListBtn')) document.getElementById('refreshMemoryListBtn').addEventListener('click', loadMemoryList);
@@ -1451,7 +1464,7 @@ async function loadConfig() {
       chrome.storage.local.set(o);
     }
     renderAiModelsList();
-    renderCliScriptPerEndConfig();
+    renderCliScriptUnifiedConfig();
     const mcps = data.mcpServers ?? data.McpServers;
     renderMcpList(mcps || []);
     await loadSkillEnvSection();
@@ -1705,7 +1718,7 @@ function updatePresetRenameDeleteVisibility(activePresetId, presets) {
 async function saveConfig() {
   try {
     setSaveConfigButtonsState(true, '保存中…');
-    var perEnd = collectCliScriptPerEndPayload();
+    var perEnd = collectCliSecurityPayload();
     const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
     var aiModelsToSave = (aiModelsCache && aiModelsCache.length) ? aiModelsCache : (fullConfig.aiModels || fullConfig.AiModels || []);
     var activeEntry = aiModelsToSave.find(function (m) { return (m.id || m.Id) === activeId; });
@@ -1763,7 +1776,7 @@ async function saveConfig() {
       tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
       skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
-      cliRunModeByClient: perEnd.cliRunModeByClient,
+      cliRunMode: perEnd.cliRunMode,
       allowedCliCommandsByClient: perEnd.allowedCliCommandsByClient,
       allowedPageScriptIdsByClient: perEnd.allowedPageScriptIdsByClient,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
@@ -1793,7 +1806,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunModeByClient: payload.cliRunModeByClient, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -2216,76 +2229,76 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
-function renderCliScriptPerEndConfig() {
+function renderCliScriptUnifiedConfig() {
   var tabsContainer = document.getElementById('cliScriptEndTabs');
   var contentContainer = document.getElementById('cliScriptPerEndConfig');
-  if (!tabsContainer || !contentContainer) return;
-  var modeByClient = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) ? (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) : {};
+  if (!contentContainer) return;
+  if (tabsContainer) tabsContainer.innerHTML = '';
   var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
   var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
-  var endKey = currentCliScriptEnd;
-  var mode = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
-  var cliList = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey] : [];
-  var scriptList = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey] : [];
-  var cliSet = cliList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
-  var scriptSet = scriptList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
-  var userCliList = cliList.filter(function (c) { return DEFAULT_CLI_COMMANDS.indexOf((c || '').toLowerCase()) < 0; });
-  var userScriptList = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; });
-
-  tabsContainer.innerHTML = CLI_SCRIPT_END_KEYS.map(function (k) {
-    var label = CLI_SCRIPT_END_LABELS[k] || k;
-    var active = k === endKey ? ' active' : '';
-    return '<button type="button" class="cli-script-end-tab' + active + '" data-end="' + escapeAttr(k) + '">' + escapeHtml(label) + '</button>';
-  }).join('');
-  tabsContainer.querySelectorAll('.cli-script-end-tab').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      currentCliScriptEnd = this.getAttribute('data-end') || 'chrome';
-      renderCliScriptPerEndConfig();
-    });
-  });
-
+  var mode = getGlobalCliRunModeFromConfig();
   var showAllowlist = mode === 'UseAllowList';
-  var html = '<div class="skill-card" style="margin-bottom:16px;" data-cli-script-end="' + escapeAttr(endKey) + '">';
-  html += '<div class="form-group" style="margin-top:8px;"><label style="display:block;margin-bottom:6px;">运行模式</label><select class="cli-run-mode-select" data-end="' + escapeAttr(endKey) + '" style="min-width:220px;">';
+  var html = '<div class="skill-card" style="margin-bottom:16px;">';
+  html += '<div class="form-group" style="margin-top:8px;"><label style="display:block;margin-bottom:6px;">运行模式（全端共用）</label><select class="global-cli-run-mode-select" style="min-width:280px;">';
   CLI_RUN_MODES.forEach(function (opt) {
     html += '<option value="' + escapeAttr(opt.value) + '"' + (mode === opt.value ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
   });
   html += '</select></div>';
-  if (endKey === 'backend') {
-    html += '<p class="help-text" style="margin-top:12px;">此处的模式与白名单适用于<strong>无浏览器会话</strong>的后台场景，包括<strong>定时任务到点执行</strong>时模型调用的 <code>run_command</code> / <code>run_page_script</code>。定时任务不会弹出确认框；非白名单命令会被拦截，除非后台为 RunEverything。</p>';
-  }
-  html += '<div class="cli-allowlist-section" data-end="' + escapeAttr(endKey) + '" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (showAllowlist ? '' : ' display:none;') + '">';
-  html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p>';
-  html += '<div class="cli-allowlist-list" style="margin-bottom:12px;">';
-  DEFAULT_CLI_COMMANDS.forEach(function (cmd) {
-    var checked = cliSet.indexOf(cmd.toLowerCase()) >= 0 ? ' checked' : '';
-    html += '<label class="cli-allowlist-row cli-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="cli-default-cb" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span>' + escapeHtml(cmd) + '</span></label>';
+  html += '<p class="help-text" style="margin-top:8px;font-size:13px;">定时任务路径不弹确认；全局为 AskEverytime 时，后台会话在 <code>GetCliRunModeForEnd</code> 中仍按白名单策略执行。</p>';
+  html += '<div class="cli-unified-allowlist" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);' + (showAllowlist ? '' : ' display:none;') + '">';
+  html += '<p class="help-text" style="margin-bottom:12px;font-size:13px;">按端分区：勾选表示该项<strong>已加入</strong>该端的 <code>run_command</code> 白名单；未保存过的内置项与后端默认一致。仅 <strong>Chrome</strong> 段含 <code>run_page_script</code>。</p>';
+  CLI_SCRIPT_END_KEYS.forEach(function (endKey, idx) {
+    if (idx > 0) html += '<hr style="margin:20px 0;border:0;border-top:1px solid var(--border);">';
+    var cliList = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey] : [];
+    var scriptList = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey] : [];
+    var cliListEmpty = cliList.length === 0;
+    var scriptListEmpty = scriptList.length === 0;
+    var cliSet = cliList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+    var scriptSet = scriptList.map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
+    var userCliList = cliList.filter(function (c) { return DEFAULT_CLI_COMMANDS.indexOf((c || '').toLowerCase()) < 0; });
+    var userScriptList = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; });
+    var label = CLI_SCRIPT_END_LABELS[endKey] || endKey;
+    html += '<div class="cli-end-block" data-end="' + escapeAttr(endKey) + '">';
+    html += '<h3 style="margin:0 0 10px;font-size:16px;">' + escapeHtml(label) + '</h3>';
+    html += '<p class="help-text" style="margin-bottom:8px;">命令白名单（run_command）</p>';
+    html += '<div class="cli-allowlist-list" style="margin-bottom:12px;">';
+    DEFAULT_CLI_COMMANDS.forEach(function (cmd) {
+      var checked = (cliListEmpty || cliSet.indexOf(cmd.toLowerCase()) >= 0) ? ' checked' : '';
+      html += '<label class="cli-allowlist-row cli-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="cli-default-cb" data-cmd="' + escapeAttr(cmd) + '" aria-label="' + escapeAttr('加入白名单：' + cmd) + '"' + checked + '><span>' + escapeHtml(cmd) + '</span></label>';
+    });
+    html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
+    userCliList.forEach(function (cmd) {
+      var checked = cliSet.indexOf((cmd || '').toLowerCase()) >= 0 ? ' checked' : '';
+      html += '<div class="cli-allowlist-row cli-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '" aria-label="' + escapeAttr('加入白名单：' + cmd) + '"' + checked + '><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
+    });
+    html += '</div><div style="display:flex;gap:8px;margin-bottom:16px;"><input type="text" class="cli-add-input" placeholder="添加命令名" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary cli-add-btn">添加命令</button></div>';
+    if (endKey === 'chrome') {
+      html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p>';
+      html += '<div class="script-allowlist-list" style="margin-bottom:12px;">';
+      DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
+        var checked = (scriptListEmpty || scriptSet.indexOf(sid.toLowerCase()) >= 0) ? ' checked' : '';
+        html += '<label class="script-allowlist-row script-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-script="' + escapeAttr(sid) + '" aria-label="' + escapeAttr('加入白名单：' + sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
+      });
+      html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
+      userScriptList.forEach(function (sid) {
+        var checked = scriptSet.indexOf((sid || '').toLowerCase()) >= 0 ? ' checked' : '';
+        html += '<div class="script-allowlist-row script-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '" aria-label="' + escapeAttr('加入白名单：' + sid) + '"' + checked + '><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
+      });
+      html += '</div><div style="display:flex;gap:8px;"><input type="text" class="script-add-input" placeholder="添加 scriptId" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary script-add-btn">添加脚本</button></div>';
+    }
+    html += '</div>';
   });
-  html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
-  userCliList.forEach(function (cmd) {
-    var checked = cliSet.indexOf((cmd || '').toLowerCase()) >= 0 ? ' checked' : '';
-    html += '<div class="cli-allowlist-row cli-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '"' + checked + '><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
-  });
-  html += '</div><div style="display:flex;gap:8px;margin-bottom:16px;"><input type="text" class="cli-add-input" placeholder="添加命令名" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary cli-add-btn">添加命令</button></div>';
-  html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p>';
-  html += '<div class="script-allowlist-list" style="margin-bottom:12px;">';
-  DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
-    var checked = scriptSet.indexOf(sid.toLowerCase()) >= 0 ? ' checked' : '';
-    html += '<label class="script-allowlist-row script-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-script="' + escapeAttr(sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
-  });
-  html += '<hr style="margin:12px 0;border:0;border-top:1px solid var(--border);">';
-  userScriptList.forEach(function (sid) {
-    var checked = scriptSet.indexOf((sid || '').toLowerCase()) >= 0 ? ' checked' : '';
-    html += '<div class="script-allowlist-row script-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '"' + checked + '><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
-  });
-  html += '</div><div style="display:flex;gap:8px;"><input type="text" class="script-add-input" placeholder="添加 scriptId" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary script-add-btn">添加脚本</button></div></div></div>';
+  html += '</div></div>';
   contentContainer.innerHTML = html;
 
-  contentContainer.querySelector('.cli-run-mode-select').addEventListener('change', function () {
-    var section = contentContainer.querySelector('.cli-allowlist-section');
-    if (section) section.style.display = this.value === 'UseAllowList' ? '' : 'none';
-    debouncedSaveConfig();
-  });
+  var modeSel = contentContainer.querySelector('.global-cli-run-mode-select');
+  if (modeSel) {
+    modeSel.addEventListener('change', function () {
+      var al = contentContainer.querySelector('.cli-unified-allowlist');
+      if (al) al.style.display = this.value === 'UseAllowList' ? '' : 'none';
+      debouncedSaveConfig();
+    });
+  }
   contentContainer.querySelectorAll('.cli-default-cb, .script-default-cb, .cli-user-cb, .script-user-cb').forEach(function (el) { el.addEventListener('change', debouncedSaveConfig); });
   contentContainer.querySelectorAll('.cli-user-delete').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -2301,101 +2314,106 @@ function renderCliScriptPerEndConfig() {
       debouncedSaveConfig();
     });
   });
-  var cliAddBtn = contentContainer.querySelector('.cli-add-btn');
-  var cliAddInput = contentContainer.querySelector('.cli-add-input');
-  var cliListEl = contentContainer.querySelector('.cli-allowlist-list');
-  if (cliAddBtn && cliAddInput && cliListEl) {
-    cliAddBtn.addEventListener('click', function () {
-      var cmd = (cliAddInput.value || '').trim();
-      if (!cmd) return;
-      var cmdLower = cmd.toLowerCase();
-      var already = false;
-      contentContainer.querySelectorAll('.cli-user-row .cli-user-cmd').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === cmdLower) already = true; });
-      if (already) return;
-      var div = document.createElement('div');
-      div.className = 'cli-allowlist-row cli-user-row';
-      div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
-      div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '" checked><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
-      var hr = cliListEl.querySelector('hr');
-      if (hr && hr.nextSibling) cliListEl.insertBefore(div, hr.nextSibling);
-      else cliListEl.appendChild(div);
-      div.querySelector('.cli-user-cb').addEventListener('change', debouncedSaveConfig);
-      div.querySelector('.cli-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
-      cliAddInput.value = '';
-      debouncedSaveConfig();
-    });
-  }
-  var scriptAddBtn = contentContainer.querySelector('.script-add-btn');
-  var scriptAddInput = contentContainer.querySelector('.script-add-input');
-  var scriptListEl = contentContainer.querySelector('.script-allowlist-list');
-  if (scriptAddBtn && scriptAddInput && scriptListEl) {
-    scriptAddBtn.addEventListener('click', function () {
-      var sid = (scriptAddInput.value || '').trim();
-      if (!sid) return;
-      var sidLower = sid.toLowerCase();
-      var already = false;
-      contentContainer.querySelectorAll('.script-user-row .script-user-id').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === sidLower) already = true; });
-      if (already) return;
-      var div = document.createElement('div');
-      div.className = 'script-allowlist-row script-user-row';
-      div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
-      div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '" checked><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
-      var hr = scriptListEl.querySelector('hr');
-      if (hr && hr.nextSibling) scriptListEl.insertBefore(div, hr.nextSibling);
-      else scriptListEl.appendChild(div);
-      div.querySelector('.script-user-cb').addEventListener('change', debouncedSaveConfig);
-      div.querySelector('.script-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
-      scriptAddInput.value = '';
-      debouncedSaveConfig();
-    });
-  }
+  contentContainer.querySelectorAll('.cli-end-block').forEach(function (block) {
+    var cliAddBtn = block.querySelector('.cli-add-btn');
+    var cliAddInput = block.querySelector('.cli-add-input');
+    var cliListEl = block.querySelector('.cli-allowlist-list');
+    if (cliAddBtn && cliAddInput && cliListEl) {
+      cliAddBtn.addEventListener('click', function () {
+        var cmd = (cliAddInput.value || '').trim();
+        if (!cmd) return;
+        var cmdLower = cmd.toLowerCase();
+        var already = false;
+        block.querySelectorAll('.cli-user-row .cli-user-cmd').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === cmdLower) already = true; });
+        if (already) return;
+        var div = document.createElement('div');
+        div.className = 'cli-allowlist-row cli-user-row';
+        div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
+        div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="cli-user-cb" data-cmd="' + escapeAttr(cmd) + '" checked aria-label="' + escapeAttr('加入白名单：' + cmd) + '"><span class="cli-user-cmd">' + escapeHtml(cmd) + '</span></label><button type="button" class="btn-secondary cli-user-delete" data-cmd="' + escapeAttr(cmd) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
+        var hr = cliListEl.querySelector('hr');
+        if (hr && hr.nextSibling) cliListEl.insertBefore(div, hr.nextSibling);
+        else cliListEl.appendChild(div);
+        div.querySelector('.cli-user-cb').addEventListener('change', debouncedSaveConfig);
+        div.querySelector('.cli-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
+        cliAddInput.value = '';
+        debouncedSaveConfig();
+      });
+    }
+    var scriptAddBtn = block.querySelector('.script-add-btn');
+    var scriptAddInput = block.querySelector('.script-add-input');
+    var scriptListEl = block.querySelector('.script-allowlist-list');
+    if (scriptAddBtn && scriptAddInput && scriptListEl) {
+      scriptAddBtn.addEventListener('click', function () {
+        var sid = (scriptAddInput.value || '').trim();
+        if (!sid) return;
+        var sidLower = sid.toLowerCase();
+        var already = false;
+        block.querySelectorAll('.script-user-row .script-user-id').forEach(function (span) { if ((span.textContent || '').trim().toLowerCase() === sidLower) already = true; });
+        if (already) return;
+        var div = document.createElement('div');
+        div.className = 'script-allowlist-row script-user-row';
+        div.setAttribute('style', 'display:flex;align-items:center;gap:8px;margin-bottom:4px;');
+        div.innerHTML = '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '" checked aria-label="' + escapeAttr('加入白名单：' + sid) + '"><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button>';
+        var hr = scriptListEl.querySelector('hr');
+        if (hr && hr.nextSibling) scriptListEl.insertBefore(div, hr.nextSibling);
+        else scriptListEl.appendChild(div);
+        div.querySelector('.script-user-cb').addEventListener('change', debouncedSaveConfig);
+        div.querySelector('.script-user-delete').addEventListener('click', function () { div.remove(); debouncedSaveConfig(); });
+        scriptAddInput.value = '';
+        debouncedSaveConfig();
+      });
+    }
+  });
 }
 
-function collectCliScriptPerEndPayload() {
-  var cliRunModeByClient = {};
+function collectCliSecurityPayload() {
+  var container = document.getElementById('cliScriptPerEndConfig');
+  var modeEl = container && container.querySelector('.global-cli-run-mode-select');
+  var cliRunMode = (modeEl && modeEl.value) ? modeEl.value : getGlobalCliRunModeFromConfig();
   var allowedCliCommandsByClient = {};
   var allowedPageScriptIdsByClient = {};
-  var container = document.getElementById('cliScriptPerEndConfig');
-  var modeByClient = fullConfig && (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) ? (fullConfig.cliRunModeByClient || fullConfig.CliRunModeByClient) : {};
-  var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
-  var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
+  var cliBy = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient);
+  var scriptBy = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient);
+  if (!container || cliRunMode !== 'UseAllowList') {
+    CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
+      allowedCliCommandsByClient[endKey] = Array.isArray(cliBy && cliBy[endKey]) ? cliBy[endKey].slice() : [];
+      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptBy && scriptBy[endKey]) ? scriptBy[endKey].slice() : [];
+    });
+    return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
+  }
   CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
-    if (endKey !== currentCliScriptEnd) {
-      cliRunModeByClient[endKey] = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
-      allowedCliCommandsByClient[endKey] = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey].slice() : [];
-      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey].slice() : [];
+    var block = container.querySelector('.cli-end-block[data-end="' + endKey + '"]');
+    if (!block) {
+      allowedCliCommandsByClient[endKey] = Array.isArray(cliBy && cliBy[endKey]) ? cliBy[endKey].slice() : [];
+      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptBy && scriptBy[endKey]) ? scriptBy[endKey].slice() : [];
       return;
     }
-    if (!container) {
-      cliRunModeByClient[endKey] = (modeByClient[endKey] || 'UseAllowList').trim() || 'UseAllowList';
-      allowedCliCommandsByClient[endKey] = Array.isArray(cliByClient[endKey]) ? cliByClient[endKey].slice() : [];
-      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptByClient[endKey]) ? scriptByClient[endKey].slice() : [];
-      return;
-    }
-    var modeEl = container.querySelector('.cli-run-mode-select[data-end="' + endKey + '"]');
-    cliRunModeByClient[endKey] = (modeEl && modeEl.value) ? modeEl.value : 'UseAllowList';
     var cliList = [];
-    container.querySelectorAll('.cli-default-cb:checked').forEach(function (cb) {
+    block.querySelectorAll('.cli-default-cb:checked').forEach(function (cb) {
       var cmd = cb.getAttribute('data-cmd');
       if (cmd) cliList.push(cmd);
     });
-    container.querySelectorAll('.cli-user-row .cli-user-cb:checked').forEach(function (cb) {
+    block.querySelectorAll('.cli-user-row .cli-user-cb:checked').forEach(function (cb) {
       var cmd = (cb.getAttribute('data-cmd') || '').trim();
       if (cmd) cliList.push(cmd);
     });
     allowedCliCommandsByClient[endKey] = cliList;
-    var scriptList = [];
-    container.querySelectorAll('.script-default-cb:checked').forEach(function (cb) {
-      var script = cb.getAttribute('data-script');
-      if (script) scriptList.push(script);
-    });
-    container.querySelectorAll('.script-user-row .script-user-cb:checked').forEach(function (cb) {
-      var script = (cb.getAttribute('data-script') || '').trim();
-      if (script) scriptList.push(script);
-    });
-    allowedPageScriptIdsByClient[endKey] = scriptList;
+    if (endKey === 'chrome') {
+      var scriptList = [];
+      block.querySelectorAll('.script-default-cb:checked').forEach(function (cb) {
+        var script = cb.getAttribute('data-script');
+        if (script) scriptList.push(script);
+      });
+      block.querySelectorAll('.script-user-row .script-user-cb:checked').forEach(function (cb) {
+        var script = (cb.getAttribute('data-script') || '').trim();
+        if (script) scriptList.push(script);
+      });
+      allowedPageScriptIdsByClient[endKey] = scriptList;
+    } else {
+      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptBy && scriptBy[endKey]) ? scriptBy[endKey].slice() : [];
+    }
   });
-  return { cliRunModeByClient: cliRunModeByClient, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
+  return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient };
 }
 
 // ───── Boot ─────

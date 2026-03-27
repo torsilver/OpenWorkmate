@@ -6,6 +6,12 @@ using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Filters;
 
+/// <summary>
+/// 拦截需人工确认（HITL）或白名单策略的高危函数调用（任意 shell、任意页面/文档脚本代码）。
+/// <para><b>本过滤器处理的函数名</b>：<c>run_command</c>、<c>run_page_script</c>、<c>run_custom_page_script</c>、<c>current_run_custom_document_script</c>。</para>
+/// <para><b>有意不纳入</b>（由产品语义与其它约束承担）：Office/Word/Excel/PPT 等文档编辑类工具；<c>current_run_document_script</c>（仅允许任务窗格注册的 scriptId 白名单）；<c>run_clawhub_script</c>（仅技能包 scripts/ 下已存在脚本）。新增可执行任意用户输入或系统命令的工具时，应在此增加分支或更新本说明。</para>
+/// <para><b>定时任务会话</b>（<c>sessionId</c> 前缀 <c>scheduled:</c>）：无前端，无法弹 HITL；CLI/页面脚本/自定义文档脚本分支为白名单放行或拒绝并返回明确 <c>[系统拦截]</c> 文案，不静默越权执行。</para>
+/// </summary>
 public sealed class SecurityFilter : IFunctionInvocationFilter
 {
     private readonly ILogger<SecurityFilter> _logger;
