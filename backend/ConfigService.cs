@@ -51,6 +51,30 @@ public class AiModelEntry
     /// <summary>Chrome 设置的 AI 供应商 id，用于反显与默认 endpoint；与 provider 并存。</summary>
     [JsonPropertyName("vendorId")]
     public string VendorId { get; set; } = "";
+
+    /// <summary>阿里云百炼 OpenAI 兼容：是否开启混合思考（请求体 <c>enable_thinking</c>）。<c>null</c> 表示不写入，使用模型默认。</summary>
+    [JsonPropertyName("enableThinking")]
+    public bool? EnableThinking { get; set; }
+
+    /// <summary>百炼：<c>thinking_budget</c>，推理过程 token 上限；需与 <see cref="EnableThinking"/> 配合。</summary>
+    [JsonPropertyName("thinkingBudget")]
+    public int? ThinkingBudget { get; set; }
+
+    /// <summary>百炼：<c>enable_search</c> 联网搜索。</summary>
+    [JsonPropertyName("enableSearch")]
+    public bool? EnableSearch { get; set; }
+
+    /// <summary>百炼：<c>search_options</c> 的 JSON 对象字符串（与官方文档字段一致），可选。</summary>
+    [JsonPropertyName("searchOptionsJson")]
+    public string? SearchOptionsJson { get; set; }
+
+    /// <summary>百炼流式：<c>stream_options.include_usage</c>。</summary>
+    [JsonPropertyName("streamIncludeUsage")]
+    public bool? StreamIncludeUsage { get; set; }
+
+    /// <summary>摘要/工具筛选等后台调用是否强制关闭思考（写入 <c>enable_thinking: false</c>），减轻延迟与费用。</summary>
+    [JsonPropertyName("disableThinkingForBackgroundCalls")]
+    public bool DisableThinkingForBackgroundCalls { get; set; } = true;
 }
 
 /// <summary>Embedding 模型列表中的单条；仅支持 Remote 远程 API。</summary>

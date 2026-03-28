@@ -485,9 +485,41 @@
             <label for="aiModelSystemPrompt">系统提示词（可选，不填用全局默认）</label>
             <textarea id="aiModelSystemPrompt" name="systemPrompt" placeholder="可选"></textarea>
           </div>
-          <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="aiModelEnabled" name="enabled" checked>
-            <label for="aiModelEnabled" style="margin: 0;">启用（在列表中可点击「启用」设为当前使用）</label>
+          <div id="aiModelBailianAdvancedWrap" class="form-group" style="display: none; margin-top: 12px; padding: 12px 0 0 0; border-top: 1px solid var(--border-color, #e5e7eb);">
+            <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">通义百炼专有选项</div>
+            <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">在上方「AI 供应商」中选择<strong>阿里巴巴 通义百炼</strong>时显示。以下参数由后端合并进百炼 OpenAI 兼容请求（Endpoint 须含 <code>dashscope</code>）。</p>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="aiModelEnableThinking">思考模式 enable_thinking</label>
+              <select id="aiModelEnableThinking" name="enableThinking">
+                <option value="">默认（不写入，按模型服务端默认）</option>
+                <option value="true">开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="aiModelThinkingBudget">thinking_budget（可选，正整数）</label>
+              <input type="number" id="aiModelThinkingBudget" name="thinkingBudget" min="1" step="1" placeholder="留空则不写入">
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="aiModelEnableSearch">联网搜索 enable_search</label>
+              <select id="aiModelEnableSearch" name="enableSearch">
+                <option value="">默认（不写入）</option>
+                <option value="true">开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="aiModelSearchOptionsJson">search_options（JSON 对象，可选）</label>
+              <textarea id="aiModelSearchOptionsJson" name="searchOptionsJson" rows="2" placeholder='例如 {"forced_search": true}'></textarea>
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <input type="checkbox" id="aiModelStreamIncludeUsage" name="streamIncludeUsage">
+              <label for="aiModelStreamIncludeUsage" style="margin: 0;">流式返回 usage（stream_options.include_usage）</label>
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="aiModelDisableThinkingBackground" name="disableThinkingForBackgroundCalls" checked>
+              <label for="aiModelDisableThinkingBackground" style="margin: 0;">摘要/工具筛选等后台调用强制关闭思考（推荐）</label>
+            </div>
           </div>
           <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
             <button type="button" id="testAiConnectionBtn" class="btn-secondary">测试连接</button>

@@ -1,5 +1,6 @@
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using OfficeCopilot.Server.Services.DashScope;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 namespace OfficeCopilot.Server.Services;
@@ -149,10 +150,13 @@ public sealed class ContextManager
         summaryHistory.AddUserMessage(input);
         var settings = new OpenAIPromptExecutionSettings { MaxTokens = 800, Temperature = 0.2f };
         var summaryBuilder = new System.Text.StringBuilder();
-        await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
+        using (DashScopeCallKindContext.EnterBackground())
         {
-            if (chunk.Content is { Length: > 0 } text)
-                summaryBuilder.Append(text);
+            await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
+            {
+                if (chunk.Content is { Length: > 0 } text)
+                    summaryBuilder.Append(text);
+            }
         }
         var summary = summaryBuilder.ToString().Trim();
         if (string.IsNullOrEmpty(summary))

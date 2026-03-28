@@ -157,7 +157,6 @@ const els = {
   aiModelApiVersion: document.getElementById('aiModelApiVersion'),
   aiModelModelId: document.getElementById('aiModelModelId'),
   aiModelSystemPrompt: document.getElementById('aiModelSystemPrompt'),
-  aiModelEnabled: document.getElementById('aiModelEnabled'),
   saveAiModelBtn: document.getElementById('saveAiModelBtn'),
   testAiConnectionBtn: document.getElementById('testAiConnectionBtn'),
   testAiStatus: document.getElementById('testAiStatus'),
@@ -275,6 +274,16 @@ function updateChatProviderUi(resetProviderToPreset) {
     }
   }
   toggleAzureFields();
+  updateBailianAdvancedSectionVisibility();
+}
+
+/** 仅在供应商为「阿里巴巴 通义百炼」时显示百炼专有表单项，避免与其它供应商混淆 */
+function updateBailianAdvancedSectionVisibility() {
+  var vendorEl = document.getElementById('aiModelVendor');
+  var wrap = document.getElementById('aiModelBailianAdvancedWrap');
+  if (!wrap) return;
+  var vid = (vendorEl && vendorEl.value) || '';
+  wrap.style.display = vid === 'aliyun_bailian' ? 'block' : 'none';
 }
 
 function findOcrPreset(id) {
@@ -342,12 +351,30 @@ function resolveOcrVendorId(entry) {
 function onAiVendorChange() {
   var el = document.getElementById('aiModelVendor');
   if (!el) return;
+  var prevVid = el.dataset.prevVendorId || '';
   var preset = findChatPreset(el.value);
   if (preset) {
     if (preset.defaultEndpoint && els.aiModelEndpoint) els.aiModelEndpoint.value = preset.defaultEndpoint;
     if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && els.aiModelModelId) els.aiModelModelId.value = preset.defaultModelId;
   }
   updateChatProviderUi(!!preset);
+  if (prevVid === 'aliyun_bailian' && el.value !== 'aliyun_bailian') resetBailianAdvancedFormFields();
+  el.dataset.prevVendorId = el.value;
+}
+
+function resetBailianAdvancedFormFields() {
+  var et = document.getElementById('aiModelEnableThinking');
+  if (et) et.value = '';
+  var tb = document.getElementById('aiModelThinkingBudget');
+  if (tb) tb.value = '';
+  var es = document.getElementById('aiModelEnableSearch');
+  if (es) es.value = '';
+  var so = document.getElementById('aiModelSearchOptionsJson');
+  if (so) so.value = '';
+  var su = document.getElementById('aiModelStreamIncludeUsage');
+  if (su) su.checked = false;
+  var dsb = document.getElementById('aiModelDisableThinkingBackground');
+  if (dsb) dsb.checked = true;
 }
 
 function onOcrVendorChange() {
@@ -1232,6 +1259,7 @@ if (memoryScopeFilterEl) {
 
 function openAiModelEditor(existingId) {
   editingAiModelId = existingId || null;
+  resetBailianAdvancedFormFields();
   els.aiModelEditorTitle.textContent = existingId ? '编辑 AI 模型' : '添加新 AI';
   var vendorSelect = document.getElementById('aiModelVendor');
   if (existingId) {
@@ -1245,15 +1273,39 @@ function openAiModelEditor(existingId) {
       els.aiModelApiVersion.value = m.apiVersion || m.ApiVersion || '2024-02-01';
       els.aiModelModelId.value = m.modelId || m.ModelId || '';
       els.aiModelSystemPrompt.value = m.systemPrompt || m.SystemPrompt || '';
-      els.aiModelEnabled.checked = m.enabled !== false && m.Enabled !== false;
-      if (vendorSelect) vendorSelect.value = resolveChatVendorId(m);
+      var resolvedVid = resolveChatVendorId(m);
+      if (vendorSelect) vendorSelect.value = resolvedVid;
+      if (resolvedVid === 'aliyun_bailian') {
+        var et = document.getElementById('aiModelEnableThinking');
+        if (et) {
+          var ev = m.enableThinking !== undefined ? m.enableThinking : m.EnableThinking;
+          if (ev === true) et.value = 'true';
+          else if (ev === false) et.value = 'false';
+          else et.value = '';
+        }
+        var tb = document.getElementById('aiModelThinkingBudget');
+        if (tb) tb.value = (m.thinkingBudget != null || m.ThinkingBudget != null) ? String(m.thinkingBudget ?? m.ThinkingBudget) : '';
+        var es = document.getElementById('aiModelEnableSearch');
+        if (es) {
+          var esv = m.enableSearch !== undefined ? m.enableSearch : m.EnableSearch;
+          if (esv === true) es.value = 'true';
+          else if (esv === false) es.value = 'false';
+          else es.value = '';
+        }
+        var so = document.getElementById('aiModelSearchOptionsJson');
+        if (so) so.value = m.searchOptionsJson || m.SearchOptionsJson || '';
+        var su = document.getElementById('aiModelStreamIncludeUsage');
+        if (su) su.checked = !!(m.streamIncludeUsage || m.StreamIncludeUsage);
+        var dsb = document.getElementById('aiModelDisableThinkingBackground');
+        if (dsb) dsb.checked = (m.disableThinkingForBackgroundCalls !== false && m.DisableThinkingForBackgroundCalls !== false);
+      }
       testConnectionFields = {
         endpoint: String(m.endpoint || m.Endpoint || '').trim(),
         modelId: String(m.modelId || m.ModelId || '').trim(),
         apiKey: m.apiKey || m.ApiKey || '',
         provider: m.provider || m.Provider || 'OpenAI',
         deploymentName: String(m.deploymentName || m.DeploymentName || '').trim(),
-        vendorId: resolveChatVendorId(m)
+        vendorId: resolvedVid
       };
     }
   } else {
@@ -1265,11 +1317,13 @@ function openAiModelEditor(existingId) {
     els.aiModelApiVersion.value = '2024-02-01';
     els.aiModelModelId.value = '';
     els.aiModelSystemPrompt.value = '';
-    els.aiModelEnabled.checked = true;
     if (vendorSelect) vendorSelect.value = 'other_auto';
     testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'other_auto' };
   }
   updateChatProviderUi(!existingId);
+  var vSel = document.getElementById('aiModelVendor');
+  if (vSel) vSel.dataset.prevVendorId = (vSel.value || '');
+  updateBailianAdvancedSectionVisibility();
   if (els.aiModelEditor) els.aiModelEditor.style.display = 'block';
   bindTestConnectionFieldsSync();
 }
@@ -1328,6 +1382,9 @@ function toggleAzureFields() {
 function saveAiModelFromEditor() {
   const id = editingAiModelId || ('ai_' + Date.now());
   var vendorEl = document.getElementById('aiModelVendor');
+  var prevEntry = editingAiModelId
+    ? aiModelsCache.find(function (x) { return (x.id || x.Id) === editingAiModelId; })
+    : null;
   const entry = {
     id: id,
     displayName: (els.aiModelDisplayName && els.aiModelDisplayName.value.trim()) || id,
@@ -1338,9 +1395,41 @@ function saveAiModelFromEditor() {
     apiVersion: (els.aiModelApiVersion && els.aiModelApiVersion.value.trim()) || '2024-02-01',
     modelId: (els.aiModelModelId && els.aiModelModelId.value.trim()) || '',
     systemPrompt: (els.aiModelSystemPrompt && els.aiModelSystemPrompt.value.trim()) || '',
-    enabled: els.aiModelEnabled ? els.aiModelEnabled.checked : true,
+    enabled: prevEntry ? (prevEntry.enabled !== false && prevEntry.Enabled !== false) : true,
     vendorId: (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto'
   };
+  var isBailianVendor = (vendorEl && vendorEl.value) === 'aliyun_bailian';
+  if (isBailianVendor) {
+    var etEl = document.getElementById('aiModelEnableThinking');
+    if (etEl && etEl.value === 'true') entry.enableThinking = true;
+    else if (etEl && etEl.value === 'false') entry.enableThinking = false;
+    else delete entry.enableThinking;
+    var tbEl = document.getElementById('aiModelThinkingBudget');
+    if (tbEl && tbEl.value && String(tbEl.value).trim() !== '') {
+      var tbn = parseInt(String(tbEl.value).trim(), 10);
+      if (!isNaN(tbn) && tbn > 0) entry.thinkingBudget = tbn;
+      else delete entry.thinkingBudget;
+    } else delete entry.thinkingBudget;
+    var esEl = document.getElementById('aiModelEnableSearch');
+    if (esEl && esEl.value === 'true') entry.enableSearch = true;
+    else if (esEl && esEl.value === 'false') entry.enableSearch = false;
+    else delete entry.enableSearch;
+    var soEl = document.getElementById('aiModelSearchOptionsJson');
+    if (soEl && soEl.value && soEl.value.trim()) entry.searchOptionsJson = soEl.value.trim();
+    else delete entry.searchOptionsJson;
+    var suEl = document.getElementById('aiModelStreamIncludeUsage');
+    if (suEl && suEl.checked) entry.streamIncludeUsage = true;
+    else delete entry.streamIncludeUsage;
+    var dsbEl = document.getElementById('aiModelDisableThinkingBackground');
+    if (dsbEl) entry.disableThinkingForBackgroundCalls = !!dsbEl.checked;
+  } else {
+    delete entry.enableThinking;
+    delete entry.thinkingBudget;
+    delete entry.enableSearch;
+    delete entry.searchOptionsJson;
+    delete entry.streamIncludeUsage;
+    delete entry.disableThinkingForBackgroundCalls;
+  }
   if (editingAiModelId) {
     const idx = aiModelsCache.findIndex(function (x) { return (x.id || x.Id) === editingAiModelId; });
     if (idx >= 0) aiModelsCache[idx] = entry;
@@ -2130,7 +2219,7 @@ window.editSkill = (id) => {
 window.deleteSkill = async (id) => {
   if (!confirm('确定要删除这个技能吗？')) return;
   try {
-    const res = await tasklyFetch(`${SKILLS_API_URL}/${id}`, { method: 'DELETE' });
+    const res = await tasklyFetch(SKILLS_API_URL + '/' + encodeURIComponent(id), { method: 'DELETE' });
     if (res.ok) await loadSkills();
     else {
       var data = await res.json().catch(function () { return {}; });

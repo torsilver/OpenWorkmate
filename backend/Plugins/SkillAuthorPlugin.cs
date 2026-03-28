@@ -5,6 +5,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.DashScope;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -54,10 +55,13 @@ public sealed class SkillAuthorPlugin
         var sb = new StringBuilder();
         try
         {
-            await foreach (var msg in chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).ConfigureAwait(false))
+            using (DashScopeCallKindContext.EnterBackground())
             {
-                if (msg.Content is { Length: > 0 } text)
-                    sb.Append(text);
+                await foreach (var msg in chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).ConfigureAwait(false))
+                {
+                    if (msg.Content is { Length: > 0 } text)
+                        sb.Append(text);
+                }
             }
         }
         catch (Exception ex)

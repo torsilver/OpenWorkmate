@@ -1,0 +1,157 @@
+using System.Text.Json;
+using OfficeCopilot.Server;
+
+namespace OfficeCopilot.Server.Services.DashScope;
+
+/// <summary>
+/// 百炼 OpenAI 兼容 <c>POST .../chat/completions</c> 请求体合并（非标准顶层字段）。
+/// </summary>
+/// <remarks>
+/// 文档：<see href="https://help.aliyun.com/zh/model-studio/qwq"/>（思考、reasoning_content）、
+/// <see href="https://help.aliyun.com/zh/model-studio/developer-reference/compatibility-of-openai-with-dashscope"/>（enable_search、stream_options 等）。
+/// 历史上兼容页曾写 tools 与 stream 不可同用，请以当前模型实测为准（本产品在主对话中依赖流式 + 工具）。
+/// </remarks>
+public static class DashScopeChatRequestMerge
+{
+    /// <summary>是否应对该 URI 做百炼请求/响应处理（compatible-mode 对话）。</summary>
+    public static bool IsDashScopeChatCompletions(Uri? requestUri)
+    {
+        if (requestUri == null || !requestUri.IsAbsoluteUri)
+            return false;
+        if (!string.Equals(requestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(requestUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+            return false;
+        var host = requestUri.Host;
+        if (!host.Contains("dashscope", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return requestUri.AbsolutePath.Contains("chat/completions", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 将百炼相关字段合并进已有 JSON 请求体。返回 null 表示无需替换原文。
+    /// 后台调用且 <see cref="AiModelEntry.DisableThinkingForBackgroundCalls"/> 为 true 时强制 <c>enable_thinking: false</c>。
+    /// </summary>
+    public static byte[]? MergeChatCompletionUtf8Body(ReadOnlySpan<byte> bodyUtf8, AiModelEntry? entry)
+    {
+        if (bodyUtf8.IsEmpty)
+            return null;
+
+        using var doc = JsonDocument.Parse(bodyUtf8.ToArray());
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var bg = DashScopeCallKindContext.IsBackground;
+        var forceNoThink = bg && entry?.DisableThinkingForBackgroundCalls == true;
+
+        var skip = new HashSet<string>(StringComparer.Ordinal);
+        var willWrite = false;
+
+        if (forceNoThink || entry?.EnableThinking is not null)
+        {
+            skip.Add("enable_thinking");
+            willWrite = true;
+        }
+
+        if (entry?.ThinkingBudget is int tb && tb > 0)
+        {
+            skip.Add("thinking_budget");
+            willWrite = true;
+        }
+
+        if (entry?.EnableSearch is not null)
+        {
+            skip.Add("enable_search");
+            willWrite = true;
+        }
+
+        if (entry is { SearchOptionsJson: { } soj } && !string.IsNullOrWhiteSpace(soj))
+        {
+            try
+            {
+                using var _ = JsonDocument.Parse(soj);
+                skip.Add("search_options");
+                willWrite = true;
+            }
+            catch (JsonException)
+            {
+                /* invalid */
+            }
+        }
+
+        if (entry?.StreamIncludeUsage == true)
+        {
+            skip.Add("stream_options");
+            willWrite = true;
+        }
+
+        if (!willWrite)
+            return null;
+
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = false }))
+        {
+            writer.WriteStartObject();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (skip.Contains(prop.Name))
+                    continue;
+                prop.WriteTo(writer);
+            }
+
+            if (forceNoThink)
+                writer.WriteBoolean("enable_thinking", false);
+            else if (entry?.EnableThinking is { } et)
+                writer.WriteBoolean("enable_thinking", et);
+
+            if (entry?.ThinkingBudget is { } tb2 && tb2 > 0)
+                writer.WriteNumber("thinking_budget", tb2);
+
+            if (entry?.EnableSearch is { } es)
+                writer.WriteBoolean("enable_search", es);
+
+            if (entry is { SearchOptionsJson: { } soj2 } && !string.IsNullOrWhiteSpace(soj2))
+            {
+                try
+                {
+                    using var soDoc = JsonDocument.Parse(soj2);
+                    if (soDoc.RootElement.ValueKind == JsonValueKind.Object)
+                    {
+                        writer.WritePropertyName("search_options");
+                        soDoc.RootElement.WriteTo(writer);
+                    }
+                }
+                catch (JsonException)
+                {
+                    /* skip */
+                }
+            }
+
+            if (entry?.StreamIncludeUsage == true)
+            {
+                writer.WritePropertyName("stream_options");
+                writer.WriteStartObject();
+                writer.WriteBoolean("include_usage", true);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return ms.ToArray();
+    }
+
+    /// <summary>请求是否为流式（用于决定是否包装响应 SSE 旁路）。</summary>
+    public static bool RequestBodyIndicatesStream(ReadOnlySpan<byte> bodyUtf8)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(bodyUtf8.ToArray());
+            return doc.RootElement.TryGetProperty("stream", out var s)
+                   && s.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+}

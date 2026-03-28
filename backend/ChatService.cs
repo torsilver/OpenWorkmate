@@ -13,6 +13,7 @@ using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.ScheduledTask;
+using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
@@ -148,7 +149,6 @@ public sealed class ChatService : IDisposable
         var config = _configService.Current;
         var entries = GetModelEntriesToRegister();
         var builder = Kernel.CreateBuilder();
-        var httpClient = new HttpClient(new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>()));
 
         foreach (var entry in entries)
         {
@@ -175,6 +175,15 @@ public sealed class ChatService : IDisposable
                     if (string.IsNullOrEmpty(deployment)) deployment = modelId;
                     modelId = deployment;
                 }
+
+                var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>());
+                var dashHandler = new DashScopeOpenAiCompatHandler(
+                    _configService,
+                    entry.Id,
+                    logHandler,
+                    _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>());
+                var httpClient = new HttpClient(dashHandler);
+
                 if (endpointUri != null)
                 {
                     builder.AddOpenAIChatCompletion(
@@ -959,7 +968,14 @@ public sealed class ChatService : IDisposable
                     if (!moved)
                         break;
 
+                    foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                        yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+
                     var chunk = streamEnum.Current;
+                    var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
+                    if (!string.IsNullOrEmpty(metaReasoning))
+                        yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
+
                     if (chunk.Content is { Length: > 0 } text)
                     {
                         fullResponse.Append(text);
@@ -1034,11 +1050,15 @@ public sealed class ChatService : IDisposable
         summaryHistory.AddUserMessage(input);
         var settings = new OpenAIPromptExecutionSettings { MaxTokens = 800, Temperature = 0.2f };
         var summaryBuilder = new System.Text.StringBuilder();
-        await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
+        using (DashScopeCallKindContext.EnterBackground())
         {
-            if (chunk.Content is { Length: > 0 } text)
-                summaryBuilder.Append(text);
+            await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
+            {
+                if (chunk.Content is { Length: > 0 } text)
+                    summaryBuilder.Append(text);
+            }
         }
+
         var summary = summaryBuilder.ToString().Trim();
         if (string.IsNullOrEmpty(summary))
             return (false, 0, 0);
@@ -1100,12 +1120,15 @@ public sealed class ChatService : IDisposable
                 TaskDescription = taskDescTrimmed,
                 Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim()
             }).ConfigureAwait(false);
-            await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
+            using (DashScopeCallKindContext.EnterBackground())
             {
-                if (chunk.Content is { Length: > 0 } text)
+                await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
                 {
-                    fullResponse.Append(text);
-                    await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                    if (chunk.Content is { Length: > 0 } text)
+                    {
+                        fullResponse.Append(text);
+                        await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                    }
                 }
             }
         }

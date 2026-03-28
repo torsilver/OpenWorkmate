@@ -49,6 +49,29 @@ public sealed class LocalApiAuthMiddleware
         }
 
         var authToken = _configService.GetEffectiveWebSocketAuthToken();
+
+        // 浏览器扩展无法用 WebSocket 携带 X-OfficeCopilot-Token；与 /ws 一致，鉴权在 /api/stt-stream 内用查询参数 token 完成。
+        if (IsSttStreamWebSocketUpgrade(context))
+        {
+            if (string.IsNullOrEmpty(authToken))
+            {
+                if (!IsLocalOrTestConnection(context))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json; charset=utf-8";
+                    await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                    {
+                        ok = false,
+                        message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
+                    }, _jsonOptions));
+                    return;
+                }
+            }
+
+            await _next(context);
+            return;
+        }
+
         if (string.IsNullOrEmpty(authToken))
         {
             if (!IsLocalOrTestConnection(context))
@@ -134,6 +157,16 @@ public sealed class LocalApiAuthMiddleware
     {
         var p = path.Value ?? "";
         return string.Equals(p, "/api/bootstrap/local-service-auth", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSttStreamWebSocketUpgrade(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+            return false;
+        if (!context.WebSockets.IsWebSocketRequest)
+            return false;
+        var p = context.Request.Path.Value ?? "";
+        return string.Equals(p, "/api/stt-stream", StringComparison.OrdinalIgnoreCase);
     }
 }
 

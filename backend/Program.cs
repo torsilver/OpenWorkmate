@@ -275,9 +275,7 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     }
 
     var origin = context.Request.Headers.Origin.ToString();
-    if (allowedOrigins.Length > 0
-        && !string.IsNullOrEmpty(origin)
-        && !allowedOrigins.Any(o => origin.StartsWith(o, StringComparison.OrdinalIgnoreCase)))
+    if (!CorsOriginEvaluator.IsOriginAllowed(origin, corsOriginPrefixes, isDev))
     {
         app.Logger.LogWarning("Rejected connection from origin: {Origin}", origin);
         context.Response.StatusCode = 403;
@@ -336,9 +334,7 @@ app.Map("/api/stt-stream", async (HttpContext context, SttInferenceStreamWebSock
     }
 
     var origin = context.Request.Headers.Origin.ToString();
-    if (allowedOrigins.Length > 0
-        && !string.IsNullOrEmpty(origin)
-        && !allowedOrigins.Any(o => origin.StartsWith(o, StringComparison.OrdinalIgnoreCase)))
+    if (!CorsOriginEvaluator.IsOriginAllowed(origin, corsOriginPrefixes, isDev))
     {
         app.Logger.LogWarning("Rejected stt-stream connection from origin: {Origin}", origin);
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -903,9 +899,11 @@ app.MapPost("/api/skills", async (HttpContext ctx, SkillService skills) =>
     }
     return Results.Json(new { ok = false, message = "请求体解析失败或技能数据无效，请确认 JSON 格式与必填字段。" }, statusCode: 400);
 });
-app.MapDelete("/api/skills/{id}", (string id, SkillService skills) => 
+app.MapDelete("/api/skills/{id}", (string id, SkillService skills) =>
 {
-    skills.DeleteSkill(id);
+    var r = skills.DeleteSkill(id);
+    if (!r.Ok)
+        return Results.Json(new { ok = false, message = r.Message ?? "删除技能失败。" }, statusCode: r.HttpStatus);
     return Results.Ok();
 });
 
@@ -1439,6 +1437,13 @@ static async Task HandleChatStream(
             if (item.IsWarning)
             {
                 await SendJson(ws, new WsMessage { Type = "stream_warning", Content = item.Content });
+                continue;
+            }
+
+            if (item.Kind == StreamSegmentKind.Reasoning)
+            {
+                if (!string.IsNullOrEmpty(item.Content))
+                    await SendJson(ws, new WsMessage { Type = "reasoning_chunk", Content = item.Content });
                 continue;
             }
 

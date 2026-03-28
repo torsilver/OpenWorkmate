@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.IO;
@@ -169,5 +170,35 @@ public class SecurityAuthIntegrationTests
             var s = tok.GetString();
             Assert.True(string.IsNullOrEmpty(s));
         }
+    }
+
+    /// <summary>
+    /// 扩展侧栏 WebSocket 无法在握手时携带 X-OfficeCopilot-Token；须仅用查询参数 token 通过 LocalApiAuthMiddleware 到达 /api/stt-stream。
+    /// </summary>
+    [Fact]
+    public async Task SttStream_WebSocket_WhenAuthConfigured_QueryTokenWithoutHeader_OpensSocket_AndServerSendsConfigError()
+    {
+        const string secret = "integration-secret-token";
+        using var fac = IsolatedAuthWebAppFactory.Create(secret);
+        var server = fac.Factory.Server;
+        var wsClient = server.CreateWebSocketClient();
+        var baseUri = server.BaseAddress ?? new Uri("http://localhost");
+        var wsUri = new UriBuilder(baseUri)
+        {
+            Scheme = string.Equals(baseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "wss" : "ws",
+            Path = "/api/stt-stream",
+            Query = "token=" + Uri.EscapeDataString(secret) + "&mode=inline"
+        }.Uri;
+
+        using var socket = await wsClient.ConnectAsync(wsUri, CancellationToken.None);
+        var buf = new byte[8192];
+        var r = await socket.ReceiveAsync(new ArraySegment<byte>(buf), CancellationToken.None);
+        Assert.Equal(WebSocketMessageType.Text, r.MessageType);
+        var text = Encoding.UTF8.GetString(buf, 0, r.Count);
+        using var msg = JsonDocument.Parse(text);
+        Assert.Equal("error", msg.RootElement.GetProperty("type").GetString());
+        var m = msg.RootElement.GetProperty("message").GetString() ?? "";
+        Assert.Contains("百炼", m);
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
     }
 }

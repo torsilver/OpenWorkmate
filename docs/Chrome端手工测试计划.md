@@ -369,4 +369,4 @@ Chrome / 扩展版本：
 
 ---
 
-*文档依据仓库内 `ClientTypeToolFilter`、`docs/MCP与工具清单.md` 与各 Plugin 源码整理；若后端增删工具，以代码为准更新 §六。*
+*文档依据仓库内 `ClientTypeToolFilter`、`docs/应用内AI插件列表.md` 与各 Plugin 源码整理；若后端增删工具，以代码为准更新 §六。*

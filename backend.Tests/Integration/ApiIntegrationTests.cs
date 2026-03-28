@@ -513,6 +513,52 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostSkill_ThenDelete_RemovesFromGetList()
+    {
+        var skillId = "apitest_skill_" + Guid.NewGuid().ToString("N");
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["id"] = skillId,
+            ["name"] = skillId,
+            ["description"] = "integration delete test",
+            ["promptTemplate"] = "body",
+            ["enabled"] = true,
+        });
+        using var postContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var post = await _client.PostAsync("/api/skills", postContent);
+        post.EnsureSuccessStatusCode();
+        var postJson = await post.Content.ReadAsStringAsync();
+        var idFromApi = JsonDocument.Parse(postJson).RootElement.GetProperty("id").GetString();
+        Assert.False(string.IsNullOrEmpty(idFromApi));
+
+        var getBefore = await _client.GetAsync("/api/skills");
+        getBefore.EnsureSuccessStatusCode();
+        var listBefore = JsonDocument.Parse(await getBefore.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(JsonValueKind.Array, listBefore.ValueKind);
+        Assert.Contains(listBefore.EnumerateArray(), e => e.TryGetProperty("id", out var p) && p.GetString() == idFromApi);
+
+        var delete = await _client.DeleteAsync("/api/skills/" + Uri.EscapeDataString(idFromApi!));
+        delete.EnsureSuccessStatusCode();
+
+        var getAfter = await _client.GetAsync("/api/skills");
+        getAfter.EnsureSuccessStatusCode();
+        var listAfter = JsonDocument.Parse(await getAfter.Content.ReadAsStringAsync()).RootElement;
+        Assert.DoesNotContain(listAfter.EnumerateArray(), e => e.TryGetProperty("id", out var p) && p.GetString() == idFromApi);
+    }
+
+    [Fact]
+    public async Task DeleteSkill_NotFound_Returns404_WithMessage()
+    {
+        var id = "nonexistent_skill_" + Guid.NewGuid().ToString("N");
+        var resp = await _client.DeleteAsync("/api/skills/" + Uri.EscapeDataString(id));
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(body).RootElement;
+        Assert.True(root.TryGetProperty("ok", out var ok) && ok.GetBoolean() == false);
+        Assert.True(root.TryGetProperty("message", out var msg) && !string.IsNullOrWhiteSpace(msg.GetString()));
+    }
+
+    [Fact]
     public async Task GetAccurateData_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/accurate-data");

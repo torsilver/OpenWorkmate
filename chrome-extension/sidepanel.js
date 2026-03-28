@@ -2759,7 +2759,11 @@ if ($attachBtn && $fileInput) {
       w.onerror = function () {
         if (!settled) {
           settled = true;
-          reject(new Error("WebSocket 错误"));
+          reject(
+            new Error(
+              "WebSocket 连接失败（请确认本机服务已启动，选项页已保存且与服务端 user-config 中 webSocketAuthToken 一致；并检查「百炼实时语音识别」配置）。"
+            )
+          );
         }
       };
       w.onclose = function () {
@@ -3143,7 +3147,11 @@ $input.addEventListener("input", () => {
           meetingSttWs.onerror = function () {
             if (!settled) {
               settled = true;
-              reject(new Error("WebSocket 错误"));
+              reject(
+                new Error(
+                  "WebSocket 连接失败（请确认本机服务已启动，选项页已保存且与服务端 user-config 中 webSocketAuthToken 一致；并检查「百炼实时语音识别」配置）。"
+                )
+              );
             }
           };
           meetingSttWs.onclose = function () {

@@ -40,6 +40,8 @@ public sealed class ClawhubSkillPlugin
         var skill = skills.FirstOrDefault(s => string.Equals(s.Id, skillId, StringComparison.OrdinalIgnoreCase));
         if (skill == null)
             return $"[错误] 未找到技能: {skillId}。";
+        if (!skill.Enabled)
+            return $"[错误] 技能 {skillId} 已在设置中停用，无法通过 run_clawhub_script 执行；请先在设置页「技能与 MCP → 自定义技能」中启用该技能。";
         if (string.IsNullOrWhiteSpace(skill.BaseDir) || !skill.IsExecutable)
             return $"[错误] 技能 {skillId} 不是可执行技能或缺少 BaseDir。";
 

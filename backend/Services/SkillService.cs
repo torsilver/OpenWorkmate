@@ -6,6 +6,18 @@ using System.Text.RegularExpressions;
 
 namespace OfficeCopilot.Server.Services;
 
+/// <summary>DELETE /api/skills/{id} 的结果，供 MapDelete 返回正确 HTTP 状态与 message。</summary>
+public readonly record struct SkillDeleteResult(bool Ok, string? Message, int HttpStatus = 200)
+{
+    public static SkillDeleteResult Success() => new(true, null, 200);
+
+    public static SkillDeleteResult BadRequest(string message) => new(false, message, 400);
+
+    public static SkillDeleteResult NotFound(string message) => new(false, message, 404);
+
+    public static SkillDeleteResult Conflict(string message) => new(false, message, 409);
+}
+
 public class SkillDefinition
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -340,13 +352,25 @@ public sealed class SkillService
         return value;
     }
 
-    public void DeleteSkill(string id)
+    public SkillDeleteResult DeleteSkill(string id)
     {
         lock (_lock)
         {
+            if (string.IsNullOrWhiteSpace(id))
+                return SkillDeleteResult.BadRequest("请求参数无效：技能 id 不能为空。");
+
             var safeId = SanitizeId(id);
+            if (string.IsNullOrEmpty(safeId))
+                return SkillDeleteResult.BadRequest("请求参数无效：技能 id 无效。");
+
             var dir = Path.Combine(_skillsDir, safeId);
-            if (Directory.Exists(dir))
+            var jsonPath = Path.Combine(_skillsDir, safeId + ".json");
+            var hadDir = Directory.Exists(dir);
+            var hadJson = File.Exists(jsonPath);
+            if (!hadDir && !hadJson)
+                return SkillDeleteResult.NotFound("未找到该技能。");
+
+            if (hadDir)
             {
                 try
                 {
@@ -356,17 +380,34 @@ public sealed class SkillService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to delete skill dir {Path}", dir);
+                    return SkillDeleteResult.Conflict(
+                        "删除技能目录失败（可能被其它程序占用或权限不足）。请关闭占用该文件夹的程序后重试。");
+                }
+
+                if (Directory.Exists(dir))
+                {
+                    return SkillDeleteResult.Conflict(
+                        "删除技能目录失败（删除后目录仍存在，可能被占用）。请关闭占用该文件夹的程序后重试。");
                 }
             }
 
-            var jsonPath = Path.Combine(_skillsDir, safeId + ".json");
             if (File.Exists(jsonPath))
             {
-                File.Delete(jsonPath);
-                _logger.LogInformation("Deleted skill file {Path}", jsonPath);
+                try
+                {
+                    File.Delete(jsonPath);
+                    _logger.LogInformation("Deleted skill file {Path}", jsonPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete skill file {Path}", jsonPath);
+                    return SkillDeleteResult.Conflict(
+                        "删除技能文件失败（可能被占用或权限不足）。请关闭占用后重试。");
+                }
             }
 
             OnSkillsChanged?.Invoke();
+            return SkillDeleteResult.Success();
         }
     }
 

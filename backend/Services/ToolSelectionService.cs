@@ -3,6 +3,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services.DashScope;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -357,11 +358,15 @@ public sealed class ToolSelectionService : IToolSelector
         {
             var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
             var responseText = new System.Text.StringBuilder();
-            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+            using (DashScopeCallKindContext.EnterBackground())
             {
-                if (msg.Content is { Length: > 0 } content)
-                    responseText.Append(content);
+                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+                {
+                    if (msg.Content is { Length: > 0 } content)
+                        responseText.Append(content);
+                }
             }
+
             var raw = responseText.ToString().Trim();
             _logger.LogDebug("ToolSelection stage1 response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
             if (string.IsNullOrEmpty(raw)) return null;
@@ -561,11 +566,15 @@ public sealed class ToolSelectionService : IToolSelector
         {
             var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
             var responseText = new System.Text.StringBuilder();
-            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+            using (DashScopeCallKindContext.EnterBackground())
             {
-                if (msg.Content is { Length: > 0 } content)
-                    responseText.Append(content);
+                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+                {
+                    if (msg.Content is { Length: > 0 } content)
+                        responseText.Append(content);
+                }
             }
+
             var raw = responseText.ToString().Trim();
             _logger.LogDebug("ToolSelection LLM response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
             if (string.IsNullOrEmpty(raw))
