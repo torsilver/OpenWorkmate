@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Microsoft.SemanticKernel.Embeddings;
@@ -15,10 +16,11 @@ using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Mcp;
+using OfficeCopilot.Server.Services.SemanticKernel;
 
 namespace OfficeCopilot.Server;
 
-public sealed class ChatService : IDisposable
+public sealed partial class ChatService : IDisposable
 {
     private Kernel _kernel = null!;
     /// <summary>当前选中的模型 Id，用于按 key 解析 IChatCompletionService。</summary>
@@ -38,9 +40,12 @@ public sealed class ChatService : IDisposable
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly AgentDebugStatsService _agentDebugStats;
+    private readonly SkStreamChatToolingProcessRegistry _skToolingRegistry;
+    private readonly SkSubtaskChatCompletionAgentRunner _skSubtaskAgentRunner;
+    private readonly IChatTurnProcessCoordinator _turnCoordinator;
     private readonly object _kernelLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IKernelAccessor kernelAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, SkStreamChatToolingProcessRegistry skToolingRegistry, SkSubtaskChatCompletionAgentRunner skSubtaskAgentRunner, IChatTurnProcessCoordinator turnCoordinator)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -55,6 +60,9 @@ public sealed class ChatService : IDisposable
         _embeddingProvider = embeddingProvider;
         _planStore = planStore;
         _agentDebugStats = agentDebugStats;
+        _skToolingRegistry = skToolingRegistry;
+        _skSubtaskAgentRunner = skSubtaskAgentRunner;
+        _turnCoordinator = turnCoordinator;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -242,6 +250,7 @@ public sealed class ChatService : IDisposable
             }
         }
 
+        builder.Services.AddSingleton(_skToolingRegistry);
         var newKernel = builder.Build();
 
         // 阶段 3：将当前 Kernel 的嵌入服务同步到 EmbeddingProvider，供记忆/ RAG 使用
@@ -420,7 +429,7 @@ public sealed class ChatService : IDisposable
             try
             {
                 var client = await _mcpManager.StartClientAsync(mcpConfig, envOverlay: null);
-                var wrapper = new McpKernelPlugin(client, $"MCP_{mcpConfig.Name}");
+                var wrapper = new McpKernelPlugin(client, $"MCP_{mcpConfig.Name}", _loggerFactory.CreateLogger<McpKernelPlugin>());
                 var mcpPlugin = await wrapper.BuildPluginAsync();
                 newKernel.Plugins.Add(mcpPlugin);
                 mcpCount++;
@@ -596,397 +605,236 @@ public sealed class ChatService : IDisposable
             await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在准备上下文…", ct).ConfigureAwait(false);
 
             var ctxConfig = _configService.Current.ContextWindow ?? new ContextWindowConfig();
-            var historyBudget = GetEffectiveMaxContextTokens()
-                - ctxConfig.ReservedSystemTokens
-                - ctxConfig.ReservedToolsTokens
-                - ctxConfig.ReservedOutputTokens;
-
-            if (historyBudget > 0 && !ctxConfig.PassThroughContext)
+            var turn = new StreamChatTurnContext
             {
-                var totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
+                SessionId = sessionId,
+                UserMessage = userMessage,
+                KnowledgeBaseId = knowledgeBaseId,
+                Mode = mode,
+                PlanId = planId,
+                PlanCurrentStepIndex = planCurrentStepIndex,
+                State = state,
+                Kernel = kernel,
+                Chat = chat,
+                SessionManager = sessionManagerForStatus,
+                CtxConfig = ctxConfig
+            };
 
-                // 摘要优先：先判断是否触发摘要（基于原始内容），避免截断后摘要质量下降
-                var summarized = false;
-                if (ctxConfig.SummarizationEnabled && state.History.Count > 5
-                    && totalTokens >= (int)(historyBudget * ctxConfig.SummarizationTriggerRatio))
-                {
-                    try
-                    {
-                        await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在整理历史对话…", ct).ConfigureAwait(false);
-                        var sumResult = await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxConfig, sessionId, ct).ConfigureAwait(false);
-                        totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
-                        summarized = sumResult.DidCompact;
-                        if (sumResult.DidCompact)
-                        {
-                            var offloadDir = GetConversationHistoryDirectory(ctxConfig);
-                            var offloadConfigured = !string.IsNullOrWhiteSpace(offloadDir);
-                            var ctxTrace = AgentTraceFormatter.BuildContextSummarizationSuccessTrace(
-                                sumResult.MessagesRemoved, sumResult.SummaryLength, ctxConfig, offloadConfigured);
-                            await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", ctxTrace.Title, ctxTrace.Detail, ct).ConfigureAwait(false);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "[{SessionId}] Summarization failed, continuing without.", sessionId);
-                        var failTrace = AgentTraceFormatter.BuildContextSummarizationFailureTrace(ErrorMessageHelper.GetFriendlyMessage(ex));
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", failTrace.Title, failTrace.Detail, ct).ConfigureAwait(false);
-                    }
-                }
+            var skFeat = _configService.Current.SemanticKernel;
+            var ctxProc = skFeat?.UseLocalProcessForStreamChatContext == true;
+            var toolProc = skFeat?.UseLocalProcessForStreamChatTooling == true;
 
-                // 仅在未触发摘要时执行截断，避免对已摘要内容重复处理
-                if (!summarized && ctxConfig.TruncateToolArgsThresholdRatio > 0 && ctxConfig.TruncateToolArgsMaxChars > 0
-                    && totalTokens >= (int)(historyBudget * ctxConfig.TruncateToolArgsThresholdRatio))
-                {
-                    var keep = Math.Max(0, ctxConfig.TruncateToolArgsKeepMessages);
-                    var maxChars = Math.Max(100, ctxConfig.TruncateToolArgsMaxChars);
-                    var truncateSuffix = "…(已截断)";
-                    var oldEndIndex = Math.Max(0, state.History.Count - keep - 1);
-                    var truncatedCount = 0;
-                    for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
-                    {
-                        var msg = state.History[i];
-                        var content = msg.Content ?? "";
-                        if (content.Length <= maxChars) continue;
-                        var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
-                        state.History[i] = new ChatMessageContent(msg.Role, truncated);
-                        truncatedCount++;
-                    }
-                    if (truncatedCount > 0)
-                    {
-                        var trTrace = AgentTraceFormatter.BuildContextTruncateTrace(
-                            truncatedCount, keep, maxChars, ctxConfig.TruncateToolArgsThresholdRatio, totalTokens, historyBudget);
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", trTrace.Title, trTrace.Detail, ct).ConfigureAwait(false);
-                    }
-                }
+            async Task RunContextBothPartsAsync()
+            {
+                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
+                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
             }
 
-            // 阶段 3：长期记忆自动注入（本 session 优先 + 共享区 top-K，带来源标记；条数与总长走配置）
-            var warnings = new List<string>();
-            var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
-            if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            async Task RunToolingAsync() =>
+                await _turnCoordinator.RunToolingPhaseAsync(turn, ct).ConfigureAwait(false);
+
+            if (ctxProc && toolProc)
             {
+                var correlationId = Guid.NewGuid().ToString("N");
+                _skToolingRegistry.Register(correlationId, RunContextBothPartsAsync, RunToolingAsync);
+                var fullProcessFailed = false;
                 try
                 {
-                    await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索相关记忆…", ct).ConfigureAwait(false);
-                    var sessionTopK = Math.Clamp(ctxConfig.MemorySessionTopK, 1, 20);
-                    var sharedTopK = Math.Clamp(ctxConfig.MemorySharedTopK, 1, 20);
-                    var sessionResults = await memorySvc.SearchAsync(userMessage, sessionTopK, sessionId, ct).ConfigureAwait(false);
-                    var sharedResults = await memorySvc.SearchSharedAsync(userMessage, sharedTopK, ct).ConfigureAwait(false);
-                    var memTrace = AgentTraceFormatter.BuildMemoryTrace(sessionResults, sharedResults, sessionTopK, sharedTopK);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", memTrace.Title, memTrace.Detail, ct).ConfigureAwait(false);
-                    if (sessionResults.Count > 0 || sharedResults.Count > 0)
-                    {
-                        var parts = new List<string>();
-                        if (sessionResults.Count > 0)
-                            parts.Add("[以下是与当前对话相关的长期记忆，供参考]\n[本会话记忆]\n" + string.Join("\n", sessionResults.Select(r => "- " + r.Text)));
-                        if (sharedResults.Count > 0)
-                            parts.Add("[来自共享记忆]\n" + string.Join("\n", sharedResults.Select(r => "- " + r.Text)));
-                        var memoryBlock = string.Join("\n\n", parts);
-                        if (ctxConfig.MemoryInjectionMaxChars > 0 && memoryBlock.Length > ctxConfig.MemoryInjectionMaxChars)
-                            memoryBlock = memoryBlock.AsSpan(0, ctxConfig.MemoryInjectionMaxChars).ToString() + "\n（前文已截断）";
-                        var currentSystem = state.History[0].Content ?? "";
-                        state.History.RemoveAt(0);
-                        state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + memoryBlock));
-                    }
+                    await _skToolingRegistry.RunFullStreamChatProcessAsync(kernel, correlationId, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "[{SessionId}] Memory search failed, continuing without injection.", sessionId);
-                    var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
-                    warnings.Add("记忆检索失败：" + friendly + " 当前对话未注入长期记忆。");
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", "长期记忆检索失败", friendly, ct).ConfigureAwait(false);
+                    _logger.LogWarning(ex, "[{SessionId}] SK Process 全阶段失败，回退内联。", sessionId);
+                    fullProcessFailed = true;
+                }
+                finally
+                {
+                    _skToolingRegistry.Unregister(correlationId);
+                }
+                if (fullProcessFailed)
+                {
+                    await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
+                    foreach (var w in turn.ContextWarnings)
+                        yield return new StreamItem(IsWarning: true, Content: w);
+                    turn.ContextWarnings.Clear();
+                    await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
+                    await RunToolingAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    foreach (var w in turn.ContextWarnings)
+                        yield return new StreamItem(IsWarning: true, Content: w);
+                    turn.ContextWarnings.Clear();
                 }
             }
-
-            // 阶段 3：知识库 RAG 注入（当请求带 knowledgeBaseId 时）
-            if (!string.IsNullOrWhiteSpace(knowledgeBaseId) && memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            else if (ctxProc && !toolProc)
             {
+                var correlationId = Guid.NewGuid().ToString("N");
+                _skToolingRegistry.Register(correlationId, RunContextBothPartsAsync, null);
+                var contextProcessFailed = false;
                 try
                 {
-                    await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索知识库…", ct).ConfigureAwait(false);
-                    var kbResults = await memorySvc.SearchKnowledgeBaseAsync(knowledgeBaseId!.Trim(), userMessage, 5, ct).ConfigureAwait(false);
-                    var kbTrace = AgentTraceFormatter.BuildKnowledgeBaseTrace(knowledgeBaseId!.Trim(), kbResults);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", kbTrace.Title, kbTrace.Detail, ct).ConfigureAwait(false);
-                    if (kbResults.Count > 0)
-                    {
-                        var kbLines = kbResults.Select(r => $"- {r.Text}").ToList();
-                        var kbBlock = "[以下来自知识库的参考内容]\n" + string.Join("\n", kbLines);
-                        var currentSystem = state.History[0].Content ?? "";
-                        state.History.RemoveAt(0);
-                        state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + kbBlock));
-                    }
+                    await _skToolingRegistry.RunContextOnlyProcessAsync(kernel, correlationId, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "[{SessionId}] Knowledge base search failed for {KbId}.", sessionId, knowledgeBaseId);
-                    var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
-                    warnings.Add("知识库检索失败：" + friendly);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", "知识库检索失败", friendly, ct).ConfigureAwait(false);
+                    _logger.LogWarning(ex, "[{SessionId}] SK Process 上下文阶段失败，回退内联。", sessionId);
+                    contextProcessFailed = true;
                 }
+                finally
+                {
+                    _skToolingRegistry.Unregister(correlationId);
+                }
+                if (contextProcessFailed)
+                {
+                    await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
+                    foreach (var w in turn.ContextWarnings)
+                        yield return new StreamItem(IsWarning: true, Content: w);
+                    turn.ContextWarnings.Clear();
+                    await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
+                }
+                foreach (var w in turn.ContextWarnings)
+                    yield return new StreamItem(IsWarning: true, Content: w);
+                turn.ContextWarnings.Clear();
+                await RunToolingAsync().ConfigureAwait(false);
             }
-
-            foreach (var w in warnings)
-                yield return new StreamItem(IsWarning: true, Content: w);
-
-            // 跨 Agent 待办注入：拉取发给本端的任务，注入到 system
-            var taskStore = _serviceProvider.GetService<ICrossAgentTaskStore>();
-            var sessionManagerForTask = _serviceProvider.GetService<SessionManager>();
-            if (taskStore != null && sessionManagerForTask != null && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+            else if (!ctxProc && toolProc)
             {
+                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
+                foreach (var w in turn.ContextWarnings)
+                    yield return new StreamItem(IsWarning: true, Content: w);
+                turn.ContextWarnings.Clear();
+                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
+                var correlationId = Guid.NewGuid().ToString("N");
+                _skToolingRegistry.Register(correlationId, RunToolingAsync);
                 try
                 {
-                    var clientTypeForTask = sessionManagerForTask.GetClientType(sessionId);
-                    var pending = await taskStore.GetPendingForTargetAsync(clientTypeForTask, sessionId, ct).ConfigureAwait(false);
-                    if (pending.Count > 0)
-                    {
-                        var taskLines = pending.Select(t => $"- [id={t.Id}] {t.Description}").ToList();
-                        var taskBlock = "[以下来自其他端的待办，请在本轮完成并调用 complete_cross_agent_task 标记完成]\n" + string.Join("\n", taskLines);
-                        var currentSystem = state.History[0].Content ?? "";
-                        state.History.RemoveAt(0);
-                        state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + taskBlock));
-                    }
+                    await _skToolingRegistry.RunToolingProcessAsync(kernel, correlationId, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "[{SessionId}] Cross-agent task pull failed.", sessionId);
+                    _logger.LogWarning(ex, "[{SessionId}] SK Process 工具阶段失败，回退内联执行。", sessionId);
+                    await RunToolingAsync().ConfigureAwait(false);
                 }
-            }
-
-            // 计划模式 / 计划注入
-            var isPlanMode = string.Equals(mode?.Trim(), "plan", StringComparison.OrdinalIgnoreCase);
-            (string Content, PlanMeta Meta)? planResult = null;
-            if (state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
-            {
-                var currentSystem = state.History[0].Content ?? "";
-                var systemModified = false;
-                if (isPlanMode)
+                finally
                 {
-                    currentSystem += "\n\n[当前为计划模式] 请根据用户描述仅生成实现计划（Markdown），并调用 create_plan 工具保存。不要执行具体操作，不要调用其他工具。";
-                    systemModified = true;
+                    _skToolingRegistry.Unregister(correlationId);
                 }
-                if (!string.IsNullOrWhiteSpace(planId) && !isPlanMode)
-                {
-                    planResult = await _planStore.GetAsync(planId.Trim(), ct).ConfigureAwait(false);
-                    if (planResult != null)
-                    {
-                        var planContent = planResult.Value.Content;
-                        var stepIndex = planCurrentStepIndex is > 0 ? planCurrentStepIndex.Value : 1;
-                        var stepOnly = PlanStepParser.GetStepAt(planContent, stepIndex);
-                        if (!string.IsNullOrWhiteSpace(stepOnly))
-                        {
-                            currentSystem += "\n\n[当前绑定的计划·第 " + stepIndex + " 步]\n" + stepOnly;
-                        }
-                        else
-                        {
-                            var planMaxChars = ctxConfig.PlanContentMaxChars;
-                            if (planMaxChars > 0 && planContent.Length > planMaxChars)
-                                planContent = planContent.AsSpan(0, planMaxChars).ToString() + "\n（前文已截断）";
-                            currentSystem += "\n\n[当前绑定的计划]\n" + planContent;
-                        }
-                        systemModified = true;
-                    }
-                }
-                if (systemModified)
-                {
-                    state.History.RemoveAt(0);
-                    state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem));
-                }
-            }
-
-            var payloadChars = 0;
-            for (var i = 0; i < state.History.Count; i++)
-                payloadChars += (state.History[i].Content?.Length ?? 0);
-            var phase = isPlanMode ? "plan" : "agent";
-            _logger.LogInformation(
-                "[AI-REQUEST] SessionId={SessionId} phase={Phase} turns={Turns} payloadChars={PayloadChars}",
-                sessionId, phase, state.History.Count, payloadChars);
-
-            var aiConfig = _configService.Current.AI;
-            var clientType = sessionManagerForStatus.GetClientType(sessionId);
-            IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
-            if (!isPlanMode)
-            {
-                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
-                _agentDebugStats.IncrementToolSelectionTotal();
-                try
-                {
-                    var recentHistory = state.History.Count > 1 ? state.History : null;
-                    var embeddingConfigured = _embeddingProvider.IsConfigured;
-                    var storePersistent = _vectorStore.IsPersistent;
-                    _logger.LogInformation("[{SessionId}] ToolSelection: entry clientType={ClientType} embeddingConfigured={Emb} storePersistent={Store}.",
-                        sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
-                    if (embeddingConfigured && storePersistent)
-                    {
-                        var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
-                        var vectorSearch = await _toolIndex.SearchToolsAsync(
-                            userPrompt, clientType,
-                            topK: ctxConfig.ToolSearchTopK,
-                            minScore: ctxConfig.ToolSearchMinScore,
-                            minCount: ctxConfig.ToolSearchMinCount,
-                            ct).ConfigureAwait(false);
-                        _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
-                            sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
-                        var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
-                        var scored = vectorSearch.ScoredHits;
-                        var maxS = scored.Count > 0 ? scored[0].Score : 0.0;
-                        double? secondS = scored.Count >= 2 ? scored[1].Score : null;
-                        _agentDebugStats.RecordVectorSearchCompleted(new VectorSearchTelemetry(
-                            clientType,
-                            maxS,
-                            secondS,
-                            scored.Count,
-                            vectorSearch.GoodEnough,
-                            vectorFirstChosen));
-                        string vectorDecision;
-                        if (vectorFirstChosen)
-                        {
-                            selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
-                            _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
-                            _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
-                            vectorDecision = "决策：已采用向量优先路径（合并 AlwaysInclude 后 (插件,函数) 对数=" + selectedPairs.Count + "）。";
-                        }
-                        else
-                        {
-                            vectorDecision = "决策：向量命中未达 goodEnough 或为空，将调用两阶段子类筛选。";
-                        }
-                        var vectorDetail = AgentTraceFormatter.BuildToolVectorSearchDetail(
-                            clientType, vectorSearch,
-                            ctxConfig.ToolSearchTopK, ctxConfig.ToolSearchMinScore, ctxConfig.ToolSearchMinCount,
-                            vectorDecision);
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引检索", vectorDetail, ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        if (!embeddingConfigured)
-                            _agentDebugStats.RecordVectorSkippedNoEmbedding();
-                        else
-                            _agentDebugStats.RecordVectorSkippedNonPersistent();
-                        var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
-                    }
-                    if (selectedPairs == null)
-                    {
-                        _agentDebugStats.RecordTwoStageUsed();
-                        _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
-                        var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
-                        selectedPairs = twoStage.SelectedPairs;
-                        _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
-                            sessionId, selectedPairs?.Count ?? -1);
-                        var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
-                    _agentDebugStats.RecordToolSelectionException();
-                    selectedPairs = null;
-                    await NotifyAgentTraceAsync(
-                        sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
-                        ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
-                }
-            }
-            IReadOnlyList<KernelFunction>? selectedFunctions;
-            if (isPlanMode)
-            {
-                selectedFunctions = GetPlanOnlyFunctions(kernel);
-                _logger.LogInformation("[{SessionId}] ToolSelection: plan mode, planOnlyFunctionCount={Count}.", sessionId, selectedFunctions?.Count ?? 0);
             }
             else
             {
-                selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
-                if (planResult != null && selectedFunctions != null)
-                    selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
-                var pairsCount = selectedPairs?.Count ?? 0;
-                var funcsCount = selectedFunctions?.Count ?? 0;
-                var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
-                _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
-                    sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
-            }
-
-            var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
-            OpenAIPromptExecutionSettings execSettings;
-            if (selectedFunctions is { Count: > 0 })
-            {
-                execSettings = new OpenAIPromptExecutionSettings
-                {
-                    MaxTokens = maxOutputTokens,
-                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(selectedFunctions)
-                };
-                _logger.LogInformation("[{SessionId}] ToolSelection: final restricted to {FunctionCount} functions clientType={ClientType}.",
-                    sessionId, selectedFunctions.Count, clientType ?? "(null)");
-                _logger.LogDebug("[{SessionId}] Tool selection: clientType={ClientType} {FunctionCount} functions",
-                    sessionId, clientType ?? "(null)", selectedFunctions.Count);
-            }
-            else
-            {
-                execSettings = new OpenAIPromptExecutionSettings
-                {
-                    MaxTokens = maxOutputTokens,
-                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
-                };
-                _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
+                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
+                foreach (var w in turn.ContextWarnings)
+                    yield return new StreamItem(IsWarning: true, Content: w);
+                turn.ContextWarnings.Clear();
+                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
+                await RunToolingAsync().ConfigureAwait(false);
             }
 
             var fullResponse = new System.Text.StringBuilder();
 
-            // 按 clientType 注入身份说明；非计划模式下追加「工具结果须在正文复述」约束
-            var identitySuffix = GetClientTypeIdentitySuffix(clientType);
-            var historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
-
             await NotifyAgentStatusAsync(
                 sessionManagerForStatus,
                 sessionId,
-                isPlanMode ? "正在等待模型生成计划…" : "正在等待模型响应…",
+                turn.IsPlanMode ? "正在等待模型生成计划…" : "正在等待模型响应…",
                 ct).ConfigureAwait(false);
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            if (skFeat?.UseAgentGroupChatMainSession == true)
             {
-                if (attempt > 0)
-                    fullResponse.Clear();
-
-                await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(
-                    historyToUse, execSettings, kernel, ct).GetAsyncEnumerator(ct);
-
-                var contextRetry = false;
-                while (true)
+                await foreach (var streamItem in SkMainSessionAgentGroupChatRunner.InvokeStreamingAsync(
+                                   kernel, _loggerFactory, turn.HistoryToUse, turn.ExecSettings, turn.SessionManager, sessionId, ct)
+                               .ConfigureAwait(false))
                 {
-                    bool moved;
+                    if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
+                        fullResponse.Append(streamItem.Content);
+                    yield return streamItem;
+                }
+            }
+            else
+            {
+                if (skFeat?.UseHostPreambleAgent == true)
+                {
+                    var preambleSb = new System.Text.StringBuilder();
+                    var hostPreambleSettings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.3f };
+                    var hostPreambleAgent = new ChatCompletionAgent
+                    {
+                        Name = "HostBrief",
+                        Instructions = "用一两句话说明你将如何组织回答（不写正文解答）。",
+                        Kernel = kernel,
+                        LoggerFactory = _loggerFactory,
+                        Arguments = new KernelArguments(hostPreambleSettings)
+                    };
+                    var preambleHistory = new ChatHistory();
+                    preambleHistory.AddUserMessage(userMessage);
+                    var preambleOpts = new AgentInvokeOptions { Kernel = kernel };
                     try
                     {
-                        moved = await streamEnum.MoveNextAsync().ConfigureAwait(false);
+                        await foreach (var item in hostPreambleAgent.InvokeStreamingAsync(preambleHistory, thread: null, preambleOpts, ct).ConfigureAwait(false))
+                        {
+                            if (item.Message?.Content is { Length: > 0 } t)
+                                preambleSb.Append(t);
+                        }
                     }
-                    catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
+                    catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
-                        TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
-                        historyToUse = BuildHistoryForStreamingTurn(state.History, identitySuffix, isPlanMode);
-                        contextRetry = true;
-                        break;
+                        _logger.LogWarning(ex, "[{SessionId}] Host 前言 Agent 失败，跳过注入。", sessionId);
                     }
-
-                    if (!moved)
-                        break;
-
-                    foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
-                        yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
-
-                    var chunk = streamEnum.Current;
-                    var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
-                    if (!string.IsNullOrEmpty(metaReasoning))
-                        yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
-
-                    if (chunk.Content is { Length: > 0 } text)
+                    var preambleText = preambleSb.ToString().Trim();
+                    if (preambleText.Length > 0)
                     {
-                        fullResponse.Append(text);
-                        yield return new StreamItem(IsWarning: false, Content: text);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "agent_phase", "Host 前言", preambleText, ct).ConfigureAwait(false);
+                        turn.HistoryToUse = InjectHostPreambleIntoStreamingHistory(turn.HistoryToUse, preambleText);
                     }
                 }
 
-                if (contextRetry)
-                    continue;
+                for (var attempt = 0; attempt < 2; attempt++)
+                {
+                    if (attempt > 0)
+                        fullResponse.Clear();
 
-                break;
+                    await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(
+                        turn.HistoryToUse, turn.ExecSettings, kernel, ct).GetAsyncEnumerator(ct);
+
+                    var contextRetry = false;
+                    while (true)
+                    {
+                        bool moved;
+                        try
+                        {
+                            moved = await streamEnum.MoveNextAsync().ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
+                        {
+                            _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
+                            TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
+                            turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.IsPlanMode);
+                            contextRetry = true;
+                            break;
+                        }
+
+                        if (!moved)
+                            break;
+
+                        foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                            yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+
+                        var chunk = streamEnum.Current;
+                        var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
+                        if (!string.IsNullOrEmpty(metaReasoning))
+                            yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
+
+                        if (chunk.Content is { Length: > 0 } text)
+                        {
+                            fullResponse.Append(text);
+                            yield return new StreamItem(IsWarning: false, Content: text);
+                        }
+                    }
+
+                    if (contextRetry)
+                        continue;
+
+                    break;
+                }
             }
 
             var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());
@@ -1122,12 +970,32 @@ public sealed class ChatService : IDisposable
             }).ConfigureAwait(false);
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
+                var useSkAgent = _configService.Current.SemanticKernel?.UseChatCompletionAgentForSubtask == true;
+                if (useSkAgent)
                 {
-                    if (chunk.Content is { Length: > 0 } text)
+                    await _skSubtaskAgentRunner.RunStreamingAsync(
+                        kernel,
+                        string.IsNullOrWhiteSpace(_kernelAccessor.ActiveModelId) ? null : _kernelAccessor.ActiveModelId.Trim(),
+                        systemPrompt,
+                        userContent,
+                        allowedFunctions,
+                        async text =>
+                        {
+                            fullResponse.Append(text);
+                            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                        },
+                        settings,
+                        timeoutCts.Token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
                     {
-                        fullResponse.Append(text);
-                        await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                        if (chunk.Content is { Length: > 0 } text)
+                        {
+                            fullResponse.Append(text);
+                            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
+                        }
                     }
                 }
             }
@@ -1631,18 +1499,4 @@ public sealed class ChatService : IDisposable
     }
 
     public void Dispose() => _cleanupTimer.Dispose();
-
-    private sealed class SessionState
-    {
-        public ChatHistory History { get; }
-        public DateTime LastActivity { get; private set; }
-
-        public SessionState(string systemPrompt)
-        {
-            History = new ChatHistory(systemPrompt);
-            Touch();
-        }
-
-        public void Touch() => LastActivity = DateTime.UtcNow;
-    }
 }

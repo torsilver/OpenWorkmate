@@ -264,9 +264,39 @@ public class OcrConfig
     public string? Language { get; set; }
 }
 
+/// <summary>Semantic Kernel 实验性功能开关（user-config.json 中 <c>semanticKernel</c>）。</summary>
+public class SemanticKernelFeaturesConfig
+{
+    /// <summary>为 true 时 <c>run_subtask</c> 使用 <c>ChatCompletionAgent</c> 流式路径。</summary>
+    public bool UseChatCompletionAgentForSubtask { get; set; }
+    /// <summary>为 true 时主会话在工具筛选与流式前准备阶段经 <c>LocalKernelProcessFactory</c> 执行（与内联逻辑等价）。</summary>
+    public bool UseLocalProcessForStreamChatTooling { get; set; }
+    /// <summary>为 true 时主会话「上下文准备」阶段（摘要/记忆/RAG/计划注入等）也经 Process 执行。</summary>
+    public bool UseLocalProcessForStreamChatContext { get; set; }
+    /// <summary>主模型流式前增加轻量 Host Agent，输出走 agent_trace；可临时影响本轮 <c>historyToUse</c>。</summary>
+    public bool UseHostPreambleAgent { get; set; }
+    /// <summary>主会话使用 <c>AgentGroupChat</c>（Host + Worker）；延迟与 token 消耗显著增加，实验用。</summary>
+    public bool UseAgentGroupChatMainSession { get; set; }
+
+    public static SemanticKernelFeaturesConfig Clone(SemanticKernelFeaturesConfig? src)
+    {
+        if (src == null) return new SemanticKernelFeaturesConfig();
+        return new SemanticKernelFeaturesConfig
+        {
+            UseChatCompletionAgentForSubtask = src.UseChatCompletionAgentForSubtask,
+            UseLocalProcessForStreamChatTooling = src.UseLocalProcessForStreamChatTooling,
+            UseLocalProcessForStreamChatContext = src.UseLocalProcessForStreamChatContext,
+            UseHostPreambleAgent = src.UseHostPreambleAgent,
+            UseAgentGroupChatMainSession = src.UseAgentGroupChatMainSession
+        };
+    }
+}
+
 public class AppConfig
 {
     public AiConfig AI { get; set; } = new();
+    /// <summary>SK Agents / Process 等实验开关；未配置时均为 false。</summary>
+    public SemanticKernelFeaturesConfig? SemanticKernel { get; set; }
     /// <summary>会话配置（历史轮数、超时等）；未配置时使用默认值。</summary>
     public SessionConfig? Session { get; set; }
     /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
@@ -682,6 +712,7 @@ public sealed class ConfigService
             OcrModels = new List<OcrModelEntry>(),
             CliRunMode = "UseAllowList",
             RagStorageType = "Sqlite",
+            SemanticKernel = new SemanticKernelFeaturesConfig(),
         };
         ApplyActivePresetIfSet(appConfig);
         MigrateLegacyAiIfNeeded(appConfig);
@@ -1010,6 +1041,8 @@ public sealed class ConfigService
                 if (newConfig.ActiveOcrModelId == null) newConfig.ActiveOcrModelId = _currentConfig.ActiveOcrModelId;
                 if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
+                if (newConfig.SemanticKernel == null)
+                    newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {

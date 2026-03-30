@@ -405,6 +405,32 @@
         </div>
       </details>
       <details class="settings-block">
+        <summary>Semantic Kernel 实验</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin: 0 0 12px 0;">以下功能依赖 Semantic Kernel 实验 API，可能增加延迟与 token 消耗；默认关闭。保存配置后写入 <code>user-config.json</code> 的 <code>semanticKernel</code>。</p>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 8px;">
+            <input type="checkbox" id="skUseChatCompletionAgentForSubtask" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">子任务（run_subtask）使用 ChatCompletionAgent 流式路径</span>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 8px;">
+            <input type="checkbox" id="skUseLocalProcessForStreamChatTooling" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">主会话「工具筛选」阶段经 LocalKernel Process 执行</span>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 8px;">
+            <input type="checkbox" id="skUseLocalProcessForStreamChatContext" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">主会话「上下文准备」阶段经 LocalKernel Process 执行（常与上一项组合为多步 Process）</span>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 8px;">
+            <input type="checkbox" id="skUseHostPreambleAgent" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">主模型流式前运行轻量 Host Agent（输出见对话 trace）</span>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 0;">
+            <input type="checkbox" id="skUseAgentGroupChatMainSession" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">主会话使用 AgentGroupChat（Host + Worker，实验性强、开销大）</span>
+          </label>
+        </div>
+      </details>
+      <details class="settings-block">
         <summary>麦克风权限（会议监听）</summary>
         <div class="settings-block-inner">
       <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">

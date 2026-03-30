@@ -1,208 +1,126 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 
 namespace OfficeCopilot.Server.Mcp;
 
-public class McpClient : IDisposable
+/// <summary>
+/// MCP 客户端：基于官方 <see href="https://www.nuget.org/packages/ModelContextProtocol">ModelContextProtocol</see> SDK（stdio），
+/// 替代自研 JSON-RPC。Microsoft.SemanticKernel.Connectors.Mcp.Core 在 NuGet 上不存在，故采用 MCP 官方 C# SDK。
+/// </summary>
+public sealed class McpClient : IAsyncDisposable, IDisposable
 {
     private readonly string _id;
-    private readonly string _command;
-    private readonly string[] _args;
-    private readonly IReadOnlyDictionary<string, string>? _env;
     private readonly ILogger _logger;
-    private Process? _process;
-    private StreamReader? _stdout;
-    private StreamWriter? _stdin;
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonRpcResponse>> _pendingRequests = new();
-    private CancellationTokenSource? _readCts;
+    private readonly SdkMcpClient _sdk;
 
     public string Id => _id;
 
-    public McpClient(string id, string command, string[] args, IReadOnlyDictionary<string, string>? env, ILogger logger)
+    private McpClient(string id, ILogger logger, SdkMcpClient sdk)
     {
         _id = id;
-        _command = command;
-        _args = args;
-        _env = env;
         _logger = logger;
+        _sdk = sdk;
     }
 
-    public async Task StartAsync(CancellationToken ct = default)
+    public static async Task<McpClient> ConnectAsync(
+        string id,
+        string command,
+        string[] args,
+        IReadOnlyDictionary<string, string>? env,
+        ILoggerFactory loggerFactory,
+        ILogger logger,
+        CancellationToken ct = default)
     {
-        var psi = new ProcessStartInfo
+        var opts = new StdioClientTransportOptions
         {
-            FileName = _command,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            Name = id,
+            Command = command,
+            Arguments = args ?? Array.Empty<string>(),
         };
-
-        foreach (var arg in _args)
+        if (env != null)
         {
-            psi.ArgumentList.Add(arg);
+            foreach (var kv in env)
+                opts.EnvironmentVariables[kv.Key] = kv.Value ?? "";
         }
 
-        if (_env != null)
-        {
-            foreach (var kv in _env)
-            {
-                if (!string.IsNullOrEmpty(kv.Key))
-                    psi.Environment[kv.Key] = kv.Value ?? "";
-            }
-        }
-
-        _process = new Process { StartInfo = psi };
-        
-        _process.ErrorDataReceived += (s, e) => 
-        {
-            if (!string.IsNullOrEmpty(e.Data))
-            {
-                _logger.LogWarning("[MCP {Id} STDERR] {Data}", _id, e.Data);
-            }
-        };
-
-        if (!_process.Start())
-        {
-            throw new Exception($"Failed to start MCP Server: {_command}");
-        }
-
-        _process.BeginErrorReadLine();
-
-        _stdout = _process.StandardOutput;
-        _stdin = _process.StandardInput;
-
-        _readCts = new CancellationTokenSource();
-        _ = Task.Run(() => ReadLoopAsync(_readCts.Token), CancellationToken.None);
-
-        // 初始化握手
-        await InitializeAsync(ct);
-    }
-
-    private async Task ReadLoopAsync(CancellationToken ct)
-    {
-        try
-        {
-            while (!ct.IsCancellationRequested && _stdout != null)
-            {
-                var line = await _stdout.ReadLineAsync(ct);
-                if (line == null)
-                    break;
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                try
-                {
-                    var response = JsonSerializer.Deserialize<JsonRpcResponse>(line);
-                    if (response != null && response.Id != null && _pendingRequests.TryGetValue(response.Id, out var tcs))
-                    {
-                        tcs.SetResult(response);
-                        _pendingRequests.TryRemove(response.Id, out _);
-                    }
-                    else
-                    {
-                        // 可能是服务器发来的通知 (Notification) 或不支持的请求，忽略
-                        _logger.LogDebug("[MCP {Id}] Received unhandled message: {Line}", _id, line);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[MCP {Id}] Failed to parse incoming JSON-RPC: {Line}", _id, line);
-                }
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[MCP {Id}] ReadLoop crashed.", _id);
-        }
-    }
-
-    private async Task<JsonElement?> SendRequestAsync(string method, object? parameters = null, CancellationToken ct = default)
-    {
-        var requestId = Guid.NewGuid().ToString("N");
-        var request = new JsonRpcRequest
-        {
-            Id = requestId,
-            Method = method,
-            Params = parameters
-        };
-
-        var tcs = new TaskCompletionSource<JsonRpcResponse>();
-        _pendingRequests[requestId] = tcs;
-
-        var json = JsonSerializer.Serialize(request);
-        await _stdin!.WriteLineAsync(json);
-        await _stdin.FlushAsync();
-
-        // 默认 30 秒超时
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
-
-        timeoutCts.Token.Register(() => tcs.TrySetCanceled());
-
-        var response = await tcs.Task;
-
-        if (response.Error != null)
-        {
-            throw new Exception($"MCP Error {response.Error.Code}: {response.Error.Message}");
-        }
-
-        return response.Result;
-    }
-
-    private async Task InitializeAsync(CancellationToken ct)
-    {
-        var initParams = new
-        {
-            protocolVersion = "2024-11-05",
-            capabilities = new { },
-            clientInfo = new { name = "OfficeCopilot", version = "1.0.0" }
-        };
-
-        await SendRequestAsync("initialize", initParams, ct);
-        
-        // 发送 initialized 通知
-        var notif = new JsonRpcRequest { Method = "notifications/initialized" };
-        await _stdin!.WriteLineAsync(JsonSerializer.Serialize(notif));
-        await _stdin.FlushAsync();
-        
-        _logger.LogInformation("[MCP {Id}] Handshake complete.", _id);
+        var transport = new StdioClientTransport(opts, loggerFactory);
+        var sdk = await SdkMcpClient.CreateAsync(transport, new McpClientOptions(), loggerFactory, ct).ConfigureAwait(false);
+        return new McpClient(id, logger, sdk);
     }
 
     public async Task<List<McpTool>> ListToolsAsync(CancellationToken ct = default)
     {
-        var result = await SendRequestAsync("tools/list", null, ct);
-        if (result.HasValue && result.Value.TryGetProperty("tools", out var toolsArray))
+        var tools = await _sdk.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+        var list = new List<McpTool>();
+        foreach (var t in tools)
         {
-            return toolsArray.Deserialize<List<McpTool>>() ?? new List<McpTool>();
+            var tool = new McpTool
+            {
+                Name = t.Name ?? "",
+                Description = t.Description ?? "",
+            };
+            try
+            {
+                if (t.JsonSchema is JsonElement je && je.ValueKind != JsonValueKind.Undefined)
+                    tool.InputSchema = je;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "[MCP {Id}] Tool {Name} input schema serialization skipped.", _id, tool.Name);
+            }
+            list.Add(tool);
         }
-        return new List<McpTool>();
+        return list;
     }
 
     public async Task<McpCallToolResult> CallToolAsync(string name, Dictionary<string, object> args, CancellationToken ct = default)
     {
-        var result = await SendRequestAsync("tools/call", new
+        try
         {
-            name = name,
-            arguments = args
-        }, ct);
-
-        if (result.HasValue)
-        {
-            return result.Value.Deserialize<McpCallToolResult>() ?? new McpCallToolResult();
+            IReadOnlyDictionary<string, object?> argDict = args.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+            var result = await _sdk.CallToolAsync(name, argDict, cancellationToken: ct).ConfigureAwait(false);
+            var mapped = new McpCallToolResult { IsError = result.IsError == true };
+            if (result.Content is { Count: > 0 })
+            {
+                foreach (var block in result.Content)
+                {
+                    if (block is TextContentBlock tb)
+                        mapped.Content.Add(new McpContent { Type = "text", Text = tb.Text ?? "" });
+                    else
+                        mapped.Content.Add(new McpContent { Type = "text", Text = block.ToString() ?? "" });
+                }
+            }
+            return mapped;
         }
-        
-        throw new Exception("Tool call returned no result.");
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[MCP {Id}] CallToolAsync failed for tool {Tool}", _id, name);
+            return new McpCallToolResult
+            {
+                IsError = true,
+                Content = new List<McpContent> { new() { Type = "text", Text = ex.Message } }
+            };
+        }
     }
 
     public void Dispose()
     {
-        _readCts?.Cancel();
-        _process?.Kill();
-        _process?.Dispose();
-        _stdout?.Dispose();
-        _stdin?.Dispose();
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            // Sdk 会话释放时会结束子进程并释放 stdio 传输层，勿再单独 Dispose transport。
+            await _sdk.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[MCP {Id}] Sdk dispose", _id);
+        }
     }
 }

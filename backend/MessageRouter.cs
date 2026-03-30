@@ -309,6 +309,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(WsMessage))]
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(SemanticKernelFeaturesConfig))]
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]

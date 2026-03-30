@@ -54,3 +54,7 @@ chrome端要不要加一个读取网页源码的MCP工具
 WPS/OFFICE端 是否能实现右键菜单工具
 
 @模式输入到对话框的内容 是否真的能提升工具命中率
+
+前台对话框是否完全显示了所有subagent的对话内容
+
+Semantic Kernel (SK) 的 Agent Framework 和 Process Framework

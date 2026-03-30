@@ -1541,6 +1541,33 @@ function debouncedSaveConfig() {
   }, SAVE_DEBOUNCE_MS);
 }
 
+function collectSemanticKernelPayload() {
+  function ck(id) {
+    var el = document.getElementById(id);
+    return !!(el && el.checked);
+  }
+  return {
+    useChatCompletionAgentForSubtask: ck('skUseChatCompletionAgentForSubtask'),
+    useLocalProcessForStreamChatTooling: ck('skUseLocalProcessForStreamChatTooling'),
+    useLocalProcessForStreamChatContext: ck('skUseLocalProcessForStreamChatContext'),
+    useHostPreambleAgent: ck('skUseHostPreambleAgent'),
+    useAgentGroupChatMainSession: ck('skUseAgentGroupChatMainSession')
+  };
+}
+
+function applySemanticKernelToForm(sk) {
+  sk = sk || {};
+  function setCk(id, v) {
+    var el = document.getElementById(id);
+    if (el) el.checked = !!v;
+  }
+  setCk('skUseChatCompletionAgentForSubtask', sk.useChatCompletionAgentForSubtask ?? sk.UseChatCompletionAgentForSubtask);
+  setCk('skUseLocalProcessForStreamChatTooling', sk.useLocalProcessForStreamChatTooling ?? sk.UseLocalProcessForStreamChatTooling);
+  setCk('skUseLocalProcessForStreamChatContext', sk.useLocalProcessForStreamChatContext ?? sk.UseLocalProcessForStreamChatContext);
+  setCk('skUseHostPreambleAgent', sk.useHostPreambleAgent ?? sk.UseHostPreambleAgent);
+  setCk('skUseAgentGroupChatMainSession', sk.useAgentGroupChatMainSession ?? sk.UseAgentGroupChatMainSession);
+}
+
 async function loadConfig() {
   try {
     setSaveConfigButtonsState(true, '加载中...');
@@ -1623,6 +1650,7 @@ async function loadConfig() {
     } else if (themeEl) {
       themeEl.value = 'dark';
     }
+    applySemanticKernelToForm(data.semanticKernel ?? data.SemanticKernel);
   } catch (err) {
     var friendly = messageForBackendUnreachable(err);
     if (friendly) console.warn(friendly);
@@ -1892,7 +1920,8 @@ async function saveConfig() {
       webSocketAuthToken: (function () {
         var el = document.getElementById('localServiceAuthToken');
         return el ? String(el.value || '').trim() : '';
-      })()
+      })(),
+      semanticKernel: collectSemanticKernelPayload()
     };
     const response = await tasklyFetch(API_URL, {
       method: 'POST',
@@ -1903,7 +1932,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';

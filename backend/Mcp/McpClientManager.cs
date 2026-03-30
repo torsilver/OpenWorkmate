@@ -1,29 +1,37 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server.Mcp;
 
 public sealed class McpClientManager : IDisposable
 {
     private readonly ConcurrentDictionary<string, McpClient> _clients = new();
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<McpClientManager> _logger;
 
-    public McpClientManager(ILogger<McpClientManager> logger)
+    public McpClientManager(ILoggerFactory loggerFactory, ILogger<McpClientManager> logger)
     {
+        _loggerFactory = loggerFactory;
         _logger = logger;
     }
 
     public async Task<McpClient> StartClientAsync(McpServerConfig config, IReadOnlyDictionary<string, string>? envOverlay = null, CancellationToken ct = default)
     {
         if (_clients.TryGetValue(config.Id, out var existing))
-        {
-            return existing; // 已经运行中
-        }
+            return existing;
 
         var env = MergeEnv(config.Env, envOverlay);
-        var client = new McpClient(config.Id, config.Command, config.Args ?? Array.Empty<string>(), env, _logger);
+        var log = _loggerFactory.CreateLogger($"MCP.{config.Id}");
         try
         {
-            await client.StartAsync(ct);
+            var client = await McpClient.ConnectAsync(
+                config.Id,
+                config.Command,
+                config.Args ?? Array.Empty<string>(),
+                env,
+                _loggerFactory,
+                log,
+                ct).ConfigureAwait(false);
             _clients[config.Id] = client;
             _logger.LogInformation("MCP Client started: {Name} ({Command})", config.Name, config.Command);
             return client;
@@ -31,7 +39,6 @@ public sealed class McpClientManager : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start MCP Client {Name}", config.Name);
-            client.Dispose();
             throw;
         }
     }
@@ -40,16 +47,22 @@ public sealed class McpClientManager : IDisposable
     {
         foreach (var kv in _clients)
         {
-            kv.Value.Dispose();
+            try
+            {
+                await kv.Value.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "MCP Client dispose: {Id}", kv.Key);
+            }
             _logger.LogInformation("MCP Client stopped: {Id}", kv.Key);
         }
         _clients.Clear();
-        await Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        _ = StopAllAsync();
+        StopAllAsync().GetAwaiter().GetResult();
     }
 
     private static IReadOnlyDictionary<string, string>? MergeEnv(Dictionary<string, string>? configEnv, IReadOnlyDictionary<string, string>? overlay)

@@ -1,5 +1,5 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
-using System.Text.Json;
 
 namespace OfficeCopilot.Server.Mcp;
 
@@ -7,11 +7,13 @@ public sealed class McpKernelPlugin
 {
     private readonly McpClient _client;
     private readonly string _pluginName;
+    private readonly ILogger<McpKernelPlugin> _logger;
 
-    public McpKernelPlugin(McpClient client, string pluginName)
+    public McpKernelPlugin(McpClient client, string pluginName, ILogger<McpKernelPlugin> logger)
     {
         _client = client;
         _pluginName = pluginName;
+        _logger = logger;
     }
 
     public async Task<KernelPlugin> BuildPluginAsync(CancellationToken ct = default)
@@ -50,14 +52,16 @@ public sealed class McpKernelPlugin
             if (result.IsError)
             {
                 var errorMsg = string.Join("\n", result.Content.Select(c => c.Text));
-                return $"[MCP Error] {errorMsg}";
+                _logger.LogWarning("[{Plugin}] MCP tool {Tool} returned error: {Message}", _pluginName, toolName, errorMsg);
+                return $"[MCP 工具错误] {errorMsg}";
             }
 
             return string.Join("\n", result.Content.Select(c => c.Text));
         }
         catch (Exception ex)
         {
-            return $"[MCP Client Exception] {ex.Message}";
+            _logger.LogWarning(ex, "[{Plugin}] MCP tool {Tool} threw", _pluginName, toolName);
+            return $"[MCP 调用异常] {ex.Message}";
         }
     }
 

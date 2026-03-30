@@ -63,6 +63,9 @@ try
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.IChatTurnProcessCoordinator, OfficeCopilot.Server.Services.SemanticKernel.DefaultChatTurnProcessCoordinator>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.SkStreamChatToolingProcessRegistry>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.SkSubtaskChatCompletionAgentRunner>();
     builder.Services.AddSingleton<IKernelAccessor, KernelAccessor>();
     builder.Services.AddSingleton<EmbeddingProvider>();
     builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());

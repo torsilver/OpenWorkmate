@@ -199,6 +199,16 @@ public class SecurityAuthIntegrationTests
         Assert.Equal("error", msg.RootElement.GetProperty("type").GetString());
         var m = msg.RootElement.GetProperty("message").GetString() ?? "";
         Assert.Contains("百炼", m);
-        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+        if (socket.State == WebSocketState.Open)
+        {
+            try
+            {
+                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                // 服务端可能已在下发错误后主动关闭，TestHost 上再 CloseAsync 会抛错，忽略即可
+            }
+        }
     }
 }
