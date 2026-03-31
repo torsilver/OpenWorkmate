@@ -37,6 +37,7 @@ public sealed class DashScopeChatRequestMergeTests
         using var doc = JsonDocument.Parse(merged);
         Assert.True(doc.RootElement.GetProperty("enable_thinking").GetBoolean());
         Assert.True(doc.RootElement.GetProperty("stream").GetBoolean());
+        Assert.True(doc.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
     }
 
     [Fact]
@@ -69,5 +70,19 @@ public sealed class DashScopeChatRequestMergeTests
             s => emitted.Add(s));
         Assert.Single(emitted);
         Assert.Equal("你好", emitted[0]);
+    }
+
+    [Fact]
+    public void HeadTailOmitMiddle_short_returns_full()
+    {
+        var s = new string('x', 500);
+        Assert.Equal(s, DashScopeChatRequestDiagnostics.HeadTailOmitMiddle(s, 300, 300));
+    }
+
+    [Fact]
+    public void HeadTailOmitMiddle_long_inserts_omitted_marker()
+    {
+        var r = DashScopeChatRequestDiagnostics.HeadTailOmitMiddle("abcdefgh", 3, 3);
+        Assert.Equal("abc …[omitted 2 chars]… fgh", r);
     }
 }

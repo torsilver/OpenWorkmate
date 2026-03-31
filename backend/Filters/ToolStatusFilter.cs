@@ -42,8 +42,14 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         var planStepIndex = GetPlanStepIndex(pluginName, functionName, context.Arguments);
 
         await SendAgentPhaseAsync(sessionId, "intent", $"{pluginName}.{functionName}");
-        // 发送开始
-        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex);
+
+        var slowSummarySuffix = GetSlowIoSummarySuffix(pluginName, functionName);
+        var slowAgentStatus = GetSlowIoAgentStatusLine(pluginName, functionName);
+        var agentStatusJson = WsMessageJson.SerializeAgentStatus(slowAgentStatus);
+        if (!string.IsNullOrEmpty(agentStatusJson))
+            await _sessionManager.SendToAsync(sessionId, agentStatusJson);
+
+        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix);
 
         try
         {
@@ -61,7 +67,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 
             var success = !IsToolResultFailure(content);
             _debugStats.RecordToolInvocation(pluginName, functionName, success);
-            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex);
+            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex, null);
             await SendAgentPhaseAsync(sessionId, "digest", success
                 ? "已收到工具输出，继续处理…"
                 : "工具返回异常，将据此调整后续步骤。");
@@ -110,7 +116,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
             var stepIndexOnFail = GetPlanStepIndex(pluginName, functionName, context.Arguments);
             _debugStats.RecordToolInvocation(pluginName, functionName, false);
-            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail);
+            await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail, null);
             await SendAgentPhaseAsync(sessionId, "digest", "工具调用失败，将据此调整后续步骤。");
             throw;
         }
@@ -123,6 +129,34 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             return null;
         if (arguments.TryGetValue("stepIndex", out var stepObj) && stepObj is int stepIndex and > 0)
             return stepIndex;
+        return null;
+    }
+
+    private static string? GetSlowIoSummarySuffix(string pluginName, string functionName)
+    {
+        if (string.Equals(pluginName, "Word", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(functionName, "word_document_create", StringComparison.OrdinalIgnoreCase))
+            return "（写入 Word 可能需数十秒，请稍候）";
+        if (!string.Equals(pluginName, "Excel", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (string.Equals(functionName, "excel_range_write", StringComparison.OrdinalIgnoreCase))
+            return "（写入 Excel 可能需数十秒，请稍候）";
+        if (string.Equals(functionName, "excel_range_read", StringComparison.OrdinalIgnoreCase))
+            return "（读取大表可能较慢，请稍候）";
+        return null;
+    }
+
+    private static string? GetSlowIoAgentStatusLine(string pluginName, string functionName)
+    {
+        if (string.Equals(pluginName, "Word", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(functionName, "word_document_create", StringComparison.OrdinalIgnoreCase))
+            return "正在写入 Word 文档，请稍候…";
+        if (!string.Equals(pluginName, "Excel", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (string.Equals(functionName, "excel_range_write", StringComparison.OrdinalIgnoreCase))
+            return "正在写入 Excel，请稍候…";
+        if (string.Equals(functionName, "excel_range_read", StringComparison.OrdinalIgnoreCase))
+            return "正在读取 Excel 数据，请稍候…";
         return null;
     }
 
@@ -179,11 +213,14 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         bool? success,
         string? content,
         string? startDetail = null,
-        int? planStepIndex = null)
+        int? planStepIndex = null,
+        string? slowIoSummarySuffix = null)
     {
         var summary = type == "tool_invocation_start"
             ? (string.IsNullOrEmpty(startDetail) ? $"正在执行: {plugin}.{function}" : $"正在执行: {plugin}.{function} — {startDetail}")
             : null;
+        if (summary != null && !string.IsNullOrEmpty(slowIoSummarySuffix))
+            summary += " " + slowIoSummarySuffix;
         var msg = new WsMessage
         {
             Type = type,

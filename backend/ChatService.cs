@@ -786,6 +786,7 @@ public sealed partial class ChatService : IDisposable
                     }
                 }
 
+                var dashScopeReasoningYieldedFromContext = 0;
                 for (var attempt = 0; attempt < 2; attempt++)
                 {
                     if (attempt > 0)
@@ -814,8 +815,17 @@ public sealed partial class ChatService : IDisposable
                         if (!moved)
                             break;
 
-                        foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                        foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
+                        {
+                            dashScopeReasoningYieldedFromContext++;
                             yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+                        }
+
+                        foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                        {
+                            dashScopeReasoningYieldedFromContext++;
+                            yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+                        }
 
                         var chunk = streamEnum.Current;
                         var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
@@ -834,6 +844,10 @@ public sealed partial class ChatService : IDisposable
 
                     break;
                 }
+
+                _logger.LogInformation(
+                    "[{SessionId}] DashScope reasoning→StreamItem from context queue: count={Count} (若 SSE tap 里 reasoningParsed>0 而此处为 0，重点查 AsyncLocal/Drain 时序)",
+                    sessionId, dashScopeReasoningYieldedFromContext);
             }
 
             var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());

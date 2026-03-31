@@ -78,7 +78,12 @@ public static class DashScopeChatRequestMerge
             }
         }
 
-        if (entry?.StreamIncludeUsage == true)
+        // 百炼「混合思考」文档示例中与 enable_thinking 同时传 stream_options.include_usage；Cherry Studio 等 OpenAI 客户端流式也常带此项。
+        // 未开启思考或未强制关思考的主对话：仅按 StreamIncludeUsage 写入。
+        var writeStreamOptions = entry?.StreamIncludeUsage == true
+            || (entry?.EnableThinking == true && !forceNoThink);
+
+        if (writeStreamOptions)
         {
             skip.Add("stream_options");
             willWrite = true;
@@ -126,7 +131,7 @@ public static class DashScopeChatRequestMerge
                 }
             }
 
-            if (entry?.StreamIncludeUsage == true)
+            if (writeStreamOptions)
             {
                 writer.WritePropertyName("stream_options");
                 writer.WriteStartObject();

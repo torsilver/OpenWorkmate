@@ -98,6 +98,11 @@
         <h3>按客户端（clientType）向量检索次数 / 平均最高分</h3>
         <div id="client-type-wrap"></div>
       </div>
+      <div class="subblock">
+        <h3>向量后再两阶段：仍为全量工具</h3>
+        <p class="sub">在<strong>已执行向量检索</strong>但未走向量优先路径时，会再调用两阶段（主模型选子类）。以下统计这种「两轮」收窄后，两阶段仍退回<strong>全量工具</strong>的次数与占比。未配置 Embedding 或存储非持久化时不会进入此路径（仅两阶段、无前置向量）。</p>
+        <dl class="stats" id="two-round-dl"></dl>
+      </div>
     </section>
     <section>
       <h2>各工具调用</h2>

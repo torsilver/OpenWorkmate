@@ -1,0 +1,25 @@
+---
+alwaysApply: false
+description: 日志与调试——后端 ILogger 优先，Chrome 扩展用 DevTools Console，禁止高频自建 DOM 日志
+---
+
+# 日志与 DevTools 调试约定
+
+## 1. 后端（C#）
+
+- 业务与联调信息优先用 **Serilog / `ILogger`** 写入现有日志（如 `backend/logs/`），便于按级别过滤与检索。
+- 新增诊断时**不要**依赖「前端侧栏再显示一遍」作为主要观测手段。
+
+## 2. Chrome 扩展前端
+
+- 开发期调试优先使用 **`console.debug` / `console.log` / `console.warn` / `console.error`**：在侧栏页面上**右键 → 检查**打开 DevTools，查看 Console。
+- **禁止**为每条 WebSocket / RPC 消息向页面 **`appendChild`** 维护流水日志（流式场景会导致 DOM 膨胀与卡顿）。
+
+## 3. 与用户可见错误
+
+- 须遵守 [error-visibility.mdc](error-visibility.mdc)：该上屏的错误、警告仍通过 toast、列表 `message` 等展示。
+- **开发者 Console** 与 **用户可见 UI** 分流：Console 不替代对用户的错误提示。
+
+## 4. 反例
+
+- 在 `handleMessage` 每帧里把日志写入侧栏内嵌的 `<div>` 列表。

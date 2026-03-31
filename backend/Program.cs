@@ -1340,7 +1340,7 @@ static async Task HandleSessionAsync(
         }
 
         // Only require Content for message types that use it for chat (allow empty content when attachments present)
-        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "ask_options_response" or "get_debug_history" or "stop" or "set_context");
+        var needsContent = incoming.Type is not ("ping" or "rpc_response" or "confirm_response" or "ask_options_response" or "stop" or "set_context");
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
@@ -1383,11 +1383,6 @@ static async Task HandleSessionAsync(
                         sessionId, incoming.Id, incoming.Selections?.Count ?? 0);
                 }
                 break;
-            case "get_debug_history":
-                var history = chatService.GetSessionHistory(sessionId);
-                var historyStr = string.Join("\n\n", history.Select(m => $"[{m.Role}]:\n{m.Content}"));
-                await SendJsonAsync(ws, new WsMessage { Type = "debug_history", Content = historyStr });
-                break;
             case "stop":
                 streamCancelService.Cancel(sessionId);
                 break;
@@ -1404,6 +1399,30 @@ static async Task HandleChatStreamAsync(
     ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
+    var wsReasoningChunkFrames = 0;
+    var wsStreamChunkFrames = 0;
+
+    static string WsLogPreview(string? s, int max = 120)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var t = s.Replace('\r', ' ').Replace('\n', ' ');
+        return t.Length <= max ? t : t.Substring(0, max) + "…";
+    }
+
+    async Task SendChatStreamWsAsync(string frameType, string content)
+    {
+        await SendJsonAsync(ws, new WsMessage { Type = frameType, Content = content });
+        if (frameType == "reasoning_chunk")
+        {
+            wsReasoningChunkFrames++;
+            logger.LogDebug(
+                "[{SessionId}] WS send reasoning_chunk len={Len} preview={Preview}",
+                sessionId, content.Length, WsLogPreview(content));
+        }
+        else if (frameType == "stream_chunk")
+            wsStreamChunkFrames++;
+    }
+
     logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
     await SendJsonAsync(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
@@ -1447,7 +1466,7 @@ static async Task HandleChatStreamAsync(
             if (item.Kind == StreamSegmentKind.Reasoning)
             {
                 if (!string.IsNullOrEmpty(item.Content))
-                    await SendJsonAsync(ws, new WsMessage { Type = "reasoning_chunk", Content = item.Content });
+                    await SendChatStreamWsAsync("reasoning_chunk", item.Content);
                 continue;
             }
 
@@ -1455,7 +1474,7 @@ static async Task HandleChatStreamAsync(
             {
                 if (string.IsNullOrEmpty(part.Text)) continue;
                 var type = part.IsReasoning ? "reasoning_chunk" : "stream_chunk";
-                await SendJsonAsync(ws, new WsMessage { Type = type, Content = part.Text });
+                await SendChatStreamWsAsync(type, part.Text);
             }
         }
 
@@ -1463,7 +1482,7 @@ static async Task HandleChatStreamAsync(
         {
             if (string.IsNullOrEmpty(part.Text)) continue;
             var type = part.IsReasoning ? "reasoning_chunk" : "stream_chunk";
-            await SendJsonAsync(ws, new WsMessage { Type = type, Content = part.Text });
+            await SendChatStreamWsAsync(type, part.Text);
         }
     }
     catch (OperationCanceledException)
@@ -1497,7 +1516,9 @@ static async Task HandleChatStreamAsync(
         logger.LogDebug("[{SessionId}] SessionContext cleared", sessionId);
     }
 
-    logger.LogInformation("[{SessionId}] Chat stream end {Suffix}", sessionId, streamEndedByError ? "(after error)" : "(completed)");
+    logger.LogInformation(
+        "[{SessionId}] Chat stream end {Suffix} (WS frames: reasoningChunk={Reasoning}, streamChunk={Stream})",
+        sessionId, streamEndedByError ? "(after error)" : "(completed)", wsReasoningChunkFrames, wsStreamChunkFrames);
     if (ws.State != WebSocketState.Open)
         logger.LogWarning("[{SessionId}] Skip sending stream_end: WebSocket not open", sessionId);
     else

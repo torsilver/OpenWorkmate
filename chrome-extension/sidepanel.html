@@ -20,7 +20,6 @@
       </div>
       <div class="header-controls">
         <button id="new-chat-btn" title="新建对话" style="background:none; border:none; cursor:pointer; font-size:16px;">💬</button>
-        <button id="toggle-debug-btn" title="Toggle Debug" style="background:none; border:none; cursor:pointer; font-size:16px;">🐛</button>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
           <span class="status-text">未连接</span>
@@ -38,24 +37,9 @@
     <main id="messages" class="messages">
       <div class="welcome">
         <p class="welcome-title">你好，我是 Office Copilot 👋</p>
-        <p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。标签页脚本、截图、会议监听与侧栏 Debug 等仅在本 Chrome 扩展中可用；WPS/Office 任务窗格连接同一后台。</p>
+        <p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p>
       </div>
     </main>
-
-    <div id="debug-panel" class="debug-panel" style="display: none;">
-      <div class="debug-header">
-        <span>🐛 Debug / 对话历史与运行日志</span>
-        <button type="button" id="open-debug-stats-btn" title="在标签页打开工具/向量调试统计">调试统计</button>
-        <button id="clear-runtime-log-btn" title="清空运行日志">清空日志</button>
-        <button id="close-debug-btn">×</button>
-      </div>
-      <div id="debug-tabs" class="debug-tabs">
-        <button type="button" class="debug-tab active" data-tab="history">对话历史</button>
-        <button type="button" class="debug-tab" data-tab="runtime">运行日志</button>
-      </div>
-      <div id="debug-content" class="debug-content"></div>
-      <div id="debug-runtime-log" class="debug-content debug-runtime-log" style="display: none;"></div>
-    </div>
 
     <footer class="input-area">
       <div class="mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">

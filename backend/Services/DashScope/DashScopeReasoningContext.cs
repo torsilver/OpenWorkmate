@@ -5,13 +5,15 @@ namespace OfficeCopilot.Server.Services.DashScope;
 /// <summary>
 /// 与 <see cref="DashScopeOpenAiCompatHandler"/> 配合：在百炼 SSE 旁路解析出的 <c>reasoning_content</c> 片段入队，
 /// 由 <see cref="OfficeCopilot.Server.ChatService"/> 在流式轮次中与正文块交错 drain。
-/// 使用 AsyncLocal + 栈以支持同一会话内嵌套 HTTP 调用（极少见）并隔离并行 Task。
+/// 使用 AsyncLocal + 栈以支持嵌套 HTTP 调用；<b>SSE 读可能在未传播 ExecutionContext 的线程上回调</b>，
+/// 故 Handler 必须用 <see cref="PushFrame"/> 返回的队列引用闭包入队，不得依赖 <see cref="TryEnqueueReasoning"/> 在该回调路径上工作。
 /// </summary>
 internal static class DashScopeReasoningContext
 {
     private static readonly AsyncLocal<Stack<ConcurrentQueue<string>>?> Stacks = new();
 
-    internal static void PushFrame()
+    /// <returns>本帧队列；SSE tap 应对该实例 <c>Enqueue</c>，保证与 HttpClient 读流线程无关。</returns>
+    internal static ConcurrentQueue<string> PushFrame()
     {
         var stack = Stacks.Value;
         if (stack == null)
@@ -20,7 +22,9 @@ internal static class DashScopeReasoningContext
             Stacks.Value = stack;
         }
 
-        stack.Push(new ConcurrentQueue<string>());
+        var q = new ConcurrentQueue<string>();
+        stack.Push(q);
+        return q;
     }
 
     internal static void PopFrame()
@@ -34,12 +38,19 @@ internal static class DashScopeReasoningContext
 
     internal static void EnqueueReasoning(string? fragment)
     {
+        TryEnqueueReasoning(fragment);
+    }
+
+    /// <returns>false 表示当前 AsyncLocal 无帧，推理片段被丢弃（用于诊断）。</returns>
+    internal static bool TryEnqueueReasoning(string? fragment)
+    {
         if (string.IsNullOrEmpty(fragment))
-            return;
+            return true;
         var stack = Stacks.Value;
         if (stack is not { Count: > 0 })
-            return;
+            return false;
         stack.Peek().Enqueue(fragment);
+        return true;
     }
 
     /// <summary>取出当前帧内已解析的推理片段（FIFO），不结束帧。</summary>

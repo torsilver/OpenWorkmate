@@ -206,6 +206,28 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
+    public void RecordVectorThenTwoStageOutcome_AccumulatesAndRate()
+    {
+        var path = NewTempPersistencePath();
+        try
+        {
+            var s = CreateService(path);
+            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: true);
+            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: false);
+            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: true);
+            var ts = s.GetSnapshot().ToolSelection;
+            Assert.Equal(3, ts.VectorThenTwoStageCount);
+            Assert.Equal(2, ts.VectorThenTwoStageFullToolsCount);
+            Assert.NotNull(ts.VectorThenTwoStageFullToolsRate);
+            Assert.True(Math.Abs(ts.VectorThenTwoStageFullToolsRate!.Value - 2.0 / 3.0) < 1e-9);
+        }
+        finally
+        {
+            TryDeleteFile(path);
+        }
+    }
+
+    [Fact]
     public void Persistence_RoundTrip_RestoresVectorAndToolInvocations()
     {
         var path = NewTempPersistencePath();
@@ -217,6 +239,7 @@ public class AgentDebugStatsServiceTests
                 s.RecordToolInvocation("CLI", "run_command", true);
                 s.RecordToolInvocation("CLI", "run_command", false);
                 s.RecordVectorSearchCompleted(T(max: 0.71, second: 0.5, hits: 2, goodEnough: true, vectorFirst: true));
+                s.RecordVectorThenTwoStageOutcome(endedWithFullTools: false);
                 s.FlushPersistenceForTests();
                 Assert.NotNull(s.GetSnapshot().StatsAccumulatedSinceUtc);
             }
@@ -227,6 +250,8 @@ public class AgentDebugStatsServiceTests
                 Assert.NotNull(snap.StatsAccumulatedSinceUtc);
                 Assert.Equal(1, snap.ToolSelection.TotalNonPlanSelections);
                 Assert.Equal(1, snap.ToolSelection.VectorSearchRunCount);
+                Assert.Equal(1, snap.ToolSelection.VectorThenTwoStageCount);
+                Assert.Equal(0, snap.ToolSelection.VectorThenTwoStageFullToolsCount);
                 var row = Assert.Single(snap.ToolInvocations);
                 Assert.Equal("CLI.run_command", row.ToolId);
                 Assert.Equal(1, row.SuccessCount);

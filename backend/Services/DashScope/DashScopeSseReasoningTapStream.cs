@@ -11,13 +11,15 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
 {
     private readonly Stream _inner;
     private readonly Action<string> _onReasoning;
+    private readonly DashScopeSseTapTelemetry? _telemetry;
     private readonly List<byte> _lineBuf = new(512);
     private bool _disposed;
 
-    public DashScopeSseReasoningTapStream(Stream inner, Action<string> onReasoning)
+    public DashScopeSseReasoningTapStream(Stream inner, Action<string> onReasoning, DashScopeSseTapTelemetry? telemetry = null)
     {
         _inner = inner;
         _onReasoning = onReasoning;
+        _telemetry = telemetry;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -92,7 +94,21 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
             return;
         }
 
-        TryExtractReasoningContent(text, _onReasoning);
+        if (_telemetry != null)
+        {
+            _telemetry.SseDataLines++;
+            if (_telemetry.SsePayloadPreviews.Count < 6)
+            {
+                var oneLine = text.Replace('\r', ' ').Replace('\n', ' ');
+                _telemetry.SsePayloadPreviews.Add(
+                    DashScopeChatRequestDiagnostics.HeadTailOmitMiddle(
+                        oneLine,
+                        DashScopeChatRequestDiagnostics.LogPreviewHeadChars,
+                        DashScopeChatRequestDiagnostics.LogPreviewTailChars));
+            }
+        }
+
+        TryExtractReasoningContent(text, _onReasoning, _telemetry);
     }
 
     private bool LineStartsWithDataColon()
@@ -104,7 +120,15 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
         return span.StartsWith(s);
     }
 
-    internal static void TryExtractReasoningContent(string jsonLine, Action<string> emit)
+    /// <summary>百炼 / 部分 OpenAI 兼容实现可能使用不同大小写或字段名。</summary>
+    private static readonly string[] DeltaReasoningPropertyNames =
+    [
+        "reasoning_content",
+        "ReasoningContent",
+        "reasoning",
+    ];
+
+    internal static void TryExtractReasoningContent(string jsonLine, Action<string> emit, DashScopeSseTapTelemetry? tel = null)
     {
         try
         {
@@ -112,21 +136,38 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
             var root = doc.RootElement;
             if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
                 return;
+            if (tel != null)
+                tel.ChoiceChunksSeen++;
             var first = choices[0];
-            if (!first.TryGetProperty("delta", out var delta))
-                return;
-            if (!delta.TryGetProperty("reasoning_content", out var rc))
-                return;
-            if (rc.ValueKind == JsonValueKind.String)
-            {
-                var s = rc.GetString();
-                if (!string.IsNullOrEmpty(s))
-                    emit(s);
-            }
+            if (first.TryGetProperty("delta", out var delta))
+                EmitReasoningFromObject(delta, emit, tel);
+            // 少数 chunk 仅在 message 上带推理字段
+            if (first.TryGetProperty("message", out var message))
+                EmitReasoningFromObject(message, emit, tel);
         }
         catch (JsonException)
         {
-            /* ignore malformed sse json */
+            if (tel != null)
+                tel.JsonParseErrors++;
+        }
+    }
+
+    private static void EmitReasoningFromObject(JsonElement obj, Action<string> emit, DashScopeSseTapTelemetry? tel)
+    {
+        foreach (var name in DeltaReasoningPropertyNames)
+        {
+            if (!obj.TryGetProperty(name, out var rc))
+                continue;
+            if (rc.ValueKind != JsonValueKind.String)
+                continue;
+            var s = rc.GetString();
+            if (!string.IsNullOrEmpty(s))
+            {
+                if (tel != null)
+                    tel.ReasoningFragmentsParsed++;
+                emit(s);
+                return;
+            }
         }
     }
 

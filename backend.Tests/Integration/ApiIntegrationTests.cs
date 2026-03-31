@@ -577,6 +577,9 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(root.TryGetProperty("serverStartedUtc", out _));
         Assert.True(root.TryGetProperty("toolSelection", out var ts));
         Assert.True(ts.TryGetProperty("totalNonPlanSelections", out _));
+        Assert.True(ts.TryGetProperty("vectorThenTwoStageCount", out _));
+        Assert.True(ts.TryGetProperty("vectorThenTwoStageFullToolsCount", out _));
+        Assert.True(ts.TryGetProperty("vectorThenTwoStageFullToolsRate", out _));
         Assert.True(root.TryGetProperty("toolInvocations", out var inv));
         Assert.Equal(JsonValueKind.Array, inv.ValueKind);
         Assert.True(root.TryGetProperty("toolSearchConfig", out var tsc));

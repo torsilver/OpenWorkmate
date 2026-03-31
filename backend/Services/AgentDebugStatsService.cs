@@ -45,6 +45,10 @@ public sealed class AgentDebugStatsService : IDisposable
     private long _vectorFirstPathChosen;
     private long _vectorSearchRanButFallbackToTwoStage;
     private long _twoStageUsed;
+    /// <summary>本轮已执行向量检索且随后调用了两阶段子类选择的次数（向量未收窄后的「第二轮」）。</summary>
+    private long _vectorThenTwoStageAttempts;
+    /// <summary>上述路径下两阶段返回 <see cref="ToolSelectionOutcome.SelectedPairs"/> 为 null、即仍用全量工具的次数。</summary>
+    private long _vectorThenTwoStageFullTools;
     private long _vectorGoodEnoughTrueButEmptyResults;
     private readonly long[] _maxScoreHistogram = new long[HistogramBucketCount];
     private double _maxScoreSum;
@@ -180,6 +184,21 @@ public sealed class AgentDebugStatsService : IDisposable
         SchedulePersist();
     }
 
+    /// <summary>
+    /// 在「已执行向量检索、未走向量优先」且随后完成两阶段选择后调用。
+    /// <paramref name="endedWithFullTools"/> 为 true 表示两阶段结果为全量工具（SelectedPairs 为空）。
+    /// </summary>
+    public void RecordVectorThenTwoStageOutcome(bool endedWithFullTools)
+    {
+        lock (_gate)
+        {
+            _vectorThenTwoStageAttempts++;
+            if (endedWithFullTools)
+                _vectorThenTwoStageFullTools++;
+        }
+        SchedulePersist();
+    }
+
     /// <summary>与 <see cref="ToolStatusFilter"/> 下发给前端的 success 一致（含返回串判失败）。</summary>
     public void RecordToolInvocation(string pluginName, string functionName, bool success)
     {
@@ -210,6 +229,8 @@ public sealed class AgentDebugStatsService : IDisposable
             _vectorFirstPathChosen = 0;
             _vectorSearchRanButFallbackToTwoStage = 0;
             _twoStageUsed = 0;
+            _vectorThenTwoStageAttempts = 0;
+            _vectorThenTwoStageFullTools = 0;
             _vectorGoodEnoughTrueButEmptyResults = 0;
             Array.Clear(_maxScoreHistogram);
             _maxScoreSum = 0;
@@ -265,6 +286,8 @@ public sealed class AgentDebugStatsService : IDisposable
                 .ToList();
 
             var goodEnoughFalse = vecRuns - _vectorGoodEnoughFlagTrue;
+            var vtsAttempts = _vectorThenTwoStageAttempts;
+            var vtsFull = _vectorThenTwoStageFullTools;
 
             return new AgentDebugStatsResponse
             {
@@ -283,6 +306,9 @@ public sealed class AgentDebugStatsService : IDisposable
                     VectorFirstPathChosenCount = vecFirst,
                     VectorSearchButTwoStageCount = _vectorSearchRanButFallbackToTwoStage,
                     TwoStageInvocationsCount = _twoStageUsed,
+                    VectorThenTwoStageCount = vtsAttempts,
+                    VectorThenTwoStageFullToolsCount = vtsFull,
+                    VectorThenTwoStageFullToolsRate = vtsAttempts > 0 ? (double)vtsFull / vtsAttempts : null,
                     VectorFirstPathRateAmongVectorSearches = vecRuns > 0 ? (double)vecFirst / vecRuns : null,
                     VectorFirstPathRateAmongSelections = total > 0 ? (double)vecFirst / total : null,
                     TwoStageRateAmongSelections = total > 0 ? (double)_twoStageUsed / total : null,
@@ -367,7 +393,8 @@ public sealed class AgentDebugStatsService : IDisposable
         if (_toolSelectionTotal != 0 || _toolSelectionException != 0 || _vectorSkippedNoEmbedding != 0 || _vectorSkippedNonPersistent != 0)
             return true;
         if (_vectorSearchRuns != 0 || _vectorGoodEnoughFlagTrue != 0 || _vectorFirstPathChosen != 0
-            || _vectorSearchRanButFallbackToTwoStage != 0 || _twoStageUsed != 0 || _vectorGoodEnoughTrueButEmptyResults != 0)
+            || _vectorSearchRanButFallbackToTwoStage != 0 || _twoStageUsed != 0 || _vectorThenTwoStageAttempts != 0
+            || _vectorThenTwoStageFullTools != 0 || _vectorGoodEnoughTrueButEmptyResults != 0)
             return true;
         if (_maxScoreSum != 0 || _distinctHitCountSum != 0 || _top1MinusTop2Sum != 0 || _top1MinusTop2SampleCount != 0)
             return true;
@@ -396,6 +423,8 @@ public sealed class AgentDebugStatsService : IDisposable
             VectorFirstPathChosenCount = _vectorFirstPathChosen,
             VectorSearchButTwoStageCount = _vectorSearchRanButFallbackToTwoStage,
             TwoStageInvocationsCount = _twoStageUsed,
+            VectorThenTwoStageCount = _vectorThenTwoStageAttempts,
+            VectorThenTwoStageFullToolsCount = _vectorThenTwoStageFullTools,
             VectorGoodEnoughTrueButEmptyResultsCount = _vectorGoodEnoughTrueButEmptyResults,
             MaxScoreHistogram = hist,
             MaxScoreSum = _maxScoreSum,
@@ -480,6 +509,8 @@ public sealed class AgentDebugStatsService : IDisposable
             _vectorFirstPathChosen = m.VectorFirstPathChosenCount;
             _vectorSearchRanButFallbackToTwoStage = m.VectorSearchButTwoStageCount;
             _twoStageUsed = m.TwoStageInvocationsCount;
+            _vectorThenTwoStageAttempts = m.VectorThenTwoStageCount;
+            _vectorThenTwoStageFullTools = m.VectorThenTwoStageFullToolsCount;
             _vectorGoodEnoughTrueButEmptyResults = m.VectorGoodEnoughTrueButEmptyResultsCount;
             Array.Clear(_maxScoreHistogram);
             if (m.MaxScoreHistogram != null && m.MaxScoreHistogram.Length == HistogramBucketCount)
@@ -517,6 +548,8 @@ internal sealed class AgentDebugStatsPersistedModel
     public long VectorFirstPathChosenCount { get; set; }
     public long VectorSearchButTwoStageCount { get; set; }
     public long TwoStageInvocationsCount { get; set; }
+    public long VectorThenTwoStageCount { get; set; }
+    public long VectorThenTwoStageFullToolsCount { get; set; }
     public long VectorGoodEnoughTrueButEmptyResultsCount { get; set; }
     public long[] MaxScoreHistogram { get; set; } = new long[5];
     public double MaxScoreSum { get; set; }
@@ -589,6 +622,12 @@ public sealed class ToolSelectionDebugStatsDto
     /// <summary>执行了向量检索但未采用向量优先（未达 goodEnough 或无命中），通常随后两阶段。</summary>
     public long VectorSearchButTwoStageCount { get; init; }
     public long TwoStageInvocationsCount { get; init; }
+    /// <summary>已执行向量检索且随后调用了两阶段子类选择的次数（向量未达优先路径后的第二轮）。</summary>
+    public long VectorThenTwoStageCount { get; init; }
+    /// <summary>上述次数中，两阶段结束后仍为全量工具（SelectedPairs 为空）的次数。</summary>
+    public long VectorThenTwoStageFullToolsCount { get; init; }
+    /// <summary>全量工具次数 / 向量后再两阶段次数；分母为 0 时为 null。</summary>
+    public double? VectorThenTwoStageFullToolsRate { get; init; }
     public double? VectorFirstPathRateAmongVectorSearches { get; init; }
     public double? VectorFirstPathRateAmongSelections { get; init; }
     public double? TwoStageRateAmongSelections { get; init; }

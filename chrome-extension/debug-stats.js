@@ -13,6 +13,7 @@
   const $cfg = document.getElementById("tool-search-config");
   const $histWrap = document.getElementById("histogram-wrap");
   const $clientWrap = document.getElementById("client-type-wrap");
+  const $twoRoundDl = document.getElementById("two-round-dl");
 
   let autoTimer = null;
 
@@ -124,12 +125,33 @@
     $clientWrap.appendChild(table);
   }
 
+  function renderTwoRoundVectorThenStage(ts) {
+    if (!$twoRoundDl) return;
+    $twoRoundDl.innerHTML = "";
+    const attempts = ts.vectorThenTwoStageCount ?? 0;
+    const fullTools = ts.vectorThenTwoStageFullToolsCount ?? 0;
+    const narrowed = Math.max(0, attempts - fullTools);
+    const rate = ts.vectorThenTwoStageFullToolsRate;
+    const entries = [
+      ["向量后再两阶段（样本数）", String(attempts)],
+      ["其中两阶段后仍为全量工具", String(fullTools)],
+      ["其中两阶段后已收窄（有 SelectedPairs）", String(narrowed)],
+      ["全量工具占比（全量 / 上述样本）", pct(rate)]
+    ];
+    for (const [dt, dd] of entries) {
+      const [dEl, ddEl] = row(dt, dd);
+      $twoRoundDl.appendChild(dEl);
+      $twoRoundDl.appendChild(ddEl);
+    }
+  }
+
   function render(data) {
     showErr("");
     const ts = data.toolSelection || {};
     renderToolSearchConfig(data.toolSearchConfig);
     renderHistogram(ts.maxScoreHistogram, ts.vectorSearchRunCount);
     renderClientTypes(ts.vectorSearchByClientType);
+    renderTwoRoundVectorThenStage(ts);
 
     if ($dl) {
       $dl.innerHTML = "";

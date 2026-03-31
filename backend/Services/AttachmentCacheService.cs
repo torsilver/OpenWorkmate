@@ -80,29 +80,56 @@ public sealed class AttachmentCacheService
     /// <summary>获取引用对应的本机临时文件路径；若仅内存缓存或已过期则返回 null。</summary>
     public string? GetPath(string attachmentRef)
     {
-        if (string.IsNullOrWhiteSpace(attachmentRef) || !attachmentRef.StartsWith("attachment:", StringComparison.OrdinalIgnoreCase))
-            return null;
-        if (!_cache.TryGetValue(attachmentRef, out var cached))
-            return null;
+        if (TryResolvePath(attachmentRef, out var path, out _))
+            return path;
+        return null;
+    }
+
+    /// <summary>
+    /// 解析附件引用：规范化键、查缓存、检查 TTL。成功时 <paramref name="path"/> 可能为 null（仅内存缓存且落盘失败时）。
+    /// 失败时 <paramref name="failure"/> 有效；成功时其值无意义。
+    /// </summary>
+    public bool TryResolvePath(string rawInput, out string? path, out AttachmentRefResolveFailure failure)
+    {
+        path = null;
+        failure = default;
+        var normalized = AttachmentRefNormalizer.TryNormalize(rawInput);
+        if (normalized == null)
+        {
+            failure = AttachmentRefResolveFailure.InvalidFormat;
+            return false;
+        }
+
+        if (!_cache.TryGetValue(normalized, out var cached))
+        {
+            failure = AttachmentRefResolveFailure.NotFound;
+            return false;
+        }
+
         if (DateTime.UtcNow - cached.CreatedAt > Ttl)
         {
-            _cache.TryRemove(attachmentRef, out _);
-            return null;
+            _cache.TryRemove(normalized, out _);
+            failure = AttachmentRefResolveFailure.Expired;
+            return false;
         }
-        return cached.FilePath;
+
+        path = cached.FilePath;
+        failure = default;
+        return true;
     }
 
     /// <summary>取回字节并移除缓存（可选）。若仅需路径请用 GetPath。</summary>
     public byte[]? TryTake(string attachmentRef, bool remove = false)
     {
-        if (string.IsNullOrWhiteSpace(attachmentRef) || !attachmentRef.StartsWith("attachment:", StringComparison.OrdinalIgnoreCase))
+        var normalized = AttachmentRefNormalizer.TryNormalize(attachmentRef);
+        if (normalized == null)
             return null;
-        var got = remove ? _cache.TryRemove(attachmentRef, out var c) : _cache.TryGetValue(attachmentRef, out c);
+        var got = remove ? _cache.TryRemove(normalized, out var c) : _cache.TryGetValue(normalized, out c);
         if (!got || c == null)
             return null;
         if (DateTime.UtcNow - c.CreatedAt > Ttl)
         {
-            if (!remove) _cache.TryRemove(attachmentRef, out _);
+            if (!remove) _cache.TryRemove(normalized, out _);
             return null;
         }
         return c.Data;

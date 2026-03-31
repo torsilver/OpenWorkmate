@@ -24,12 +24,31 @@ public sealed class FilePlugin
     public string GetAttachmentPath(
         [Description("The attachment reference from the user message, e.g. attachment:abc123")] string attachmentRef)
     {
-        var path = _attachmentCache.GetPath(attachmentRef);
+        if (!_attachmentCache.TryResolvePath(attachmentRef, out var path, out var resolveFailure))
+        {
+            switch (resolveFailure)
+            {
+                case AttachmentRefResolveFailure.InvalidFormat:
+                    _logger.LogDebug("[File] get_attachment_path invalid ref format: {Ref}", attachmentRef);
+                    return "失败：附件引用格式无效。请使用用户消息中的完整引用（例如 attachment: 后跟 32 位十六进制 id），勿只传裸 id。";
+                case AttachmentRefResolveFailure.NotFound:
+                    _logger.LogWarning("[File] get_attachment_path ref not in cache: {Ref}", attachmentRef);
+                    return "失败：未找到该附件，可能本会话未上传或引用错误。请让用户重新发送图片。";
+                case AttachmentRefResolveFailure.Expired:
+                    _logger.LogWarning("[File] get_attachment_path ref expired (TTL): {Ref}", attachmentRef);
+                    return "失败：附件引用已过期（约 30 分钟有效），请让用户重新发送图片。";
+                default:
+                    _logger.LogWarning("[File] get_attachment_path unresolved: {Ref}", attachmentRef);
+                    return "失败：无法解析附件引用，请让用户重新发送图片。";
+            }
+        }
+
         if (string.IsNullOrEmpty(path))
         {
-            _logger.LogWarning("[File] get_attachment_path ref not found or expired: {Ref}", attachmentRef);
-            return "失败：附件引用无效或已过期（约 30 分钟有效），请让用户重新发送图片。";
+            _logger.LogWarning("[File] get_attachment_path no local path (memory-only cache): {Ref}", attachmentRef);
+            return "失败：附件在服务端无本地文件路径，无法交给 OCR 等工具。请让用户重新发送图片。";
         }
+
         return path;
     }
 

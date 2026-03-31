@@ -244,6 +244,7 @@ public sealed partial class ChatService
         var aiConfig = _configService.Current.AI;
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
+        var vectorSearchRanForSelection = false;
         if (!isPlanMode)
         {
             await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
@@ -257,6 +258,7 @@ public sealed partial class ChatService
                     sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
                 if (embeddingConfigured && storePersistent)
                 {
+                    vectorSearchRanForSelection = true;
                     var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
                     var vectorSearch = await _toolIndex.SearchToolsAsync(
                         userPrompt, clientType,
@@ -310,6 +312,8 @@ public sealed partial class ChatService
                     _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
                     var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
                     selectedPairs = twoStage.SelectedPairs;
+                    if (vectorSearchRanForSelection)
+                        _agentDebugStats.RecordVectorThenTwoStageOutcome(selectedPairs == null);
                     _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
                         sessionId, selectedPairs?.Count ?? -1);
                     var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);

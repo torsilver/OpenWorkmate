@@ -780,83 +780,23 @@ function getSessionId() {
   return id;
 }
 
-// ───── Debug Panel & Runtime Log ─────
-const DEBUG_LOG_MAX = 300;
-const debugLogBuffer = [];
-const $debugPanel = document.getElementById("debug-panel");
-const $toggleDebugBtn = document.getElementById("toggle-debug-btn");
-const $closeDebugBtn = document.getElementById("close-debug-btn");
-const $debugContent = document.getElementById("debug-content");
-const $debugRuntimeLog = document.getElementById("debug-runtime-log");
-const $clearRuntimeLogBtn = document.getElementById("clear-runtime-log-btn");
-const $openDebugStatsBtn = document.getElementById("open-debug-stats-btn");
-
-function debugLog(tag, message, type = "info") {
-  const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-  const line = `[${ts}] [${tag}] ${message}`;
-  console.log("[OfficeCopilot]", tag, message);
-  debugLogBuffer.push({ ts, tag, message, type });
-  if (debugLogBuffer.length > DEBUG_LOG_MAX) debugLogBuffer.shift();
-  if ($debugRuntimeLog) {
-    const div = document.createElement("div");
-    div.className = "log-line log--" + (type === "send" ? "send" : type === "recv" ? "recv" : type === "rpc" ? "rpc" : type === "err" ? "err" : "");
-    div.textContent = line;
-    $debugRuntimeLog.appendChild(div);
-    $debugRuntimeLog.scrollTop = $debugRuntimeLog.scrollHeight;
+// ───── DevTools logging（侧栏页面右键「检查」打开 Console） ─────
+function debugLog(tag, message, type = "info", detail) {
+  const prefix = "[OfficeCopilot]";
+  const line = `[${tag}] ${message}`;
+  if (type === "err") {
+    if (detail !== undefined) console.error(prefix, line, detail);
+    else console.error(prefix, line);
+  } else if (type === "warn") {
+    if (detail !== undefined) console.warn(prefix, line, detail);
+    else console.warn(prefix, line);
+  } else if (type === "send" || type === "recv" || type === "rpc") {
+    if (detail !== undefined) console.debug(prefix, line, detail);
+    else console.debug(prefix, line);
+  } else {
+    if (detail !== undefined) console.log(prefix, line, detail);
+    else console.log(prefix, line);
   }
-}
-
-if ($toggleDebugBtn) {
-  $toggleDebugBtn.addEventListener("click", () => {
-    const isHidden = $debugPanel.style.display === "none";
-    $debugPanel.style.display = isHidden ? "flex" : "none";
-    if (isHidden) {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "get_debug_history" }));
-      }
-    }
-  });
-}
-if ($closeDebugBtn) {
-  $closeDebugBtn.addEventListener("click", () => {
-    $debugPanel.style.display = "none";
-  });
-}
-if ($openDebugStatsBtn && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL && chrome.tabs) {
-  $openDebugStatsBtn.addEventListener("click", () => {
-    const url = chrome.runtime.getURL("debug-stats.html");
-    chrome.tabs.create({ url });
-  });
-}
-document.querySelectorAll(".debug-tab").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll(".debug-tab").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    if (tab === "history") {
-      if ($debugContent) $debugContent.style.display = "block";
-      if ($debugRuntimeLog) $debugRuntimeLog.style.display = "none";
-    } else {
-      if ($debugContent) $debugContent.style.display = "none";
-      if ($debugRuntimeLog) $debugRuntimeLog.style.display = "block";
-    }
-  });
-});
-if ($clearRuntimeLogBtn) {
-  $clearRuntimeLogBtn.addEventListener("click", () => {
-    debugLogBuffer.length = 0;
-    if ($debugRuntimeLog) $debugRuntimeLog.innerHTML = "";
-    debugLog("Log", "运行日志已清空");
-  });
-}
-
-function addDebugLog(role, content) {
-  if (!$debugContent) return;
-  const div = document.createElement("div");
-  div.className = "debug-item";
-  div.innerHTML = `<span class="debug-item-role">[${role}]</span><br/>${escapeHtml(content)}`;
-  $debugContent.appendChild(div);
-  $debugContent.scrollTop = $debugContent.scrollHeight;
 }
 
 function escapeHtml(unsafe) {
@@ -1389,7 +1329,15 @@ function handleMessage(raw) {
   } catch {
     msg = { type: "text", content: raw };
   }
-  debugLog("WS Recv", "type=" + (msg.type || "?") + (msg.content ? " len=" + (typeof msg.content === "string" ? msg.content.length : 0) : ""), "recv");
+  debugLog(
+    "WS Recv",
+    "message",
+    "recv",
+    {
+      type: msg.type || "?",
+      contentLen: typeof msg.content === "string" ? msg.content.length : 0,
+    }
+  );
 
   switch (msg.type) {
     case "stream_start":
@@ -1620,13 +1568,6 @@ function handleMessage(raw) {
       removeThinkingIndicator();
       finalizeStream();
       addBotMessage((msg.content && String(msg.content).trim()) || "请求失败，请稍后重试", true);
-      break;
-
-    case "debug_history":
-      if ($debugContent) {
-        $debugContent.innerHTML = "";
-        addDebugLog("System/History", msg.content);
-      }
       break;
 
     case "rpc_request":

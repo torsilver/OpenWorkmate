@@ -39,12 +39,12 @@ internal sealed class PopFrameOnDisposeStream : Stream
         _disposed = true;
         try
         {
-            _onDispose();
+            if (disposing)
+                _inner.Dispose();
         }
         finally
         {
-            if (disposing)
-                _inner.Dispose();
+            _onDispose();
         }
 
         base.Dispose(disposing);
