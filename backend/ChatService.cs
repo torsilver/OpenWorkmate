@@ -575,11 +575,16 @@ public sealed partial class ChatService : IDisposable
         {
             if (attachmentRefs is { Count: > 0 })
             {
-                // 仅将引用写入对话，不把 base64/ImageContent 放入上下文；模型通过工具（如 get_attachment_path、OCR）按 ref 在客户机处理
-                var refList = string.Join(", ", attachmentRefs);
-                var messageText = "用户附带了 [" + refList + "]。"
-                    + (string.IsNullOrWhiteSpace(userMessage) ? "" : " 用户说：" + userMessage);
-                state.History.AddUserMessage(messageText);
+                var activeEntry = GetActiveModelEntry();
+                var supportsVision = activeEntry?.SupportsVision == true;
+                var attachmentCache = _serviceProvider.GetRequiredService<AttachmentCacheService>();
+                var userMsg = AttachmentRefChatMessageFactory.Build(
+                    userMessage,
+                    attachmentRefs,
+                    supportsVision,
+                    attachmentCache,
+                    _logger);
+                state.History.Add(userMsg);
             }
             else if (attachments is { Count: > 0 })
             {
@@ -735,7 +740,7 @@ public sealed partial class ChatService : IDisposable
             await NotifyAgentStatusAsync(
                 sessionManagerForStatus,
                 sessionId,
-                turn.IsPlanMode ? "正在等待模型生成计划…" : "正在等待模型响应…",
+                "正在等待模型响应…",
                 ct).ConfigureAwait(false);
 
             if (skFeat?.UseAgentGroupChatMainSession == true)
@@ -807,7 +812,7 @@ public sealed partial class ChatService : IDisposable
                         {
                             _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
                             TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
-                            turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.IsPlanMode);
+                            turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
                             contextRetry = true;
                             break;
                         }
@@ -1274,7 +1279,7 @@ public sealed partial class ChatService : IDisposable
     }
 
     /// <summary>
-    /// 非计划模式下注入：最新用户意图优先；可验证事实须本轮用工具刷新，不以聊天历史替代（与 Memory/AccurateData 边界见文内）。
+    /// 注入：最新用户意图优先；可验证事实须本轮用工具刷新，不以聊天历史替代（与 Memory/AccurateData 边界见文内）。
     /// </summary>
     private const string LatestIntentAndGroundedFactsInstruction =
         "[意图优先级] 当用户在后续消息中纠正、细化或推翻先前要求时，以最近一条用户消息中的意图为准；"
@@ -1288,7 +1293,7 @@ public sealed partial class ChatService : IDisposable
         + "通过 Memory、AccurateData 等工具写入或检索的记忆与结构化数据仍可使用，但不可替代「当前目录列表」等须当场核实的状态。";
 
     /// <summary>
-    /// 非计划模式下注入：用户界面看不到工具原始返回全文，模型必须在最终回复中整理复述。
+    /// 注入：用户界面看不到工具原始返回全文，模型必须在最终回复中整理复述。
     /// </summary>
     private const string ToolResultEchoSystemInstruction =
         "[工具与回答方式] 用户对话界面中看不到工具的原始返回全文（执行过程里可能仅有简短摘要）。"
@@ -1297,9 +1302,9 @@ public sealed partial class ChatService : IDisposable
         + "禁止仅用「已读取」「已完成」等占位描述而不给出实质内容。";
 
     /// <summary>
-    /// 构建本轮流式请求用的 ChatHistory：可选追加 client 身份后缀；非计划模式再追加意图/事实约束与工具结果复述约束。
+    /// 构建本轮流式请求用的 ChatHistory：可选追加 client 身份后缀；再追加意图/事实约束与工具结果复述约束。
     /// </summary>
-    private static ChatHistory BuildHistoryForStreamingTurn(ChatHistory stateHistory, string? identitySuffix, bool isPlanMode)
+    private static ChatHistory BuildHistoryForStreamingTurn(ChatHistory stateHistory, string? identitySuffix)
     {
         var historyToUse = stateHistory;
         if (!string.IsNullOrEmpty(identitySuffix) && stateHistory.Count > 0 && stateHistory[0].Role == AuthorRole.System)
@@ -1312,7 +1317,7 @@ public sealed partial class ChatService : IDisposable
             historyToUse = newHistory;
         }
 
-        if (!isPlanMode && historyToUse.Count > 0 && historyToUse[0].Role == AuthorRole.System)
+        if (historyToUse.Count > 0 && historyToUse[0].Role == AuthorRole.System)
         {
             var sys = historyToUse[0].Content ?? "";
             var augmented = sys + "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolResultEchoSystemInstruction;
@@ -1351,24 +1356,6 @@ public sealed partial class ChatService : IDisposable
             || string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>计划模式下仅暴露 Plan 插件的 create_plan、get_plan。</summary>
-    private static IReadOnlyList<KernelFunction>? GetPlanOnlyFunctions(Kernel kernel)
-    {
-        var list = new List<KernelFunction>();
-        foreach (var plugin in kernel.Plugins)
-        {
-            if (!string.Equals(plugin.Name, "Plan", StringComparison.OrdinalIgnoreCase)) continue;
-            foreach (KernelFunction func in plugin)
-            {
-                if (string.Equals(func.Name, "create_plan", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(func.Name, "get_plan", StringComparison.OrdinalIgnoreCase))
-                    list.Add(func);
-            }
-            break;
-        }
-        return list.Count > 0 ? list : null;
     }
 
     /// <summary>将 Plan 插件的 get_plan、update_plan、execute_plan_step、complete_plan 并入已选函数列表（供按计划执行时使用）。</summary>

@@ -75,6 +75,10 @@ public class AiModelEntry
     /// <summary>摘要/工具筛选等后台调用是否强制关闭思考（写入 <c>enable_thinking: false</c>），减轻延迟与费用。</summary>
     [JsonPropertyName("disableThinkingForBackgroundCalls")]
     public bool DisableThinkingForBackgroundCalls { get; set; } = true;
+
+    /// <summary>为 true 时，用户通过附件上传的图片在同轮对话中会以 <c>ImageContent</c> 注入聊天 API（需模型与端点支持视觉）。仍为 <c>attachment:</c> 引用，OCR 等工具可用。</summary>
+    [JsonPropertyName("supportsVision")]
+    public bool SupportsVision { get; set; }
 }
 
 /// <summary>Embedding 模型列表中的单条；仅支持 Remote 远程 API。</summary>
@@ -103,13 +107,6 @@ public class SessionConfig
     public int MinTurnsToKeep { get; set; } = 8;
     public int TimeoutMinutes { get; set; } = 30;
     public int CleanupIntervalMinutes { get; set; } = 5;
-}
-
-/// <summary>计划确认规则：由后台规则决定计划生成后是否在 UI 中需用户确认；仅步数阈值（执行期高危工具由 cliRunMode + SecurityFilter 处理）。</summary>
-public class PlanConfirmationConfig
-{
-    /// <summary>步数 ≤ 该值时可不确认直接继续；大于则需确认。默认 3。</summary>
-    public int AutoExecuteMaxSteps { get; set; } = 3;
 }
 
 /// <summary>上下文窗口配置：64K 优化及业内常用项，便于将来换硬件时改配置即可。</summary>
@@ -150,14 +147,13 @@ public class ContextWindowConfig
     public bool PassThroughContext { get; set; }
 }
 
-/// <summary>上下文优化预设：一组 ContextWindow + Session + PlanConfirmation，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
+/// <summary>上下文优化预设：一组 ContextWindow + Session，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
 public class ContextOptimizationPreset
 {
     public string Id { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public ContextWindowConfig ContextWindow { get; set; } = new();
     public SessionConfig Session { get; set; } = new();
-    public PlanConfirmationConfig PlanConfirmation { get; set; } = new();
 }
 
 /// <summary>测试 AI 连接时前端传入的请求体。</summary>
@@ -301,11 +297,9 @@ public class AppConfig
     public SessionConfig? Session { get; set; }
     /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
     public ContextWindowConfig? ContextWindow { get; set; }
-    /// <summary>计划确认规则（仅步数阈值）；未配置时使用默认值。</summary>
-    public PlanConfirmationConfig? PlanConfirmation { get; set; }
     /// <summary>上下文优化预设列表（内置 64K/Kimi K2.5 + 用户自定义）；空时在加载时注入内置两条。</summary>
     public List<ContextOptimizationPreset>? ContextOptimizationPresets { get; set; }
-    /// <summary>当前生效的预设 Id；非空且存在于 Presets 时，加载后用该预设覆盖 Session/ContextWindow/PlanConfirmation。</summary>
+    /// <summary>当前生效的预设 Id；非空且存在于 Presets 时，加载后用该预设覆盖 Session/ContextWindow。</summary>
     public string? ActiveContextPresetId { get; set; }
     /// <summary>多套 AI 模型列表；为空时使用 AI 单条配置。</summary>
     public List<AiModelEntry> AiModels { get; set; } = new();
@@ -689,9 +683,18 @@ public sealed class ConfigService
         config.OcrModels ??= new List<OcrModelEntry>();
         config.Session ??= new SessionConfig();
         config.ContextWindow ??= new ContextWindowConfig();
-        config.PlanConfirmation ??= new PlanConfirmationConfig();
         if (config.ContextOptimizationPresets == null || config.ContextOptimizationPresets.Count == 0)
             config.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
+        else
+        {
+            var hasQwen35 = config.ContextOptimizationPresets.Exists(p =>
+                string.Equals((p.Id ?? "").Trim(), "qwen35-plus", StringComparison.OrdinalIgnoreCase));
+            if (!hasQwen35)
+            {
+                var add = GetBuiltInPresets().Find(p => string.Equals(p.Id, "qwen35-plus", StringComparison.OrdinalIgnoreCase));
+                if (add != null) config.ContextOptimizationPresets.Add(add);
+            }
+        }
         ApplyActivePresetIfSet(config);
         MigrateLegacyAiIfNeeded(config);
         MigrateLegacyOcrIfNeeded(config);
@@ -703,7 +706,6 @@ public sealed class ConfigService
         {
             Session = new SessionConfig(),
             ContextWindow = new ContextWindowConfig(),
-            PlanConfirmation = new PlanConfirmationConfig(),
             ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets()),
             ActiveContextPresetId = "internal-64k",
             SkillEnv = new Dictionary<string, string>(),
@@ -819,7 +821,7 @@ public sealed class ConfigService
         }
     }
 
-    /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）。</summary>
+    /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）、通义 Qwen3.5-Plus（百炼 1M 思考模式规格）。</summary>
     private static List<ContextOptimizationPreset> GetBuiltInPresets()
     {
         return new List<ContextOptimizationPreset>
@@ -853,8 +855,7 @@ public sealed class ConfigService
                     ToolSearchMinScore = 0.7,
                     ToolSearchMinCount = 1
                 },
-                Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
+                Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             },
             new ContextOptimizationPreset
             {
@@ -885,8 +886,39 @@ public sealed class ConfigService
                     ToolSearchMinScore = 0.7,
                     ToolSearchMinCount = 1
                 },
-                Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
+                Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
+            },
+            new ContextOptimizationPreset
+            {
+                Id = "qwen35-plus",
+                DisplayName = "通义 Qwen3.5-Plus（百炼）",
+                ContextWindow = new ContextWindowConfig
+                {
+                    // 与阿里云百炼模型表一致（思考模式）：上下文 1M、最大输入 983616、思维链上限 81920、最大输出 65536。
+                    MaxContextTokens = 1_000_000,
+                    ReservedSystemTokens = 20_000,
+                    ReservedToolsTokens = 24_000,
+                    ReservedOutputTokens = 100_000,
+                    PlanContentMaxChars = 48_000,
+                    MemoryInjectionMaxChars = 12_000,
+                    MemorySessionTopK = 10,
+                    MemorySharedTopK = 6,
+                    TokenEstimation = "CharsRatio",
+                    CharsPerToken = 2,
+                    SummarizationEnabled = false,
+                    SummarizationTriggerRatio = 0.9,
+                    SummarizationMaxSummaryChars = 500,
+                    ContextLengthRetryEnabled = true,
+                    ContextLengthRetryMaxTurns = 20,
+                    ConversationHistoryDirectory = null,
+                    TruncateToolArgsThresholdRatio = 0,
+                    TruncateToolArgsKeepMessages = 10,
+                    TruncateToolArgsMaxChars = 2000,
+                    ToolSearchTopK = 20,
+                    ToolSearchMinScore = 0.7,
+                    ToolSearchMinCount = 1
+                },
+                Session = new SessionConfig { MaxHistoryTurns = 200, MinTurnsToKeep = 14, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             },
             new ContextOptimizationPreset
             {
@@ -918,13 +950,12 @@ public sealed class ConfigService
                     ToolSearchMinScore = 0.7,
                     ToolSearchMinCount = 1
                 },
-                Session = new SessionConfig { MaxHistoryTurns = 5000, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 },
-                PlanConfirmation = new PlanConfirmationConfig { AutoExecuteMaxSteps = 3 }
+                Session = new SessionConfig { MaxHistoryTurns = 5000, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             }
         };
     }
 
-    /// <summary>若 ActiveContextPresetId 已设置且存在于 Presets 中，用该预设覆盖 Session/ContextWindow/PlanConfirmation。</summary>
+    /// <summary>若 ActiveContextPresetId 已设置且存在于 Presets 中，用该预设覆盖 Session/ContextWindow。</summary>
     private static void ApplyActivePresetIfSet(AppConfig config)
     {
         var id = config.ActiveContextPresetId?.Trim();
@@ -963,10 +994,6 @@ public sealed class ConfigService
             ToolSearchTopK = preset.ContextWindow.ToolSearchTopK,
             ToolSearchMinScore = preset.ContextWindow.ToolSearchMinScore,
             ToolSearchMinCount = preset.ContextWindow.ToolSearchMinCount
-        };
-        config.PlanConfirmation = new PlanConfirmationConfig
-        {
-            AutoExecuteMaxSteps = preset.PlanConfirmation.AutoExecuteMaxSteps
         };
     }
 
@@ -1028,7 +1055,6 @@ public sealed class ConfigService
                 ApplyActivePresetIfSet(newConfig);
                 if (newConfig.Session == null) newConfig.Session = _currentConfig.Session ?? new SessionConfig();
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
-                if (newConfig.PlanConfirmation == null) newConfig.PlanConfirmation = _currentConfig.PlanConfirmation ?? new PlanConfirmationConfig();
                 if (string.IsNullOrWhiteSpace(newConfig.CliRunMode)) newConfig.CliRunMode = _currentConfig.CliRunMode ?? "UseAllowList";
                 if (newConfig.AllowedCliCommandsByClient == null) newConfig.AllowedCliCommandsByClient = _currentConfig.AllowedCliCommandsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.AllowedPageScriptIdsByClient == null) newConfig.AllowedPageScriptIdsByClient = _currentConfig.AllowedPageScriptIdsByClient ?? new Dictionary<string, List<string>>();

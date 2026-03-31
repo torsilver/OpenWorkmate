@@ -2,6 +2,7 @@
   "use strict";
 
   let API_BASE = "http://127.0.0.1:8765";
+  const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
   const STORAGE_EXECUTE_PLAN_ID = "copilot_execute_plan_id";
   const STORAGE_EXECUTE_PLAN_TITLE = "copilot_execute_plan_title";
 
@@ -38,6 +39,48 @@
       $error.textContent = message;
       $error.style.display = "block";
     }
+  }
+
+  /** 与侧栏 / 选项页一致：请求头携带本地服务密钥（user-config webSocketAuthToken）。 */
+  function tasklyFetch(url, init) {
+    init = init ? Object.assign({}, init) : {};
+    return new Promise(function (resolve) {
+      if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+        resolve(fetch(url, init));
+        return;
+      }
+      chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+        var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+        var headers = Object.assign({}, init.headers || {});
+        if (t) headers["X-OfficeCopilot-Token"] = t;
+        init.headers = headers;
+        resolve(fetch(url, init));
+      });
+    });
+  }
+
+  /** 本机 loopback：storage 尚无密钥时从引导接口写入（与侧栏首次连接一致）。 */
+  function ensureLocalServiceTokenFromBootstrap(apiBase) {
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local)
+      return Promise.resolve();
+    var base = (apiBase || "").replace(/\/$/, "");
+    return fetch(base + "/api/bootstrap/local-service-auth")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        var t = (j.webSocketAuthToken || "").trim();
+        if (!t) return;
+        return new Promise(function (resolve) {
+          chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (cur) {
+            var existing = (cur && cur[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+            if (existing) { resolve(); return; }
+            var o = {};
+            o[COPILOT_TOKEN_STORAGE_KEY] = t;
+            chrome.storage.local.set(o, function () { resolve(); });
+          });
+        });
+      })
+      .catch(function () {});
   }
 
   function showDetail(planId, meta, content) {
@@ -94,7 +137,7 @@
     }
     showLoading(true);
     try {
-      const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+      const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || (res.status === 404 ? "未找到该计划" : res.statusText));
@@ -135,7 +178,7 @@
       if (!currentPlanId) return;
       const content = $contentEdit.value;
       try {
-        const res = await fetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
+        const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })
@@ -196,7 +239,7 @@
             chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT }).catch(() => {});
           }
           $executePlanBtn.textContent = "已请求执行，请到侧边栏查看";
-          setTimeout(() => { $executePlanBtn.textContent = "执行计划"; }, 3000);
+          setTimeout(() => { $executePlanBtn.textContent = "确认并开始执行"; }, 3000);
         });
         return;
       }
@@ -253,16 +296,18 @@
   )
     .then(function (r) {
       API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
-      fetch(API_BASE + "/api/config")
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (j) {
-          if (!j || typeof TasklyTheme === "undefined") return;
-          var id = j.uiThemeId || j.UiThemeId;
-          if (id) TasklyTheme.setTheme(id);
-          tasklyRefreshHljsLink();
-        })
-        .catch(function () {});
-      return loadPlan(planId);
+      return ensureLocalServiceTokenFromBootstrap(API_BASE).then(function () {
+        tasklyFetch(API_BASE + "/api/config")
+          .then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (j) {
+            if (!j || typeof TasklyTheme === "undefined") return;
+            var id = j.uiThemeId || j.UiThemeId;
+            if (id) TasklyTheme.setTheme(id);
+            tasklyRefreshHljsLink();
+          })
+          .catch(function () {});
+        return loadPlan(planId);
+      });
     })
     .catch(function (err) {
       showError(err.message || "无法连接本机 Office Copilot 服务。");

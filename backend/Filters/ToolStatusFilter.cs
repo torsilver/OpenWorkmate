@@ -90,15 +90,13 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
                         var titleMatch = System.Text.RegularExpressions.Regex.Match(fullResult, @"标题[：:]\s*([^。\n]+)");
                         var title = titleMatch.Success ? titleMatch.Groups[1].Value.Trim() : goalFallback;
                         var createdBy = _sessionManager.GetClientType(sessionId);
-                        var requiresConfirm = fullResult.Contains("需用户确认", StringComparison.Ordinal);
                         var planCreated = new WsMessage
                         {
                             Type = "plan_created",
                             PlanId = planId,
                             Title = string.IsNullOrEmpty(title) ? planId : title,
                             Path = null,
-                            CreatedBy = createdBy,
-                            RequiresUserConfirmation = requiresConfirm
+                            CreatedBy = createdBy
                         };
                         var json = JsonSerializer.Serialize(planCreated, JsonCtx.Default.WsMessage);
                         await _sessionManager.SendToAsync(sessionId, json);

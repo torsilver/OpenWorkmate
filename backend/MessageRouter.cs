@@ -126,11 +126,6 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CreatedBy { get; set; }
 
-    /// <summary>plan_created 时：是否需用户确认后再执行（由后台规则计算）。</summary>
-    [JsonPropertyName("requiresUserConfirmation")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? RequiresUserConfirmation { get; set; }
-
     /// <summary>subtask_start 时：子任务描述。</summary>
     [JsonPropertyName("taskDescription")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -313,7 +308,6 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]
-[JsonSerializable(typeof(PlanConfirmationConfig))]
 [JsonSerializable(typeof(ContextOptimizationPreset))]
 [JsonSerializable(typeof(List<ContextOptimizationPreset>))]
 [JsonSerializable(typeof(AiModelEntry))]

@@ -153,7 +153,6 @@ public sealed partial class ChatService
     {
         var sessionId = turn.SessionId;
         var state = turn.State;
-        var mode = turn.Mode;
         var planId = turn.PlanId;
         var planCurrentStepIndex = turn.PlanCurrentStepIndex;
         var ctxConfig = turn.CtxConfig;
@@ -181,18 +180,12 @@ public sealed partial class ChatService
             }
         }
 
-        turn.IsPlanMode = string.Equals(mode?.Trim(), "plan", StringComparison.OrdinalIgnoreCase);
         turn.PlanResult = null;
         if (state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
         {
             var currentSystem = state.History[0].Content ?? "";
             var systemModified = false;
-            if (turn.IsPlanMode)
-            {
-                currentSystem += "\n\n[当前为计划模式] 请根据用户描述仅生成实现计划（Markdown），并调用 create_plan 工具保存。不要执行具体操作，不要调用其他工具。";
-                systemModified = true;
-            }
-            if (!string.IsNullOrWhiteSpace(planId) && !turn.IsPlanMode)
+            if (!string.IsNullOrWhiteSpace(planId))
             {
                 turn.PlanResult = await _planStore.GetAsync(planId.Trim(), ct).ConfigureAwait(false);
                 if (turn.PlanResult != null)
@@ -224,10 +217,9 @@ public sealed partial class ChatService
         var payloadChars = 0;
         for (var i = 0; i < state.History.Count; i++)
             payloadChars += (state.History[i].Content?.Length ?? 0);
-        var phase = turn.IsPlanMode ? "plan" : "agent";
         _logger.LogInformation(
-            "[AI-REQUEST] SessionId={SessionId} phase={Phase} turns={Turns} payloadChars={PayloadChars}",
-            sessionId, phase, state.History.Count, payloadChars);
+            "[AI-REQUEST] SessionId={SessionId} phase=agent turns={Turns} payloadChars={PayloadChars}",
+            sessionId, state.History.Count, payloadChars);
     }
 
     internal async Task RunStreamChatToolingPhaseAsync(StreamChatTurnContext turn, CancellationToken ct)
@@ -238,115 +230,104 @@ public sealed partial class ChatService
         var kernel = turn.Kernel;
         var ctxConfig = turn.CtxConfig;
         var sessionManagerForStatus = turn.SessionManager;
-        var isPlanMode = turn.IsPlanMode;
         var planResult = turn.PlanResult;
 
         var aiConfig = _configService.Current.AI;
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
         var vectorSearchRanForSelection = false;
-        if (!isPlanMode)
+        await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
+        _agentDebugStats.IncrementToolSelectionTotal();
+        try
         {
-            await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
-            _agentDebugStats.IncrementToolSelectionTotal();
-            try
+            var recentHistory = state.History.Count > 1 ? state.History : null;
+            var embeddingConfigured = _embeddingProvider.IsConfigured;
+            var storePersistent = _vectorStore.IsPersistent;
+            _logger.LogInformation("[{SessionId}] ToolSelection: entry clientType={ClientType} embeddingConfigured={Emb} storePersistent={Store}.",
+                sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
+            if (embeddingConfigured && storePersistent)
             {
-                var recentHistory = state.History.Count > 1 ? state.History : null;
-                var embeddingConfigured = _embeddingProvider.IsConfigured;
-                var storePersistent = _vectorStore.IsPersistent;
-                _logger.LogInformation("[{SessionId}] ToolSelection: entry clientType={ClientType} embeddingConfigured={Emb} storePersistent={Store}.",
-                    sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
-                if (embeddingConfigured && storePersistent)
+                vectorSearchRanForSelection = true;
+                var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
+                var vectorSearch = await _toolIndex.SearchToolsAsync(
+                    userPrompt, clientType,
+                    topK: ctxConfig.ToolSearchTopK,
+                    minScore: ctxConfig.ToolSearchMinScore,
+                    minCount: ctxConfig.ToolSearchMinCount,
+                    ct).ConfigureAwait(false);
+                _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
+                    sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
+                var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
+                var scored = vectorSearch.ScoredHits;
+                var maxS = scored.Count > 0 ? scored[0].Score : 0.0;
+                double? secondS = scored.Count >= 2 ? scored[1].Score : null;
+                _agentDebugStats.RecordVectorSearchCompleted(new VectorSearchTelemetry(
+                    clientType,
+                    maxS,
+                    secondS,
+                    scored.Count,
+                    vectorSearch.GoodEnough,
+                    vectorFirstChosen));
+                string vectorDecision;
+                if (vectorFirstChosen)
                 {
-                    vectorSearchRanForSelection = true;
-                    var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
-                    var vectorSearch = await _toolIndex.SearchToolsAsync(
-                        userPrompt, clientType,
-                        topK: ctxConfig.ToolSearchTopK,
-                        minScore: ctxConfig.ToolSearchMinScore,
-                        minCount: ctxConfig.ToolSearchMinCount,
-                        ct).ConfigureAwait(false);
-                    _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
-                        sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
-                    var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
-                    var scored = vectorSearch.ScoredHits;
-                    var maxS = scored.Count > 0 ? scored[0].Score : 0.0;
-                    double? secondS = scored.Count >= 2 ? scored[1].Score : null;
-                    _agentDebugStats.RecordVectorSearchCompleted(new VectorSearchTelemetry(
-                        clientType,
-                        maxS,
-                        secondS,
-                        scored.Count,
-                        vectorSearch.GoodEnough,
-                        vectorFirstChosen));
-                    string vectorDecision;
-                    if (vectorFirstChosen)
-                    {
-                        selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
-                        _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
-                        _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
-                        vectorDecision = "决策：已采用向量优先路径（合并 AlwaysInclude 后 (插件,函数) 对数=" + selectedPairs.Count + "）。";
-                    }
-                    else
-                    {
-                        vectorDecision = "决策：向量命中未达 goodEnough 或为空，将调用两阶段子类筛选。";
-                    }
-                    var vectorDetail = AgentTraceFormatter.BuildToolVectorSearchDetail(
-                        clientType, vectorSearch,
-                        ctxConfig.ToolSearchTopK, ctxConfig.ToolSearchMinScore, ctxConfig.ToolSearchMinCount,
-                        vectorDecision);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引检索", vectorDetail, ct).ConfigureAwait(false);
+                    selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
+                    _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
+                    _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
+                    vectorDecision = "决策：已采用向量优先路径（合并 AlwaysInclude 后 (插件,函数) 对数=" + selectedPairs.Count + "）。";
                 }
                 else
                 {
-                    if (!embeddingConfigured)
-                        _agentDebugStats.RecordVectorSkippedNoEmbedding();
-                    else
-                        _agentDebugStats.RecordVectorSkippedNonPersistent();
-                    var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
+                    vectorDecision = "决策：向量命中未达 goodEnough 或为空，将调用两阶段子类筛选。";
                 }
-                if (selectedPairs == null)
-                {
-                    _agentDebugStats.RecordTwoStageUsed();
-                    _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
-                    var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
-                    selectedPairs = twoStage.SelectedPairs;
-                    if (vectorSearchRanForSelection)
-                        _agentDebugStats.RecordVectorThenTwoStageOutcome(selectedPairs == null);
-                    _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
-                        sessionId, selectedPairs?.Count ?? -1);
-                    var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
-                }
+                var vectorDetail = AgentTraceFormatter.BuildToolVectorSearchDetail(
+                    clientType, vectorSearch,
+                    ctxConfig.ToolSearchTopK, ctxConfig.ToolSearchMinScore, ctxConfig.ToolSearchMinCount,
+                    vectorDecision);
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引检索", vectorDetail, ct).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
-                _agentDebugStats.RecordToolSelectionException();
-                selectedPairs = null;
-                await NotifyAgentTraceAsync(
-                    sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
-                    ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
+                if (!embeddingConfigured)
+                    _agentDebugStats.RecordVectorSkippedNoEmbedding();
+                else
+                    _agentDebugStats.RecordVectorSkippedNonPersistent();
+                var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
+            }
+            if (selectedPairs == null)
+            {
+                _agentDebugStats.RecordTwoStageUsed();
+                _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
+                var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                selectedPairs = twoStage.SelectedPairs;
+                if (vectorSearchRanForSelection)
+                    _agentDebugStats.RecordVectorThenTwoStageOutcome(selectedPairs == null);
+                _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
+                    sessionId, selectedPairs?.Count ?? -1);
+                var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
             }
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
+            _agentDebugStats.RecordToolSelectionException();
+            selectedPairs = null;
+            await NotifyAgentTraceAsync(
+                sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
+                ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
+        }
+
         IReadOnlyList<KernelFunction>? selectedFunctions;
-        if (isPlanMode)
-        {
-            selectedFunctions = GetPlanOnlyFunctions(kernel);
-            _logger.LogInformation("[{SessionId}] ToolSelection: plan mode, planOnlyFunctionCount={Count}.", sessionId, selectedFunctions?.Count ?? 0);
-        }
-        else
-        {
-            selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
-            if (planResult != null && selectedFunctions != null)
-                selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
-            var pairsCount = selectedPairs?.Count ?? 0;
-            var funcsCount = selectedFunctions?.Count ?? 0;
-            var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
-            _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
-                sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
-        }
+        selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
+        if (planResult != null && selectedFunctions != null)
+            selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
+        var pairsCount = selectedPairs?.Count ?? 0;
+        var funcsCount = selectedFunctions?.Count ?? 0;
+        var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
+        _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
+            sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
 
         var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
         if (selectedFunctions is { Count: > 0 })
@@ -372,7 +353,7 @@ public sealed partial class ChatService
         }
 
         turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
-        turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, isPlanMode);
+        turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
     }
 
     /// <summary>将 Host 前言合并进本轮流式用历史的 system 首条，不写入持久 <see cref="SessionState.History"/>。</summary>

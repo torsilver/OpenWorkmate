@@ -511,6 +511,10 @@
             <label for="aiModelSystemPrompt">系统提示词（可选，不填用全局默认）</label>
             <textarea id="aiModelSystemPrompt" name="systemPrompt" placeholder="可选"></textarea>
           </div>
+          <div class="form-group" style="display: flex; align-items: flex-start; gap: 8px;">
+            <input type="checkbox" id="aiModelSupportsVision" name="supportsVision">
+            <label for="aiModelSupportsVision" style="margin: 0; font-weight: normal;">支持视觉：将侧栏附带的图片以多模态形式发给当前模型（需 API 支持；仍保留 attachment 引用，OCR 等工具可用）</label>
+          </div>
           <div id="aiModelBailianAdvancedWrap" class="form-group" style="display: none; margin-top: 12px; padding: 12px 0 0 0; border-top: 1px solid var(--border-color, #e5e7eb);">
             <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">通义百炼专有选项</div>
             <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">在上方「AI 供应商」中选择<strong>阿里巴巴 通义百炼</strong>时显示。以下参数由后端合并进百炼 OpenAI 兼容请求（Endpoint 须含 <code>dashscope</code>）。</p>
@@ -1064,17 +1068,6 @@ postgresql://localhost/mydb"></textarea>
           <input type="number" id="ctxTruncateToolArgsMaxChars" min="100" placeholder="2000" style="width: 100px;">
         </div>
         </div>
-      </div>
-        </div>
-      </details>
-
-      <details class="settings-block">
-        <summary>计划确认规则</summary>
-        <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 12px;">由后台规则决定<strong>生成计划后</strong>是否在侧栏先弹确认再打开计划页。仅按步数判断；执行阶段 CLI/页面脚本等仍由「安全与确认」中的运行模式与白名单控制。</p>
-      <div class="form-group">
-        <label for="autoExecuteMaxSteps">不弹确认的最大步数（步数 ≤ 此值时生成计划后不弹确认）</label>
-        <input type="number" id="autoExecuteMaxSteps" min="1" max="50" placeholder="3" style="width: 80px;">
       </div>
         </div>
       </details>

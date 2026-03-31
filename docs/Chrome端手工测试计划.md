@@ -56,11 +56,11 @@
 | A1 | 加载 Tools | 在输入框触发 `@`（或项目约定的唤起方式） | 列出 Tools + Skills；内置项与 `/api/tools/builtin` 一致（或说明部分需配置才注册） |
 | A2 | 指定工具 | 选择某一内置插件名发送 | 对话中带工具约束，模型优先使用该方向能力 |
 
-### 1.5 计划模式 UI（若侧栏已实现）
+### 1.5 计划 UI
 
 | 序号 | 场景 | 操作 | 预期 |
 |------|------|------|------|
-| P0 | 与 Plan 插件联动 | 开启计划模式后让 AI 建计划 | 出现 planId、步骤清单或等价 UI；与 `create_plan` / `execute_plan_step` 一致 |
+| P0 | 与 Plan 插件联动 | 在对话中让 AI 列计划（如「帮我制定分步计划…」） | 出现 planId、自动打开计划页；执行在计划页点「确认并开始执行」后与 `execute_plan_step` 一致 |
 
 ---
 
@@ -286,7 +286,7 @@
 
 | 编号 | 工具名 | 前置 | 建议粘贴到对话框的话术 | 应核对工具名 | 预期要点 |
 |------|--------|------|------------------------|--------------|----------|
-| PL1 | `create_plan` | 计划模式 | 「create_plan：目标【整理下载目录测试文件清单】。」 | `create_plan` | planId |
+| PL1 | `create_plan` | 无 | 「create_plan：目标【整理下载目录测试文件清单】。」 | `create_plan` | planId |
 | PL2 | `get_plan` | PL1 | 「get_plan：planId=…。」 | `get_plan` | 全文 |
 | PL3 | `update_plan` | PL1 | 「update_plan：追加一行【手工备注】。」 | `update_plan` | 成功 |
 | PL4 | `execute_plan_step` | PL1 | 「execute_plan_step：stepIndex=1。」 | `execute_plan_step` | 执行步骤 |

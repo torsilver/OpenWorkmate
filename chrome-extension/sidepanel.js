@@ -364,29 +364,9 @@ function appendPlanCreatedMessage(planId, title, isUpdated) {
   const div = document.createElement("div");
   div.className = "msg msg--system";
   div.textContent = isUpdated
-    ? "计划已更新，已在新标签页打开。若需再改请在此继续说明。"
-    : "计划已生成，已在新标签页打开。若需修改请在此继续说明。";
+    ? "计划已更新，已在新标签页打开。若需再改请在此说明；执行请在计划页点击「确认并开始执行」。"
+    : "计划已生成，已在新标签页打开。可在计划页审阅编辑；确认后点击「确认并开始执行」以在侧栏开始按步执行。";
   $messages.appendChild(div);
-}
-
-function showPlanConfirmDialog(planId, title, onConfirm) {
-  const overlay = document.createElement("div");
-  overlay.className = "plan-confirm-overlay";
-  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;";
-  const box = document.createElement("div");
-  box.className = "plan-confirm-box";
-  box.style.cssText = "background:var(--bg-primary,#0f172a);border:1px solid var(--border,#334155);border-radius:12px;padding:20px;max-width:360px;box-shadow:0 10px 40px rgba(0,0,0,0.3);";
-  box.innerHTML = "<p style='margin:0 0 12px;font-weight:500;'>该计划需您确认后再执行</p><p style='margin:0 0 16px;font-size:13px;color:var(--text-secondary,#94a3b8);'>" + escapeHtml(title || planId || "") + "</p><div style='display:flex;gap:10px;justify-content:flex-end;'>" +
-    "<button type='button' class='plan-confirm-cancel' style='padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;'>取消</button>" +
-    "<button type='button' class='plan-confirm-ok' style='padding:8px 16px;border-radius:8px;border:none;background:var(--accent,#3b82f6);color:#fff;cursor:pointer;'>确认执行</button></div>";
-  overlay.appendChild(box);
-  function close() {
-    overlay.remove();
-  }
-  box.querySelector(".plan-confirm-cancel").addEventListener("click", () => { close(); });
-  box.querySelector(".plan-confirm-ok").addEventListener("click", () => { close(); onConfirm(); });
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  document.body.appendChild(overlay);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1586,19 +1566,10 @@ function handleMessage(raw) {
     case "plan_updated": {
       const planId = msg.planId || "";
       const title = msg.title || "新计划";
-      const requiresConfirm = msg.requiresUserConfirmation === true;
       if (planId) {
-        if (msg.type === "plan_created" && requiresConfirm) {
-          showPlanConfirmDialog(planId, title, () => {
-            setCurrentPlan(planId, title);
-            appendPlanCreatedMessage(planId, title, true);
-            chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
-          });
-        } else {
-          setCurrentPlan(planId, title);
-          appendPlanCreatedMessage(planId, title, msg.type === "plan_updated");
-          chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
-        }
+        setCurrentPlan(planId, title);
+        appendPlanCreatedMessage(planId, title, msg.type === "plan_updated");
+        chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
         const welcome = $messages.querySelector(".welcome");
         if (welcome) welcome.remove();
         $messages.scrollTop = $messages.scrollHeight;

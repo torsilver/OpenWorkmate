@@ -31,7 +31,7 @@ public sealed class AttachmentCacheService
     }
 
     /// <summary>存储附件到临时文件并返回引用。extension 如 ".png"。若落盘失败则仅内存缓存并返回 ref（GetPath 可能不可用）。</summary>
-    public string Store(byte[] data, string extension = ".bin")
+    public string Store(byte[] data, string extension = ".bin", string? mimeType = null)
     {
         var guid = Guid.NewGuid().ToString("N");
         var refId = "attachment:" + guid;
@@ -52,7 +52,7 @@ public sealed class AttachmentCacheService
                 path = null;
             }
         }
-        _cache[refId] = new CachedAttachment(data, path, DateTime.UtcNow);
+        _cache[refId] = new CachedAttachment(data, path, DateTime.UtcNow, mimeType);
         _logger.LogDebug("[AttachmentCache] Stored ref={Ref} size={Size} path={Path}", refId, data.Length, path ?? "(memory)");
         return refId;
     }
@@ -64,7 +64,14 @@ public sealed class AttachmentCacheService
             throw new ArgumentException("base64Data is required.", nameof(base64Data));
         var bytes = Convert.FromBase64String(base64Data.Trim());
         var ext = InferExtension(mimeType);
-        return Store(bytes, ext);
+        return Store(bytes, ext, NormalizeMimeType(mimeType));
+    }
+
+    private static string? NormalizeMimeType(string? mimeType)
+    {
+        if (string.IsNullOrWhiteSpace(mimeType)) return null;
+        var t = mimeType.Trim();
+        return t.Length == 0 ? null : t;
     }
 
     private static string InferExtension(string? mimeType)
@@ -75,6 +82,48 @@ public sealed class AttachmentCacheService
         if (mimeType.Contains("gif", StringComparison.OrdinalIgnoreCase)) return ".gif";
         if (mimeType.Contains("webp", StringComparison.OrdinalIgnoreCase)) return ".webp";
         return ".bin";
+    }
+
+    /// <summary>由文件扩展名推断 MIME（供缓存未记录 mime 时多模态注入使用）。</summary>
+    public static string? MimeFromFilePath(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return null;
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// 只读取附件字节与 MIME（不驱逐缓存），供多模态注入。成功时 <paramref name="mime"/> 优先用上传时的类型，否则按落盘扩展名推断。
+    /// </summary>
+    public bool TryGetForVision(string rawRef, out byte[] data, out string? mime)
+    {
+        data = Array.Empty<byte>();
+        mime = null;
+        var normalized = AttachmentRefNormalizer.TryNormalize(rawRef);
+        if (normalized == null)
+            return false;
+
+        if (!_cache.TryGetValue(normalized, out var cached))
+            return false;
+
+        if (DateTime.UtcNow - cached.CreatedAt > Ttl)
+        {
+            _cache.TryRemove(normalized, out _);
+            return false;
+        }
+
+        data = cached.Data;
+        mime = !string.IsNullOrWhiteSpace(cached.MimeType)
+            ? cached.MimeType
+            : MimeFromFilePath(cached.FilePath);
+        return true;
     }
 
     /// <summary>获取引用对应的本机临时文件路径；若仅内存缓存或已过期则返回 null。</summary>
@@ -140,11 +189,13 @@ public sealed class AttachmentCacheService
         public byte[] Data { get; }
         public string? FilePath { get; }
         public DateTime CreatedAt { get; }
-        public CachedAttachment(byte[] data, string? filePath, DateTime createdAt)
+        public string? MimeType { get; }
+        public CachedAttachment(byte[] data, string? filePath, DateTime createdAt, string? mimeType)
         {
             Data = data;
             FilePath = filePath;
             CreatedAt = createdAt;
+            MimeType = mimeType;
         }
     }
 }

@@ -22,9 +22,6 @@ public sealed class StreamChatTurnContext
     public required SessionManager SessionManager { get; init; }
     public required ContextWindowConfig CtxConfig { get; init; }
 
-    /// <summary>计划模式（在上下文阶段 Part2 中赋值）。</summary>
-    public bool IsPlanMode { get; set; }
-
     /// <summary>当前绑定的计划内容（若有）。</summary>
     public (string Content, PlanMeta Meta)? PlanResult { get; set; }
 

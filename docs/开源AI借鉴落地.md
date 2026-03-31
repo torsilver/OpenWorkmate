@@ -75,7 +75,7 @@
 
 **可借鉴点**：复杂任务先产出可执行步骤，再逐步执行。
 
-**Taskly 映射**：`PlanPlugin.create_plan`、`mode=plan` 时的 system 附加段（见 `ChatService` 中计划模式分支）、以及绑定 `planId` / `planCurrentStepIndex` 时的「当前步骤」注入。开源项目中的「Planner 节点」对应这里的 **计划生成 + 分步注入**，无需另起一套图执行引擎。
+**Taskly 映射**：`PlanPlugin.create_plan`、绑定 `planId` / `planCurrentStepIndex` 时在 `RunStreamChatContextPhasePart2Async` 注入的「当前步骤」system 块。开源项目中的「Planner 节点」对应这里的 **计划生成 + 分步注入**，无需另起一套图执行引擎。
 
 ---
 
@@ -92,7 +92,7 @@
 | 人机确认 | `HitlManager` + `SecurityFilter` | 拦截 → 前端确认 → 继续调用 |
 | 流式与取消 | `HandleChatStream` + `StreamCancelService` | `stop` 取消本轮生成 |
 
-上述组合在语义上已覆盖 LangGraph 常见图中的 **路由（工具选择）、分支（计划模式 vs 普通模式）、人类节点（HITL）、子图（子任务）**，只是以 **C# + SK 连接器内建函数调用循环** 实现，而非 Python 中的显式 `StateGraph`。
+上述组合在语义上已覆盖 LangGraph 常见图中的 **路由（工具选择）、分支（如绑定计划时的上下文差异）、人类节点（HITL）、子图（子任务）**，只是以 **C# + SK 连接器内建函数调用循环** 实现，而非 Python 中的显式 `StateGraph`。
 
 ### 3.2 结论：是否需要额外「Planner 状态机」对象？
 

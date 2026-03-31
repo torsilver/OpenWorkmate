@@ -15,15 +15,13 @@ public sealed class PlanPlugin
     private readonly IPlanStore _store;
     private readonly IKernelAccessor _kernelAccessor;
     private readonly SessionManager _sessionManager;
-    private readonly ConfigService _configService;
     private readonly ILogger<PlanPlugin> _logger;
 
-    public PlanPlugin(IPlanStore store, IKernelAccessor kernelAccessor, SessionManager sessionManager, ConfigService configService, ILogger<PlanPlugin> logger)
+    public PlanPlugin(IPlanStore store, IKernelAccessor kernelAccessor, SessionManager sessionManager, ILogger<PlanPlugin> logger)
     {
         _store = store;
         _kernelAccessor = kernelAccessor;
         _sessionManager = sessionManager;
-        _configService = configService;
         _logger = logger;
     }
 
@@ -79,9 +77,6 @@ public sealed class PlanPlugin
         var sessionId = SessionContext.GetSessionId();
         var createdBy = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetClientType(sessionId) ?? "chrome") : "chrome";
         var createdByDisplayName = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetDisplayName(sessionId) ?? "") : "";
-        var steps = PlanStepParser.ParsePlanSteps(content);
-        var pc = _configService.Current.PlanConfirmation ?? new PlanConfirmationConfig();
-        var requiresConfirm = PlanConfirmationRules.RequiresUserConfirmation(steps.Count, pc.AutoExecuteMaxSteps);
         var meta = new PlanMeta
         {
             Id = planId,
@@ -90,13 +85,11 @@ public sealed class PlanPlugin
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             CreatedBy = createdBy,
-            CreatedByDisplayName = createdByDisplayName,
-            RequiresUserConfirmation = requiresConfirm
+            CreatedByDisplayName = createdByDisplayName
         };
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);
-        _logger.LogInformation("create_plan: saved planId={PlanId} title={Title} requiresUserConfirmation={Requires}", planId, meta.Title, requiresConfirm);
-        var confirmHint = requiresConfirm ? " 需用户确认后再执行。" : " 可直接执行。";
-        return $"[计划已生成] planId={planId}，标题：{meta.Title}。{confirmHint} 可在计划页查看与编辑，或选择该计划后按步骤执行。";
+        _logger.LogInformation("create_plan: saved planId={PlanId} title={Title}", planId, meta.Title);
+        return $"[计划已生成] planId={planId}，标题：{meta.Title}。请在计划页查看与编辑；确认后在计划页点击执行以开始按步任务。";
     }
 
     [KernelFunction("get_plan")]

@@ -1273,6 +1273,8 @@ function openAiModelEditor(existingId) {
       els.aiModelApiVersion.value = m.apiVersion || m.ApiVersion || '2024-02-01';
       els.aiModelModelId.value = m.modelId || m.ModelId || '';
       els.aiModelSystemPrompt.value = m.systemPrompt || m.SystemPrompt || '';
+      var svVision = document.getElementById('aiModelSupportsVision');
+      if (svVision) svVision.checked = !!(m.supportsVision || m.SupportsVision);
       var resolvedVid = resolveChatVendorId(m);
       if (vendorSelect) vendorSelect.value = resolvedVid;
       if (resolvedVid === 'aliyun_bailian') {
@@ -1317,6 +1319,8 @@ function openAiModelEditor(existingId) {
     els.aiModelApiVersion.value = '2024-02-01';
     els.aiModelModelId.value = '';
     els.aiModelSystemPrompt.value = '';
+    var svVisionNew = document.getElementById('aiModelSupportsVision');
+    if (svVisionNew) svVisionNew.checked = false;
     if (vendorSelect) vendorSelect.value = 'other_auto';
     testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'other_auto' };
   }
@@ -1398,6 +1402,8 @@ function saveAiModelFromEditor() {
     enabled: prevEntry ? (prevEntry.enabled !== false && prevEntry.Enabled !== false) : true,
     vendorId: (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto'
   };
+  var svEl = document.getElementById('aiModelSupportsVision');
+  entry.supportsVision = !!(svEl && svEl.checked);
   var isBailianVendor = (vendorEl && vendorEl.value) === 'aliyun_bailian';
   if (isBailianVendor) {
     var etEl = document.getElementById('aiModelEnableThinking');
@@ -1611,11 +1617,6 @@ async function loadConfig() {
     if (rtEl) rtEl.value = ragType || 'Sqlite';
     if (rpEl) rpEl.value = ragPath || '';
     if (rpGroup) rpGroup.style.display = (ragType === 'Sqlite') ? 'block' : 'none';
-    var pc = data.planConfirmation ?? data.PlanConfirmation;
-    if (pc) {
-      var aeEl = document.getElementById('autoExecuteMaxSteps');
-      if (aeEl) aeEl.value = (pc.autoExecuteMaxSteps ?? pc.AutoExecuteMaxSteps ?? 3);
-    }
     var presets = data.contextOptimizationPresets ?? data.ContextOptimizationPresets;
     var activePresetId = data.activeContextPresetId ?? data.ActiveContextPresetId ?? '';
     var presetEl = document.getElementById('activeContextPreset');
@@ -1839,7 +1840,7 @@ function updatePresetRenameDeleteVisibility(activePresetId, presets) {
   }
   renameBtn.style.display = 'inline-block';
   var id = (activePresetId || '').toLowerCase();
-  var isBuiltIn = id === 'internal-64k' || id === 'kimi-k25';
+  var isBuiltIn = id === 'internal-64k' || id === 'kimi-k25' || id === 'qwen35-plus';
   deleteBtn.style.display = isBuiltIn ? 'none' : 'inline-block';
 }
 
@@ -1868,17 +1869,12 @@ async function saveConfig() {
     var ragPathEl = document.getElementById('ragStoragePath');
     var ragType = ragTypeEl ? ragTypeEl.value : 'Sqlite';
     var ragPath = ragPathEl ? ragPathEl.value : '';
-    var aeEl = document.getElementById('autoExecuteMaxSteps');
-    var autoExecuteMaxSteps = (aeEl && aeEl.value !== '') ? parseInt(aeEl.value, 10) : (fullConfig && fullConfig.planConfirmation && (fullConfig.planConfirmation.autoExecuteMaxSteps ?? fullConfig.planConfirmation.AutoExecuteMaxSteps)) || 3;
-    if (isNaN(autoExecuteMaxSteps) || autoExecuteMaxSteps < 1) autoExecuteMaxSteps = 3;
     var presetSelectEl = document.getElementById('activeContextPreset');
     var activeContextPresetId = (presetSelectEl && presetSelectEl.value) ? presetSelectEl.value : (fullConfig && (fullConfig.activeContextPresetId ?? fullConfig.ActiveContextPresetId));
     var contextOptimizationPresets = (fullConfig && (fullConfig.contextOptimizationPresets ?? fullConfig.ContextOptimizationPresets)) || [];
-    var planConfirmationPayload = { autoExecuteMaxSteps: autoExecuteMaxSteps };
     if (activeContextPresetId && contextOptimizationPresets.length > 0) {
       var activePreset = contextOptimizationPresets.find(function (p) { return (p.id || p.Id) === activeContextPresetId; });
       if (activePreset) {
-        activePreset.planConfirmation = activePreset.PlanConfirmation = planConfirmationPayload;
         var sessPayload = collectSessionFromForm();
         activePreset.session = activePreset.Session = sessPayload;
         var ctxPayload = collectContextWindowFromForm();
@@ -1912,7 +1908,6 @@ async function saveConfig() {
       activeOcrModelId: activeOcrModelId || undefined,
       ragStorageType: ragType,
       ragStoragePath: (ragType === 'Sqlite' && ragPath) ? ragPath : undefined,
-      planConfirmation: planConfirmationPayload,
       activeContextPresetId: activeContextPresetId || undefined,
       contextOptimizationPresets: contextOptimizationPresets.length > 0 ? contextOptimizationPresets : undefined,
       uiThemeId: uiThemeId,
@@ -1932,7 +1927,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, planConfirmation: payload.planConfirmation, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';
@@ -1961,15 +1956,13 @@ if (newContextPresetBtn) {
     if (!Array.isArray(presets)) presets = [];
     var ctx = fullConfig && (fullConfig.contextWindow || fullConfig.ContextWindow);
     var sess = fullConfig && (fullConfig.session || fullConfig.Session);
-    var plan = fullConfig && (fullConfig.planConfirmation || fullConfig.PlanConfirmation);
     function cloneObj(o) { return o ? JSON.parse(JSON.stringify(o)) : {}; }
     var newId = 'custom-' + Date.now();
     var newPreset = {
       id: newId,
       displayName: '自定义 ' + (presets.length + 1),
       contextWindow: cloneObj(ctx),
-      session: cloneObj(sess),
-      planConfirmation: cloneObj(plan)
+      session: cloneObj(sess)
     };
     fullConfig = fullConfig || {};
     fullConfig.contextOptimizationPresets = presets.slice();
@@ -2036,7 +2029,7 @@ if (deleteContextPresetBtn) {
     var presets = getPresets();
     if (!activeId || !presets.length) return;
     var id = (activeId || '').toLowerCase();
-    if (id === 'internal-64k' || id === 'kimi-k25') return;
+    if (id === 'internal-64k' || id === 'kimi-k25' || id === 'qwen35-plus') return;
     if (!confirm('确定删除该预设？')) return;
     var next = presets.filter(function (p) { return (p.id || p.Id) !== activeId; });
     fullConfig = fullConfig || {};
@@ -2068,9 +2061,6 @@ if (deleteContextPresetBtn) {
     saveConfig();
   });
 }
-
-var autoExecuteMaxStepsEl = document.getElementById('autoExecuteMaxSteps');
-if (autoExecuteMaxStepsEl) autoExecuteMaxStepsEl.addEventListener('input', debouncedSaveConfig);
 
 if (els.addAiModelBtn) els.addAiModelBtn.addEventListener('click', function () { openAiModelEditor(null); });
 if (els.closeAiModelEditorBtn) els.closeAiModelEditorBtn.addEventListener('click', closeAiModelEditor);
