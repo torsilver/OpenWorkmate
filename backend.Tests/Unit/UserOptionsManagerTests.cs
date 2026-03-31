@@ -64,7 +64,7 @@ public class UserOptionsManagerTests
             requestTimeout: TimeSpan.FromMinutes(1));
 
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var steps = new List<AskOptionsStep>
         {

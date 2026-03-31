@@ -62,7 +62,10 @@ public sealed class McpClientManager : IDisposable
 
     public void Dispose()
     {
+        // IDisposable 桥接到异步 StopAll：宿主关闭时同步等待可接受。
+#pragma warning disable VSTHRD002 // Avoid synchronous waits in IDisposable.Dispose
         StopAllAsync().GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
     }
 
     private static IReadOnlyDictionary<string, string>? MergeEnv(Dictionary<string, string>? configEnv, IReadOnlyDictionary<string, string>? overlay)

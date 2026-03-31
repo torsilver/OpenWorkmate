@@ -42,6 +42,7 @@ public sealed class McpClient : IAsyncDisposable, IDisposable
         };
         if (env != null)
         {
+            opts.EnvironmentVariables ??= new Dictionary<string, string?>();
             foreach (var kv in env)
                 opts.EnvironmentVariables[kv.Key] = kv.Value ?? "";
         }
@@ -108,7 +109,10 @@ public sealed class McpClient : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
+        // IDisposable 桥接到 IAsyncDisposable：宿主关闭时同步等待异步释放为常见做法。
+#pragma warning disable VSTHRD002 // Avoid synchronous waits in IDisposable.Dispose
         DisposeAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
     }
 
     public async ValueTask DisposeAsync()

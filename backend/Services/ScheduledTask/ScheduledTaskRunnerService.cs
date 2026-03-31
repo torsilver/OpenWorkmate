@@ -24,7 +24,7 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _timer = new System.Threading.Timer(RunScheduledTasksAsync, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(IntervalSeconds));
+        _timer = new System.Threading.Timer(RunScheduledTasksTick, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(IntervalSeconds));
         _logger.LogInformation("ScheduledTaskRunnerService started, interval={Sec}s", IntervalSeconds);
         return Task.CompletedTask;
     }
@@ -37,7 +37,9 @@ public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable
 
     public void Dispose() => _timer?.Dispose();
 
-    private async void RunScheduledTasksAsync(object? _)
+    private void RunScheduledTasksTick(object? _) => _ = RunScheduledTasksAsync();
+
+    private async Task RunScheduledTasksAsync()
     {
         try
         {

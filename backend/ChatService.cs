@@ -67,7 +67,6 @@ public sealed partial class ChatService : IDisposable
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
 
-        RebuildKernelAsync(skipUserToolIndexSync: true).GetAwaiter().GetResult();
         _configService.OnConfigChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
         _skillService.OnSkillsChanged += () => _ = RebuildKernelAsync(skipUserToolIndexSync: false);
 
@@ -944,7 +943,8 @@ public sealed partial class ChatService : IDisposable
         if (allowedFunctions.Count == 0)
             return "[错误] 当前端无可用的工具集，无法执行子任务。";
 
-        var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。";
+        var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。"
+            + " 用户最新表述优先于历史中的旧结论；本机/文档/网页的当前状态须用工具查询后再下结论，勿仅凭聊天记录推断。";
         var userContent = taskDescTrimmed;
         if (!string.IsNullOrWhiteSpace(constraints))
             userContent += "\n\n约束：" + constraints.Trim();
@@ -1260,6 +1260,20 @@ public sealed partial class ChatService : IDisposable
     }
 
     /// <summary>
+    /// 非计划模式下注入：最新用户意图优先；可验证事实须本轮用工具刷新，不以聊天历史替代（与 Memory/AccurateData 边界见文内）。
+    /// </summary>
+    private const string LatestIntentAndGroundedFactsInstruction =
+        "[意图优先级] 当用户在后续消息中纠正、细化或推翻先前要求时，以最近一条用户消息中的意图为准；"
+        + "若与早前 assistant 总结或旧结论冲突，以最新用户表述为准。"
+        + "未冲突的上下文约束（如已约定的路径、端侧、任务目标）仍应保留。"
+        + "\n\n[事实与可验证状态] 关于会变化或需实勘的信息"
+        + "（本机文件/目录列表与是否存在、run_command 能反映的本机状态、当前网页或当前文档的实时内容等），"
+        + "禁止仅凭对话历史或旧 assistant 回复断言；须在本轮通过相应工具"
+        + "（如 run_command、File/浏览器/Office 侧读取工具等）获取结果后再作答。"
+        + "用户明确要求「再看一下」「重新确认」「现在有什么」等时，必须先执行能反映真实状态的查询。"
+        + "通过 Memory、AccurateData 等工具写入或检索的记忆与结构化数据仍可使用，但不可替代「当前目录列表」等须当场核实的状态。";
+
+    /// <summary>
     /// 非计划模式下注入：用户界面看不到工具原始返回全文，模型必须在最终回复中整理复述。
     /// </summary>
     private const string ToolResultEchoSystemInstruction =
@@ -1269,7 +1283,7 @@ public sealed partial class ChatService : IDisposable
         + "禁止仅用「已读取」「已完成」等占位描述而不给出实质内容。";
 
     /// <summary>
-    /// 构建本轮流式请求用的 ChatHistory：可选追加 client 身份后缀；非计划模式再追加工具结果复述约束。
+    /// 构建本轮流式请求用的 ChatHistory：可选追加 client 身份后缀；非计划模式再追加意图/事实约束与工具结果复述约束。
     /// </summary>
     private static ChatHistory BuildHistoryForStreamingTurn(ChatHistory stateHistory, string? identitySuffix, bool isPlanMode)
     {
@@ -1287,7 +1301,7 @@ public sealed partial class ChatService : IDisposable
         if (!isPlanMode && historyToUse.Count > 0 && historyToUse[0].Role == AuthorRole.System)
         {
             var sys = historyToUse[0].Content ?? "";
-            var augmented = sys + "\n\n" + ToolResultEchoSystemInstruction;
+            var augmented = sys + "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolResultEchoSystemInstruction;
             var withEcho = new ChatHistory(augmented);
             for (var i = 1; i < historyToUse.Count; i++)
                 withEcho.Add(historyToUse[i]);

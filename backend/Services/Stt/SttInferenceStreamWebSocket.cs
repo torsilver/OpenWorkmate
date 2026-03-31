@@ -114,7 +114,7 @@ public sealed class SttInferenceStreamWebSocket
             await SendFinishAndDrainAsync(upstream, taskId, c).ConfigureAwait(false);
         }
 
-        async Task UpstreamReadLoop()
+        async Task UpstreamReadLoopAsync()
         {
             try
             {
@@ -191,7 +191,7 @@ public sealed class SttInferenceStreamWebSocket
             }
         }
 
-        var upstreamTask = Task.Run(() => UpstreamReadLoop(), CancellationToken.None);
+        var upstreamTask = Task.Run(() => UpstreamReadLoopAsync(), CancellationToken.None);
 
         try
         {
@@ -201,8 +201,8 @@ public sealed class SttInferenceStreamWebSocket
             {
                 await SendBrowserJsonAsync(browserWs, new { type = "error", message = "等待百炼 task-started 超时或未成功。" }, ct)
                     .ConfigureAwait(false);
-                stopReadingUpstream.Cancel();
-                await SafeClosePair(browserWs, upstream, upstreamTask).ConfigureAwait(false);
+                await stopReadingUpstream.CancelAsync().ConfigureAwait(false);
+                await SafeClosePairAsync(browserWs, upstream, upstreamTask).ConfigureAwait(false);
                 return;
             }
 
@@ -243,8 +243,8 @@ public sealed class SttInferenceStreamWebSocket
                 /* ignored */
             }
 
-            stopReadingUpstream.Cancel();
-            await SafeClosePair(browserWs, upstream, upstreamTask).ConfigureAwait(false);
+            await stopReadingUpstream.CancelAsync().ConfigureAwait(false);
+            await SafeClosePairAsync(browserWs, upstream, upstreamTask).ConfigureAwait(false);
         }
     }
 
@@ -279,7 +279,7 @@ public sealed class SttInferenceStreamWebSocket
         }
     }
 
-    private static async Task SafeClosePair(WebSocket browserWs, ClientWebSocket upstream, Task upstreamTask)
+    private static async Task SafeClosePairAsync(WebSocket browserWs, ClientWebSocket upstream, Task upstreamTask)
     {
         try
         {

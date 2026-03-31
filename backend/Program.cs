@@ -159,6 +159,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
     });
 
     builder.Services.AddCors();
+    builder.Services.AddHostedService<ChatServiceKernelWarmupHostedService>();
     builder.Services.AddHostedService<ScheduledTaskRunnerService>();
 
     var app = builder.Build();
@@ -318,7 +319,7 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
         var userOptionsManager = app.Services.GetRequiredService<UserOptionsManager>();
         var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
         var attachmentCache = app.Services.GetRequiredService<AttachmentCacheService>();
-        await HandleSession(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, app.Logger);
+        await HandleSessionAsync(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, app.Logger);
     }
     finally
     {
@@ -1296,7 +1297,7 @@ finally
     Log.CloseAndFlush();
 }
 
-static async Task HandleSession(
+static async Task HandleSessionAsync(
     WebSocket ws, string sessionId, SessionManager sessions,
     ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
@@ -1315,7 +1316,7 @@ static async Task HandleSession(
                     WebSocketCloseStatus.NormalClosure, "Bye", CancellationToken.None);
                 return;
             }
-            ms.Write(buffer, 0, result.Count);
+            await ms.WriteAsync(buffer.AsMemory(0, result.Count), CancellationToken.None);
         } while (!result.EndOfMessage);
 
         var raw = Encoding.UTF8.GetString(ms.ToArray());
@@ -1334,7 +1335,7 @@ static async Task HandleSession(
 
         if (incoming is null)
         {
-            await SendJson(ws, new WsMessage { Type = "error", Content = "Empty message." });
+            await SendJsonAsync(ws, new WsMessage { Type = "error", Content = "Empty message." });
             continue;
         }
 
@@ -1343,7 +1344,7 @@ static async Task HandleSession(
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
-            await SendJson(ws, new WsMessage { Type = "error", Content = "Empty message." });
+            await SendJsonAsync(ws, new WsMessage { Type = "error", Content = "Empty message." });
             continue;
         }
 
@@ -1357,7 +1358,7 @@ static async Task HandleSession(
                 }
                 break;
             case "ping":
-                await SendJson(ws, new WsMessage { Type = "pong", Content = "pong" });
+                await SendJsonAsync(ws, new WsMessage { Type = "pong", Content = "pong" });
                 break;
             case "rpc_response":
                 if (incoming.Id != null)
@@ -1385,26 +1386,26 @@ static async Task HandleSession(
             case "get_debug_history":
                 var history = chatService.GetSessionHistory(sessionId);
                 var historyStr = string.Join("\n\n", history.Select(m => $"[{m.Role}]:\n{m.Content}"));
-                await SendJson(ws, new WsMessage { Type = "debug_history", Content = historyStr });
+                await SendJsonAsync(ws, new WsMessage { Type = "debug_history", Content = historyStr });
                 break;
             case "stop":
                 streamCancelService.Cancel(sessionId);
                 break;
             default:
                 // 不 await，避免阻塞消息循环；否则工具发 rpc_request 后无法在同一连接上收到 rpc_response，导致超时
-                _ = HandleChatStream(ws, sessionId, incoming, chatService, streamCancelService, attachmentCache, logger);
+                _ = HandleChatStreamAsync(ws, sessionId, incoming, chatService, streamCancelService, attachmentCache, logger);
                 break;
         }
     }
 }
 
-static async Task HandleChatStream(
+static async Task HandleChatStreamAsync(
     WebSocket ws, string sessionId, WsMessage incoming,
     ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
     logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
-    await SendJson(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
+    await SendJsonAsync(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
     var ct = streamCancelService.CreateForSession(sessionId);
     SessionContext.SetSessionId(sessionId);
@@ -1439,14 +1440,14 @@ static async Task HandleChatStream(
         {
             if (item.IsWarning)
             {
-                await SendJson(ws, new WsMessage { Type = "stream_warning", Content = item.Content });
+                await SendJsonAsync(ws, new WsMessage { Type = "stream_warning", Content = item.Content });
                 continue;
             }
 
             if (item.Kind == StreamSegmentKind.Reasoning)
             {
                 if (!string.IsNullOrEmpty(item.Content))
-                    await SendJson(ws, new WsMessage { Type = "reasoning_chunk", Content = item.Content });
+                    await SendJsonAsync(ws, new WsMessage { Type = "reasoning_chunk", Content = item.Content });
                 continue;
             }
 
@@ -1454,7 +1455,7 @@ static async Task HandleChatStream(
             {
                 if (string.IsNullOrEmpty(part.Text)) continue;
                 var type = part.IsReasoning ? "reasoning_chunk" : "stream_chunk";
-                await SendJson(ws, new WsMessage { Type = type, Content = part.Text });
+                await SendJsonAsync(ws, new WsMessage { Type = type, Content = part.Text });
             }
         }
 
@@ -1462,7 +1463,7 @@ static async Task HandleChatStream(
         {
             if (string.IsNullOrEmpty(part.Text)) continue;
             var type = part.IsReasoning ? "reasoning_chunk" : "stream_chunk";
-            await SendJson(ws, new WsMessage { Type = type, Content = part.Text });
+            await SendJsonAsync(ws, new WsMessage { Type = type, Content = part.Text });
         }
     }
     catch (OperationCanceledException)
@@ -1480,7 +1481,7 @@ static async Task HandleChatStream(
             logger.LogWarning("[{SessionId}] Skip sending error: WebSocket not open", sessionId);
         else
         {
-            await SendJson(ws, new WsMessage
+            await SendJsonAsync(ws, new WsMessage
             {
                 Type = "error",
                 Content = friendlyMessage
@@ -1500,7 +1501,7 @@ static async Task HandleChatStream(
     if (ws.State != WebSocketState.Open)
         logger.LogWarning("[{SessionId}] Skip sending stream_end: WebSocket not open", sessionId);
     else
-        await SendJson(ws, new WsMessage { Type = "stream_end" });
+        await SendJsonAsync(ws, new WsMessage { Type = "stream_end" });
 }
 
 static string GetMessageType(string raw)
@@ -1513,7 +1514,7 @@ static string GetMessageType(string raw)
     catch { return "?"; }
 }
 
-static async Task SendJson(WebSocket ws, WsMessage msg)
+static async Task SendJsonAsync(WebSocket ws, WsMessage msg)
 {
     if (ws.State != WebSocketState.Open) return;
     var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);

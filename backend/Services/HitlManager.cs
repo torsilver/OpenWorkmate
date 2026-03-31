@@ -68,7 +68,7 @@ public sealed class HitlManager
         var delayTask = Task.Delay(DefaultTimeout, ct);
         var completed = await Task.WhenAny(tcs.Task, delayTask);
         if (completed == tcs.Task)
-            return tcs.Task.Result;
+            return await tcs.Task.ConfigureAwait(false);
         _logger.LogWarning("[Hitl] confirm_request id={ReqId} timed out", requestId);
         _pending.TryRemove(requestId, out var expired);
         expired.Tcs?.TrySetResult(new HitlResult(false, false));
