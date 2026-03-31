@@ -20,13 +20,15 @@ public sealed class TavilyPlugin
     [KernelFunction("tavily_search")]
     [Description("使用 Tavily API 进行网页搜索，返回简洁相关结果，适合 AI 摘要。当用户需要查实时信息、新闻或网络资料时使用。")]
     public async Task<string> SearchAsync(
-        [Description("搜索关键词或问题")] string query,
+        [Description("检索式：简短关键词或问句，勿粘贴整篇正文；空则无法搜索")] string query,
         [Description("返回结果数量，默认 5，最大 20")] int maxResults = 5,
         [Description("是否深度搜索，更全面但较慢")] bool deep = false,
         [Description("主题：general 或 news")] string topic = "general")
     {
         if (string.IsNullOrEmpty(_apiKey))
             return "[错误] 未配置 Tavily API Key，请在 user-config.json 中填写 tavilyApiKey（或在 skillEnv 中配置 TAVILY_API_KEY）。";
+        if (string.IsNullOrWhiteSpace(query))
+            return "[错误] 搜索关键词 query 不能为空；请改为简短检索式后重试。";
 
         var body = new Dictionary<string, object>
         {
@@ -88,9 +90,9 @@ public sealed class TavilyPlugin
     }
 
     [KernelFunction("tavily_extract")]
-    [Description("从指定 URL 提取正文内容，适用于需要阅读网页全文时。")]
+    [Description("从指定 URL 提取正文内容，适用于需要阅读网页全文时。多个 URL 用英文逗号或空格分隔。")]
     public async Task<string> ExtractAsync(
-        [Description("要提取内容的网页 URL，可多个用逗号或空格分隔")] string urls)
+        [Description("一个或多个绝对 URL（https://…）；多个用逗号或空格分隔，勿在单个 URL 内换行")] string urls)
     {
         if (string.IsNullOrEmpty(_apiKey))
             return "[错误] 未配置 Tavily API Key（user-config.json 中 tavilyApiKey 或 skillEnv.TAVILY_API_KEY）。";

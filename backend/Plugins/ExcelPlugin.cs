@@ -99,15 +99,28 @@ public sealed class ExcelPlugin
     [Description("向指定工作表和起始单元格写入 JSON 二维数组数据；文件不存在则创建。")]
     public string ExcelRangeWrite(
         [Description("Excel 文件完整路径")] string filePath,
-        [Description("JSON 二维数组，如 [[\"姓名\",\"年龄\"],[\"张三\",25]]")] string jsonData,
+        [Description("合法 JSON 二维数组字符串，双引号键/字符串；示例 [[\"姓名\",\"年龄\"],[\"张三\",25]]。勿用单引号；解析失败时请检查转义与逗号")] string jsonData,
         [Description("工作表名称，留空为 Sheet1")] string sheetName = "",
         [Description("起始单元格，如 A1")] string startCell = "A1")
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateExcelExtension(filePath, out var extErr)) return extErr;
+        if (string.IsNullOrWhiteSpace(jsonData))
+            return "[错误] jsonData 不能为空；请传入 JSON 二维数组字符串（见参数说明中的示例）。";
         try
         {
-            var data = JsonSerializer.Deserialize<List<List<JsonElement>>>(jsonData) ?? throw new Exception("JSON 解析失败");
+            List<List<JsonElement>>? data;
+            try
+            {
+                data = JsonSerializer.Deserialize<List<List<JsonElement>>>(jsonData);
+            }
+            catch (JsonException jex)
+            {
+                return $"[错误] jsonData 不是合法 JSON 二维数组：{jex.Message}。请使用双引号字符串、检查逗号与反斜杠转义后重试。";
+            }
+
+            if (data == null)
+                return "[错误] jsonData 解析结果为 null；请传入 JSON 二维数组字符串。";
             bool isNew = !File.Exists(filePath);
             var isXlsm = filePath.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase);
             var docType = isXlsm ? SpreadsheetDocumentType.MacroEnabledWorkbook : SpreadsheetDocumentType.Workbook;

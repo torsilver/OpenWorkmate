@@ -18,6 +18,9 @@ public sealed class ToolSelectionService : IToolSelector
 
     private const string FallbackAllKeyword = "全部";
 
+    // Harness / 新鲜度：新增或重命名 Kernel 插件时，须同步下方 PluginDescriptions、SubcategoryDescriptions，
+    // 并与 Program.cs 中实际 AddPlugin 名称一致，避免工具选择阶段与真实 Kernel 能力漂移。
+
     /// <summary>内置语音/OCR 以 MCP_ 前缀注册，但不走外接 MCP；工具选择子类「多媒体」与「外部」据此区分。</summary>
     private static bool IsBuiltinMediaMcpPlugin(string pluginName) =>
         string.Equals(pluginName, "MCP_STT", StringComparison.OrdinalIgnoreCase)

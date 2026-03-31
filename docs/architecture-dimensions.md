@@ -271,9 +271,24 @@ flowchart LR
 
 ---
 
+## 11. Harness 与工具契约（驾驭工程）
+
+对照 `.cursor/rules/harness-engineering.mdc`：Agent 可靠性优先靠**环境与边界**，而非只加长提示词。
+
+**改 Kernel 插件或函数时建议同步检查：**
+
+1. 函数上的 `[Description]` / 参数 `[Description]` 是否写清输入形状与失败时模型可执行的重试方式（另见 `error-visibility`）。
+2. [`docs/提示词清单.md`](docs/提示词清单.md) 中与默认 system 相关的句子是否与 [`ConfigService`](backend/ConfigService.cs) 一致。
+3. [`ToolSelectionService`](backend/Services/ToolSelectionService.cs) 中的 `PluginDescriptions` / `SubcategoryDescriptions` 是否与 `Program.cs` 里实际注册的插件名一致。
+4. 若涉及**多行/结构化字符串**工具参数，优先在服务端做确定性解析（例如 Word `paragraphs`、PPT `bodyText` 经 `ToolMultilineTextNormalizer`），并补 [`backend.Tests/Unit`](backend.Tests/Unit) 单测。
+5. **用户技能**（`SkillAuthorPlugin` 生成内容）中列举的插件名应与上述字典及真实注册名一致，避免技能误导后续工具选择。
+
+---
+
 ## 维护建议
 
 - **改路由或契约**：同步更新本文件中的 API 分组图，并优先对照 `.cursor/rules` 里的 `api-json-contract` / `api-frontend-backend-contract`。
+- **改工具或插件**：对照上文 **§11 Harness 与工具契约** 的检查清单。
 - **新增大模块**：在「后端分层」或「运行时拓扑」中补一个子图即可，避免单图节点过多导致 Mermaid 难以阅读。
 
 如需把某一维拆成独立短文（例如只画 MCP 生命周期），可在 `docs/` 下新增专题 MD 并链回本文。

@@ -128,12 +128,12 @@ public sealed class PptPlugin
     }
 
     [KernelFunction("ppt_slide_write")]
-    [Description("向指定幻灯片写入文本。优先使用 shapeIndex（1 起，见 ppt_slide_read 形状列表）或 shapeName；否则按 placeholderType 匹配占位符：title、body、subtitle、ctrTitle。须先 ppt_document_create 或打开已有合法 pptx。")]
+    [Description("向指定幻灯片写入文本。优先使用 shapeIndex（1 起，见 ppt_slide_read 形状列表）或 shapeName；否则按 placeholderType 匹配占位符：title、body、subtitle、ctrTitle。须先 ppt_document_create 或打开已有合法 pptx。text 支持用 |、空行或换行分段，服务端拆成多行；- 或 * 行首为项目符号。")]
     public string PptSlideWrite(
         [Description("PPT 文件完整路径")] string filePath,
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
         [Description("占位符类型：title、body、subtitle、ctrTitle（shapeIndex>0 时可忽略）")] string placeholderType = "title",
-        [Description("要写入的文本")] string text = "",
+        [Description("写入内容：可用 | 或空行/换行分段；- 或 * 开头为项目符号")] string text = "",
         [Description("可选：按 ppt_slide_read 列出的形状编号写入，0 表示不用")] int shapeIndex = 0,
         [Description("可选：与形状 Name 匹配（不区分大小写）")] string shapeName = "")
     {
@@ -183,7 +183,7 @@ public sealed class PptPlugin
         [Description("PPT 文件完整路径")] string filePath,
         [Description("插入位置：0=最前；k=第 k 页之后；≥页数=末尾")] int position = 0,
         [Description("新幻灯片标题文本")] string titleText = "",
-        [Description("新幻灯片正文文本")] string bodyText = "")
+        [Description("正文：可用 | 或空行/换行分段；- 或 * 开头为项目符号")] string bodyText = "")
     {
         var rawFilePath = filePath;
         filePath = OpenXmlHelpers.ResolvePath(filePath);

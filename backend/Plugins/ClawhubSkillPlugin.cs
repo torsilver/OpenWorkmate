@@ -25,11 +25,11 @@ public sealed class ClawhubSkillPlugin
     }
 
     [KernelFunction("run_clawhub_script")]
-    [Description("运行位置：后端服务所在机器的 Node 进程（技能目录 scripts/ 下）。运行 Clawhub 可执行技能中的脚本。scriptName 为脚本名不含扩展名（如 search、extract），arguments 为空格分隔的参数字符串。")]
+    [Description("在后端本机 Node 下运行技能目录 scripts/ 中的脚本（.mjs 优先，否则 .js）。scriptName 不含扩展名；arguments 按空格切分，含空格的参数须用双引号包裹。")]
     public async Task<string> RunClawhubScriptAsync(
         [Description("技能 ID，与 SKILL.md 中 name 一致，如 tavily")] string skillId,
         [Description("脚本名（不含扩展名），如 search 或 extract")] string scriptName,
-        [Description("传给脚本的参数，空格分隔，如 \"hello world\" 或 5 --deep")] string arguments = "")
+        [Description("传给脚本的参数：空格分隔；含空格的值用双引号包起来，例如 search \"量子计算\" zh。若失败，根据返回中的 stderr 调整参数或检查技能 RequiresEnv")] string arguments = "")
     {
         if (string.IsNullOrWhiteSpace(skillId))
             return "[错误] 请提供技能 ID。";

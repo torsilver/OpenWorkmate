@@ -245,7 +245,8 @@ internal static class PptOpenXmlHelpers
         var tb = shape.TextBody;
         if (tb == null) return;
         tb.RemoveAllChildren<A.Paragraph>();
-        var lines = (text ?? "").Split('\n');
+        var normalized = ToolMultilineTextNormalizer.NormalizeToNewlineSeparatedLines(text);
+        var lines = normalized.Split('\n');
         foreach (var line in lines)
         {
             var trimmed = line.TrimEnd();

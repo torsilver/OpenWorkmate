@@ -482,7 +482,7 @@ public sealed partial class ChatService : IDisposable
         return keyed ?? kernel.GetRequiredService<IChatCompletionService>();
     }
 
-    /// <summary>追加到主对话 system：Memory / AccurateData / Plan / UserOptions 分工与双触发（用户可点名 + 模型可按需启用）。</summary>
+    /// <summary>追加到主对话 system：Memory / AccurateData / Plan / UserOptions 分工与双触发（用户可点名 + 模型可按需启用）。宜保持精炼；完整默认 system 见 ConfigService 与 docs/提示词清单.md（Harness：避免与 AiConfig 长文重复堆叠）。</summary>
     private const string BuiltinTaskPluginSystemGuidance = """
 [内置插件：记忆 / 准确数据 / 计划 / 候选项确认]
 以下均为内置能力（非外接 MCP）。用户可在对话中明确要求；你也应在符合条件时主动选用对应工具。

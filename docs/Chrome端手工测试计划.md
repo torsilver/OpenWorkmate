@@ -171,6 +171,7 @@
 | 编号 | 工具名 | 依赖 | 建议粘贴到对话框的话术 | 应核对工具名 | 预期要点 |
 |------|--------|------|------------------------|--------------|----------|
 | W01 | `word_document_create` | — | 「请 word_document_create：taskly-word-test.docx，标题【手工测试】，段落用 \| 分隔：第一段 \| 第二段 \| 含【替换目标】的第三段。」 | `word_document_create` | 文件已创建 |
+| W01b | `word_document_create` | — | 「请 word_document_create：taskly-word-newlines.docx，标题【换行分段】；paragraphs 里不要用竖线 \|，用三行正文且段与段之间空一行（服务端会按空行/换行拆成多个 Word 段落）。」 | `word_document_create` | 打开后为多段排版，非整段挤成一坨 |
 | W02 | `word_body_read` | W01 | 「请 word_body_read：taskly-word-test.docx，includeTables true。」 | `word_body_read` | 段落文本 |
 | W03 | `word_tables_list` | 文档内有表 | 「请 word_tables_list：taskly-word-test.docx。」 | `word_tables_list` | 表数量或「无表格」 |
 | W04 | `word_tables_read` | 有表 | 「请 word_tables_read：tableIndex=1。」 | `word_tables_read` | 表内容 |

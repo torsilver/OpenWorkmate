@@ -140,11 +140,11 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_document_create")]
-    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。paragraphs 中可用 Markdown 约定：以 # / ## / ### 开头的行自动变为标题，以 - 或 * 开头的行自动变为列表项，其余为正文段落。")]
+    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。Markdown：以 # / ## / ### 开头的行变为标题，以 - 或 * 开头的行变为列表项，其余为正文。")]
     public string WordDocumentCreate(
         [Description("Word 文件完整路径")] string filePath,
         [Description("文档标题")] string title,
-        [Description("段落内容，用 | 分隔多个段落。支持 Markdown：# 标题、- 列表")] string paragraphs)
+        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表")] string paragraphs)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
@@ -168,12 +168,9 @@ public sealed class WordPlugin
                 new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }),
                 new Run(new Text(title))));
 
-            // Parse each paragraph with Markdown conventions
-            foreach (var part in paragraphs.Split('|', StringSplitOptions.TrimEntries))
-            {
-                if (string.IsNullOrEmpty(part)) continue;
-                body.Append(ParseMarkdownParagraph(part));
-            }
+            // Parse each logical line with Markdown conventions (|、空行、换行均会拆段)
+            foreach (var line in WordParagraphSplitter.ExpandWordDocumentParagraphs(paragraphs))
+                body.Append(ParseMarkdownParagraph(line));
 
             // A4 page setup with standard margins
             body.Append(new SectionProperties(

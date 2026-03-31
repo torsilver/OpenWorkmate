@@ -52,6 +52,20 @@ public class PptPluginOpenXmlTests : IDisposable
     }
 
     [Fact]
+    public void SlideInsert_BodyText_WithPipe_NormalizesToMultipleParagraphs()
+    {
+        var path = Path.Combine(_dir, "pipe_body.pptx");
+        var p = new PptPlugin();
+        Assert.Contains("成功", p.PptDocumentCreate(path));
+        Assert.Contains("成功", p.PptSlideInsert(path, 0, "标题", "行一|行二|行三"));
+        var slide1 = p.PptSlideRead(path, 1, false);
+        Assert.Contains("标题", slide1);
+        Assert.Contains("行一", slide1);
+        Assert.Contains("行二", slide1);
+        Assert.Contains("行三", slide1);
+    }
+
+    [Fact]
     public void InsertSlide_AfterSlide1Write_SingleLineBody_StillHasText()
     {
         var path = Path.Combine(_dir, "after_write.pptx");
