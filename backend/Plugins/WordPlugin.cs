@@ -140,9 +140,9 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_document_create")]
-    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。Markdown：以 # / ## / ### 开头的行变为标题，以 - 或 * 开头的行变为列表项，其余为正文。")]
+    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。Markdown：以 # / ## / ### 开头的行变为标题，以 - 或 * 开头的行变为列表项，其余为正文。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。")]
     public string WordDocumentCreate(
-        [Description("Word 文件完整路径")] string filePath,
+        [Description("目标路径：优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题")] string title,
         [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表")] string paragraphs)
     {

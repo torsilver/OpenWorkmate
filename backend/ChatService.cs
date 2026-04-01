@@ -267,7 +267,7 @@ public sealed partial class ChatService : IDisposable
         // 注入当前会话 ID，供 BrowserPlugin 等插件在工具调用时使用
         newKernel.FunctionInvocationFilters.Add(new SessionContextFilter(_loggerFactory.CreateLogger<SessionContextFilter>()));
         // 工具调用状态对前端可见：推送 tool_invocation_start / tool_invocation_end
-        newKernel.FunctionInvocationFilters.Add(new ToolStatusFilter(sessionManager, _loggerFactory.CreateLogger<ToolStatusFilter>(), _agentDebugStats));
+        newKernel.FunctionInvocationFilters.Add(new ToolStatusFilter(sessionManager, _configService, _loggerFactory.CreateLogger<ToolStatusFilter>(), _agentDebugStats));
 
         // 已停用的内置插件 ID（不区分大小写）
         var disabledBuiltIn = _configService.Current.DisabledBuiltInPlugins?
@@ -603,6 +603,15 @@ public sealed partial class ChatService : IDisposable
                 state.History.AddUserMessage(userMessage);
             }
 
+            var ctxForAudit = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+            SessionAuditLog.TryAppend(ctxForAudit, sessionId, "user_message", new
+            {
+                contentPreview = SessionAuditLog.SanitizeForAudit(userMessage),
+                mode,
+                planId,
+                attachmentCount = attachmentRefs?.Count ?? attachments?.Count ?? 0
+            });
+
             TrimHistory(state.History);
 
             var sessionManagerForStatus = _serviceProvider.GetRequiredService<SessionManager>();
@@ -797,6 +806,8 @@ public sealed partial class ChatService : IDisposable
                     if (attempt > 0)
                         fullResponse.Clear();
 
+                    var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
+
                     await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(
                         turn.HistoryToUse, turn.ExecSettings, kernel, ct).GetAsyncEnumerator(ct);
 
@@ -837,6 +848,9 @@ public sealed partial class ChatService : IDisposable
                         if (!string.IsNullOrEmpty(metaReasoning))
                             yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
 
+                        foreach (var toolDelta in StreamingToolCallDeltaHelper.ExtractFromChunk(chunk, toolCallArgBudget))
+                            yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: toolDelta);
+
                         if (chunk.Content is { Length: > 0 } text)
                         {
                             fullResponse.Append(text);
@@ -870,70 +884,10 @@ public sealed partial class ChatService : IDisposable
     private async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> TrySummarizeOldTurnsAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, CancellationToken ct)
     {
         var dir = GetConversationHistoryDirectory(ctx);
-        var r = await SummarizeOldTurnsCoreAsync(history, kernel, chatService, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        var r = await ContextManager.SummarizeOldTurnsCoreAsync(history, kernel, chatService, ctx, sessionId, dir, ct).ConfigureAwait(false);
         if (r.DidCompact)
             _logger.LogDebug("[{SessionId}] Summarized {MessagesRemoved} messages into one block.", sessionId, r.MessagesRemoved);
         return r;
-    }
-
-    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换历史。返回是否执行、被移除的消息条数、摘要字符数。offloadDirectory 为空则不落盘。</summary>
-    private static async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> SummarizeOldTurnsCoreAsync(ChatHistory history, Kernel kernel, IChatCompletionService chatService, ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
-    {
-        const int maxTurnsToSummarize = 6;
-        var toTake = Math.Min(maxTurnsToSummarize * 2, history.Count - 1);
-        if (toTake < 4)
-            return (false, 0, 0);
-        var sb = new System.Text.StringBuilder();
-        for (var i = 1; i <= toTake && i < history.Count; i++)
-        {
-            var msg = history[i];
-            var role = msg.Role.Label ?? msg.Role.ToString() ?? "unknown";
-            var content = msg.Content ?? "";
-            sb.AppendLine($"[{role}] {content}");
-        }
-        var input = sb.ToString().Trim();
-        if (input.Length == 0)
-            return (false, 0, 0);
-
-        var dir = offloadDirectory;
-        if (!string.IsNullOrEmpty(dir))
-        {
-            try
-            {
-                Directory.CreateDirectory(dir);
-                var safeName = string.Join("_", (sessionId ?? "").Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
-                if (string.IsNullOrEmpty(safeName)) safeName = "session";
-                var path = Path.Combine(dir, safeName + ".md");
-                var section = $"\n\n## Summarized at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z\n\n{input}\n\n";
-                await File.AppendAllTextAsync(path, section, ct).ConfigureAwait(false);
-            }
-            catch { /* offload best-effort */ }
-        }
-
-        var maxChars = Math.Max(100, Math.Min(ctx.SummarizationMaxSummaryChars, 2000));
-        var systemPrompt = $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。";
-        var summaryHistory = new ChatHistory(systemPrompt);
-        summaryHistory.AddUserMessage(input);
-        var settings = new OpenAIPromptExecutionSettings { MaxTokens = 800, Temperature = 0.2f };
-        var summaryBuilder = new System.Text.StringBuilder();
-        using (DashScopeCallKindContext.EnterBackground())
-        {
-            await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
-            {
-                if (chunk.Content is { Length: > 0 } text)
-                    summaryBuilder.Append(text);
-            }
-        }
-
-        var summary = summaryBuilder.ToString().Trim();
-        if (string.IsNullOrEmpty(summary))
-            return (false, 0, 0);
-        if (summary.Length > ctx.SummarizationMaxSummaryChars)
-            summary = summary.AsSpan(0, ctx.SummarizationMaxSummaryChars).ToString() + "…";
-        for (var i = 0; i < toTake; i++)
-            history.RemoveAt(1);
-        history.Insert(1, new ChatMessageContent(AuthorRole.User, "[此前对话摘要]\n" + summary));
-        return (true, toTake, summary.Length);
     }
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
@@ -979,6 +933,15 @@ public sealed partial class ChatService : IDisposable
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
         SubtaskContext.SetActive(true);
+        Task SendSubtaskToolDeltaAsync(ToolCallStreamDelta d) =>
+            SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
+            {
+                Type = "tool_call_delta",
+                ToolCallId = d.CallId,
+                ToolName = d.ToolName,
+                ArgumentsDelta = string.IsNullOrEmpty(d.ArgumentsDelta) ? null : d.ArgumentsDelta,
+                IsSubtask = true
+            });
         try
         {
             await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
@@ -1004,12 +967,16 @@ public sealed partial class ChatService : IDisposable
                             await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
                         },
                         settings,
-                        timeoutCts.Token).ConfigureAwait(false);
+                        timeoutCts.Token,
+                        onToolCallDeltaAsync: SendSubtaskToolDeltaAsync).ConfigureAwait(false);
                 }
                 else
                 {
+                    var subtaskToolArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
                     await foreach (var chunk in chat.GetStreamingChatMessageContentsAsync(subHistory, settings, kernel, timeoutCts.Token).ConfigureAwait(false))
                     {
+                        foreach (var td in StreamingToolCallDeltaHelper.ExtractFromChunk(chunk, subtaskToolArgBudget))
+                            await SendSubtaskToolDeltaAsync(td).ConfigureAwait(false);
                         if (chunk.Content is { Length: > 0 } text)
                         {
                             fullResponse.Append(text);
@@ -1079,7 +1046,7 @@ public sealed partial class ChatService : IDisposable
         if (chat == null)
             return "[错误] 未找到对话服务。";
         var dir = GetConversationHistoryDirectory(ctx);
-        var (didCompact, messagesRemoved, _) = await SummarizeOldTurnsCoreAsync(state.History, kernel, chat, ctx, sessionId, dir, ct).ConfigureAwait(false);
+        var (didCompact, messagesRemoved, _) = await ContextManager.SummarizeOldTurnsCoreAsync(state.History, kernel, chat, ctx, sessionId, dir, ct).ConfigureAwait(false);
         if (didCompact)
         {
             var sessionManager = _serviceProvider.GetService<SessionManager>();

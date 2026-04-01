@@ -6,15 +6,43 @@ namespace OfficeCopilot.Server.Plugins;
 public static class OpenXmlHelpers
 {
     /// <summary>展开环境变量，相对路径解析到用户下载目录。</summary>
+    /// <remarks>
+    /// 模型常把「下载文件夹」写成 <c>C:\Users\Public\Downloads</c> 或 <c>%PUBLIC%\Downloads</c>（Public 为共享配置档）。
+    /// 此类路径重定向到当前登录用户的 <c>UserProfile\Downloads</c>，避免文件落到 Public 下。
+    /// </remarks>
     public static string ResolvePath(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return filePath ?? "";
-        filePath = Environment.ExpandEnvironmentVariables(filePath);
-        if (Path.IsPathRooted(filePath)) return filePath;
+        filePath = Environment.ExpandEnvironmentVariables(filePath.Trim());
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrEmpty(userProfile)) return filePath;
-        var downloads = Path.Combine(userProfile, "Downloads");
-        return Path.Combine(downloads, filePath.TrimStart('\\', '/'));
+        if (string.IsNullOrEmpty(userProfile))
+            return Path.IsPathRooted(filePath) ? filePath : filePath;
+
+        var userDownloads = Path.Combine(userProfile, "Downloads");
+
+        if (Path.IsPathRooted(filePath))
+        {
+            var publicRoot = Environment.GetEnvironmentVariable("PUBLIC");
+            if (!string.IsNullOrWhiteSpace(publicRoot))
+            {
+                var publicDownloads = Path.GetFullPath(Path.Combine(publicRoot, "Downloads"));
+                var full = Path.GetFullPath(filePath);
+                if (full.StartsWith(publicDownloads, StringComparison.OrdinalIgnoreCase) &&
+                    (full.Length == publicDownloads.Length ||
+                     full[publicDownloads.Length] == Path.DirectorySeparatorChar ||
+                     full[publicDownloads.Length] == Path.AltDirectorySeparatorChar))
+                {
+                    var rel = full.Length > publicDownloads.Length
+                        ? full.Substring(publicDownloads.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        : "";
+                    return string.IsNullOrEmpty(rel) ? userDownloads : Path.Combine(userDownloads, rel);
+                }
+            }
+
+            return filePath;
+        }
+
+        return Path.Combine(userDownloads, filePath.TrimStart('\\', '/'));
     }
 
     /// <summary>仅允许 .xlsx / .xlsm；.xls 返回明确错误。</summary>

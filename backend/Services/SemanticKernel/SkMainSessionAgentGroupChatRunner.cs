@@ -77,8 +77,16 @@ public static class SkMainSessionAgentGroupChatRunner
 
         group.AddChatMessages(msgs);
 
+        var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
+
         await foreach (var streaming in group.InvokeStreamingAsync(ct).ConfigureAwait(false))
         {
+            if (streaming is StreamingChatMessageContent schunk)
+            {
+                foreach (var d in StreamingToolCallDeltaHelper.ExtractFromChunk(schunk, toolCallArgBudget))
+                    yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+            }
+
             if (streaming?.Content is not { Length: > 0 } text)
                 continue;
 

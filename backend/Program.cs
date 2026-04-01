@@ -1470,6 +1470,18 @@ static async Task HandleChatStreamAsync(
                 continue;
             }
 
+            if (item.Kind == StreamSegmentKind.ToolCallDelta && item.ToolDelta is { } td)
+            {
+                await SendJsonAsync(ws, new WsMessage
+                {
+                    Type = "tool_call_delta",
+                    ToolCallId = td.CallId,
+                    ToolName = td.ToolName,
+                    ArgumentsDelta = string.IsNullOrEmpty(td.ArgumentsDelta) ? null : td.ArgumentsDelta
+                });
+                continue;
+            }
+
             foreach (var part in reasoningParser.Append(item.Content))
             {
                 if (string.IsNullOrEmpty(part.Text)) continue;

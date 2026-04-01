@@ -29,6 +29,8 @@ alwaysApply: true
 - 新增 **Agent 行为**：是否可用更短的静态说明 + 更稳的协议/解析，减少「模型自由发挥」。 
 - 修改 **对话/子 Agent 提示**：是否与 `ContextManager`、多端 system 后缀、计划绑定注入等现有分层一致，避免重复矛盾。 
 - 纯逻辑与契约：**单元测试 / 集成测试**是否覆盖新边界（见 testing 规则）。
+- **压缩边界**：摘要消息勿删 `[compact_boundary:…]`；改 `ContextManager` 裁剪逻辑时保持与 `ConversationCompactBoundary` 一致（见 `docs/提示词清单.md` H 节）。
+- **高危工具 HITL**：新增走 `SecurityFilter` 的任意执行类工具时，同步考虑 `AppConfig.toolPermissionRules` 与 `ToolCapabilityRegistry`（日志/元数据）。
 
 ## 反例（避免）
 

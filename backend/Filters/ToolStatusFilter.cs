@@ -13,12 +13,14 @@ namespace OfficeCopilot.Server.Filters;
 public sealed class ToolStatusFilter : IFunctionInvocationFilter
 {
     private readonly SessionManager _sessionManager;
+    private readonly ConfigService _configService;
     private readonly ILogger<ToolStatusFilter> _logger;
     private readonly AgentDebugStatsService _debugStats;
 
-    public ToolStatusFilter(SessionManager sessionManager, ILogger<ToolStatusFilter> logger, AgentDebugStatsService debugStats)
+    public ToolStatusFilter(SessionManager sessionManager, ConfigService configService, ILogger<ToolStatusFilter> logger, AgentDebugStatsService debugStats)
     {
         _sessionManager = sessionManager;
+        _configService = configService;
         _logger = logger;
         _debugStats = debugStats;
     }
@@ -30,6 +32,10 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
         var sessionId = SessionContext.GetSessionId();
         var pluginName = context.Function.Metadata?.PluginName ?? context.Function.PluginName ?? "?";
         var functionName = context.Function.Name ?? "?";
+        var cap = ToolCapabilityRegistry.Get(pluginName, functionName);
+        _logger.LogDebug(
+            "[ToolCapability] {Plugin}.{Function} readOnly={RO} destructive={D} suggestHitl={H} parallelOk={P}",
+            pluginName, functionName, cap.ReadOnly, cap.Destructive, cap.SuggestHitl, cap.AllowParallelSameTurn);
 
         if (string.IsNullOrEmpty(sessionId))
         {
@@ -50,6 +56,8 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             await _sessionManager.SendToAsync(sessionId, agentStatusJson);
 
         await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix);
+        var ctxWin = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+        SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_start", new { plugin = pluginName, function = functionName, detail = SessionAuditLog.SanitizeForAudit(startDetail, 500) });
 
         try
         {
@@ -68,6 +76,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             var success = !IsToolResultFailure(content);
             _debugStats.RecordToolInvocation(pluginName, functionName, success);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, success, content, null, planStepIndex, null);
+            SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_end", new { plugin = pluginName, function = functionName, success, resultPreview = SessionAuditLog.SanitizeForAudit(content, 500) });
             await SendAgentPhaseAsync(sessionId, "digest", success
                 ? "已收到工具输出，继续处理…"
                 : "工具返回异常，将据此调整后续步骤。");
@@ -115,6 +124,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             var stepIndexOnFail = GetPlanStepIndex(pluginName, functionName, context.Arguments);
             _debugStats.RecordToolInvocation(pluginName, functionName, false);
             await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, false, friendly, null, stepIndexOnFail, null);
+            SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_end", new { plugin = pluginName, function = functionName, success = false, resultPreview = SessionAuditLog.SanitizeForAudit(friendly, 500) });
             await SendAgentPhaseAsync(sessionId, "digest", "工具调用失败，将据此调整后续步骤。");
             throw;
         }

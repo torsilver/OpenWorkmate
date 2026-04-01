@@ -136,7 +136,7 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Constraints { get; set; }
 
-    /// <summary>tool_invocation_start/end 时：是否属于子代理内调用，供前端归入子代理块。</summary>
+    /// <summary>tool_invocation_start/end 与 tool_call_delta：是否属于子代理内，供前端归入子代理块。</summary>
     [JsonPropertyName("isSubtask")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IsSubtask { get; set; }
@@ -165,6 +165,21 @@ public class WsMessage
     [JsonPropertyName("uiThemeId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UiThemeId { get; set; }
+
+    /// <summary>tool_call_delta：OpenAI/SK 流式工具调用的 call_id（无则服务端用占位 key）。</summary>
+    [JsonPropertyName("toolCallId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolCallId { get; set; }
+
+    /// <summary>tool_call_delta：工具名片段（可能随流式逐步完整）。</summary>
+    [JsonPropertyName("toolName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolName { get; set; }
+
+    /// <summary>tool_call_delta：arguments JSON 的增量片段。</summary>
+    [JsonPropertyName("argumentsDelta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ArgumentsDelta { get; set; }
 }
 
 public class AttachmentDto
@@ -304,6 +319,8 @@ public class ScheduledTaskUpdateRequest
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(WsMessage))]
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(ToolPermissionRule))]
+[JsonSerializable(typeof(List<ToolPermissionRule>))]
 [JsonSerializable(typeof(SemanticKernelFeaturesConfig))]
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]

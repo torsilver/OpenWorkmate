@@ -11,7 +11,7 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class ExcelPlugin
 {
     [KernelFunction("excel_sheets_list")]
-    [Description("列出 Excel 工作簿中所有工作表名称。filePath 支持环境变量与相对路径（解析到下载目录）。")]
+    [Description("列出 Excel 工作簿中所有工作表名称。filePath 支持环境变量与相对路径（相对路径相对当前用户约定目录，多为 Downloads）。")]
     public string ExcelSheetsList(
         [Description("Excel 文件完整路径，.xlsx 或 .xlsm")] string filePath)
     {
@@ -96,9 +96,9 @@ public sealed class ExcelPlugin
     }
 
     [KernelFunction("excel_range_write")]
-    [Description("向指定工作表和起始单元格写入 JSON 二维数组数据；文件不存在则创建。")]
+    [Description("向指定工作表和起始单元格写入 JSON 二维数组数据；文件不存在则创建。路径须对应当前登录用户：优先仅文件名或相对路径；勿用 Public/%PUBLIC% 或臆测用户名目录。")]
     public string ExcelRangeWrite(
-        [Description("Excel 文件完整路径")] string filePath,
+        [Description("Excel 路径：优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("合法 JSON 二维数组字符串，双引号键/字符串；示例 [[\"姓名\",\"年龄\"],[\"张三\",25]]。勿用单引号；解析失败时请检查转义与逗号")] string jsonData,
         [Description("工作表名称，留空为 Sheet1")] string sheetName = "",
         [Description("起始单元格，如 A1")] string startCell = "A1")

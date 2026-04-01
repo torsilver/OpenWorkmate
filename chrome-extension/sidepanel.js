@@ -1011,6 +1011,12 @@ let openPrepSeg = null;
 let openThinkSeg = null;
 let openDigestSeg = null;
 let openIntentSeg = null;
+/** 模型正在流式生成工具参数时的展示段（tool_call_delta） */
+let openToolDraftSeg = null;
+/** 子代理内 tool_call_delta 草稿（挂在 subtask-inner 内、tools 列表上方） */
+let openSubtaskToolDraft = null;
+/** 工具块 summary 上的耗时定时器（WeakMap: block -> intervalId） */
+const toolBlockElapsedTimers = new WeakMap();
 /** 当前一段「助手回复」流（工具调用前会关闭并新建，保证与时间线顺序一致） */
 let openAnswerSeg = null;
 const TIMELINE_TAIL_MAX = 100;
@@ -1125,6 +1131,112 @@ function collapseAllOpenPhases() {
   closeOpenAnswerSegment();
 }
 
+function clearToolDraftTimeline() {
+  if (openToolDraftSeg && openToolDraftSeg.details && openToolDraftSeg.details.parentNode) {
+    openToolDraftSeg.details.remove();
+  }
+  openToolDraftSeg = null;
+}
+
+function clearSubtaskToolDraft() {
+  if (openSubtaskToolDraft && openSubtaskToolDraft.wrap && openSubtaskToolDraft.wrap.parentNode) {
+    openSubtaskToolDraft.wrap.remove();
+  }
+  openSubtaskToolDraft = null;
+}
+
+function ensureSubtaskToolDraft() {
+  if (openSubtaskToolDraft) return openSubtaskToolDraft;
+  if (!currentSubtaskToolsEl || !currentSubtaskToolsEl.parentNode) return null;
+  const inner = currentSubtaskToolsEl.parentNode;
+  const wrap = document.createElement("details");
+  wrap.className = "subtask-tool-draft-wrap";
+  wrap.open = true;
+  const sum = document.createElement("summary");
+  sum.textContent = "工具参数（生成中）";
+  const pre = document.createElement("pre");
+  pre.className = "subtask-tool-draft-body";
+  wrap.appendChild(sum);
+  wrap.appendChild(pre);
+  inner.insertBefore(wrap, currentSubtaskToolsEl);
+  openSubtaskToolDraft = { wrap, pre, lastCallId: "" };
+  return openSubtaskToolDraft;
+}
+
+function ensureToolDraftSeg() {
+  if (openToolDraftSeg) return openToolDraftSeg;
+  if (!currentRoundWrapper) beginStream();
+  ensureTimeline();
+  const seg = newTimelineSeg("tool-draft", "工具参数（生成中）");
+  seg.details.classList.add("timeline-seg--tool-draft");
+  openToolDraftSeg = { details: seg.details, pre: seg.pre, tail: seg.tail, lastCallId: "" };
+  return openToolDraftSeg;
+}
+
+function appendToolCallDelta(msg) {
+  const callIdRaw = msg.toolCallId != null ? String(msg.toolCallId).trim() : "";
+  const callId = callIdRaw || "_";
+  const name = msg.toolName != null ? String(msg.toolName) : "";
+  const delta = msg.argumentsDelta != null ? String(msg.argumentsDelta) : "";
+  if (!delta && !name.trim()) return;
+  if (msg.isSubtask === true) {
+    if (!currentRoundWrapper) beginStream();
+    if (!currentSubtaskToolsEl) return;
+    const sd = ensureSubtaskToolDraft();
+    if (!sd) return;
+    if (sd.lastCallId !== callId) {
+      if (sd.pre.textContent) sd.pre.textContent += "\n\n";
+      sd.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
+      sd.lastCallId = callId;
+    }
+    sd.pre.textContent += delta;
+    if ($messages) $messages.scrollTop = $messages.scrollHeight;
+    return;
+  }
+  if (!currentRoundWrapper) beginStream();
+  ensureTimeline();
+  const d = ensureToolDraftSeg();
+  if (d.lastCallId !== callId) {
+    if (d.pre.textContent) d.pre.textContent += "\n\n";
+    d.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
+    d.lastCallId = callId;
+  }
+  d.pre.textContent += delta;
+  d.tail.textContent = timelineTail(d.pre.textContent, TIMELINE_TAIL_MAX);
+  d.details.title = (d.pre.textContent || "").slice(0, 500);
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
+
+function startToolElapsedTimer(block) {
+  if (!block) return;
+  const sum = block.querySelector("summary");
+  if (!sum) return;
+  const span = document.createElement("span");
+  span.className = "tool-elapsed";
+  sum.appendChild(span);
+  const t0 = Date.now();
+  const id = setInterval(function () {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    span.textContent = " · 已执行 " + s + "s";
+  }, 1000);
+  toolBlockElapsedTimers.set(block, id);
+}
+
+function clearToolElapsedTimer(block) {
+  if (!block) return;
+  const id = toolBlockElapsedTimers.get(block);
+  if (id) clearInterval(id);
+  toolBlockElapsedTimers.delete(block);
+}
+
+function clearAllRunningToolTimers() {
+  const wrap = currentRoundWrapper;
+  if (!wrap) return;
+  wrap.querySelectorAll(".tool-call-block.tool-call--running").forEach(function (b) {
+    clearToolElapsedTimer(b);
+  });
+}
+
 function appendAgentStatusLine(text) {
   const line = (text && String(text).trim()) || "";
   if (!line) return;
@@ -1162,6 +1274,7 @@ function appendReasoningChunk(text) {
 
 function beginStream() {
   removeThinkingIndicator();
+  clearSubtaskToolDraft();
   const welcome = $messages.querySelector(".welcome");
   if (welcome) welcome.remove();
 
@@ -1172,6 +1285,7 @@ function beginStream() {
   openThinkSeg = null;
   openDigestSeg = null;
   openIntentSeg = null;
+  openToolDraftSeg = null;
   openAnswerSeg = null;
 
   $messages.appendChild(currentRoundWrapper);
@@ -1244,6 +1358,9 @@ function appendStreamChunk(text) {
 
 function finalizeStream() {
   const wrap = currentRoundWrapper;
+  clearToolDraftTimeline();
+  clearSubtaskToolDraft();
+  clearAllRunningToolTimers();
   collapseAllOpenPhases();
   openAnswerSeg = null;
   if (timelineRoot) {
@@ -1283,6 +1400,8 @@ function finalizeStream() {
   }
   currentRoundWrapper = null;
   timelineRoot = null;
+  openToolDraftSeg = null;
+  openSubtaskToolDraft = null;
   currentRoundToolBlocks = [];
   currentToolEndIndex = 0;
   currentSubtaskBlock = null;
@@ -1322,6 +1441,10 @@ function handleMessage(raw) {
   switch (msg.type) {
     case "stream_start":
       beginStream();
+      break;
+
+    case "tool_call_delta":
+      appendToolCallDelta(msg);
       break;
 
     case "agent_status": {
@@ -1375,6 +1498,7 @@ function handleMessage(raw) {
 
     case "subtask_start": {
       if (!currentRoundWrapper) beginStream();
+      clearSubtaskToolDraft();
       ensureTimeline();
       if (!timelineRoot) break;
       const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
@@ -1431,6 +1555,7 @@ function handleMessage(raw) {
     }
 
     case "subtask_end": {
+      clearSubtaskToolDraft();
       if (currentSubtaskBlock) {
         const sum = currentSubtaskBlock.querySelector("summary");
         if (sum) sum.innerHTML = `<span class="tool-status-icon">✓</span> 子代理（已完成）`;
@@ -1450,6 +1575,8 @@ function handleMessage(raw) {
     }
 
     case "tool_invocation_start": {
+      if (msg.isSubtask === true) clearSubtaskToolDraft();
+      else clearToolDraftTimeline();
       if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
         const planId = getCurrentPlanId();
         if (planId) {
@@ -1470,8 +1597,11 @@ function handleMessage(raw) {
       block.appendChild(sum);
       const out = document.createElement("pre");
       out.className = "tool-call-output";
+      out.textContent = "执行中，请稍候…";
+      out.style.display = "block";
       block.appendChild(out);
       parentBody.appendChild(block);
+      startToolElapsedTimer(block);
       if (isSubtask) {
         currentSubtaskToolBlocks.push(block);
       } else {
@@ -1492,6 +1622,7 @@ function handleMessage(raw) {
       const isSubtask = msg.isSubtask === true;
       const block = isSubtask ? currentSubtaskToolBlocks[currentSubtaskToolEndIndex] : currentRoundToolBlocks[currentToolEndIndex];
       if (block) {
+        clearToolElapsedTimer(block);
         const contentRaw = (msg.content && String(msg.content).trim()) || "";
         const looksLikeError = (c) => {
           if (!c) return false;

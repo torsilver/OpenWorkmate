@@ -37,7 +37,12 @@ public sealed class ContextManager
         var maxMessagesByTurns = 1 + session.MaxHistoryTurns * 2;
 
         while (history.Count > maxMessagesByTurns)
-            history.RemoveAt(1);
+        {
+            var removeAt = ConversationCompactBoundary.GetFirstRemovableChatIndex(history);
+            if (removeAt >= history.Count)
+                break;
+            history.RemoveAt(removeAt);
+        }
 
         if (ctx.PassThroughContext)
             return;
@@ -56,10 +61,18 @@ public sealed class ContextManager
         {
             if (history.Count <= 2)
                 break;
-            var removed = EstimateMessageTokens(history[1], ctx) + (history.Count > 2 ? EstimateMessageTokens(history[2], ctx) : 0);
-            history.RemoveAt(1);
-            if (history.Count > 1)
-                history.RemoveAt(1);
+            var start = ConversationCompactBoundary.GetFirstRemovableChatIndex(history);
+            if (start >= history.Count)
+                break;
+            var removed = EstimateMessageTokens(history[start], ctx);
+            history.RemoveAt(start);
+            totalTokens -= removed;
+            if (totalTokens <= budget || history.Count <= minMessagesToKeep)
+                continue;
+            if (start >= history.Count)
+                continue;
+            removed = EstimateMessageTokens(history[start], ctx);
+            history.RemoveAt(start);
             totalTokens -= removed;
         }
     }
@@ -103,21 +116,24 @@ public sealed class ContextManager
             total += TokenEstimator.EstimateTokens(history[i].Content ?? "", ctx);
         while (total > halfBudget && history.Count > 3)
         {
-            var removed = TokenEstimator.EstimateTokens(history[1].Content ?? "", ctx);
-            history.RemoveAt(1);
+            var start = ConversationCompactBoundary.GetFirstRemovableChatIndex(history);
+            if (start >= history.Count)
+                break;
+            var removed = TokenEstimator.EstimateTokens(history[start].Content ?? "", ctx);
+            history.RemoveAt(start);
             total -= removed;
         }
     }
 
-    /// <summary>执行摘要压缩核心逻辑。</summary>
-    public static async Task<(bool DidCompact, int TurnsSummarized)> SummarizeOldTurnsCoreAsync(
+    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换为带 <see cref="ConversationCompactBoundary"/> 的单条用户消息。</summary>
+    public static async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> SummarizeOldTurnsCoreAsync(
         ChatHistory history, Kernel kernel, IChatCompletionService chatService,
         ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
     {
         const int maxTurnsToSummarize = 6;
         var toTake = Math.Min(maxTurnsToSummarize * 2, history.Count - 1);
         if (toTake < 4)
-            return (false, 0);
+            return (false, 0, 0);
         var sb = new System.Text.StringBuilder();
         for (var i = 1; i <= toTake && i < history.Count; i++)
         {
@@ -128,7 +144,7 @@ public sealed class ContextManager
         }
         var input = sb.ToString().Trim();
         if (input.Length == 0)
-            return (false, 0);
+            return (false, 0, 0);
 
         if (!string.IsNullOrEmpty(offloadDirectory))
         {
@@ -160,13 +176,15 @@ public sealed class ContextManager
         }
         var summary = summaryBuilder.ToString().Trim();
         if (string.IsNullOrEmpty(summary))
-            return (false, 0);
+            return (false, 0, 0);
         if (summary.Length > ctx.SummarizationMaxSummaryChars)
             summary = summary.AsSpan(0, ctx.SummarizationMaxSummaryChars).ToString() + "…";
         for (var i = 0; i < toTake; i++)
             history.RemoveAt(1);
-        history.Insert(1, new ChatMessageContent(AuthorRole.User, "[此前对话摘要]\n" + summary));
-        return (true, toTake / 2);
+        var body = ConversationCompactBoundary.BuildSummaryMessageBody(summary, DateTimeOffset.UtcNow);
+        history.Insert(1, new ChatMessageContent(AuthorRole.User, body));
+        SessionAuditLog.TryAppend(ctx, sessionId ?? "", "compact_applied", new { messagesRemoved = toTake, summaryChars = summary.Length });
+        return (true, toTake, summary.Length);
     }
 
     public static bool IsContextLengthError(Exception ex)

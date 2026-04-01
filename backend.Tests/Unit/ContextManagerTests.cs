@@ -33,6 +33,31 @@ public class ContextManagerTests
         Assert.Equal(maxMessagesByTurns, history.Count);
     }
 
+    /// <summary>存在压缩摘要 + 锚点消息时，按轮数裁剪不得删除摘要与锚点。</summary>
+    [Fact]
+    public void TrimHistory_WithCompactBoundary_DoesNotRemoveSummaryOrAnchor()
+    {
+        var configService = CreateConfigServiceWithPassThrough(maxHistoryTurns: 1);
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<ContextManager>();
+        var manager = new ContextManager(configService, logger);
+
+        var history = new ChatHistory("system");
+        var summary = ConversationCompactBoundary.BuildSummaryMessageBody("summarized", DateTimeOffset.UtcNow);
+        history.AddUserMessage(summary);
+        history.AddAssistantMessage("after-compact-anchor");
+        for (var i = 0; i < 4; i++)
+        {
+            history.AddUserMessage("user " + i);
+            history.AddAssistantMessage("asst " + i);
+        }
+
+        manager.TrimHistory(history, activeEntry: null);
+
+        Assert.True(history.Count >= 3);
+        Assert.Contains(ConversationCompactBoundary.BoundaryMarkerPrefix, history[1].Content ?? "", StringComparison.Ordinal);
+        Assert.Equal("after-compact-anchor", history[2].Content);
+    }
+
     private static ConfigService CreateConfigServiceWithPassThrough(int maxHistoryTurns)
     {
         var configBuilder = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>());

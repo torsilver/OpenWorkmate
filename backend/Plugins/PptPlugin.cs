@@ -24,9 +24,9 @@ public sealed class PptPlugin
         return s;
     }
     [KernelFunction("ppt_document_create")]
-    [Description("创建新的空白 PPT 文件（至少含一张可编辑幻灯片）。若文件已存在则覆盖。新建后可用 ppt_slide_write / ppt_slide_insert 编辑。勿用 shell 重定向伪造 .pptx。路径支持环境变量与相对路径（相对路径解析到下载目录）。")]
+    [Description("创建新的空白 PPT 文件（至少含一张可编辑幻灯片）。若文件已存在则覆盖。新建后可用 ppt_slide_write / ppt_slide_insert 编辑。勿用 shell 重定向伪造 .pptx。路径支持环境变量与相对路径；须对应当前登录用户，勿用 Public/%PUBLIC% 代替用户主目录。")]
     public string PptDocumentCreate(
-        [Description("PPT 文件完整路径，须为 .pptx 或 .pptm")] string filePath)
+        [Description("优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；须 .pptx 或 .pptm；绝对路径用 %USERPROFILE%\\…")] string filePath)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidatePptExtension(filePath, out var extErr)) return extErr;
@@ -45,7 +45,7 @@ public sealed class PptPlugin
     }
 
     [KernelFunction("ppt_slides_list")]
-    [Description("列出 PPT 演示文稿中所有幻灯片的序号与简要信息（按播放顺序）。filePath 支持环境变量与相对路径（解析到下载目录）。回答用户时必须引用并归纳本工具输出中的要点，勿假设用户能看到工具原始返回。")]
+    [Description("列出 PPT 演示文稿中所有幻灯片的序号与简要信息（按播放顺序）。filePath 支持环境变量与相对路径（相对当前用户约定目录，多为 Downloads）。回答用户时必须引用并归纳本工具输出中的要点，勿假设用户能看到工具原始返回。")]
     public string PptSlidesList(
         [Description("PPT 文件完整路径，.pptx 或 .pptm")] string filePath)
     {

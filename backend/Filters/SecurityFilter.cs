@@ -31,7 +31,15 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
         FunctionInvocationContext context,
         Func<FunctionInvocationContext, Task> next)
     {
-        var functionName = context.Function.Name;
+        var pluginName = context.Function.Metadata?.PluginName ?? context.Function.PluginName ?? "";
+        var functionName = context.Function.Name ?? "";
+        var ruleEffect = ToolPermissionRuleEvaluator.Evaluate(_configService.Current.ToolPermissionRules, pluginName, functionName);
+        if (ruleEffect == ToolPermissionRuleEffect.Deny)
+        {
+            context.Result = new FunctionResult(context.Function,
+                "[系统拦截] 工具权限规则禁止调用 " + pluginName + "." + functionName + "。");
+            return;
+        }
 
         if (functionName == "run_command" && context.Arguments.TryGetValue("command", out var cmdObj))
         {
@@ -68,6 +76,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
 
             var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
                 || (cmdName == null || !cliSet.Contains(cmdName));
+            ToolPermissionRuleEvaluator.ApplyToNeedHitl(ref needHitl, ruleEffect);
 
             if (needHitl)
             {
@@ -125,6 +134,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
 
             var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
                 || (string.IsNullOrEmpty(scriptId) || !normalized.Contains(scriptId.ToLowerInvariant()));
+            ToolPermissionRuleEvaluator.ApplyToNeedHitl(ref needHitl, ruleEffect);
 
             if (needHitl)
             {
@@ -184,6 +194,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
 
             var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
                 || (string.IsNullOrEmpty(scriptId) || !docSet.Contains(scriptId.ToLowerInvariant()));
+            ToolPermissionRuleEvaluator.ApplyToNeedHitl(ref needHitl, ruleEffect);
 
             if (needHitl)
             {
@@ -217,23 +228,26 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     "[系统拦截] 定时任务到点执行不支持自定义页面脚本（需人工确认且无浏览器会话）。");
                 return;
             }
-            if (string.IsNullOrEmpty(sessionId))
+            if (ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
             {
-                context.Result = new FunctionResult(context.Function,
-                    "[系统拦截] 执行自定义页面脚本需在会话中由用户确认，当前无会话。");
-                return;
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "[系统拦截] 执行自定义页面脚本需在会话中由用户确认，当前无会话。");
+                    return;
+                }
+                var code = scriptCodeObj?.ToString()?.Trim() ?? "";
+                const int PreviewLen = 200;
+                var action = "执行自定义页面脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
+                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_page_script", null);
+                if (!result.Allowed)
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "用户拒绝执行或未在限定时间内确认，已取消执行。");
+                    return;
+                }
+                _logger.LogInformation("用户已允许执行自定义页面脚本");
             }
-            var code = scriptCodeObj?.ToString()?.Trim() ?? "";
-            const int PreviewLen = 200;
-            var action = "执行自定义页面脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
-            var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_page_script", null);
-            if (!result.Allowed)
-            {
-                context.Result = new FunctionResult(context.Function,
-                    "用户拒绝执行或未在限定时间内确认，已取消执行。");
-                return;
-            }
-            _logger.LogInformation("用户已允许执行自定义页面脚本");
             await next(context);
             return;
         }
@@ -247,23 +261,26 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     "[系统拦截] 定时任务到点执行不支持自定义文档脚本（需人工确认）。");
                 return;
             }
-            if (string.IsNullOrEmpty(sessionId))
+            if (ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
             {
-                context.Result = new FunctionResult(context.Function,
-                    "[系统拦截] 执行自定义文档脚本需在会话中由用户确认，当前无会话。");
-                return;
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "[系统拦截] 执行自定义文档脚本需在会话中由用户确认，当前无会话。");
+                    return;
+                }
+                var code = docScriptCodeObj?.ToString()?.Trim() ?? "";
+                const int PreviewLen = 200;
+                var action = "执行自定义文档脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
+                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_document_script", null);
+                if (!result.Allowed)
+                {
+                    context.Result = new FunctionResult(context.Function,
+                        "用户拒绝执行或未在限定时间内确认，已取消执行。");
+                    return;
+                }
+                _logger.LogInformation("用户已允许执行自定义文档脚本");
             }
-            var code = docScriptCodeObj?.ToString()?.Trim() ?? "";
-            const int PreviewLen = 200;
-            var action = "执行自定义文档脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
-            var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_document_script", null);
-            if (!result.Allowed)
-            {
-                context.Result = new FunctionResult(context.Function,
-                    "用户拒绝执行或未在限定时间内确认，已取消执行。");
-                return;
-            }
-            _logger.LogInformation("用户已允许执行自定义文档脚本");
             await next(context);
             return;
         }

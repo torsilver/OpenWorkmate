@@ -6,8 +6,11 @@
   box-sizing: border-box;
 }
 
+/* 侧栏/嵌入页不要用 100vh 撑满：与宿主可视高度不一致时会出现整页微滚动，
+   #messages 可滚但永远差一截到不了底。与 html/body 统一用 100% 并禁止文档级滚动条。 */
 html, body {
   height: 100%;
+  overflow: hidden;
   font-family: var(--font-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif);
   font-size: 14px;
   background: var(--bg-primary);
@@ -17,7 +20,8 @@ html, body {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -126,6 +130,7 @@ html, body {
      滚动条/滚轮命中与真实可滚区域不一致（例如只能向上滚、点滚动条无效）。 */
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -449,6 +454,64 @@ html, body {
 .tool-call-block.tool-call--running summary { color: var(--accent); }
 .tool-call-block.tool-call--done summary { color: var(--success); }
 .tool-call-block.tool-call--fail summary { color: var(--danger); }
+
+.tool-call-block .tool-elapsed {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.tool-call-block.tool-call--running {
+  animation: taskly-tool-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes taskly-tool-pulse {
+  0%, 100% { border-color: var(--border); }
+  50% { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+}
+
+.timeline-seg.timeline-seg--tool-draft .timeline-seg__body {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
+/* 子代理内：流式工具参数草稿（与主时间线 tool-draft 风格一致） */
+.subtask-tool-draft-wrap {
+  margin-bottom: 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.subtask-tool-draft-wrap summary {
+  padding: 5px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.subtask-tool-draft-wrap summary::-webkit-details-marker { display: none; }
+.subtask-tool-draft-body {
+  margin: 0;
+  padding: 8px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+}
 
 /* 错误类气泡（友好文案） */
 .msg--error {

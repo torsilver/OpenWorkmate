@@ -12,7 +12,7 @@ public class AiConfig
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
-    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 可用 | 显式分段，也可用空行或换行分段（服务端会拆成多个 Word 段落）；行首 Markdown：以 # / ## / ### 开头为标题，以 - 或 * 开头为列表项，其余为正文（自动首行缩进与排版）。创建 PPT 或向幻灯片写入正文时，bodyText/text 可用 | 显式分段，也可用空行或换行分段（与 Word 一致，服务端会拆成多行）；以 - 或 * 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。";
+    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 可用 | 显式分段，也可用空行或换行分段（服务端会拆成多个 Word 段落）；行首 Markdown：以 # / ## / ### 开头为标题，以 - 或 * 开头为列表项，其余为正文（自动首行缩进与排版）。创建 PPT 或向幻灯片写入正文时，bodyText/text 可用 | 显式分段，也可用空行或换行分段（与 Word 一致，服务端会拆成多行）；以 - 或 * 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n本机文件与用户身份：工具运行在「当前登录 Windows 用户」的环境中，凡写入或引用用户个人目录、桌面、下载、文档等，均应对应该用户本人。不要臆造 C:\\Users\\某用户名\\…；不要用 C:\\Users\\Public、%PUBLIC% 等公共/共享配置目录代替当前用户的私人目录。需要绝对路径时优先用 %USERPROFILE% 及其子路径（如 Desktop、Downloads）。Word/Excel/PPT 等路径参数若未要求完整盘符路径，优先只传文件名或相对子路径（服务端按约定解析到当前用户下，多为 Downloads）。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。";
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
 }
@@ -145,6 +145,12 @@ public class ContextWindowConfig
 
     /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
     public bool PassThroughContext { get; set; }
+
+    /// <summary>为 true 时向 <see cref="SessionAuditDirectory"/> 追加 JSONL 会话审计（用户消息、工具起止、压缩等）；默认关闭。</summary>
+    public bool SessionAuditEnabled { get; set; }
+
+    /// <summary>JSONL 审计目录；空则与 <see cref="ConversationHistoryDirectory"/> 同级下 SessionAudit，再否则 %LocalAppData%/OfficeCopilot/SessionAudit。</summary>
+    public string? SessionAuditDirectory { get; set; }
 }
 
 /// <summary>上下文优化预设：一组 ContextWindow + Session，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
@@ -361,6 +367,20 @@ public class AppConfig
     public bool AllowPrivateEndpointTests { get; set; }
     /// <summary>本地 HTTP/WebSocket 访问密钥；在扩展选项页保存后写入 user-config.json，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
+
+    /// <summary>按 <c>Plugin:function</c> 通配符（<c>*</c>）匹配的工具权限覆盖；多条命中时按 Deny &gt; Ask &gt; AllowAlways &gt; AllowOnceSession。</summary>
+    public List<ToolPermissionRule>? ToolPermissionRules { get; set; }
+}
+
+/// <summary>单条工具权限规则；<see cref="Pattern"/> 形如 <c>CLI:*</c>、<c>Excel:excel_*</c>、<c>*:run_command</c>。</summary>
+public sealed class ToolPermissionRule
+{
+    [JsonPropertyName("pattern")]
+    public string Pattern { get; set; } = "";
+
+    /// <summary>deny | ask | allowAlways | allowOnceSession（大小写不敏感）。</summary>
+    [JsonPropertyName("effect")]
+    public string Effect { get; set; } = "";
 }
 
 /// <summary>CLI/页面脚本安全策略用的四端键名：chrome、backend、office、wps；配置中按端各有一份白名单。</summary>
