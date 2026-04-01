@@ -17,6 +17,23 @@
   const $twoRoundDl = document.getElementById("two-round-dl");
 
   let autoTimer = null;
+  /** 与侧栏/选项页一致：成功则缓存 fulfilled；reject 时清空，避免后台晚启动后永远命中旧失败 */
+  let tasklyDebugStatsApiReady = null;
+
+  function tasklyEnsureDebugStatsApiBase() {
+    if (tasklyDebugStatsApiReady) return tasklyDebugStatsApiReady;
+    tasklyDebugStatsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+      typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
+    )
+      .then(function (r) {
+        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      })
+      .catch(function (err) {
+        tasklyDebugStatsApiReady = null;
+        throw err;
+      });
+    return tasklyDebugStatsApiReady;
+  }
 
   function showErr(msg) {
     if (!$err) return;
@@ -266,6 +283,20 @@
       .catch(function () {});
   }
 
+  /** 重新解析本机端口、引导 token 后拉取统计（用于首次打开与「刷新」） */
+  function resolveBootstrapAndLoad() {
+    return tasklyEnsureDebugStatsApiBase()
+      .then(function () {
+        return ensureLocalServiceTokenFromBootstrap(API_BASE);
+      })
+      .then(function () {
+        return load();
+      })
+      .catch(function (e) {
+        showErr(e.message || String(e));
+      });
+  }
+
   async function load() {
     try {
       const res = await tasklyFetch(API_BASE + "/api/debug/agent-stats");
@@ -283,6 +314,8 @@
   async function reset() {
     if (!confirm("确定清空所有调试计数？将删除本机持久化文件，工具调用与向量选择统计一并归零。")) return;
     try {
+      await tasklyEnsureDebugStatsApiBase();
+      await ensureLocalServiceTokenFromBootstrap(API_BASE);
       const res = await tasklyFetch(API_BASE + "/api/debug/agent-stats/reset", { method: "POST" });
       if (!res.ok) {
         showErr(await parseErrorMessage(res));
@@ -302,20 +335,11 @@
     if (on) autoTimer = setInterval(load, 3000);
   }
 
-  if ($btnRefresh) $btnRefresh.addEventListener("click", () => load());
+  if ($btnRefresh) $btnRefresh.addEventListener("click", () => resolveBootstrapAndLoad());
   if ($btnReset) $btnReset.addEventListener("click", () => reset());
   if ($chkAuto) {
     $chkAuto.addEventListener("change", () => setAuto($chkAuto.checked));
   }
 
-  TasklyLocalService.tasklyResolveLocalServiceBase(
-    typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
-  )
-    .then(function (r) {
-      API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
-      return ensureLocalServiceTokenFromBootstrap(API_BASE).then(function () { return load(); });
-    })
-    .catch(function (e) {
-      showErr(e.message || String(e));
-    });
+  resolveBootstrapAndLoad();
 })();

@@ -2,6 +2,7 @@
   "use strict";
 
   let API_BASE = "http://127.0.0.1:8765";
+  let tasklyPlansApiReady = null;
   const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
   const STORAGE_EXECUTE_PLAN_ID = "copilot_execute_plan_id";
   const STORAGE_EXECUTE_PLAN_TITLE = "copilot_execute_plan_title";
@@ -290,12 +291,24 @@
 
   tasklyRefreshHljsLink();
 
+  function tasklyEnsurePlansApiBase() {
+    if (tasklyPlansApiReady) return tasklyPlansApiReady;
+    tasklyPlansApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+      typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
+    )
+      .then(function (r) {
+        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      })
+      .catch(function (err) {
+        tasklyPlansApiReady = null;
+        throw err;
+      });
+    return tasklyPlansApiReady;
+  }
+
   const planId = getPlanIdFromUrl();
-  TasklyLocalService.tasklyResolveLocalServiceBase(
-    typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
-  )
-    .then(function (r) {
-      API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+  tasklyEnsurePlansApiBase()
+    .then(function () {
       return ensureLocalServiceTokenFromBootstrap(API_BASE).then(function () {
         tasklyFetch(API_BASE + "/api/config")
           .then(function (res) { return res.ok ? res.json() : null; })

@@ -16,7 +16,8 @@
     var ctrl = new AbortController();
     var id = setTimeout(function () {
       try {
-        ctrl.abort();
+        // 明确 reason，避免 Chrome 报「signal is aborted without reason」且便于上层映射为友好文案
+        ctrl.abort(new DOMException("本机服务请求超时", "AbortError"));
       } catch (e) { /* ignore */ }
     }, ms || 1500);
     return fetch(url, { method: "GET", signal: ctrl.signal })

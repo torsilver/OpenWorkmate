@@ -14,9 +14,14 @@ function tasklySetOptionsApiUrls(apiBase) {
 var tasklyOptionsApiReady = null;
 function tasklyEnsureOptionsApiBase() {
   if (tasklyOptionsApiReady) return tasklyOptionsApiReady;
-  tasklyOptionsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(chrome.storage.local).then(function (r) {
-    tasklySetOptionsApiUrls(r.baseUrl);
-  });
+  tasklyOptionsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(chrome.storage.local)
+    .then(function (r) {
+      tasklySetOptionsApiUrls(r.baseUrl);
+    })
+    .catch(function (err) {
+      tasklyOptionsApiReady = null;
+      throw err;
+    });
   return tasklyOptionsApiReady;
 }
 
@@ -79,17 +84,35 @@ function isUserScriptsAvailable() {
   }
 }
 
-/** 更新选项页「自定义页面脚本」区块的状态与扩展详情页链接。 */
+/** 扩展选项页无法通过 a[href=chrome://...] 打开系统扩展页，需用 tabs.create。 */
+function setupUserScriptsExtensionLink() {
+  var linkEl = document.getElementById('userScriptsExtensionLink');
+  if (!linkEl) return;
+  linkEl.addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!chrome.runtime || !chrome.runtime.id) {
+      alert('当前环境无法获取扩展 ID。');
+      return;
+    }
+    if (!chrome.tabs || !chrome.tabs.create) {
+      alert('当前环境无法打开标签页。');
+      return;
+    }
+    var url = 'chrome://extensions/?id=' + chrome.runtime.id;
+    chrome.tabs.create({ url: url }, function () {
+      if (chrome.runtime.lastError)
+        alert('打开失败：' + (chrome.runtime.lastError.message || String(chrome.runtime.lastError)));
+    });
+  });
+}
+
+/** 更新选项页「自定义页面脚本」区块的状态。 */
 function updateUserScriptsSection() {
   const statusEl = document.getElementById('userScriptsStatusText');
-  const linkEl = document.getElementById('userScriptsExtensionLink');
   if (!statusEl) return;
   const available = isUserScriptsAvailable();
   statusEl.textContent = available ? '已开启' : '未开启';
   statusEl.style.color = available ? 'var(--success)' : 'var(--danger)';
-  if (linkEl && chrome.runtime && chrome.runtime.id) {
-    linkEl.href = 'chrome://extensions?id=' + chrome.runtime.id;
-  }
 }
 
 /** 判断是否为「无法连接后端」类错误，返回可展示给用户的文案；否则返回 null。 */
@@ -2700,6 +2723,7 @@ document.addEventListener('DOMContentLoaded', function () {
       console.warn(msg);
     });
   setupPassThroughContextToggle();
+  setupUserScriptsExtensionLink();
   updateUserScriptsSection();
 });
 

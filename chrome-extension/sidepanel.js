@@ -3,16 +3,35 @@ let API_BASE = "http://127.0.0.1:8765";
 const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
 
 var tasklySidepanelApiReady = null;
+/** 避免在「后台晚启动」场景下反复弹出同一条气泡提示 */
+let tasklyLocalServiceWaitHintShown = false;
+
 function tasklyEnsureApiBase() {
   if (tasklySidepanelApiReady) return tasklySidepanelApiReady;
   tasklySidepanelApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
     typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
-  ).then(function (r) {
-    var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
-    API_BASE = hw.apiBase;
-    WS_URL = hw.wsUrl;
-  });
+  )
+    .then(function (r) {
+      var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+      API_BASE = hw.apiBase;
+      WS_URL = hw.wsUrl;
+    })
+    .catch(function (err) {
+      // 解析失败时勿永久缓存 rejected，否则后台稍后启动也会一直命中旧失败，无法重新扫端口
+      tasklySidepanelApiReady = null;
+      throw err;
+    });
   return tasklySidepanelApiReady;
+}
+
+function formatLocalServiceConnectError(err) {
+  if (!err) return "";
+  var name = err.name || "";
+  var msg = err.message || String(err);
+  if (name === "AbortError" || /aborted/i.test(msg)) {
+    return "本机服务暂未响应（常见原因：后台尚未启动）。已自动排队重试。";
+  }
+  return msg;
 }
 
 function tasklyFetch(url, init) {
@@ -809,6 +828,7 @@ function connect() {
   ws.addEventListener("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
     reconnectAttempts = 0;
+    tasklyLocalServiceWaitHintShown = false;
     setStatus("connected");
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
@@ -849,8 +869,15 @@ function connect() {
   });
   });
   }).catch(function (err) {
-    setStatus("failed");
-    addBotMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)), true);
+    setStatus("reconnecting");
+    if (!tasklyLocalServiceWaitHintShown) {
+      tasklyLocalServiceWaitHintShown = true;
+      addSystemMessage(
+        "未检测到本机 Office Copilot，将自动重试连接。请先启动本机服务端或稍候片刻。\n" +
+          formatLocalServiceConnectError(err)
+      );
+    }
+    scheduleReconnect();
   });
 }
 
@@ -3482,11 +3509,5 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", ensureConnectionOnVisible);
 
-tasklyEnsureApiBase()
-  .then(function () {
-    connect();
-  })
-  .catch(function (err) {
-    setStatus("failed");
-    addBotMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)), true);
-  });
+// 统一走 connect()：内含解析本机地址、引导 token、WebSocket；失败时由 scheduleReconnect 重试
+connect();

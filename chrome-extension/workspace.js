@@ -6,9 +6,15 @@ function tasklyEnsureWorkspaceApiBase() {
   if (tasklyWorkspaceApiReady) return tasklyWorkspaceApiReady;
   tasklyWorkspaceApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
     typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
-  ).then(function (r) {
-    TASKLY_API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
-  });
+  )
+    .then(function (r) {
+      TASKLY_API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+    })
+    .catch(function (err) {
+      // 自行缓存的 Promise：失败时必须清空，否则后台晚启动后仍会命中旧的 rejected
+      tasklyWorkspaceApiReady = null;
+      throw err;
+    });
   return tasklyWorkspaceApiReady;
 }
 

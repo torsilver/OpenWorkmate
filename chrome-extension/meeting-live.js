@@ -9,9 +9,14 @@
     if (tasklyMeetingLiveApiReady) return tasklyMeetingLiveApiReady;
     tasklyMeetingLiveApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
       typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
-    ).then(function (r) {
-      API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
-    });
+    )
+      .then(function (r) {
+        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      })
+      .catch(function (err) {
+        tasklyMeetingLiveApiReady = null;
+        throw err;
+      });
     return tasklyMeetingLiveApiReady;
   }
 
@@ -174,6 +179,9 @@
       startPolling();
     })
     .catch(function (e) {
-      showError("无法解析本机服务地址：" + (e && e.message ? e.message : String(e)));
+      showError("本机服务未就绪，将自动重试：" + (e && e.message ? e.message : String(e)));
+      setStatus("等待本机服务…");
+      // 仍启动轮询：tasklyEnsureApiBase 在 reject 时会清空缓存，后续 pollOnce 会重新扫端口
+      startPolling();
     });
 })();
