@@ -31,4 +31,7 @@ public sealed class StreamChatTurnContext
     public OpenAIPromptExecutionSettings ExecSettings { get; set; } = null!;
     public ChatHistory HistoryToUse { get; set; } = null!;
     public string IdentitySuffix { get; set; } = "";
+
+    /// <summary>本轮 ToolSelection 解析后的函数列表；全量工具时为 null，工具接地重试时用于 <c>Required</c> 或回退为客户端允许列表。</summary>
+    public IReadOnlyList<KernelFunction>? SelectedKernelFunctions { get; set; }
 }

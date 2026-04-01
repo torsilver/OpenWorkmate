@@ -352,6 +352,8 @@ public sealed partial class ChatService
             _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
         }
 
+        turn.SelectedKernelFunctions = selectedFunctions is { Count: > 0 } ? selectedFunctions : null;
+
         turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
     }

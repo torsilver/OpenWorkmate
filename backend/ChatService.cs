@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
@@ -754,13 +755,21 @@ public sealed partial class ChatService : IDisposable
 
             if (skFeat?.UseAgentGroupChatMainSession == true)
             {
-                await foreach (var streamItem in SkMainSessionAgentGroupChatRunner.InvokeStreamingAsync(
-                                   kernel, _loggerFactory, turn.HistoryToUse, turn.ExecSettings, turn.SessionManager, sessionId, ct)
-                               .ConfigureAwait(false))
+                ToolInvocationTurnMeter.BeginTurn();
+                try
                 {
-                    if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                        fullResponse.Append(streamItem.Content);
-                    yield return streamItem;
+                    await foreach (var streamItem in SkMainSessionAgentGroupChatRunner.InvokeStreamingAsync(
+                                       kernel, _loggerFactory, turn.HistoryToUse, turn.ExecSettings, turn.SessionManager, sessionId, ct)
+                                   .ConfigureAwait(false))
+                    {
+                        if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
+                            fullResponse.Append(streamItem.Content);
+                        yield return streamItem;
+                    }
+                }
+                finally
+                {
+                    ToolInvocationTurnMeter.EndTurn();
                 }
             }
             else
@@ -800,73 +809,151 @@ public sealed partial class ChatService : IDisposable
                     }
                 }
 
-                var dashScopeReasoningYieldedFromContext = 0;
-                for (var attempt = 0; attempt < 2; attempt++)
+                var dashScopeReasoningYieldedFromContext = new DashScopeReasoningCounter();
+                ToolInvocationTurnMeter.BeginTurn();
+                try
                 {
-                    if (attempt > 0)
-                        fullResponse.Clear();
-
-                    var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
-
-                    await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(
-                        turn.HistoryToUse, turn.ExecSettings, kernel, ct).GetAsyncEnumerator(ct);
-
-                    var contextRetry = false;
-                    while (true)
+                    var streamOutcome = new StreamingPassOutcome();
+                    for (var attempt = 0; attempt < 2; attempt++)
                     {
-                        bool moved;
-                        try
+                        if (attempt > 0)
+                            fullResponse.Clear();
+
+                        streamOutcome.ContextLengthRetryRequested = false;
+                        await foreach (var streamItem in EnumerateMainModelStreamAsync(
+                                           chat,
+                                           turn.HistoryToUse,
+                                           turn.ExecSettings,
+                                           kernel,
+                                           sessionId,
+                                           ctxConfig,
+                                           state,
+                                           fullResponse,
+                                           streamOutcome,
+                                           attempt,
+                                           dashScopeReasoningYieldedFromContext,
+                                           ct).ConfigureAwait(false))
                         {
-                            moved = await streamEnum.MoveNextAsync().ConfigureAwait(false);
+                            yield return streamItem;
                         }
-                        catch (Exception ex) when (attempt == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled && IsContextLengthError(ex))
+
+                        if (streamOutcome.ContextLengthRetryRequested)
                         {
-                            _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
-                            TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
                             turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
-                            contextRetry = true;
-                            break;
+                            continue;
                         }
 
-                        if (!moved)
-                            break;
-
-                        foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
-                        {
-                            dashScopeReasoningYieldedFromContext++;
-                            yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
-                        }
-
-                        foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
-                        {
-                            dashScopeReasoningYieldedFromContext++;
-                            yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
-                        }
-
-                        var chunk = streamEnum.Current;
-                        var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
-                        if (!string.IsNullOrEmpty(metaReasoning))
-                            yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
-
-                        foreach (var toolDelta in StreamingToolCallDeltaHelper.ExtractFromChunk(chunk, toolCallArgBudget))
-                            yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: toolDelta);
-
-                        if (chunk.Content is { Length: > 0 } text)
-                        {
-                            fullResponse.Append(text);
-                            yield return new StreamItem(IsWarning: false, Content: text);
-                        }
+                        break;
                     }
 
-                    if (contextRetry)
-                        continue;
+                    var firstPassTools = ToolInvocationTurnMeter.GetCount();
+                    var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
+                    IReadOnlyList<KernelFunction> funcsForRequired = turn.SelectedKernelFunctions is { Count: > 0 }
+                        ? turn.SelectedKernelFunctions
+                        : ClientTypeToolFilter.GetAllowedFunctions(kernel, clientTypeForTools, sessionId);
+                    var needToolGroundingRetry = firstPassTools == 0
+                        && MutationIntentHeuristic.LikelyRequiresLocalMutationTool(userMessage)
+                        && funcsForRequired is { Count: > 0 };
 
-                    break;
+                    if (needToolGroundingRetry)
+                    {
+                        _logger.LogInformation(
+                            "[{SessionId}] Tool grounding retry: firstPassTools=0 mutationIntent=true functionsForRequired={FnCount}",
+                            sessionId, funcsForRequired.Count);
+                        yield return new StreamItem(
+                            IsWarning: true,
+                            Content: "检测到本轮可能需修改本机文件但未执行任何工具，正在自动重试并要求调用工具…");
+
+                        var retryHistory = CloneChatHistory(turn.HistoryToUse);
+                        retryHistory.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
+                        retryHistory.AddUserMessage(ToolGroundingRetryMessages.NudgeUserMessage);
+                        fullResponse.Clear();
+                        ToolInvocationTurnMeter.ResetCount();
+
+                        var maxTok = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
+                        OpenAIPromptExecutionSettings retrySettings = new()
+                        {
+                            MaxTokens = maxTok,
+                            FunctionChoiceBehavior = FunctionChoiceBehavior.Required(funcsForRequired, autoInvoke: true)
+                        };
+                        CopyOptionalPromptSettings(turn.ExecSettings, retrySettings);
+
+                        var requiredApiFallback = false;
+                        var requiredPassBuffer = new List<StreamItem>();
+                        streamOutcome.ContextLengthRetryRequested = false;
+                        try
+                        {
+                            await foreach (var streamItem in EnumerateMainModelStreamAsync(
+                                               chat,
+                                               retryHistory,
+                                               retrySettings,
+                                               kernel,
+                                               sessionId,
+                                               ctxConfig,
+                                               state,
+                                               fullResponse,
+                                               streamOutcome,
+                                               contextAttemptIndex: 0,
+                                               dashScopeReasoningYieldedFromContext,
+                                               ct).ConfigureAwait(false))
+                            {
+                                requiredPassBuffer.Add(streamItem);
+                            }
+                        }
+                        catch (Exception ex) when (IsLikelyToolChoiceOrFunctionCallApiError(ex))
+                        {
+                            _logger.LogWarning(ex, "[{SessionId}] tool_choice Required 重试失败，回退为 Auto + 强提示。", sessionId);
+                            requiredApiFallback = true;
+                            requiredPassBuffer.Clear();
+                            fullResponse.Clear();
+                        }
+
+                        foreach (var streamItem in requiredPassBuffer)
+                            yield return streamItem;
+
+                        if (requiredApiFallback)
+                        {
+                            ToolInvocationTurnMeter.ResetCount();
+                            fullResponse.Clear();
+                            var fallbackSettings = new OpenAIPromptExecutionSettings
+                            {
+                                MaxTokens = maxTok,
+                                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(funcsForRequired)
+                            };
+                            CopyOptionalPromptSettings(turn.ExecSettings, fallbackSettings);
+                            streamOutcome.ContextLengthRetryRequested = false;
+                            await foreach (var streamItem in EnumerateMainModelStreamAsync(
+                                               chat,
+                                               retryHistory,
+                                               fallbackSettings,
+                                               kernel,
+                                               sessionId,
+                                               ctxConfig,
+                                               state,
+                                               fullResponse,
+                                               streamOutcome,
+                                               contextAttemptIndex: 0,
+                                               dashScopeReasoningYieldedFromContext,
+                                               ct).ConfigureAwait(false))
+                            {
+                                yield return streamItem;
+                            }
+                        }
+
+                        var retryPassTools = ToolInvocationTurnMeter.GetCount();
+                        _logger.LogInformation(
+                            "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
+                            sessionId, retryPassTools);
+                    }
+
+                    _logger.LogInformation(
+                        "[{SessionId}] DashScope reasoning→StreamItem from context queue: count={Count} (若 SSE tap 里 reasoningParsed>0 而此处为 0，重点查 AsyncLocal/Drain 时序)",
+                        sessionId, dashScopeReasoningYieldedFromContext.Count);
                 }
-
-                _logger.LogInformation(
-                    "[{SessionId}] DashScope reasoning→StreamItem from context queue: count={Count} (若 SSE tap 里 reasoningParsed>0 而此处为 0，重点查 AsyncLocal/Drain 时序)",
-                    sessionId, dashScopeReasoningYieldedFromContext);
+                finally
+                {
+                    ToolInvocationTurnMeter.EndTurn();
+                }
             }
 
             var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());
@@ -878,6 +965,107 @@ public sealed partial class ChatService : IDisposable
                 sessionId, state.History.Count, assistantText.Length, preview);
         }
         finally { }
+    }
+
+    private sealed class StreamingPassOutcome
+    {
+        public bool ContextLengthRetryRequested;
+    }
+
+    private sealed class DashScopeReasoningCounter
+    {
+        public int Count;
+    }
+
+    private static ChatHistory CloneChatHistory(ChatHistory source)
+    {
+        var h = new ChatHistory();
+        for (var i = 0; i < source.Count; i++)
+            h.Add(source[i]);
+        return h;
+    }
+
+    private static void CopyOptionalPromptSettings(OpenAIPromptExecutionSettings from, OpenAIPromptExecutionSettings to)
+    {
+        to.Temperature = from.Temperature;
+        to.TopP = from.TopP;
+        to.FrequencyPenalty = from.FrequencyPenalty;
+        to.PresencePenalty = from.PresencePenalty;
+        if (from.StopSequences is { Count: > 0 })
+            to.StopSequences = from.StopSequences;
+    }
+
+    private static bool IsLikelyToolChoiceOrFunctionCallApiError(Exception ex)
+    {
+        var msg = ex.Message + "\n" + ex;
+        return msg.Contains("tool_choice", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("tool choice", StringComparison.OrdinalIgnoreCase)
+            || (msg.Contains("required", StringComparison.OrdinalIgnoreCase)
+                && (msg.Contains("tools", StringComparison.OrdinalIgnoreCase) || msg.Contains("function", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async IAsyncEnumerable<StreamItem> EnumerateMainModelStreamAsync(
+        IChatCompletionService chat,
+        ChatHistory history,
+        OpenAIPromptExecutionSettings settings,
+        Kernel kernel,
+        string sessionId,
+        ContextWindowConfig ctxConfig,
+        SessionState state,
+        StringBuilder fullResponse,
+        StreamingPassOutcome outcome,
+        int contextAttemptIndex,
+        DashScopeReasoningCounter dashScopeCounter,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
+        await using var streamEnum = chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).GetAsyncEnumerator(ct);
+        var allowContextRetry = contextAttemptIndex == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled;
+
+        while (true)
+        {
+            bool moved;
+            try
+            {
+                moved = await streamEnum.MoveNextAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (allowContextRetry && IsContextLengthError(ex))
+            {
+                _logger.LogWarning(ex, "[{SessionId}] Context length exceeded, retrying with halved budget.", sessionId);
+                TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
+                outcome.ContextLengthRetryRequested = true;
+                yield break;
+            }
+
+            if (!moved)
+                break;
+
+            foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
+            {
+                dashScopeCounter.Count++;
+                yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+            }
+
+            foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+            {
+                dashScopeCounter.Count++;
+                yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+            }
+
+            var chunk = streamEnum.Current;
+            var metaReasoning = OpenAiStreamingReasoningHelper.TryGetReasoningFromMetadata(chunk);
+            if (!string.IsNullOrEmpty(metaReasoning))
+                yield return new StreamItem(IsWarning: false, Content: metaReasoning, Kind: StreamSegmentKind.Reasoning);
+
+            foreach (var toolDelta in StreamingToolCallDeltaHelper.ExtractFromChunk(chunk, toolCallArgBudget))
+                yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: toolDelta);
+
+            if (chunk.Content is { Length: > 0 } text)
+            {
+                fullResponse.Append(text);
+                yield return new StreamItem(IsWarning: false, Content: text);
+            }
+        }
     }
 
     /// <summary>将最旧若干轮（最多 6 轮）压缩为一段摘要并替换为一条消息；若配置了落盘目录则先将被压缩的原文追加写入会话历史文件。</summary>
@@ -917,7 +1105,8 @@ public sealed partial class ChatService : IDisposable
             return "[错误] 当前端无可用的工具集，无法执行子任务。";
 
         var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。"
-            + " 用户最新表述优先于历史中的旧结论；本机/文档/网页的当前状态须用工具查询后再下结论，勿仅凭聊天记录推断。";
+            + " 用户最新表述优先于历史中的旧结论；本机/文档/网页的当前状态须用工具查询后再下结论，勿仅凭聊天记录推断。"
+            + " 若子任务涉及修改本机文件或 Office 文档，须实际调用工具并依据工具返回再总结；不得未调用工具却声称已完成变更。";
         var userContent = taskDescTrimmed;
         if (!string.IsNullOrWhiteSpace(constraints))
             userContent += "\n\n约束：" + constraints.Trim();

@@ -61,6 +61,7 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 
         try
         {
+            ToolInvocationTurnMeter.RecordInvocation();
             await next(context);
 
             // 正常返回：发送成功结束；可选附带简短结果摘要；若返回串表示错误则按失败下发
