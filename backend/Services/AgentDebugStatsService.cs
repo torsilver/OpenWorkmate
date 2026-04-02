@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>单次向量检索完成后的遥测（进程内累计用）。</summary>
+/// <summary>单次向量检索完成后的遥测（进程内累计用）。<see cref="VectorFirstPathChosen"/> 已不再表示「采用向量 sole」；主对话恒为两阶段，该字段恒为 false。</summary>
 public readonly record struct VectorSearchTelemetry(
     string? ClientType,
     double MaxScore,

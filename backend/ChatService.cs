@@ -1590,32 +1590,6 @@ public sealed partial class ChatService : IDisposable
         return userPrompt;
     }
 
-    /// <summary>将向量检索结果与 AlwaysIncludePlugins 合并，与 ToolSelectionService 两轮路径语义一致。</summary>
-    private static IReadOnlyList<(string PluginName, string FunctionName)> MergeVectorResultsWithAlwaysInclude(
-        IReadOnlyList<(string PluginName, string FunctionName)> fromVector,
-        AiConfig ai,
-        Kernel kernel)
-    {
-        var result = new HashSet<(string, string)>(fromVector, new PluginFunctionComparer());
-        var alwaysPlugins = ai.AlwaysIncludePlugins ?? new List<string>();
-        var alwaysSet = new HashSet<string>(alwaysPlugins.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
-        foreach (var plugin in kernel.Plugins)
-        {
-            if (!alwaysSet.Contains(plugin.Name)) continue;
-            foreach (KernelFunction func in plugin)
-                result.Add((plugin.Name, func.Name));
-        }
-        return result.ToList();
-    }
-
-    private sealed class PluginFunctionComparer : IEqualityComparer<(string Plugin, string Function)>
-    {
-        public bool Equals((string Plugin, string Function) x, (string Plugin, string Function) y) =>
-            string.Equals(x.Plugin, y.Plugin, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Function, y.Function, StringComparison.OrdinalIgnoreCase);
-        public int GetHashCode((string Plugin, string Function) obj) =>
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
-    }
-
     /// <summary>向当前会话 WebSocket 推送一行「正在干什么」，供前端活动条展示。</summary>
     private static async Task NotifyAgentStatusAsync(SessionManager sessionManager, string sessionId, string text, CancellationToken ct)
     {

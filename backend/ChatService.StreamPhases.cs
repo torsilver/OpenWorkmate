@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
@@ -232,10 +233,8 @@ public sealed partial class ChatService
         var sessionManagerForStatus = turn.SessionManager;
         var planResult = turn.PlanResult;
 
-        var aiConfig = _configService.Current.AI;
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
-        var vectorSearchRanForSelection = false;
         await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
         _agentDebugStats.IncrementToolSelectionTotal();
         try
@@ -247,7 +246,6 @@ public sealed partial class ChatService
                 sessionId, clientType ?? "(null)", embeddingConfigured, storePersistent);
             if (embeddingConfigured && storePersistent)
             {
-                vectorSearchRanForSelection = true;
                 var userPrompt = BuildToolSelectionUserPrompt(userMessage, recentHistory);
                 var vectorSearch = await _toolIndex.SearchToolsAsync(
                     userPrompt, clientType,
@@ -257,7 +255,6 @@ public sealed partial class ChatService
                     ct).ConfigureAwait(false);
                 _logger.LogInformation("[{SessionId}] ToolSelection: vector search result count={Count} goodEnough={GoodEnough}.",
                     sessionId, vectorSearch.Results.Count, vectorSearch.GoodEnough);
-                var vectorFirstChosen = vectorSearch.GoodEnough && vectorSearch.Results.Count > 0;
                 var scored = vectorSearch.ScoredHits;
                 var maxS = scored.Count > 0 ? scored[0].Score : 0.0;
                 double? secondS = scored.Count >= 2 ? scored[1].Score : null;
@@ -267,24 +264,33 @@ public sealed partial class ChatService
                     secondS,
                     scored.Count,
                     vectorSearch.GoodEnough,
-                    vectorFirstChosen));
-                string vectorDecision;
-                if (vectorFirstChosen)
-                {
-                    selectedPairs = MergeVectorResultsWithAlwaysInclude(vectorSearch.Results, aiConfig ?? new AiConfig(), kernel);
-                    _logger.LogInformation("[{SessionId}] ToolSelection: using vector-first path, selectedPairsCount={Count}.", sessionId, selectedPairs.Count);
-                    _logger.LogDebug("[{SessionId}] Tool selection: vector-first used, {Count} tools.", sessionId, selectedPairs.Count);
-                    vectorDecision = "决策：已采用向量优先路径（合并 AlwaysInclude 后 (插件,函数) 对数=" + selectedPairs.Count + "）。";
-                }
-                else
-                {
-                    vectorDecision = "决策：向量命中未达 goodEnough 或为空，将调用两阶段子类筛选。";
-                }
+                    VectorFirstPathChosen: false));
+                var vectorToolHint = BuildVectorToolHintForStage1(vectorSearch.Results, Math.Clamp(ctxConfig.ToolSearchTopK, 1, 20));
+                var vectorDecision =
+                    "决策：向量结果仅作 stage1 参考；本轮工具集一律由两阶段子类选择决定（已禁用向量 sole）。goodEnough="
+                    + vectorSearch.GoodEnough + "。";
+                if (!string.IsNullOrEmpty(vectorToolHint))
+                    vectorDecision += " 已向 stage1 注入向量参考列表。";
                 var vectorDetail = AgentTraceFormatter.BuildToolVectorSearchDetail(
                     clientType, vectorSearch,
                     ctxConfig.ToolSearchTopK, ctxConfig.ToolSearchMinScore, ctxConfig.ToolSearchMinCount,
                     vectorDecision);
                 await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引检索", vectorDetail, ct).ConfigureAwait(false);
+
+                _agentDebugStats.RecordTwoStageUsed();
+                _logger.LogInformation("[{SessionId}] ToolSelection: two-stage LLM path (vector never sole).", sessionId);
+                var twoStage = await _toolSelector.SelectFunctionsAsync(
+                    userMessage,
+                    recentHistory,
+                    kernel,
+                    ct,
+                    new ToolSelectionContext(vectorToolHint, clientType)).ConfigureAwait(false);
+                selectedPairs = twoStage.SelectedPairs;
+                _agentDebugStats.RecordVectorThenTwoStageOutcome(selectedPairs == null);
+                _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
+                    sessionId, selectedPairs?.Count ?? -1);
+                var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
             }
             else
             {
@@ -294,15 +300,16 @@ public sealed partial class ChatService
                     _agentDebugStats.RecordVectorSkippedNonPersistent();
                 var skipDetail = AgentTraceFormatter.BuildToolVectorSkipDetail(embeddingConfigured, storePersistent);
                 await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", "工具选择：向量索引未使用", skipDetail, ct).ConfigureAwait(false);
-            }
-            if (selectedPairs == null)
-            {
+
                 _agentDebugStats.RecordTwoStageUsed();
-                _logger.LogInformation("[{SessionId}] ToolSelection: using two-stage LLM path.", sessionId);
-                var twoStage = await _toolSelector.SelectFunctionsAsync(userMessage, recentHistory, kernel, ct).ConfigureAwait(false);
+                _logger.LogInformation("[{SessionId}] ToolSelection: two-stage LLM path (no vector index).", sessionId);
+                var twoStage = await _toolSelector.SelectFunctionsAsync(
+                    userMessage,
+                    recentHistory,
+                    kernel,
+                    ct,
+                    new ToolSelectionContext(null, clientType)).ConfigureAwait(false);
                 selectedPairs = twoStage.SelectedPairs;
-                if (vectorSearchRanForSelection)
-                    _agentDebugStats.RecordVectorThenTwoStageOutcome(selectedPairs == null);
                 _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
                     sessionId, selectedPairs?.Count ?? -1);
                 var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
@@ -356,6 +363,16 @@ public sealed partial class ChatService
 
         turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
+    }
+
+    private static string? BuildVectorToolHintForStage1(
+        IReadOnlyList<(string PluginName, string FunctionName)> results,
+        int maxItems)
+    {
+        if (results == null || results.Count == 0 || maxItems <= 0)
+            return null;
+        var lines = results.Take(maxItems).Select(p => $"- {p.PluginName}.{p.FunctionName}");
+        return "[向量索引参考，仅供子类选择时参考；须结合对话与历史判断]\n" + string.Join("\n", lines);
     }
 
     /// <summary>将 Host 前言合并进本轮流式用历史的 system 首条，不写入持久 <see cref="SessionState.History"/>。</summary>

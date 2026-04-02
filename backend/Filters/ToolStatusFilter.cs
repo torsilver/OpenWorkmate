@@ -37,8 +37,13 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
             "[ToolCapability] {Plugin}.{Function} readOnly={RO} destructive={D} suggestHitl={H} parallelOk={P}",
             pluginName, functionName, cap.ReadOnly, cap.Destructive, cap.SuggestHitl, cap.AllowParallelSameTurn);
 
+        ToolInvocationTurnMeter.RecordInvocation();
+
         if (string.IsNullOrEmpty(sessionId))
         {
+            _logger.LogWarning(
+                "ToolStatusFilter: SessionContext 无 sessionId，已记录工具调用计数但无法推送 tool_invocation 状态。{Plugin}.{Function}",
+                pluginName, functionName);
             await next(context);
             return;
         }
@@ -61,7 +66,6 @@ public sealed class ToolStatusFilter : IFunctionInvocationFilter
 
         try
         {
-            ToolInvocationTurnMeter.RecordInvocation();
             await next(context);
 
             // 正常返回：发送成功结束；可选附带简短结果摘要；若返回串表示错误则按失败下发

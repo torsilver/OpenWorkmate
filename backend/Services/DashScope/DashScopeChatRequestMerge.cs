@@ -89,16 +89,22 @@ public static class DashScopeChatRequestMerge
             willWrite = true;
         }
 
-        if (!willWrite)
+        var root = doc.RootElement;
+        var normalizeToolChoice = ShouldNormalizeToolChoiceForThinking(root, entry, forceNoThink);
+
+        if (!willWrite && !normalizeToolChoice)
             return null;
 
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = false }))
         {
             writer.WriteStartObject();
-            foreach (var prop in doc.RootElement.EnumerateObject())
+            foreach (var prop in root.EnumerateObject())
             {
-                if (skip.Contains(prop.Name))
+                if (willWrite && skip.Contains(prop.Name))
+                    continue;
+                if (normalizeToolChoice
+                    && string.Equals(prop.Name, "tool_choice", StringComparison.OrdinalIgnoreCase))
                     continue;
                 prop.WriteTo(writer);
             }
@@ -139,11 +145,39 @@ public static class DashScopeChatRequestMerge
                 writer.WriteEndObject();
             }
 
+            if (normalizeToolChoice)
+                writer.WriteString("tool_choice", "auto");
+
             writer.WriteEndObject();
         }
 
         return ms.ToArray();
     }
+
+    /// <summary>
+    /// 百炼在开启思考模式时不接受 <c>tool_choice</c> 为 <c>required</c> 或 object；与 SK 的 Required 工具策略冲突时需降级为 <c>auto</c>。
+    /// </summary>
+    internal static bool EffectiveEnableThinkingOn(JsonElement root, AiModelEntry? entry, bool forceNoThink)
+    {
+        if (forceNoThink)
+            return false;
+        if (entry?.EnableThinking == true)
+            return true;
+        return root.TryGetProperty("enable_thinking", out var et)
+               && et.ValueKind == JsonValueKind.True;
+    }
+
+    internal static bool IsToolChoiceIncompatibleWithThinking(JsonElement root)
+    {
+        if (!root.TryGetProperty("tool_choice", out var tc))
+            return false;
+        if (tc.ValueKind == JsonValueKind.String)
+            return string.Equals(tc.GetString(), "required", StringComparison.OrdinalIgnoreCase);
+        return tc.ValueKind == JsonValueKind.Object;
+    }
+
+    internal static bool ShouldNormalizeToolChoiceForThinking(JsonElement root, AiModelEntry? entry, bool forceNoThink) =>
+        EffectiveEnableThinkingOn(root, entry, forceNoThink) && IsToolChoiceIncompatibleWithThinking(root);
 
     /// <summary>请求是否为流式（用于决定是否包装响应 SSE 旁路）。</summary>
     public static bool RequestBodyIndicatesStream(ReadOnlySpan<byte> bodyUtf8)

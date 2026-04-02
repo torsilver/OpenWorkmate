@@ -28,6 +28,40 @@ public sealed class DashScopeChatRequestMergeTests
     }
 
     [Fact]
+    public void Merge_thinking_on_downgrades_tool_choice_required_to_auto()
+    {
+        var body = """{"model":"qwen-plus","messages":[],"stream":true,"enable_thinking":true,"tool_choice":"required"}"""u8.ToArray();
+        var entry = new AiModelEntry { Id = "x", EnableThinking = true };
+        var merged = DashScopeChatRequestMerge.MergeChatCompletionUtf8Body(body, entry);
+        Assert.NotNull(merged);
+        using var doc = JsonDocument.Parse(merged);
+        Assert.True(doc.RootElement.GetProperty("enable_thinking").GetBoolean());
+        Assert.Equal("auto", doc.RootElement.GetProperty("tool_choice").GetString());
+    }
+
+    [Fact]
+    public void Merge_body_thinking_true_null_entry_downgrades_tool_choice_required()
+    {
+        var body = """{"model":"qwen","messages":[],"stream":true,"enable_thinking":true,"tool_choice":"required"}"""u8.ToArray();
+        var merged = DashScopeChatRequestMerge.MergeChatCompletionUtf8Body(body, null);
+        Assert.NotNull(merged);
+        using var doc = JsonDocument.Parse(merged);
+        Assert.True(doc.RootElement.GetProperty("enable_thinking").GetBoolean());
+        Assert.Equal("auto", doc.RootElement.GetProperty("tool_choice").GetString());
+    }
+
+    [Fact]
+    public void Merge_thinking_on_downgrades_tool_choice_object_to_auto()
+    {
+        var body = """{"model":"qwen-plus","messages":[],"stream":true,"enable_thinking":true,"tool_choice":{"type":"function","function":{"name":"x"}}}"""u8.ToArray();
+        var entry = new AiModelEntry { Id = "x", EnableThinking = true };
+        var merged = DashScopeChatRequestMerge.MergeChatCompletionUtf8Body(body, entry);
+        Assert.NotNull(merged);
+        using var doc = JsonDocument.Parse(merged);
+        Assert.Equal("auto", doc.RootElement.GetProperty("tool_choice").GetString());
+    }
+
+    [Fact]
     public void Merge_enable_thinking_true_inserts_field()
     {
         var body = """{"model":"qwen-plus","messages":[],"stream":true}"""u8.ToArray();

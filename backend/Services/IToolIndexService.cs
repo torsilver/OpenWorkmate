@@ -20,7 +20,7 @@ public enum ToolIndexBuildMode
 }
 
 /// <summary>
-/// 工具向量索引：按 clientType 分 collection 存储工具描述，支持按用户输入检索候选工具；检索结果足够好时可直接用作工具集，否则回退两轮选择。
+/// 工具向量索引：按 clientType 分 collection 存储工具描述，支持按用户输入检索候选工具；命中分数用于遥测与两阶段 stage1 参考，最终工具集由子类 LLM 选择决定。
 /// </summary>
 public interface IToolIndexService
 {
