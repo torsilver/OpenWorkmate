@@ -11,13 +11,20 @@ public static class ConversationCompactBoundary
 {
     public const string SummaryPrefix = "[此前对话摘要]";
 
+    /// <summary>紧接前缀后的说明：标明摘要性质，避免模型把压缩块当作磁盘文件当前状态。</summary>
+    public const string SummaryScopeNotice =
+        "以下块内为压缩后的历史对话摘要，可能已过时，不能单独作为本机 Word/Excel/PPT 等文件的当前状态依据；核对文件实际内容须重新调用读类工具。";
+
+    public const string SummaryXmlOpen = "<prior_conversation_summary>";
+    public const string SummaryXmlClose = "</prior_conversation_summary>";
+
     /// <summary>单行标记，形如 <c>[compact_boundary:2026-04-01T12:00:00.000Z]</c>。</summary>
     public const string BoundaryMarkerPrefix = "[compact_boundary:";
 
     public static string BuildSummaryMessageBody(string summaryBody, DateTimeOffset compactUtc)
     {
         var iso = compactUtc.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
-        return $"{SummaryPrefix}\n{summaryBody}\n{BoundaryMarkerPrefix}{iso}]";
+        return $"{SummaryPrefix}\n{SummaryScopeNotice}\n{SummaryXmlOpen}\n{summaryBody}\n{SummaryXmlClose}\n{BoundaryMarkerPrefix}{iso}]";
     }
 
     public static bool MessageContainsCompactBoundary(ChatMessageContent msg) =>

@@ -161,7 +161,9 @@ public sealed class ContextManager
         }
 
         var maxChars = Math.Max(100, Math.Min(ctx.SummarizationMaxSummaryChars, 2000));
-        var systemPrompt = $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。";
+        var systemPrompt =
+            $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。"
+            + " 摘要中不要断言「当前文件里仍是…」「文档现在一定…」等磁盘实时状态；优先概括用户曾提出的要求、助手曾执行的操作与结论，并可用「当时曾…」表述，避免读者把摘要当作此刻本机文件的真相。";
         var summaryHistory = new ChatHistory(systemPrompt);
         summaryHistory.AddUserMessage(input);
         var settings = new OpenAIPromptExecutionSettings { MaxTokens = 800, Temperature = 0.2f };

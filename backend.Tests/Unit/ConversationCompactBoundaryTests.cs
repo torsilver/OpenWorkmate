@@ -12,6 +12,9 @@ public class ConversationCompactBoundaryTests
         var utc = new DateTimeOffset(2026, 4, 1, 12, 0, 0, TimeSpan.Zero);
         var body = ConversationCompactBoundary.BuildSummaryMessageBody("hello", utc);
         Assert.Contains(ConversationCompactBoundary.SummaryPrefix, body, StringComparison.Ordinal);
+        Assert.Contains(ConversationCompactBoundary.SummaryScopeNotice, body, StringComparison.Ordinal);
+        Assert.Contains(ConversationCompactBoundary.SummaryXmlOpen, body, StringComparison.Ordinal);
+        Assert.Contains(ConversationCompactBoundary.SummaryXmlClose, body, StringComparison.Ordinal);
         Assert.Contains("hello", body, StringComparison.Ordinal);
         Assert.Contains("[compact_boundary:2026-04-01T12:00:00.000Z]", body, StringComparison.Ordinal);
     }

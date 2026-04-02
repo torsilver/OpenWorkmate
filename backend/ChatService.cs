@@ -945,6 +945,98 @@ public sealed partial class ChatService : IDisposable
                             "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
                             sessionId, retryPassTools);
                     }
+                    else if (firstPassTools == 0
+                             && DocumentReadIntentHeuristic.LikelyRequiresDocumentReadTool(userMessage)
+                             && funcsForRequired is { Count: > 0 })
+                    {
+                        _logger.LogInformation(
+                            "[{SessionId}] Tool grounding retry (read): firstPassTools=0 documentReadIntent=true functionsForRequired={FnCount}",
+                            sessionId, funcsForRequired.Count);
+                        yield return new StreamItem(
+                            IsWarning: true,
+                            Content: "检测到本轮点名了读类文档工具但未执行任何工具，正在自动重试并要求调用工具…");
+
+                        var retryHistoryRead = CloneChatHistory(turn.HistoryToUse);
+                        retryHistoryRead.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
+                        retryHistoryRead.AddUserMessage(ToolGroundingRetryMessages.ReadNudgeUserMessage);
+                        fullResponse.Clear();
+                        ToolInvocationTurnMeter.ResetCount(sessionId);
+
+                        var maxTokRead = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
+                        OpenAIPromptExecutionSettings retrySettingsRead = new()
+                        {
+                            MaxTokens = maxTokRead,
+                            FunctionChoiceBehavior = FunctionChoiceBehavior.Required(funcsForRequired, autoInvoke: true)
+                        };
+                        CopyOptionalPromptSettings(turn.ExecSettings, retrySettingsRead);
+
+                        var requiredApiFallbackRead = false;
+                        var requiredPassBufferRead = new List<StreamItem>();
+                        streamOutcome.ContextLengthRetryRequested = false;
+                        try
+                        {
+                            await foreach (var streamItem in EnumerateMainModelStreamAsync(
+                                               chat,
+                                               retryHistoryRead,
+                                               retrySettingsRead,
+                                               kernel,
+                                               sessionId,
+                                               ctxConfig,
+                                               state,
+                                               fullResponse,
+                                               streamOutcome,
+                                               contextAttemptIndex: 0,
+                                               dashScopeReasoningYieldedFromContext,
+                                               ct).ConfigureAwait(false))
+                            {
+                                requiredPassBufferRead.Add(streamItem);
+                            }
+                        }
+                        catch (Exception ex) when (IsLikelyToolChoiceOrFunctionCallApiError(ex))
+                        {
+                            _logger.LogWarning(ex, "[{SessionId}] tool_choice Required 读类重试失败，回退为 Auto + 强提示。", sessionId);
+                            requiredApiFallbackRead = true;
+                            requiredPassBufferRead.Clear();
+                            fullResponse.Clear();
+                        }
+
+                        foreach (var streamItem in requiredPassBufferRead)
+                            yield return streamItem;
+
+                        if (requiredApiFallbackRead)
+                        {
+                            ToolInvocationTurnMeter.ResetCount(sessionId);
+                            fullResponse.Clear();
+                            var fallbackSettingsRead = new OpenAIPromptExecutionSettings
+                            {
+                                MaxTokens = maxTokRead,
+                                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(funcsForRequired)
+                            };
+                            CopyOptionalPromptSettings(turn.ExecSettings, fallbackSettingsRead);
+                            streamOutcome.ContextLengthRetryRequested = false;
+                            await foreach (var streamItem in EnumerateMainModelStreamAsync(
+                                               chat,
+                                               retryHistoryRead,
+                                               fallbackSettingsRead,
+                                               kernel,
+                                               sessionId,
+                                               ctxConfig,
+                                               state,
+                                               fullResponse,
+                                               streamOutcome,
+                                               contextAttemptIndex: 0,
+                                               dashScopeReasoningYieldedFromContext,
+                                               ct).ConfigureAwait(false))
+                            {
+                                yield return streamItem;
+                            }
+                        }
+
+                        var retryPassToolsRead = ToolInvocationTurnMeter.GetCount(sessionId);
+                        _logger.LogInformation(
+                            "[{SessionId}] Tool grounding retry (read) finished: toolsInvokedAfterRetry={Count}",
+                            sessionId, retryPassToolsRead);
+                    }
 
                     _logger.LogInformation(
                         "[{SessionId}] DashScope reasoning→StreamItem from context queue: count={Count} (若 SSE tap 里 reasoningParsed>0 而此处为 0，重点查 AsyncLocal/Drain 时序)",
