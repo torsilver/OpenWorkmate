@@ -48,44 +48,12 @@ public static class ToolCapabilityRegistry
         if (Exact.TryGetValue(key, out var cap))
             return cap;
 
-        if (IsLikelyReadOnly(fn))
+        if (KernelFunctionNameSemantics.IsLikelyReadOnly(fn))
             return new ToolCapability(ReadOnly: true, Destructive: false, SuggestHitl: false, AllowParallelSameTurn: true);
 
-        if (IsLikelyDestructive(fn))
+        if (KernelFunctionNameSemantics.IsLikelyDestructive(fn))
             return new ToolCapability(ReadOnly: false, Destructive: true, SuggestHitl: false, AllowParallelSameTurn: false);
 
         return Default;
-    }
-
-    private static bool IsLikelyReadOnly(string fn)
-    {
-        if (string.IsNullOrEmpty(fn)) return false;
-        if (fn.StartsWith("get_", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_read", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_list", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_meta", StringComparison.OrdinalIgnoreCase)) return true;
-        if (string.Equals(fn, "search_memory", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(fn, "search_accurate_data", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
-    }
-
-    private static bool IsLikelyDestructive(string fn)
-    {
-        if (string.IsNullOrEmpty(fn)) return false;
-        if (fn.EndsWith("_write", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_delete", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_remove", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.Contains("_insert", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.EndsWith("_add", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.Contains("_create", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.Contains("_set", StringComparison.OrdinalIgnoreCase) && !fn.Contains("_list", StringComparison.OrdinalIgnoreCase)) return true;
-        if (fn.Contains("_clear", StringComparison.OrdinalIgnoreCase)) return true;
-        if (string.Equals(fn, "save_memory", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(fn, "accurate_data_write", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(fn, "execute_plan_step", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(fn, "create_plan", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
     }
 }

@@ -755,7 +755,7 @@ public sealed partial class ChatService : IDisposable
 
             if (skFeat?.UseAgentGroupChatMainSession == true)
             {
-                ToolInvocationTurnMeter.BeginTurn();
+                ToolInvocationTurnMeter.BeginTurn(sessionId);
                 try
                 {
                     await foreach (var streamItem in SkMainSessionAgentGroupChatRunner.InvokeStreamingAsync(
@@ -769,7 +769,7 @@ public sealed partial class ChatService : IDisposable
                 }
                 finally
                 {
-                    ToolInvocationTurnMeter.EndTurn();
+                    ToolInvocationTurnMeter.EndTurn(sessionId);
                 }
             }
             else
@@ -810,7 +810,7 @@ public sealed partial class ChatService : IDisposable
                 }
 
                 var dashScopeReasoningYieldedFromContext = new DashScopeReasoningCounter();
-                ToolInvocationTurnMeter.BeginTurn();
+                ToolInvocationTurnMeter.BeginTurn(sessionId);
                 try
                 {
                     var streamOutcome = new StreamingPassOutcome();
@@ -846,7 +846,7 @@ public sealed partial class ChatService : IDisposable
                         break;
                     }
 
-                    var firstPassTools = ToolInvocationTurnMeter.GetCount();
+                    var firstPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
                     var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
                     IReadOnlyList<KernelFunction> funcsForRequired = turn.SelectedKernelFunctions is { Count: > 0 }
                         ? turn.SelectedKernelFunctions
@@ -868,7 +868,7 @@ public sealed partial class ChatService : IDisposable
                         retryHistory.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
                         retryHistory.AddUserMessage(ToolGroundingRetryMessages.NudgeUserMessage);
                         fullResponse.Clear();
-                        ToolInvocationTurnMeter.ResetCount();
+                        ToolInvocationTurnMeter.ResetCount(sessionId);
 
                         var maxTok = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
                         OpenAIPromptExecutionSettings retrySettings = new()
@@ -913,7 +913,7 @@ public sealed partial class ChatService : IDisposable
 
                         if (requiredApiFallback)
                         {
-                            ToolInvocationTurnMeter.ResetCount();
+                            ToolInvocationTurnMeter.ResetCount(sessionId);
                             fullResponse.Clear();
                             var fallbackSettings = new OpenAIPromptExecutionSettings
                             {
@@ -940,7 +940,7 @@ public sealed partial class ChatService : IDisposable
                             }
                         }
 
-                        var retryPassTools = ToolInvocationTurnMeter.GetCount();
+                        var retryPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
                         _logger.LogInformation(
                             "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
                             sessionId, retryPassTools);
@@ -952,7 +952,7 @@ public sealed partial class ChatService : IDisposable
                 }
                 finally
                 {
-                    ToolInvocationTurnMeter.EndTurn();
+                    ToolInvocationTurnMeter.EndTurn(sessionId);
                 }
             }
 
@@ -1492,7 +1492,7 @@ public sealed partial class ChatService : IDisposable
         var ct = (clientType ?? "").Trim();
         if (string.IsNullOrEmpty(ct)) return "";
         if (string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase))
-            return "你是浏览器侧助手，负责当前页面的标注、笔记、截图等；文档编辑请由用户在 Word/Excel 任务窗格端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
+            return "你是浏览器侧边栏助手：可对「本机路径上的」Word/Excel/PPT 使用 Word/Excel/Ppt 插件读写（与任务窗格互补；本端无 CurrentDocument 当前文档 API，须用文件路径调用文档工具）。另支持网页截图与页面脚本、附件与文件工具、命令行等。用户已提供 docx/xlsx 等路径时，应直接用相应文档工具完成编辑与批注，不得以「浏览器端不能改 Word」为由拒绝或要求用户必须切到任务窗格。";
         if (string.Equals(ct, "office-word", StringComparison.OrdinalIgnoreCase))
             return "你是 Word 侧助手，负责当前打开的 Word 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase))

@@ -3,10 +3,24 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>两阶段子类召回的保守保底（Chrome + 历史中出现 Excel 语境时补 <c>Excel-修改样式</c>）。</summary>
+/// <summary>两阶段子类召回的保守保底（Chrome + 历史中出现 Excel 语境时补 <c>Excel-修改样式</c>）；Chrome 下一阶段不展示 CurrentDocument-*（该端 <see cref="ClientTypeToolFilter"/> 不暴露 CurrentDocument 插件）。</summary>
 internal static class ToolSelectionRecallHelper
 {
     internal const string ExcelStyleSubcategoryId = "Excel-修改样式";
+
+    /// <summary>Chrome 侧无法调用 CurrentDocument 插件；从一阶段子类列表中移除 CurrentDocument-*，避免模型选中后候选函数被 <see cref="ClientTypeToolFilter.Filter"/> 清空。</summary>
+    internal static List<(string Id, string Description)> ExcludeCurrentDocumentSubcategoriesForChrome(
+        List<(string Id, string Description)> subcategories,
+        string? clientType)
+    {
+        if (subcategories == null || subcategories.Count == 0)
+            return subcategories ?? new List<(string, string)>();
+        if (!IsChromeClient(clientType))
+            return subcategories;
+        return subcategories
+            .Where(s => !s.Id.StartsWith("CurrentDocument-", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
 
     internal static void MergeChromeExcelStyleSubcategoryIfNeeded(
         List<string> selectedSubcategoryIds,

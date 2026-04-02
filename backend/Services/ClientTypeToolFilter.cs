@@ -2,7 +2,7 @@ using Microsoft.SemanticKernel;
 
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 只暴露 CurrentDocument + 通用插件，不暴露 Browser/File/CLI/Word/Excel。</summary>
+/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument（工具选择一阶段亦不为 Chrome 列出 CurrentDocument-* 子类，见 <see cref="ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome"/>）；Office/WPS 只暴露 CurrentDocument + 通用插件，不暴露 Browser/File/CLI/Word/Excel。</summary>
 public static class ClientTypeToolFilter
 {
     private static readonly StringComparer PluginComparer = StringComparer.OrdinalIgnoreCase;

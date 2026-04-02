@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using A = DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.SemanticKernel;
 
@@ -346,11 +349,11 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_paragraphs_format")]
-    [Description("对指定段落设置对齐、样式、段前段后间距。alignment: left|center|right|justify。")]
+    [Description("对指定段落范围设置对齐、样式、段前段后间距。alignment: left|center|right|justify。用户只说「第 N 段」且未提「到第 M 段 / 以下 / 直至末尾」时，视为只改该一段：须令 endParagraph 与 startParagraph 均为 N；若省略 endParagraph 或传 0，则从 startParagraph 一直格式化到文档最后一个段落。")]
     public string WordParagraphsFormat(
         [Description("Word 文件完整路径")] string filePath,
         [Description("起始段落号，从 1 开始")] int startParagraph,
-        [Description("结束段落号，0 表示到文档末尾")] int endParagraph = 0,
+        [Description("结束段落号（含）。只改单段时必须与 startParagraph 相同；0 或省略表示从 startParagraph 一直到文档末尾")] int endParagraph = 0,
         [Description("对齐：left、center、right、justify")] string? alignment = null,
         [Description("段落样式 ID，如 Heading1、Normal")] string? styleId = null,
         [Description("段前间距（磅）")] int spacingBefore = 0,
@@ -493,10 +496,10 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_comment_add")]
-    [Description("在包含指定文字的首次出现处插入批注。")]
+    [Description("在正文按 WordprocessingML 惯例定位：遍历 body 内 Run（文档顺序），在第一个「含 anchorText 子串」的 Run 内插入 CommentRangeStart/CommentRangeEnd 与 comments.xml 中的批注。OpenXML 以 Run/Text 为粒度，无单独「第几处」API；若多处文字相同，请用更长的唯一锚点字符串区分。")]
     public string WordCommentAdd(
         [Description("Word 文件完整路径")] string filePath,
-        [Description("被批注的文字（首次匹配的 Run）")] string anchorText,
+        [Description("锚点文字（子串匹配该 Run 内 w:t 文本）")] string anchorText,
         [Description("批注内容")] string commentText,
         [Description("作者名")] string author = "User")
     {
@@ -507,6 +510,19 @@ public sealed class WordPlugin
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
             if (!TryGetMainAndBody(doc, out var mainPart, out var body, out var structErr)) return structErr;
+
+            Run? targetRun = null;
+            foreach (var run in body.Descendants<Run>())
+            {
+                if (!run.Elements<Text>().Any(t => t.Text?.Contains(anchorText, StringComparison.Ordinal) == true))
+                    continue;
+                targetRun = run;
+                break;
+            }
+
+            if (targetRun == null)
+                return $"[错误] 正文中未找到包含「{anchorText}」的位置。";
+
             var commentsPart = mainPart.WordprocessingCommentsPart ?? mainPart.AddNewPart<WordprocessingCommentsPart>();
             if (commentsPart.Comments == null) commentsPart.Comments = new Comments();
 
@@ -525,22 +541,6 @@ public sealed class WordPlugin
             commentsPart.Comments.AppendChild(comment);
             commentsPart.Comments.Save();
 
-            Run? targetRun = null;
-            Text? targetText = null;
-            foreach (var run in body.Descendants<Run>())
-            {
-                foreach (var text in run.Elements<Text>())
-                {
-                    if (text.Text?.Contains(anchorText) == true)
-                    {
-                        targetRun = run; targetText = text; break;
-                    }
-                }
-                if (targetRun != null) break;
-            }
-            if (targetRun == null || targetText == null)
-                return "已添加批注内容，但未在正文中找到锚点文字，批注未关联到文档位置。";
-
             var commentRangeStart = new CommentRangeStart { Id = new StringValue(newId) };
             var commentRangeEnd = new CommentRangeEnd { Id = new StringValue(newId) };
             var commentRef = new Run(new RunProperties(new VerticalTextAlignment { Val = VerticalPositionValues.Baseline }), new CommentReference { Id = new StringValue(newId) });
@@ -549,7 +549,7 @@ public sealed class WordPlugin
             targetRun.InsertAfter(commentRangeEnd, targetRun.LastChild);
             targetRun.Parent!.InsertAfter(commentRef, targetRun);
             mainPart.Document!.Save();
-            return $"已添加批注(Id={newId})到「{anchorText}」处。";
+            return $"已添加批注(Id={newId})到「{anchorText}」处（正文文档顺序下首个匹配的 Run）。";
         }
         catch (Exception ex) { return $"[错误] 添加批注失败: {ex.Message}"; }
     }
@@ -599,46 +599,8 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_part_xml_read")]
-    [Description("读取文档指定部件的原始 XML（document、comments、styles 等），maxChars 限制长度。")]
-    public string WordPartXmlRead(
-        [Description("Word 文件完整路径")] string filePath,
-        [Description("部件类型：document、comments、styles")] string part = "document",
-        [Description("最大字符数，0 不限制")] int maxChars = 0)
-    {
-        filePath = OpenXmlHelpers.ResolvePath(filePath);
-        if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
-        try
-        {
-            using var doc = WordprocessingDocument.Open(filePath, false);
-            string xml;
-            switch (part.Trim().ToLowerInvariant())
-            {
-                case "document":
-                    if (!TryGetMainPart(doc, out var mdPart, out var docErr)) return docErr;
-                    if (mdPart.Document is not { } wordDoc) return WordStructureErrMsg;
-                    xml = wordDoc.OuterXml;
-                    break;
-                case "comments":
-                    var cp = doc.MainDocumentPart!.WordprocessingCommentsPart;
-                    xml = cp?.Comments?.OuterXml ?? "<w:comments />";
-                    break;
-                case "styles":
-                    var sp = doc.MainDocumentPart!.StyleDefinitionsPart;
-                    xml = sp?.Styles?.OuterXml ?? "<w:styles />";
-                    break;
-                default:
-                    return $"[错误] 不支持的 part: {part}，可选 document、comments、styles。";
-            }
-            if (maxChars > 0 && xml.Length > maxChars)
-                xml = xml[..maxChars] + "\n...(已截断)";
-            return xml;
-        }
-        catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
-    }
-
     [KernelFunction("word_headers_footers_list")]
-    [Description("按节列出文档中的页眉页脚（索引与类型）。")]
+    [Description("列出文档中页眉、页脚部件的数量；每项给出索引（与 word_header_read / word_header_write 的 index 一致，从 1 起）及正文摘要，便于选用索引。不返回包内路径。")]
     public string WordHeadersFootersList(
         [Description("Word 文件完整路径")] string filePath)
     {
@@ -649,12 +611,25 @@ public sealed class WordPlugin
             using var doc = WordprocessingDocument.Open(filePath, false);
             if (!TryGetMainPart(doc, out var main, out var structErr)) return structErr;
             var sb = new StringBuilder();
-            int i = 0;
-            foreach (var hp in main.HeaderParts) { i++; sb.AppendLine($"页眉 {i}: {hp.Uri}"); }
-            i = 0;
-            foreach (var fp in main.FooterParts) { i++; sb.AppendLine($"页脚 {i}: {fp.Uri}"); }
-            var result = sb.ToString().TrimEnd();
-            return string.IsNullOrEmpty(result) ? "文档中无页眉页脚。" : result;
+            var headers = main.HeaderParts.ToList();
+            var footers = main.FooterParts.ToList();
+            if (headers.Count == 0 && footers.Count == 0)
+                return "文档中无页眉页脚部件（尚未插入过页眉/页脚）。";
+            for (var i = 0; i < headers.Count; i++)
+            {
+                var raw = headers[i].Header?.InnerText ?? "";
+                var oneLine = raw.Replace("\r", " ").Replace("\n", " ").Trim();
+                if (oneLine.Length > 160) oneLine = oneLine[..160] + "…";
+                sb.AppendLine(string.IsNullOrEmpty(oneLine) ? $"页眉 {i + 1}: (空)" : $"页眉 {i + 1}: {oneLine}");
+            }
+            for (var i = 0; i < footers.Count; i++)
+            {
+                var raw = footers[i].Footer?.InnerText ?? "";
+                var oneLine = raw.Replace("\r", " ").Replace("\n", " ").Trim();
+                if (oneLine.Length > 160) oneLine = oneLine[..160] + "…";
+                sb.AppendLine(string.IsNullOrEmpty(oneLine) ? $"页脚 {i + 1}: (空)" : $"页脚 {i + 1}: {oneLine}");
+            }
+            return sb.ToString().TrimEnd();
         }
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
@@ -869,22 +844,25 @@ public sealed class WordPlugin
     }
 
     [KernelFunction("word_image_insert")]
-    [Description("在指定段落后插入图片。imagePath 为本地图片文件路径。")]
+    [Description("在指定段落后插入图片。imagePath 为本地图片文件路径。支持 png、jpg/jpeg、gif、bmp。")]
     public string WordImageInsert(
         [Description("Word 文件完整路径")] string filePath,
         [Description("要插入的图片文件路径")] string imagePath = "",
         [Description("段落索引，从 1 开始，在该段后插入")] int paragraphIndex = 1)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
+        imagePath = OpenXmlHelpers.ResolvePath(imagePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath)) return "[错误] 请提供存在的图片文件路径。";
+        var ext = Path.GetExtension(imagePath).ToLowerInvariant();
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp"))
+            return "[错误] 不支持的图片扩展名，请使用 png、jpg、jpeg、gif 或 bmp。";
         try
         {
             using var doc = WordprocessingDocument.Open(filePath, true);
             if (!TryGetMainAndBody(doc, out var main, out var body, out var structErr)) return structErr;
             var paragraphs = body.Elements<Paragraph>().ToList();
             if (paragraphIndex < 1 || paragraphIndex > paragraphs.Count) return $"段落索引无效（共 {paragraphs.Count} 段）。";
-            var ext = Path.GetExtension(imagePath).ToLowerInvariant();
             ImagePart imagePart = ext is ".jpg" or ".jpeg" ? main.AddImagePart(ImagePartType.Jpeg)
                 : ext == ".gif" ? main.AddImagePart(ImagePartType.Gif)
                 : ext == ".bmp" ? main.AddImagePart(ImagePartType.Bmp)
@@ -892,28 +870,51 @@ public sealed class WordPlugin
             using (var stream = File.OpenRead(imagePath))
                 imagePart.FeedData(stream);
             var relId = main.GetIdOfPart(imagePart);
-            var picUri = "http://schemas.openxmlformats.org/drawingml/2006/picture";
-            var inline = new DocumentFormat.OpenXml.Drawing.Wordprocessing.Inline(
-                new DocumentFormat.OpenXml.Drawing.Wordprocessing.Extent { Cx = 990000L, Cy = 792000L },
-                new DocumentFormat.OpenXml.Drawing.Wordprocessing.EffectExtent(),
-                new DocumentFormat.OpenXml.Drawing.Wordprocessing.DocProperties { Id = 1U, Name = "Picture 1" },
-                new DocumentFormat.OpenXml.Drawing.Wordprocessing.NonVisualGraphicFrameDrawingProperties(
-                    new DocumentFormat.OpenXml.Drawing.GraphicFrameLocks { NoChangeAspect = true }),
-                new DocumentFormat.OpenXml.Drawing.Graphic(
-                    new DocumentFormat.OpenXml.Drawing.GraphicData(
-                        new DocumentFormat.OpenXml.Drawing.Pictures.Picture(
-                            new DocumentFormat.OpenXml.Drawing.Pictures.NonVisualPictureProperties(
-                                new DocumentFormat.OpenXml.Drawing.Pictures.NonVisualDrawingProperties { Id = 0U, Name = "Image" },
-                                new DocumentFormat.OpenXml.Drawing.Pictures.NonVisualPictureDrawingProperties()),
-                            new DocumentFormat.OpenXml.Drawing.Pictures.BlipFill(
-                                new DocumentFormat.OpenXml.Drawing.Blip { Embed = relId },
-                                new DocumentFormat.OpenXml.Drawing.Stretch(new DocumentFormat.OpenXml.Drawing.FillRectangle())),
-                            new DocumentFormat.OpenXml.Drawing.Pictures.ShapeProperties(
-                                new DocumentFormat.OpenXml.Drawing.Transform2D(
-                                    new DocumentFormat.OpenXml.Drawing.Offset { X = 0L, Y = 0L },
-                                    new DocumentFormat.OpenXml.Drawing.Extents { Cx = 990000L, Cy = 792000L }),
-                                new DocumentFormat.OpenXml.Drawing.PresetGeometry { Preset = DocumentFormat.OpenXml.Drawing.ShapeTypeValues.Rectangle })))
-                    { Uri = picUri }));
+            var nextId = GetNextDrawingNumericId(main);
+            var editId = NewUniqueDrawingEditId(main);
+            var picName = Path.GetFileName(imagePath);
+            if (string.IsNullOrEmpty(picName)) picName = "image";
+
+            // 与 Microsoft Learn「向文字处理文档插入图片」一致，避免 Word 无法打开（缺 BlipExtension、EffectExtent、Inline 属性等）
+            var inline = new DW.Inline(
+                new DW.Extent { Cx = 990000L, Cy = 792000L },
+                new DW.EffectExtent
+                {
+                    LeftEdge = 0L,
+                    TopEdge = 0L,
+                    RightEdge = 0L,
+                    BottomEdge = 0L
+                },
+                new DW.DocProperties { Id = nextId, Name = $"Picture {nextId}" },
+                new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+                new A.Graphic(
+                    new A.GraphicData(
+                        new PIC.Picture(
+                            new PIC.NonVisualPictureProperties(
+                                new PIC.NonVisualDrawingProperties { Id = nextId, Name = picName },
+                                new PIC.NonVisualPictureDrawingProperties()),
+                            new PIC.BlipFill(
+                                new A.Blip(new A.BlipExtensionList(new A.BlipExtension { Uri = "{28A0092B-C50C-407E-A947-70E740481C1C}" }))
+                                {
+                                    Embed = relId,
+                                    CompressionState = A.BlipCompressionValues.Print
+                                },
+                                new A.Stretch(new A.FillRectangle())),
+                            new PIC.ShapeProperties(
+                                new A.Transform2D(
+                                    new A.Offset { X = 0L, Y = 0L },
+                                    new A.Extents { Cx = 990000L, Cy = 792000L }),
+                                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })))
+                    { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })
+            )
+            {
+                DistanceFromTop = 0U,
+                DistanceFromBottom = 0U,
+                DistanceFromLeft = 0U,
+                DistanceFromRight = 0U,
+                EditId = editId
+            };
+
             var newPara = new Paragraph(new Run(new Drawing(inline)));
             paragraphs[paragraphIndex - 1].InsertAfterSelf(newPara);
             main.Document!.Save();
@@ -966,6 +967,51 @@ public sealed class WordPlugin
             return $"已在第 {paragraphIndex} 段插入超链接。";
         }
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }
+    }
+
+    /// <summary>Word 要求 wp:docPr 与 pic:cNvPr 等 Id 在文档内递增，重复会导致无法打开。</summary>
+    private static uint GetNextDrawingNumericId(MainDocumentPart main)
+    {
+        uint max = 0;
+        void Consider(OpenXmlElement? root)
+        {
+            if (root == null) return;
+            foreach (var dp in root.Descendants<DW.DocProperties>())
+                if (dp.Id?.Value != null && dp.Id.Value > max) max = dp.Id.Value;
+            foreach (var nv in root.Descendants<PIC.NonVisualDrawingProperties>())
+                if (nv.Id?.Value != null && nv.Id.Value > max) max = nv.Id.Value;
+        }
+        Consider(main.Document);
+        foreach (var hp in main.HeaderParts)
+            Consider(hp.Header);
+        foreach (var fp in main.FooterParts)
+            Consider(fp.Footer);
+        return max + 1;
+    }
+
+    private static string NewUniqueDrawingEditId(MainDocumentPart main)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Collect(OpenXmlElement? root)
+        {
+            if (root == null) return;
+            foreach (var inline in root.Descendants<DW.Inline>())
+            {
+                var e = inline.EditId?.Value;
+                if (!string.IsNullOrEmpty(e)) existing.Add(e);
+            }
+        }
+        Collect(main.Document);
+        foreach (var hp in main.HeaderParts)
+            Collect(hp.Header);
+        foreach (var fp in main.FooterParts)
+            Collect(fp.Footer);
+        string id;
+        do
+        {
+            id = Guid.NewGuid().ToString("N")[..8];
+        } while (existing.Contains(id));
+        return id;
     }
 
     private static string? GetCommentedRangeText(OpenXmlElement body, string commentId)

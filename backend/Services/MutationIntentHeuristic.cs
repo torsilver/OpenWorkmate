@@ -7,9 +7,10 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public static class MutationIntentHeuristic
 {
-    /// <summary>与 <see cref="LikelyRequiresLocalMutationTool"/> 同步维护，供测试与遥测。</summary>
+    /// <summary>与 <see cref="LikelyRequiresLocalMutationTool"/> 行为概要同步，供测试与遥测。</summary>
     public const string PatternHint =
-        "取消合并|请合并|要求合并|帮我合并|合并+单元格/区域/Sheet|写入|删除工作表|添加工作表|另存|保存为|修改单元格|公式写入|run_command";
+        "自然语言: 取消合并|合并单元格|写入|删建工作表|另存|改单元格|run_command|设置/调整+行高列宽|行高列宽+设为数字;"
+        + " 用户文中 Kernel 函数名( snake_case 或 Plugin.fn )且符合写类命名(与 KernelFunctionNameSemantics 一致)";
 
     private static readonly Regex MutationLike = new(
         """
@@ -21,8 +22,23 @@ public static class MutationIntentHeuristic
         另存|保存为|
         修改[^。！？\n]{0,20}单元格|单元格[^。！？\n]{0,20}(写入|修改)|
         公式写入|
-        run_command|执行命令
+        run_command|执行命令|
+        (?:设置|调整|改|将)[^。！？\n]{0,30}(?:行高|列宽)|
+        (?:行高|列宽)\s*(?:设为|设置为)\s*\d|
+        (?:行高|列宽)\s*为\s*\d
         """.ReplaceLineEndings(""),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(200));
+
+    /// <summary>Plugin.function 形式中的 function 段（如 Word.word_footer_write → word_footer_write）。</summary>
+    private static readonly Regex PluginDotFunction = new(
+        @"[A-Za-z][A-Za-z0-9_]*\.([a-z][a-z0-9_]*)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(200));
+
+    /// <summary>独立 snake_case 且至少含一段下划线，近似 Kernel 函数名。</summary>
+    private static readonly Regex SnakeKernelLike = new(
+        @"(?<![A-Za-z0-9_])([a-z][a-z0-9_]*(?:_[a-z0-9_]+)+)(?![A-Za-z0-9_])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(200));
 
@@ -33,13 +49,29 @@ public static class MutationIntentHeuristic
     {
         if (string.IsNullOrWhiteSpace(userMessage))
             return false;
+        var t = userMessage.Trim();
         try
         {
-            return MutationLike.IsMatch(userMessage.Trim());
+            if (MutationLike.IsMatch(t))
+                return true;
+
+            foreach (Match m in PluginDotFunction.Matches(t))
+            {
+                if (m.Groups.Count > 1 && KernelFunctionNameSemantics.ImpliesLocalMutation(m.Groups[1].Value))
+                    return true;
+            }
+
+            foreach (Match m in SnakeKernelLike.Matches(t))
+            {
+                if (m.Groups.Count > 1 && KernelFunctionNameSemantics.ImpliesLocalMutation(m.Groups[1].Value))
+                    return true;
+            }
         }
         catch (RegexMatchTimeoutException)
         {
             return false;
         }
+
+        return false;
     }
 }

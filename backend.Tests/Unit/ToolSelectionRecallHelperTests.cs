@@ -60,4 +60,28 @@ public sealed class ToolSelectionRecallHelperTests
         ToolSelectionRecallHelper.MergeChromeExcelStyleSubcategoryIfNeeded(ids, "chrome", "合并单元格", null, valid);
         Assert.Equal(2, ids.Count);
     }
+
+    [Fact]
+    public void ExcludeCurrentDocument_for_chrome_removes_task_pane_subcategories()
+    {
+        var list = new List<(string Id, string Description)>
+        {
+            ("Word-编辑内容", "…"),
+            ("CurrentDocument-Word", "…"),
+            ("CurrentDocument-Excel", "…"),
+        };
+        var filtered = ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome(list, "chrome");
+        Assert.Single(filtered);
+        Assert.Equal("Word-编辑内容", filtered[0].Id);
+        Assert.DoesNotContain(filtered, x => x.Id.StartsWith("CurrentDocument-", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ExcludeCurrentDocument_for_office_word_unchanged()
+    {
+        var list = new List<(string Id, string Description)> { ("CurrentDocument-Word", "…") };
+        var filtered = ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome(list, "office-word");
+        Assert.Single(filtered);
+        Assert.Equal("CurrentDocument-Word", filtered[0].Id);
+    }
 }

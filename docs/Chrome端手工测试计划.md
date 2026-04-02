@@ -91,8 +91,9 @@
 
 下列每条**工具名**与后端 `[KernelFunction("...")]` 一致。
 
-- **路径约定**：未写盘符的**相对文件名**解析到当前 Windows 用户 `**Downloads`**（与后端 `OpenXmlHelpers.ResolvePath` 一致）。下文固定使用 `taskly-excel-test.xlsx`、`taskly-word-test.docx`、`taskly-ppt-test.pptx`、`taskly-img.png`，你可改名但同一轮请保持一致。
+- **路径约定**：未写盘符的**相对文件名**解析到当前 Windows 用户的下载目录（常为文件夹 `Downloads`，与后端 `OpenXmlHelpers.ResolvePath` 一致）。下文固定使用 `taskly-excel-test.xlsx`、`taskly-word-test.docx`、`taskly-ppt-test.pptx`、`taskly-img.png`，你可改名但同一轮请保持一致。
 - **应核对工具名**：侧栏/调试统计/后端日志中是否出现该调用（用于统计**工具调用成功率**）。
+- **表格与 Markdown**：下列表格用竖线分列；**话术列**内勿再写入与列分隔符相同的竖线字符（否则整行窜列），勿在单元格内写 Markdown 超链接语法（方括号 + 圆括号 URL）。需表示「竖线分段」时用文字 **U+007C** 或见 **§3.9 / §3.10**。
 - 模型未选型时：先发「**请必须调用 Kernel 工具 xxx**」，或用 `@Excel` 等约束。
 
 ### 3.0 数据准备顺序（建议）
@@ -100,7 +101,7 @@
 1. **E01** `excel_range_write` 生成或覆盖 `taskly-excel-test.xlsx`。
 2. **W01** `word_document_create` 生成 `taskly-word-test.docx`。
 3. **P01** `ppt_document_create` 生成 `taskly-ppt-test.pptx`。
-4. 下载目录放一张 `**taskly-img.png`**，供 Word/Ppt 插图用例。
+4. 下载目录放一张图片 `**taskly-img.png`**，供 Word/Ppt 插图用例。
 
 ### 3.1 Browser
 
@@ -169,95 +170,98 @@
 **文件**：`taskly-excel-test.xlsx`（相对路径 = 用户「下载」目录）。**建议按 E01→E21 顺序**。
 
 
-| 编号  | 工具名                              | 依赖  | 建议粘贴到对话框的话术                                                                                        | 应核对工具名                           | 预期要点             |
-| --- | -------------------------------- | --- | -------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------- |
-| E01 | `excel_range_write`              | —   | 「请 excel_range_write：文件 taskly-excel-test.xlsx，Sheet1，A1，jsonData=[[姓名,分数,等级],[张三,85,],[李四,92,]]。」 | `excel_range_write`              | 已写入              |
-| E02 | `excel_sheets_list`              | E01 | 「请 excel_sheets_list：taskly-excel-test.xlsx。」                                                      | `excel_sheets_list`              | 列出表名             |
-| E03 | `excel_range_read`               | E01 | 「请 excel_range_read：同一文件，Sheet1，startCell A1，endCell C3，includeFormulas false。」                    | `excel_range_read`               | 制表符文本            |
-| E04 | `excel_formula_write`            | E01 | 「请在 Sheet1 的 D2 写入公式 =B2*1.1。」                                                                     | `excel_formula_write`            | 成功               |
-| E05 | `excel_cells_merge`              | E01 | 「请合并 Sheet1 的 A1:C1。」                                                                              | `excel_cells_merge`              | 已合并              |
-| E06 | `excel_cells_unmerge`            | E05 | 「请取消合并 A1:C1。」                                                                                     | `excel_cells_unmerge`            | 已取消              |
-| E07 | `excel_named_range_define`       | E01 | 「请定义命名区域 ManualTestData，引用 Sheet1!A2:C3。」                                                          | `excel_named_range_define`       | 成功               |
-| E08 | `excel_named_range_read`         | E07 | 「请 excel_named_range_read：name=ManualTestData。」                                                    | `excel_named_range_read`         | 数据一致             |
-| E09 | `excel_named_ranges_list`        | E07 | 「请 excel_named_ranges_list。」                                                                       | `excel_named_ranges_list`        | 含 ManualTestData |
-| E10 | `excel_column_width_set`         | E01 | 「请 excel_column_width_set：Sheet1，columnIndex=2，width=20。」                                          | `excel_column_width_set`         | 成功               |
-| E11 | `excel_row_height_set`           | E01 | 「请 excel_row_height_set：Sheet1，rowIndex=1，height=22。」                                              | `excel_row_height_set`           | 成功               |
-| E12 | `excel_validation_set`           | E01 | 「请对 Sheet1 区域 E2:E10 设 list 验证，formula1=优,良,差。」                                                    | `excel_validation_set`           | 成功               |
-| E13 | `excel_validations_list`         | E12 | 「请 excel_validations_list：Sheet1。」                                                                 | `excel_validations_list`         | 有规则              |
-| E14 | `excel_validation_clear`         | E12 | 「请清除 Sheet1 的 E2:E10 验证。」                                                                          | `excel_validation_clear`         | 已清除              |
-| E15 | `excel_conditional_format_add`   | E01 | 「请对 Sheet1 的 B2:B10 添加 between 条件格式，formula1=60，formula2=100。」                                     | `excel_conditional_format_add`   | 成功               |
-| E16 | `excel_conditional_formats_list` | E15 | 「请 excel_conditional_formats_list：Sheet1。」                                                         | `excel_conditional_formats_list` | 有规则              |
-| E17 | `excel_conditional_format_clear` | E15 | 「请清除 Sheet1 的 B2:B10 条件格式。」                                                                        | `excel_conditional_format_clear` | 已清除              |
-| E18 | `excel_hyperlink_set`            | E01 | 「请在 Sheet1 的 F1 设超链接 [https://example.com，显示](https://example.com，显示) 测试链接。」                       | `excel_hyperlink_set`            | 成功               |
-| E19 | `excel_sheet_add`                | E01 | 「请添加工作表 ManualTestExtra。」                                                                          | `excel_sheet_add`                | 新表存在             |
-| E20 | `excel_sheet_remove`             | E19 | 「请删除工作表 ManualTestExtra。」                                                                          | `excel_sheet_remove`             | 已删               |
-| E21 | `excel_charts_list`              | —   | 「请 excel_charts_list：taskly-excel-test.xlsx。」（需非空可先手工插入图表）                                         | `excel_charts_list`              | 列表或「无图表」         |
+| 编号  | 工具名                              | 依赖  | 建议粘贴到对话框的话术                                                                                                                                           | 应核对工具名                           | 预期要点             |
+| --- | -------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------- |
+| E01 | `excel_range_write`              | —   | 「请 excel_range_write：文件 taskly-excel-test.xlsx，Sheet1，A1，jsonData=[[姓名,分数,等级],[张三,85,],[李四,92,]]。」                                                    | `excel_range_write`              | 已写入              |
+| E02 | `excel_sheets_list`              | E01 | 「请 excel_sheets_list：taskly-excel-test.xlsx。」                                                                                                         | `excel_sheets_list`              | 列出表名             |
+| E03 | `excel_range_read`               | E01 | 「请 excel_range_read：同一文件，Sheet1，startCell A1，endCell C3，includeFormulas false。」                                                                       | `excel_range_read`               | 制表符文本            |
+| E04 | `excel_formula_write`            | E01 | 「请在 Sheet1 的 D2 写入公式 =B2*1.1。」                                                                                                                        | `excel_formula_write`            | 成功               |
+| E05 | `excel_cells_merge`              | E01 | 「请合并 Sheet1 的 A1:C1。」                                                                                                                                 | `excel_cells_merge`              | 已合并              |
+| E06 | `excel_cells_unmerge`            | E05 | 「请取消合并 A1:C1。」                                                                                                                                        | `excel_cells_unmerge`            | 已取消              |
+| E07 | `excel_named_range_define`       | E01 | 「请定义命名区域 ManualTestData，引用 Sheet1!A2:C3。」                                                                                                             | `excel_named_range_define`       | 成功               |
+| E08 | `excel_named_range_read`         | E07 | 「请 excel_named_range_read：name=ManualTestData。」                                                                                                       | `excel_named_range_read`         | 数据一致             |
+| E09 | `excel_named_ranges_list`        | E07 | 「请 excel_named_ranges_list。」                                                                                                                          | `excel_named_ranges_list`        | 含 ManualTestData |
+| E10 | `excel_column_width_set`         | E01 | 「请 excel_column_width_set：Sheet1，columnIndex=2，width=20。」                                                                                             | `excel_column_width_set`         | 成功               |
+| E11 | `excel_row_height_set`           | E01 | 「请 excel_row_height_set：Sheet1，rowIndex=1，height=22。」                                                                                                 | `excel_row_height_set`           | 成功               |
+| E12 | `excel_validation_set`           | E01 | 「请对 Sheet1 区域 E2:E10 设 list 验证，formula1=优,良,差。」                                                                                                       | `excel_validation_set`           | 成功               |
+| E13 | `excel_validations_list`         | E12 | 「请 excel_validations_list：Sheet1。」                                                                                                                    | `excel_validations_list`         | 有规则              |
+| E14 | `excel_validation_clear`         | E12 | 「请清除 Sheet1 的 E2:E10 验证。」                                                                                                                             | `excel_validation_clear`         | 已清除              |
+| E15 | `excel_conditional_format_add`   | E01 | 「请对 Sheet1 的 B2:B10 添加 between 条件格式，formula1=60，formula2=100。」                                                                                        | `excel_conditional_format_add`   | 成功               |
+| E16 | `excel_conditional_formats_list` | E15 | 「请 excel_conditional_formats_list：Sheet1。」                                                                                                            | `excel_conditional_formats_list` | 有规则              |
+| E17 | `excel_conditional_format_clear` | E15 | 「请清除 Sheet1 的 B2:B10 条件格式。」                                                                                                                           | `excel_conditional_format_clear` | 已清除              |
+| E18 | `excel_hyperlink_set`            | E01 | 「请 excel_hyperlink_set：文件 taskly-excel-test.xlsx，Sheet1，单元格 F1，url [https://example.com，displayText【测试链接】。」](https://example.com，displayText【测试链接】。」) | `excel_hyperlink_set`            | 成功               |
+| E19 | `excel_sheet_add`                | E01 | 「请添加工作表 ManualTestExtra。」                                                                                                                             | `excel_sheet_add`                | 新表存在             |
+| E20 | `excel_sheet_remove`             | E19 | 「请删除工作表 ManualTestExtra。」                                                                                                                             | `excel_sheet_remove`             | 已删               |
+| E21 | `excel_charts_list`              | —   | 「请 excel_charts_list：taskly-excel-test.xlsx。」（需非空可先手工插入图表）                                                                                            | `excel_charts_list`              | 列表或「无图表」         |
 
 
-### 3.9 Word（逐工具，共 24 个函数）
+### 3.9 Word（逐工具，共 23 个函数）
 
 **文件**：`taskly-word-test.docx`。**无表格时** `word_tables_list` / `word_tables_read` 会得到「无表格」——可先在 Word 手工插入 2×2 表再测 W02/W03，或接受「无表格」作为预期。
 
+**说明**：`word_document_create` 有 **W01**（空行拆段）与 **W01b**（换行/空行场景）两条；其余每行对应一个 Kernel 工具。竖线分段与表格语法冲突处见 §3 段首「表格与 Markdown」。
 
-| 编号   | 工具名                         | 依赖               | 建议粘贴到对话框的话术                                                                                                             | 应核对工具名                      | 预期要点             |
-| ---- | --------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------- |
-| W01  | `word_document_create`      | —                | 「请 word_document_create：taskly-word-test.docx，标题【手工测试】，段落用 | 分隔：第一段 | 第二段 | 含【替换目标】的第三段。」                               | `word_document_create`      | 文件已创建            |
-| W01b | `word_document_create`      | —                | 「请 word_document_create：taskly-word-newlines.docx，标题【换行分段】；paragraphs 里不要用竖线 |，用三行正文且段与段之间空一行（服务端会按空行/换行拆成多个 Word 段落）。」 | `word_document_create`      | 打开后为多段排版，非整段挤成一坨 |
-| W02  | `word_body_read`            | W01              | 「请 word_body_read：taskly-word-test.docx，includeTables true。」                                                            | `word_body_read`            | 段落文本             |
-| W03  | `word_tables_list`          | 文档内有表            | 「请 word_tables_list：taskly-word-test.docx。」                                                                             | `word_tables_list`          | 表数量或「无表格」        |
-| W04  | `word_tables_read`          | 有表               | 「请 word_tables_read：tableIndex=1。」                                                                                      | `word_tables_read`          | 表内容              |
-| W05  | `word_find_replace`         | W01              | 「请 word_find_replace：查找【替换目标】，替换为【已替换】。」                                                                                | `word_find_replace`         | 成功               |
-| W06  | `word_paragraphs_format`    | W01              | 「请 word_paragraphs_format：第 2 段，alignment center。」                                                                      | `word_paragraphs_format`    | 成功               |
-| W07  | `word_text_format`          | W05              | 「请 word_text_format：包含文字【已替换】，加粗、红色。」                                                                                   | `word_text_format`          | 成功               |
-| W08  | `word_comments_list`        | 可有批注             | 「请 word_comments_list。」                                                                                                 | `word_comments_list`        | 列表或空             |
-| W09  | `word_comment_add`          | W05              | 「请 word_comment_add：在含【已替换】处加批注【测试批注】。」                                                                                 | `word_comment_add`          | 成功               |
-| W10  | `word_comments_read`        | W09              | 「请 word_comments_read。」                                                                                                 | `word_comments_read`        | 批注内容             |
-| W11  | `word_comments_delete`      | W09              | 「请 word_comments_delete：删除刚才的批注（或指定 commentId）。」                                                                        | `word_comments_delete`      | 成功               |
-| W12  | `word_part_xml_read`        | W01              | 「请 word_part_xml_read：partName document，maxChars 5000。」                                                                 | `word_part_xml_read`        | XML 片段           |
-| W13  | `word_headers_footers_list` | W01              | 「请 word_headers_footers_list。」                                                                                          | `word_headers_footers_list` | 索引列表             |
-| W14  | `word_header_read`          | 有页眉              | 「请 word_header_read：index=1。」                                                                                           | `word_header_read`          | 文本               |
-| W15  | `word_footer_read`          | 有页脚              | 「请 word_footer_read：index=1。」                                                                                           | `word_footer_read`          | 文本               |
-| W16  | `word_header_write`         | W01              | 「请 word_header_write：index=1，文本【页眉手工测试】。」                                                                               | `word_header_write`         | 成功               |
-| W17  | `word_footer_write`         | W01              | 「请 word_footer_write：index=1，文本【页脚手工测试】。」                                                                               | `word_footer_write`         | 成功               |
-| W18  | `word_bookmark_insert`      | W01              | 「请 word_bookmark_insert：书签名 bm_manual，paragraphIndex=1。」                                                                | `word_bookmark_insert`      | 成功               |
-| W19  | `word_bookmarks_list`       | W18              | 「请 word_bookmarks_list。」                                                                                                | `word_bookmarks_list`       | 含 bm_manual      |
-| W20  | `word_bookmark_read`        | W18              | 「请 word_bookmark_read：bm_manual。」                                                                                       | `word_bookmark_read`        | 文本               |
-| W21  | `word_image_insert`         | 有 taskly-img.png | 「请 word_image_insert：第 1 段后插入 taskly-img.png。」                                                                          | `word_image_insert`         | 成功               |
-| W22  | `word_images_list`          | W21 后            | 「请 word_images_list。」                                                                                                   | `word_images_list`          | 部件数 ≥1           |
-| W23  | `word_sections_list`        | W01              | 「请 word_sections_list。」                                                                                                 | `word_sections_list`        | ≥1 节             |
-| W24  | `word_hyperlink_insert`     | W01              | 「请 word_hyperlink_insert：第 2 段插入链接 [https://example.com，显示【点我】。」](https://example.com，显示【点我】。」)                         | `word_hyperlink_insert`     | 成功               |
+
+| 编号   | 工具名                         | 依赖               | 建议粘贴到对话框的话术                                                                                                                             | 应核对工具名                      | 预期要点        |
+| ---- | --------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ----------- |
+| W01  | `word_document_create`      | —                | 「请 word_document_create：taskly-word-test.docx，标题【手工测试】；paragraphs 里先写【第一段】，空一行，再写【第二段】。」（与工具说明一致时也可用 ASCII 竖线 U+007C 分段，本表为避表格语法不示例竖线。） | `word_document_create`      | 文件已生成，含两段正文 |
+| W01b | `word_document_create`      | —                | 「请 word_document_create：taskly-word-newlines.docx，标题【换行分段】；不要用竖线分段，用多行正文且段与段之间空一行，让服务端按换行拆成多个 Word 段落。」                                 | `word_document_create`      | 多段按空行/换行拆段  |
+| W02  | `word_body_read`            | W01              | 「请 word_body_read：taskly-word-test.docx，includeTables true。」                                                                            | `word_body_read`            | 段落文本        |
+| W03  | `word_tables_list`          | 文档内有表            | 「请 word_tables_list：taskly-word-test.docx。」                                                                                             | `word_tables_list`          | 表数量或「无表格」   |
+| W04  | `word_tables_read`          | 有表               | 「请 word_tables_read：tableIndex=1。」                                                                                                      | `word_tables_read`          | 表内容         |
+| W05  | `word_find_replace`         | W01              | 「请 word_find_replace：查找【替换目标】，替换为【已替换】。」                                                                                                | `word_find_replace`         | 成功          |
+| W06  | `word_paragraphs_format`    | W01              | 「请 word_paragraphs_format：第 2 段，alignment center。」                                                                                      | `word_paragraphs_format`    | 成功          |
+| W07  | `word_text_format`          | W05              | 「请 word_text_format：包含文字【已替换】，加粗、红色。」                                                                                                   | `word_text_format`          | 成功          |
+| W08  | `word_comments_list`        | 可有批注             | 「请 word_comments_list。」                                                                                                                 | `word_comments_list`        | 列表或空        |
+| W09  | `word_comment_add`          | W05              | 「请 word_comment_add：在含【已替换】处加批注【测试批注】。」                                                                                                 | `word_comment_add`          | 成功          |
+| W10  | `word_comments_read`        | W09              | 「请 word_comments_read。」                                                                                                                 | `word_comments_read`        | 批注内容        |
+| W11  | `word_comments_delete`      | W09              | 「请 word_comments_delete：删除刚才的批注（或指定 commentId）。」                                                                                        | `word_comments_delete`      | 成功          |
+| W12  | `word_headers_footers_list` | W01              | 「请 word_headers_footers_list。」                                                                                                          | `word_headers_footers_list` | 条数与各索引文本摘要 |
+| W13  | `word_header_read`          | 有页眉              | 「请 word_header_read：index=1。」                                                                                                           | `word_header_read`          | 文本          |
+| W14  | `word_footer_read`          | 有页脚              | 「请 word_footer_read：index=1。」                                                                                                           | `word_footer_read`          | 文本          |
+| W15  | `word_header_write`         | W01              | 「请 word_header_write：index=1，文本【页眉手工测试】。」                                                                                               | `word_header_write`         | 成功          |
+| W16  | `word_footer_write`         | W01              | 「请 word_footer_write：index=1，文本【页脚手工测试】。」                                                                                               | `word_footer_write`         | 成功          |
+| W17  | `word_bookmark_insert`      | W01              | 「请 word_bookmark_insert：书签名 bm_manual，paragraphIndex=1。」                                                                                | `word_bookmark_insert`      | 成功          |
+| W18  | `word_bookmarks_list`       | W17              | 「请 word_bookmarks_list。」                                                                                                                | `word_bookmarks_list`       | 含 bm_manual |
+| W19  | `word_bookmark_read`        | W17              | 「请 word_bookmark_read：bm_manual。」                                                                                                       | `word_bookmark_read`        | 文本          |
+| W20  | `word_image_insert`         | 有 taskly-img.png | 「请 word_image_insert：第 1 段后插入 taskly-img.png。」                                                                                          | `word_image_insert`         | 成功          |
+| W21  | `word_images_list`          | W20 后            | 「请 word_images_list。」                                                                                                                   | `word_images_list`          | 部件数 ≥1      |
+| W22  | `word_sections_list`        | W01              | 「请 word_sections_list。」                                                                                                                 | `word_sections_list`        | ≥1 节        |
+| W23  | `word_hyperlink_insert`     | W01              | 「请 word_hyperlink_insert：在第 2 段插入超链接，地址为 [https://example.com，显示文字【点我】。」](https://example.com，显示文字【点我】。」)                               | `word_hyperlink_insert`     | 成功          |
 
 
 ### 3.10 Ppt（逐工具，共 14 个函数）
 
 **文件**：`taskly-ppt-test.pptx`。**P14** 要求页上**无嵌入图片**；若已执行 P07，请再 **P01** 重建文件或另存无图页再测 duplicate。
 
+**说明**：`ppt_table_write_cells` 的 `rowsCsv` 约定见插件 Description（多行用 U+007C、单元格用英文逗号）；**P12** 话术用「竖线」代称，避免破坏表格（参见 §3「表格与 Markdown」）。
 
-| 编号  | 工具名                     | 依赖               | 建议粘贴到对话框的话术                                                                         | 应核对工具名                       | 预期要点                    |
-| --- | ----------------------- | ---------------- | ----------------------------------------------------------------------------------- | ---------------------------- | ----------------------- |
-| P01 | `ppt_document_create`   | —                | 「请 ppt_document_create：taskly-ppt-test.pptx。」                                       | `ppt_document_create`        | 1 张灯片                   |
-| P02 | `ppt_slides_list`       | P01              | 「请 ppt_slides_list。」                                                                | `ppt_slides_list`            | ≥1 张                    |
-| P03 | `ppt_slide_read`        | P01              | 「请 ppt_slide_read：slideIndex=1，includeShapeDetails true。」                           | `ppt_slide_read`             | 文本+形状                   |
-| P04 | `ppt_slide_write`       | P03              | 「请 ppt_slide_write：slideIndex=1，placeholderType=title，text【手工 PPT】。」                | `ppt_slide_write`            | 成功                      |
-| P05 | `ppt_slide_insert`      | P01              | 「请 ppt_slide_insert：position 取大末尾，title【第二页】，body【正文测试】。」                           | `ppt_slide_insert`           | 总页数 +1                  |
-| P06 | `ppt_slide_delete`      | P05              | 「请 ppt_slide_delete：slideIndex=2。」                                                  | `ppt_slide_delete`           | 剩 1 页                   |
-| P07 | `ppt_slide_image_add`   | 有 taskly-img.png | 「请 ppt_slide_image_add：slideIndex=1，imagePath taskly-img.png。」                      | `ppt_slide_image_add`        | 成功                      |
-| P08 | `ppt_notes_read`        | P01              | 「请 ppt_notes_read：slideIndex=1。」                                                    | `ppt_notes_read`             | 文本或空                    |
-| P09 | `ppt_notes_write`       | P01              | 「请 ppt_notes_write：slideIndex=1，【备注手工测试】。」                                          | `ppt_notes_write`            | 成功                      |
-| P10 | `ppt_slides_reorder`    | 至少 2 页           | 先 P05 再发：「请 ppt_slides_reorder：newOrder=2,1。」                                       | `ppt_slides_reorder`         | 成功                      |
-| P11 | `ppt_table_create`      | P01              | 「请 ppt_table_create：slideIndex=1，3 行 2 列。」                                          | `ppt_table_create`           | 成功                      |
-| P12 | `ppt_table_write_cells` | P11              | 「请 ppt_table_write_cells：slideIndex=1，rowsCsv=`第一行左,第一行右                            | 第二行左,第二行右`（多行用 |，单元格用英文逗号）。」 | `ppt_table_write_cells` |
-| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：slideIndex=1，链接 [https://example.com。」](https://example.com。」) | `ppt_hyperlink_add`          | 成功或形状说明                 |
-| P14 | `ppt_slide_duplicate`   | 页无嵌入图            | 「请 ppt_slide_duplicate：slideIndex=1。」若失败因图片，换无图 ppt 重试。                             | `ppt_slide_duplicate`        | 成功                      |
+
+| 编号  | 工具名                     | 依赖               | 建议粘贴到对话框的话术                                                                                                                            | 应核对工具名                  | 预期要点    |
+| --- | ----------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------- |
+| P01 | `ppt_document_create`   | —                | 「请 ppt_document_create：taskly-ppt-test.pptx。」                                                                                          | `ppt_document_create`   | 1 张灯片   |
+| P02 | `ppt_slides_list`       | P01              | 「请 ppt_slides_list。」                                                                                                                   | `ppt_slides_list`       | ≥1 张    |
+| P03 | `ppt_slide_read`        | P01              | 「请 ppt_slide_read：slideIndex=1，includeShapeDetails true。」                                                                              | `ppt_slide_read`        | 文本+形状   |
+| P04 | `ppt_slide_write`       | P03              | 「请 ppt_slide_write：slideIndex=1，placeholderType=title，text【手工 PPT】。」                                                                   | `ppt_slide_write`       | 成功      |
+| P05 | `ppt_slide_insert`      | P01              | 「请 ppt_slide_insert：position 取大末尾，title【第二页】，body【正文测试】。」                                                                              | `ppt_slide_insert`      | 总页数 +1  |
+| P06 | `ppt_slide_delete`      | P05              | 「请 ppt_slide_delete：slideIndex=2。」                                                                                                     | `ppt_slide_delete`      | 剩 1 页   |
+| P07 | `ppt_slide_image_add`   | 有 taskly-img.png | 「请 ppt_slide_image_add：slideIndex=1，imagePath taskly-img.png。」                                                                         | `ppt_slide_image_add`   | 成功      |
+| P08 | `ppt_notes_read`        | P01              | 「请 ppt_notes_read：slideIndex=1。」                                                                                                       | `ppt_notes_read`        | 文本或空    |
+| P09 | `ppt_notes_write`       | P01              | 「请 ppt_notes_write：slideIndex=1，【备注手工测试】。」                                                                                             | `ppt_notes_write`       | 成功      |
+| P10 | `ppt_slides_reorder`    | 至少 2 页           | 先 P05 再发：「请 ppt_slides_reorder：newOrder=2,1。」                                                                                          | `ppt_slides_reorder`    | 成功      |
+| P11 | `ppt_table_create`      | P01              | 「请 ppt_table_create：slideIndex=1，3 行 2 列。」                                                                                             | `ppt_table_create`      | 成功      |
+| P12 | `ppt_table_write_cells` | P11              | 「请 ppt_table_write_cells：slideIndex=1，rowsCsv 填 2 行 2 列：第一行【第一行左,第一行右】与第二行【第二行左,第二行右】之间用竖线（U+007C）连接，格内只用英文逗号。」                        | `ppt_table_write_cells` | 成功      |
+| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 taskly-ppt-test.pptx，slideIndex=1，url [https://example.com，shapeIndex=1。」](https://example.com，shapeIndex=1。」) | `ppt_hyperlink_add`     | 成功或形状说明 |
+| P14 | `ppt_slide_duplicate`   | 页无嵌入图            | 「请 ppt_slide_duplicate：slideIndex=1。」若失败因图片，换无图 ppt 重试。                                                                                | `ppt_slide_duplicate`   | 成功      |
 
 
 ### 3.11 Tavily
 
 
-| 编号  | 工具名              | 前置      | 建议粘贴到对话框的话术                                                      | 应核对工具名           | 预期要点    |
-| --- | ---------------- | ------- | ---------------------------------------------------------------- | ---------------- | ------- |
-| TV1 | `tavily_search`  | API Key | 「请 tavily_search：查询【2025 年某项科技新闻关键词】。」                           | `tavily_search`  | 多条摘要    |
-| TV2 | `tavily_extract` | 同上      | 「请 tavily_extract：[https://example.com。」](https://example.com。」) | `tavily_extract` | 正文或失败原因 |
+| 编号  | 工具名              | 前置      | 建议粘贴到对话框的话术                                                             | 应核对工具名           | 预期要点    |
+| --- | ---------------- | ------- | ----------------------------------------------------------------------- | ---------------- | ------- |
+| TV1 | `tavily_search`  | API Key | 「请 tavily_search：查询【2026 年某项科技新闻关键词】。」                                  | `tavily_search`  | 多条摘要    |
+| TV2 | `tavily_extract` | 同上      | 「请 tavily_extract：urls 填 [https://example.com。」](https://example.com。」) | `tavily_extract` | 正文或失败原因 |
 
 
 ### 3.12 ClawhubSkill
@@ -360,12 +364,12 @@
 ## 四、选项页（options）与配置
 
 
-| 序号  | 场景          | 操作           | 预期                                                       |
-| --- | ----------- | ------------ | -------------------------------------------------------- |
-| O1  | 内置插件列表      | 打开内置工具/插件区块  | 列表与后端 `/api/tools/builtin` 一致；停用某插件后对话中不可再调用             |
-| O2  | 保存配置        | 修改模型/密钥/目录   | 保存成功；侧栏重连后生效                                             |
-| O3  | MCP 服务器（外部） | 若配置外部 MCP    | Chrome 会话可出现 `MCP_`* 工具；**本计划不强制逐项**（以运行时 tools/list 为准） |
-| O4  | 用户技能        | 启用/禁用某 Skill | 侧栏 `@` 中 Skills 列表变化                                     |
+| 序号  | 场景          | 操作           | 预期                                                           |
+| --- | ----------- | ------------ | ------------------------------------------------------------ |
+| O1  | 内置插件列表      | 打开内置工具/插件区块  | 列表与后端 `/api/tools/builtin` 一致；停用某插件后对话中不可再调用                 |
+| O2  | 保存配置        | 修改模型/密钥/目录   | 保存成功；侧栏重连后生效                                                 |
+| O3  | MCP 服务器（外部） | 若配置外部 MCP    | Chrome 会话可出现 `MCP`_ 前缀的外部工具；**本计划不强制逐项**（以运行时 tools/list 为准） |
+| O4  | 用户技能        | 启用/禁用某 Skill | 侧栏 `@` 中 Skills 列表变化                                         |
 
 
 ---
@@ -396,7 +400,7 @@
 | MCP_OCR           | `ocr_image`                                                                                                             |
 | CLI               | `run_command`                                                                                                           |
 | Excel             | 见 §3.8 共 21 个                                                                                                           |
-| Word              | 见 §3.9 共 24 个                                                                                                           |
+| Word              | 见 §3.9 共 23 个                                                                                                           |
 | Ppt               | 见 §3.10 共 14 个                                                                                                          |
 | Tavily            | `tavily_search`, `tavily_extract`                                                                                       |
 | ClawhubSkill      | `run_clawhub_script`                                                                                                    |
@@ -411,7 +415,7 @@
 | SkillAuthor       | `generate_user_skill`, `save_user_skill_markdown`                                                                       |
 
 
-**不计入「内置插件」但会出现的**：`UserSkill_`*（用户技能 Prompt）、`MCP_*`（外部 MCP）。若需「技能」回归，在 §1.4 与 §四 O4 已覆盖；外部 MCP 按各自配置单测。
+**不计入「内置插件」但会出现的**：`UserSkill_`*（用户技能 Prompt）、`MCP_`*（外部 MCP）。若需「技能」回归，在 §1.4 与 §四 O4 已覆盖；外部 MCP 按各自配置单测。
 
 ---
 

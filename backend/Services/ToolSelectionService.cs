@@ -111,7 +111,7 @@ public sealed class ToolSelectionService : IToolSelector
             ["Word-获取信息"] = new List<(string, string)>
             {
                 ("Word", "word_body_read"), ("Word", "word_tables_list"), ("Word", "word_tables_read"), ("Word", "word_comments_list"), ("Word", "word_comments_read"),
-                ("Word", "word_part_xml_read"), ("Word", "word_headers_footers_list"), ("Word", "word_header_read"), ("Word", "word_footer_read"),
+                ("Word", "word_headers_footers_list"), ("Word", "word_header_read"), ("Word", "word_footer_read"),
                 ("Word", "word_bookmarks_list"), ("Word", "word_bookmark_read"), ("Word", "word_images_list"), ("Word", "word_sections_list")
             },
             ["Word-编辑内容"] = new List<(string, string)>
@@ -221,7 +221,9 @@ public sealed class ToolSelectionService : IToolSelector
             return new ToolSelectionOutcome(null, "no_functions", null, 0, 0);
         }
 
-        var subcategories = BuildSubcategoryListFromKernel(kernel, allKernelFunctions);
+        var subcategories = ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome(
+            BuildSubcategoryListFromKernel(kernel, allKernelFunctions),
+            context?.ClientType);
         _logger.LogInformation("ToolSelection two-stage: entry pluginCount={PluginCount} totalFunctions={FuncCount} subcategoryCount={SubCount}.",
             kernel.Plugins.Count, allKernelFunctions.Count, subcategories.Count);
 
@@ -407,7 +409,7 @@ public sealed class ToolSelectionService : IToolSelector
     {
         var lines = new List<string>
         {
-            "根据用户消息，从下列子类中选出会用到的，只输出子类id，多个用英文逗号分隔。不要输出序号、步骤或解释。",
+            "根据用户消息，从下列子类中选出会用到的，只输出子类id，多个用英文逗号 , 分隔（勿用中文逗号）。不要输出序号、步骤或解释。",
             "尽量只输出会用到的子类，不要输出「全部」；只有完全无法判断时才输出：全部。",
             "可多项子类；宁多勿漏（主对话会再按需调用），不要只选单一 File 而漏掉用户实际需要的 Excel/Word/CLI 等。",
             "若用户话很短（如「再来一次」「同样操作」）或正文未重复文件名，必须结合 [上一条] 与上文中的具体任务（Excel/Word/路径/合并/下载等）选齐相关子类。",
@@ -423,20 +425,29 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。Chrome 会议监听结束且含 sessionId、要生成纪要→MeetingTranscript。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。Chrome 侧栏对话操作本机路径上的 docx/xlsx/pptx→选 Word-* / Excel-* / Ppt-*（如批注/查找替换→Word-编辑内容），勿选 CurrentDocument-*（仅 office-word / WPS / office-excel / office-powerpoint 任务窗格可用）。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word（任务窗格端）。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。Chrome 会议监听结束且含 sessionId、要生成纪要→MeetingTranscript。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
         return string.Join("\n", lines);
     }
 
-    private static List<string> ParseSubcategoryIdsFromResponse(string raw, List<(string Id, string Description)> subcategories)
+    /// <summary>解析阶段一模型返回的子类 id；须同时认英文/中文逗号等分隔符（模型常输出「File, Word-获取信息，Word-编辑内容」）。</summary>
+    internal static List<string> ParseSubcategoryIdsFromResponse(string raw, List<(string Id, string Description)> subcategories)
     {
         var idSet = new HashSet<string>(subcategories.Select(s => s.Id), StringComparer.OrdinalIgnoreCase);
+        return ParseSubcategoryIdsFromResponse(raw, idSet);
+    }
+
+    internal static List<string> ParseSubcategoryIdsFromResponse(string raw, HashSet<string> validIds)
+    {
         var result = new List<string>();
-        var parts = raw.Split(new[] { ',', '\n', '\r', ';', '、' }, StringSplitOptions.RemoveEmptyEntries);
+        if (string.IsNullOrWhiteSpace(raw) || validIds == null || validIds.Count == 0)
+            return result;
+        // U+FF0C 全角逗号、U+FF1B 全角分号；与英文 , ; 及顿号 、 一并切分，避免只识别到首个子类
+        var parts = raw.Split(new[] { ',', '\uFF0C', '\n', '\r', ';', '\uFF1B', '、' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var part in parts)
         {
             var id = part.Trim().Trim('"', '\'', '`', ' ').Trim();
             if (string.IsNullOrEmpty(id)) continue;
-            if (idSet.Contains(id))
+            if (validIds.Contains(id))
                 result.Add(id);
         }
         return result;
