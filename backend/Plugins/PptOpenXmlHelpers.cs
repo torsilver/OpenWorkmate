@@ -320,10 +320,13 @@ internal static class PptOpenXmlHelpers
         }
 
         var picId = maxShapeId + 1;
+        // prstGeom 需含空 a:avLst，否则 PowerPoint 常提示「修复」；与 WordPlugin 插入图片写法一致。
+        // p:nvPicPr 在 OOXML 架构中须含 p:nvPr（可为空）；缺则 PowerPoint 提示修复，OpenXmlValidator 报 incomplete content。
         var pic = new Picture(
             new NonVisualPictureProperties(
                 new NonVisualDrawingProperties { Id = picId, Name = "Picture " + picId },
-                new NonVisualPictureDrawingProperties()),
+                new NonVisualPictureDrawingProperties(new A.PictureLocks { NoChangeAspect = true }),
+                new ApplicationNonVisualDrawingProperties()),
             new BlipFill(
                 new A.Blip { Embed = embedId, CompressionState = A.BlipCompressionValues.Print },
                 new A.Stretch(new A.FillRectangle())),
@@ -331,9 +334,10 @@ internal static class PptOpenXmlHelpers
                 new A.Transform2D(
                     new A.Offset { X = offsetEmuX, Y = offsetEmuY },
                     new A.Extents { Cx = widthEmu, Cy = heightEmu }),
-                new A.PresetGeometry { Preset = A.ShapeTypeValues.Rectangle }));
+                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
 
         tree.AppendChild(pic);
+        slide.Save();
         return null;
     }
 

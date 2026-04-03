@@ -1,6 +1,8 @@
 using System.IO.Compression;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
+using DocumentFormat.OpenXml.Validation;
 using OfficeCopilot.Server.Plugins;
 using Xunit;
 
@@ -122,6 +124,23 @@ public class PptPluginOpenXmlTests : IDisposable
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("成功", p.PptSlideDuplicate(path, 1));
         Assert.Contains("共 2", p.PptSlidesList(path));
+    }
+
+    /// <summary>插入图片后须通过 OpenXml 架构校验；缺 p:nvPr 时 PowerPoint 会提示修复。</summary>
+    [Fact]
+    public void SlideImageAdd_PassesOpenXmlValidation()
+    {
+        var png = Path.Combine(_dir, "tiny.png");
+        File.WriteAllBytes(png, Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+        var path = Path.Combine(_dir, "with_img.pptx");
+        var p = new PptPlugin();
+        Assert.Contains("成功", p.PptDocumentCreate(path));
+        Assert.Contains("成功", p.PptSlideImageAdd(path, 1, png));
+        using var doc = PresentationDocument.Open(path, false);
+        var validator = new OpenXmlValidator(FileFormatVersions.Microsoft365);
+        var errors = validator.Validate(doc).ToList();
+        Assert.Empty(errors);
     }
 
     /// <summary>创建 → 插入第 2 页 → 写第 1 页：验证写第 1 页后第 2 页中文仍可读（排除操作顺序假象）。</summary>

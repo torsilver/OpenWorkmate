@@ -847,9 +847,12 @@ public sealed partial class ChatService : IDisposable
                         break;
                     }
 
-                    // 工具接地重试：仅依据「本轮是否真实执行过 Kernel 工具」+ 用户原文启发式 + 可用函数列表。
-                    // 不得使用推理流（reasoning_content / StreamSegmentKind.Reasoning）条数或文本参与此判断。
+                    // 工具接地重试：依据「真实执行过的 Kernel 工具数」+ 用户原文启发式 + 可用函数列表。
+                    // 百炼 thinking 走 reasoning_chunk，不入 fullResponse；不得用推理条数/正文参与判定（harness-engineering）。
+                    // stream_warning 仅在首轮已有「可见助手正文」（fullResponse strip 后非空）却未调工具时下发；仅 thinking、无正文则静默续跑。
                     var firstPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
+                    var visibleAssistantFirstPass = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()).Trim();
+                    var firstPassHadVisibleAssistantText = visibleAssistantFirstPass.Length > 0;
                     var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
                     IReadOnlyList<KernelFunction> funcsForRequired = turn.SelectedKernelFunctions is { Count: > 0 }
                         ? turn.SelectedKernelFunctions
@@ -861,14 +864,17 @@ public sealed partial class ChatService : IDisposable
                     if (needToolGroundingRetry)
                     {
                         _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry: firstPassTools=0 mutationIntent=true functionsForRequired={FnCount}",
-                            sessionId, funcsForRequired.Count);
-                        yield return new StreamItem(
-                            IsWarning: true,
-                            Content: "首轮响应未触发本机文件类工具调用；正在自动续跑一轮以完成操作…");
+                            "[{SessionId}] Tool grounding retry: firstPassTools=0 mutationIntent=true functionsForRequired={FnCount} streamWarning={StreamWarning}",
+                            sessionId, funcsForRequired.Count, firstPassHadVisibleAssistantText);
+                        if (firstPassHadVisibleAssistantText)
+                        {
+                            yield return new StreamItem(
+                                IsWarning: true,
+                                Content: "首轮响应未触发本机文件类工具调用；正在自动续跑一轮以完成操作…");
+                        }
 
                         var retryHistory = CloneChatHistory(turn.HistoryToUse);
-                        retryHistory.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
+                        retryHistory.AddAssistantMessage(visibleAssistantFirstPass);
                         retryHistory.AddUserMessage(ToolGroundingRetryMessages.NudgeUserMessage);
                         fullResponse.Clear();
                         ToolInvocationTurnMeter.ResetCount(sessionId);
@@ -948,20 +954,23 @@ public sealed partial class ChatService : IDisposable
                             "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
                             sessionId, retryPassTools);
                     }
-                    // 读类工具接地：判定依据同上（工具计数 + 用户原文），与推理流无关。
+                    // 读类工具接地：判定依据同上；stream_warning 规则与写类一致（须首轮已有可见正文）。
                     else if (firstPassTools == 0
                              && DocumentReadIntentHeuristic.LikelyRequiresDocumentReadTool(userMessage)
                              && funcsForRequired is { Count: > 0 })
                     {
                         _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry (read): firstPassTools=0 documentReadIntent=true functionsForRequired={FnCount}",
-                            sessionId, funcsForRequired.Count);
-                        yield return new StreamItem(
-                            IsWarning: true,
-                            Content: "首轮响应未执行读类文档工具；正在自动续跑一轮…");
+                            "[{SessionId}] Tool grounding retry (read): firstPassTools=0 documentReadIntent=true functionsForRequired={FnCount} streamWarning={StreamWarning}",
+                            sessionId, funcsForRequired.Count, firstPassHadVisibleAssistantText);
+                        if (firstPassHadVisibleAssistantText)
+                        {
+                            yield return new StreamItem(
+                                IsWarning: true,
+                                Content: "首轮响应未执行读类文档工具；正在自动续跑一轮…");
+                        }
 
                         var retryHistoryRead = CloneChatHistory(turn.HistoryToUse);
-                        retryHistoryRead.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
+                        retryHistoryRead.AddAssistantMessage(visibleAssistantFirstPass);
                         retryHistoryRead.AddUserMessage(ToolGroundingRetryMessages.ReadNudgeUserMessage);
                         fullResponse.Clear();
                         ToolInvocationTurnMeter.ResetCount(sessionId);
