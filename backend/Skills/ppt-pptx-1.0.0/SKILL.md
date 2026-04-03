@@ -41,7 +41,7 @@ User needs to **create** a new deck or **read/write** slides in a file path (.pp
 | `ppt_slides_reorder` | Permutation string e.g. `3,2,1` |
 | `ppt_table_create` / `ppt_table_write_cells` | Simple grid; cells `row1a,row1b\|row2a` |
 | `ppt_hyperlink_add` | Clickable URL on shape’s first run |
-| `ppt_slide_duplicate` | Clone slide after source (fails if slide has embedded images) |
+| `ppt_slide_duplicate` | Clone slide after source (copies slide `ImagePart`s + remaps `blip/@embed`; charts/media not fully covered) |
 
 ## Format Limits
 

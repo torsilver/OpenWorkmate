@@ -126,6 +126,43 @@ public class PptPluginOpenXmlTests : IDisposable
         Assert.Contains("共 2", p.PptSlidesList(path));
     }
 
+    /// <summary>含嵌入图的幻灯片经 OpenXmlPowerTools 复制后仍为 2 页且包可校验。</summary>
+    [Fact]
+    public void SlideDuplicate_WithEmbeddedImage_Succeeds()
+    {
+        var png = Path.Combine(_dir, "dup_slide_png.png");
+        File.WriteAllBytes(png, Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+        var path = Path.Combine(_dir, "dup_with_img.pptx");
+        var p = new PptPlugin();
+        Assert.Contains("成功", p.PptDocumentCreate(path));
+        Assert.Contains("成功", p.PptSlideImageAdd(path, 1, png));
+        Assert.Contains("成功", p.PptSlideDuplicate(path, 1));
+        Assert.Contains("共 2", p.PptSlidesList(path));
+        using var doc = PresentationDocument.Open(path, false);
+        var validator = new OpenXmlValidator(FileFormatVersions.Microsoft365);
+        var errors = validator.Validate(doc).ToList();
+        Assert.Empty(errors);
+    }
+
+    /// <summary>超链接须写在 a:rPr/a:hlinkClick；写在 a:r 直下 PowerPoint 不生效。</summary>
+    [Fact]
+    public void HyperlinkAdd_HlinkClick_IsChildOfRunProperties()
+    {
+        var p = new PptPlugin();
+        var path = Path.Combine(_dir, "hyperlink.pptx");
+        Assert.Contains("成功", p.PptDocumentCreate(path));
+        Assert.Contains("成功", p.PptSlideWrite(path, 1, "title", "Link me"));
+        Assert.Contains("成功", p.PptHyperlinkAdd(path, 1, "https://example.com/", 1, ""));
+        using var doc = PresentationDocument.Open(path, false);
+        var pres = doc.PresentationPart!;
+        var slideId = pres.Presentation!.SlideIdList!.Elements<SlideId>().First();
+        var slidePart = (SlidePart)pres.GetPartById(slideId.RelationshipId!.Value);
+        var hlinks = slidePart.Slide!.Descendants<DocumentFormat.OpenXml.Drawing.HyperlinkOnClick>().ToList();
+        Assert.NotEmpty(hlinks);
+        Assert.All(hlinks, h => Assert.IsType<DocumentFormat.OpenXml.Drawing.RunProperties>(h.Parent));
+    }
+
     /// <summary>插入图片后须通过 OpenXml 架构校验；缺 p:nvPr 时 PowerPoint 会提示修复。</summary>
     [Fact]
     public void SlideImageAdd_PassesOpenXmlValidation()

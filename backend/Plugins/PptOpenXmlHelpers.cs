@@ -421,9 +421,27 @@ internal static class PptOpenXmlHelpers
         var rel = slidePart.AddHyperlinkRelationship(uri, true);
         var rid = rel.Id;
         if (string.IsNullOrEmpty(rid)) return "[错误] 无法创建超链接关系。";
-        var h = firstRun.GetFirstChild<A.HyperlinkOnClick>();
-        if (h != null) h.Remove();
-        firstRun.InsertAt(new A.HyperlinkOnClick { Id = rid }, 0);
+
+        // 规范位置为 a:r/a:rPr/a:hlinkClick；挂在 a:r 下会被 PowerPoint 忽略（曾误报成功）。
+        foreach (var misplaced in firstRun.Elements<A.HyperlinkOnClick>().ToList())
+            misplaced.Remove();
+
+        var rPr = firstRun.GetFirstChild<A.RunProperties>();
+        if (rPr == null)
+        {
+            rPr = new A.RunProperties();
+            OpenXmlElement? insertBefore = firstRun.Elements<A.Text>().FirstOrDefault();
+            if (insertBefore == null) insertBefore = firstRun.Elements<A.Break>().FirstOrDefault();
+            if (insertBefore == null) insertBefore = firstRun.Elements<A.Field>().FirstOrDefault();
+            if (insertBefore != null)
+                firstRun.InsertBefore(rPr, insertBefore);
+            else
+                firstRun.PrependChild(rPr);
+        }
+
+        foreach (var oldH in rPr.Elements<A.HyperlinkOnClick>().ToList())
+            oldH.Remove();
+        rPr.AppendChild(new A.HyperlinkOnClick { Id = rid });
         return null;
     }
 
@@ -474,8 +492,6 @@ internal static class PptOpenXmlHelpers
         return null;
     }
 
-    internal static bool SlidePartHasImages(SlidePart part) => part.ImageParts.Any();
-
     /// <summary>rows 之间用 |，单元格之间用英文逗号（单元格内容勿含未转义逗号）。</summary>
     internal static string? WriteFirstTableCells(Slide? slide, string rowsCsv)
     {
@@ -506,6 +522,10 @@ internal static class PptOpenXmlHelpers
         return null;
     }
 
+    /// <summary>
+    /// 在紧接指定页（1-based）之后插入该页副本。复制 <see cref="SlidePart"/> 下嵌入 <see cref="ImagePart"/> 并重写 DrawingML <c>blip/@r:embed</c>，避免仅 CloneNode 导致缺图。
+    /// 复杂图表/媒体若未覆盖可能需后续扩展或仍失败。
+    /// </summary>
     internal static string? DuplicateSlideAfter(PresentationPart presentationPart, int sourceSlideIndex1)
     {
         var slideIds = presentationPart.Presentation?.SlideIdList is { } sil
@@ -516,27 +536,50 @@ internal static class PptOpenXmlHelpers
         if (sourceSlideIndex1 < 1 || sourceSlideIndex1 > slideIds.Count)
             return "[错误] 源幻灯片序号超出范围。";
 
-        var sourceId = slideIds[sourceSlideIndex1 - 1];
-        if (sourceId.RelationshipId?.Value == null)
+        var sourceSlideId = slideIds[sourceSlideIndex1 - 1];
+        if (sourceSlideId.RelationshipId?.Value == null)
             return "[错误] 无法解析源幻灯片。";
-        var sourcePart = presentationPart.GetPartById(sourceId.RelationshipId.Value) as SlidePart;
+        var sourcePart = presentationPart.GetPartById(sourceSlideId.RelationshipId.Value) as SlidePart;
         if (sourcePart?.Slide == null)
             return "[错误] 无法打开源幻灯片。";
-        if (SlidePartHasImages(sourcePart))
-            return "[错误] 当前不支持复制含嵌入图片的幻灯片（请新建页后手动插入图片）。";
 
         var layout = sourcePart.SlideLayoutPart;
         if (layout == null)
             return "[错误] 源幻灯片缺少版式。";
 
         var clone = (Slide)sourcePart.Slide.CloneNode(true)!;
+        var embedMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var newPart = presentationPart.AddNewPart<SlidePart>();
+
+        foreach (var imagePart in sourcePart.ImageParts.ToList())
+        {
+            var oldId = sourcePart.GetIdOfPart(imagePart);
+            var newImage = newPart.AddImagePart(imagePart.ContentType);
+            using (var src = imagePart.GetStream(FileMode.Open, FileAccess.Read))
+                newImage.FeedData(src);
+            embedMap[oldId] = newPart.GetIdOfPart(newImage);
+        }
+
+        RemapBlipEmbeds(clone, embedMap);
+
         newPart.Slide = clone;
         newPart.AddPart(layout);
         var newRid = presentationPart.GetIdOfPart(newPart);
         var newSlideId = new SlideId { Id = NextSlideNumericId(presentationPart), RelationshipId = newRid };
         var list = presentationPart.Presentation!.SlideIdList!;
-        list.InsertAfter(newSlideId, sourceId);
+        list.InsertAfter(newSlideId, sourceSlideId);
         return null;
+    }
+
+    private static void RemapBlipEmbeds(OpenXmlElement root, Dictionary<string, string> oldToNew)
+    {
+        if (oldToNew.Count == 0)
+            return;
+        foreach (var blip in root.Descendants<A.Blip>())
+        {
+            var e = blip.Embed?.Value;
+            if (e != null && oldToNew.TryGetValue(e, out var n))
+                blip.Embed = n;
+        }
     }
 }

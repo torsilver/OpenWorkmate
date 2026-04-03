@@ -232,7 +232,7 @@
 
 ### 3.10 Ppt（逐工具，共 14 个函数）
 
-**文件**：`taskly-ppt-test.pptx`。**P14** 要求页上**无嵌入图片**；若已执行 P07，请再 **P01** 重建文件或另存无图页再测 duplicate。
+**文件**：`taskly-ppt-test.pptx`。**P14** 可复制**含嵌入图**的页（`ImagePart` + `blip/@embed`）；亦可在 **P01** 无图页上测；复杂图表/媒体若失败记工具返回。
 
 **说明**：`ppt_table_write_cells` 的 `rowsCsv` 约定见插件 Description（多行用 U+007C、单元格用英文逗号）；**P12** 话术用「竖线」代称，避免破坏表格（参见 §3「表格与 Markdown」）。
 
@@ -254,7 +254,7 @@
 | P11 | `ppt_table_create`      | P01              | 「请 ppt_table_create：slideIndex=1，3 行 2 列。」                                                                                             | `ppt_table_create`      | 成功      |
 | P12 | `ppt_table_write_cells` | P11              | 「请 ppt_table_write_cells：slideIndex=1，rowsCsv 填 2 行 2 列：第一行【第一行左,第一行右】与第二行【第二行左,第二行右】之间用竖线（U+007C）连接，格内只用英文逗号。」                        | `ppt_table_write_cells` | 成功      |
 | P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 taskly-ppt-test.pptx，slideIndex=1，url [https://example.com，shapeIndex=1。」](https://example.com，shapeIndex=1。」) | `ppt_hyperlink_add`     | 成功或形状说明 |
-| P14 | `ppt_slide_duplicate`   | 页无嵌入图            | 「请 ppt_slide_duplicate：slideIndex=1。」若失败因图片，换无图 ppt 重试。                                                                                | `ppt_slide_duplicate`   | 成功      |
+| P14 | `ppt_slide_duplicate`   | P01 或 P07           | 「请 ppt_slide_duplicate：slideIndex=1。」后端复制 `ImagePart` 并重映射 `blip/@embed`；极复杂页（图表等）失败请看工具返回。                                                                 | `ppt_slide_duplicate`   | 成功      |
 
 
 ### 3.11 Tavily

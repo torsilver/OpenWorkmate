@@ -538,7 +538,7 @@ public sealed class PptPlugin
     }
 
     [KernelFunction("ppt_slide_duplicate")]
-    [Description("在紧接指定页之后复制一张内容相同的幻灯片（纯文本/版式；若该页含嵌入图片则拒绝）。")]
+    [Description("在紧接指定页之后复制一张内容相同的幻灯片（嵌入图随 SlidePart 的 ImagePart 一并复制；复杂图表/视频等可能不完整）。")]
     public string PptSlideDuplicate(
         [Description("PPT 文件完整路径")] string filePath,
         [Description("要复制的幻灯片序号，从 1 开始")] int slideIndex = 1)
