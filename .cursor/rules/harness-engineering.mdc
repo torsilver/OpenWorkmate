@@ -31,9 +31,11 @@ alwaysApply: true
 - 纯逻辑与契约：**单元测试 / 集成测试**是否覆盖新边界（见 testing 规则）。
 - **压缩边界**：摘要消息勿删 `[compact_boundary:…]`；改 `ContextManager` 裁剪逻辑时保持与 `ConversationCompactBoundary` 一致（见 `docs/提示词清单.md` H 节）。
 - **高危工具 HITL**：新增走 `SecurityFilter` 的任意执行类工具时，同步考虑 `AppConfig.toolPermissionRules` 与 `ToolCapabilityRegistry`（日志/元数据）。
+- **推理 / thinking 流**：`reasoning_chunk`、`StreamSegmentKind.Reasoning`、百炼 SSE 旁路 `reasoning_content` 队列等**仅用于前端时间线展示**；不得参与重试、摘要、权限、启发式等业务分支。**例外**：诊断日志、遥测计数。
 
 ## 反例（避免）
 
+- 用推理流条数或推理文本决定是否工具接地、是否写历史等（策略应基于工具调用事实与用户消息等，与 `docs/提示词清单.md` 分层一致）。
 - 仅靠加长 system prompt 解决反复出现的同类工具调用错误。  
 - 工具接受模糊长文本、服务端不做解析normalize，却把版式/结构问题完全推给模型。  
 - 接口或工具失败后返回空结果、无 `message`，导致无法改进「环境」。

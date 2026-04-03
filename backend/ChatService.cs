@@ -846,6 +846,8 @@ public sealed partial class ChatService : IDisposable
                         break;
                     }
 
+                    // 工具接地重试：仅依据「本轮是否真实执行过 Kernel 工具」+ 用户原文启发式 + 可用函数列表。
+                    // 不得使用推理流（reasoning_content / StreamSegmentKind.Reasoning）条数或文本参与此判断。
                     var firstPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
                     var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
                     IReadOnlyList<KernelFunction> funcsForRequired = turn.SelectedKernelFunctions is { Count: > 0 }
@@ -862,7 +864,7 @@ public sealed partial class ChatService : IDisposable
                             sessionId, funcsForRequired.Count);
                         yield return new StreamItem(
                             IsWarning: true,
-                            Content: "检测到本轮可能需修改本机文件但未执行任何工具，正在自动重试并要求调用工具…");
+                            Content: "首轮响应未触发本机文件类工具调用；正在自动续跑一轮以完成操作…");
 
                         var retryHistory = CloneChatHistory(turn.HistoryToUse);
                         retryHistory.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
@@ -945,6 +947,7 @@ public sealed partial class ChatService : IDisposable
                             "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
                             sessionId, retryPassTools);
                     }
+                    // 读类工具接地：判定依据同上（工具计数 + 用户原文），与推理流无关。
                     else if (firstPassTools == 0
                              && DocumentReadIntentHeuristic.LikelyRequiresDocumentReadTool(userMessage)
                              && funcsForRequired is { Count: > 0 })
@@ -954,7 +957,7 @@ public sealed partial class ChatService : IDisposable
                             sessionId, funcsForRequired.Count);
                         yield return new StreamItem(
                             IsWarning: true,
-                            Content: "检测到本轮点名了读类文档工具但未执行任何工具，正在自动重试并要求调用工具…");
+                            Content: "首轮响应未执行读类文档工具；正在自动续跑一轮…");
 
                         var retryHistoryRead = CloneChatHistory(turn.HistoryToUse);
                         retryHistoryRead.AddAssistantMessage(ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()));
@@ -1152,6 +1155,7 @@ public sealed partial class ChatService : IDisposable
             foreach (var toolDelta in StreamingToolCallDeltaHelper.ExtractFromChunk(chunk, toolCallArgBudget))
                 yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: toolDelta);
 
+            // fullResponse 仅累积 SK 正文的 chunk.Content；百炼 reasoning_content 仅经上方 Reasoning StreamItem 下发，不入此缓冲。
             if (chunk.Content is { Length: > 0 } text)
             {
                 fullResponse.Append(text);

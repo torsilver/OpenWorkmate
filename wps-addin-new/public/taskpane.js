@@ -432,7 +432,7 @@
     var notice = document.createElement("div");
     notice.className = "msg msg--stream-warning";
     notice.textContent = (text && String(text).trim()) || "服务端返回了警告";
-    wrap.insertBefore(notice, wrap.firstChild);
+    wrap.appendChild(notice);
     if ($messages) $messages.scrollTop = $messages.scrollHeight;
   }
 

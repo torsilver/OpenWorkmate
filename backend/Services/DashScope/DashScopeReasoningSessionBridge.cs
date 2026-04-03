@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace OfficeCopilot.Server.Services.DashScope;
 
 /// <summary>
-/// 将百炼 SSE 旁路解析出的推理片段与 <see cref="ChatService"/> 的 drain 对齐。
+/// 将百炼 SSE 旁路解析出的推理片段与 <see cref="ChatService"/> 的 drain 对齐（仅 UI 流式，不入历史、不参与业务判断）。
 /// HttpClient Handler 与 SK 主循环可能不在同一 <see cref="System.Threading.AsyncLocal{T}"/> 复制上，
 /// 因此不能仅靠 <see cref="DashScopeReasoningContext.DrainCurrentFrame"/>；按 <see cref="SessionContext"/> 的 sessionId 登记队列。
 /// </summary>

@@ -5,6 +5,7 @@ namespace OfficeCopilot.Server.Services.DashScope;
 /// <summary>
 /// 与 <see cref="DashScopeOpenAiCompatHandler"/> 配合：在百炼 SSE 旁路解析出的 <c>reasoning_content</c> 片段入队，
 /// 由 <see cref="OfficeCopilot.Server.ChatService"/> 在流式轮次中与正文块交错 drain。
+/// <b>旁路推理仅用于下发 <c>reasoning_chunk</c>，不写入 <c>fullResponse</c> / 会话历史，也不得参与工具接地等策略分支。</b>
 /// 使用 AsyncLocal + 栈以支持嵌套 HTTP 调用；<b>SSE 读可能在未传播 ExecutionContext 的线程上回调</b>，
 /// 故 Handler 必须用 <see cref="PushFrame"/> 返回的队列引用闭包入队，不得依赖 <see cref="TryEnqueueReasoning"/> 在该回调路径上工作。
 /// </summary>

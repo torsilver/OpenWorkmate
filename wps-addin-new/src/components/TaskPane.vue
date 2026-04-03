@@ -80,13 +80,6 @@
           <div v-html="msg.html"></div>
         </div>
         <div v-else-if="msg.type === 'round'" class="msg msg--round">
-          <div
-            v-for="(w, wi) in msg.streamWarnings || []"
-            :key="'sw-' + idx + '-' + wi"
-            class="msg msg--stream-warning"
-          >
-            {{ w }}
-          </div>
           <div v-if="msg.timelineSegments && msg.timelineSegments.length" class="msg--agent-timeline">
             <template v-for="seg in msg.timelineSegments" :key="seg.id">
               <details
@@ -120,6 +113,13 @@
             </template>
           </div>
           <div
+            v-for="(w, wi) in msg.streamWarnings || []"
+            :key="'sw-' + idx + '-' + wi"
+            class="msg msg--stream-warning"
+          >
+            {{ w }}
+          </div>
+          <div
             v-if="roundNeedsBottomBubble(msg)"
             :class="['msg', 'msg--bot', msg.isStreaming ? 'msg--streaming' : '']"
             v-html="msg.parsedHtml"
@@ -128,13 +128,6 @@
       </template>
       <!-- 当前正在进行的 round -->
       <div v-if="currentRound" class="msg msg--round">
-        <div
-          v-for="(w, wi) in currentRound.streamWarnings || []"
-          :key="'csw-' + wi"
-          class="msg msg--stream-warning"
-        >
-          {{ w }}
-        </div>
         <div v-if="currentRound.timelineSegments && currentRound.timelineSegments.length" class="msg--agent-timeline">
           <template v-for="seg in currentRound.timelineSegments" :key="seg.id">
             <details
@@ -166,6 +159,13 @@
               <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
             </details>
           </template>
+        </div>
+        <div
+          v-for="(w, wi) in currentRound.streamWarnings || []"
+          :key="'csw-' + wi"
+          class="msg msg--stream-warning"
+        >
+          {{ w }}
         </div>
       </div>
     </main>
