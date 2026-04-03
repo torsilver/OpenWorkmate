@@ -98,6 +98,7 @@ try
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
+    builder.Services.AddSingleton<IHitlPlainLanguageExplainer, HitlPlainLanguageExplainer>();
 builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();

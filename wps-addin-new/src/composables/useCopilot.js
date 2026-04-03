@@ -263,6 +263,7 @@ export function useCopilot() {
   const attachments = ref([]) // [{ id, mimeType, data }]
 
   const hitlVisible = ref(false)
+  const hitlHumanSummary = ref('')
   const hitlAction = ref('')
   const pendingConfirmId = ref(null)
   const hitlShowAddToList = ref(false)
@@ -1728,12 +1729,15 @@ export function useCopilot() {
     }
   }
 
+  // confirm_request：字段与展示逻辑对齐 chrome-extension/sidepanel.js handleConfirmRequest（规范源在 Chrome）
   function handleConfirmRequest(msg) {
     const requestId = msg.id || msg.requestId
     const action = msg.content || msg.action || '未知操作'
+    const humanSummary = (msg.humanSummary && String(msg.humanSummary).trim()) || ''
     const hitlKind = msg.hitlKind
     if (!requestId) return
     pendingConfirmId.value = requestId
+    hitlHumanSummary.value = humanSummary
     hitlAction.value = action
     hitlShowAddToList.value = hitlKind === 'run_command' || hitlKind === 'run_page_script'
     hitlVisible.value = true
@@ -1746,6 +1750,8 @@ export function useCopilot() {
       ws.send(JSON.stringify({ type: 'confirm_response', id, allowed, addToAllowList: !!addToAllowList }))
     }
     pendingConfirmId.value = null
+    // 关闭时清空 HITL 状态：语义对齐 chrome-extension/sidepanel.js sendConfirmResponse（规范源在 Chrome，勿以本 composable 为其它端的参考）
+    hitlHumanSummary.value = ''
     hitlVisible.value = false
   }
 
@@ -2098,6 +2104,7 @@ export function useCopilot() {
     planChecklistStatus,
     planChecklistDoneCount,
     hitlVisible,
+    hitlHumanSummary,
     hitlAction,
     hitlShowAddToList,
     showWelcome,

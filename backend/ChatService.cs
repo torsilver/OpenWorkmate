@@ -263,7 +263,8 @@ public sealed partial class ChatService : IDisposable
         // 注册安全拦截器（含 HITL：拦截时发确认请求，用户允许则继续执行）
         var hitlManager = _serviceProvider.GetRequiredService<HitlManager>();
         var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
-        var securityFilter = new SecurityFilter(_loggerFactory.CreateLogger<SecurityFilter>(), _configService, hitlManager, sessionManager);
+        var hitlPlainLanguage = _serviceProvider.GetRequiredService<IHitlPlainLanguageExplainer>();
+        var securityFilter = new SecurityFilter(_loggerFactory.CreateLogger<SecurityFilter>(), _configService, hitlManager, sessionManager, hitlPlainLanguage);
         newKernel.FunctionInvocationFilters.Add(securityFilter);
         // 注入当前会话 ID，供 BrowserPlugin 等插件在工具调用时使用
         newKernel.FunctionInvocationFilters.Add(new SessionContextFilter(_loggerFactory.CreateLogger<SessionContextFilter>()));

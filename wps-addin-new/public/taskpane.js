@@ -1600,8 +1600,11 @@
     }
   }
 
+  // HITL：与 chrome-extension/sidepanel.js 对齐（遗留 public 栈）；规范源在 Chrome。优先使用 wps-addin-new/src（Vue）主线时亦应对齐 Chrome，勿以本文件为权威。
   var pendingConfirmId = null;
   var $hitlOverlay = document.getElementById("hitl-overlay");
+  var $hitlHumanSummary = document.getElementById("hitl-human-summary");
+  var $hitlRawLabel = document.getElementById("hitl-raw-label");
   var $hitlAction = document.getElementById("hitl-action");
   var $hitlAllowBtn = document.getElementById("hitl-allow-btn");
   var $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
@@ -1610,9 +1613,20 @@
   function handleConfirmRequest(msg) {
     var requestId = msg.id || msg.requestId;
     var action = msg.content || msg.action || "未知操作";
+    var humanSummary = (msg.humanSummary && String(msg.humanSummary).trim()) || "";
     var hitlKind = msg.hitlKind;
     if (!requestId) return;
     pendingConfirmId = requestId;
+    if ($hitlHumanSummary) {
+      if (humanSummary) {
+        $hitlHumanSummary.textContent = humanSummary;
+        $hitlHumanSummary.style.display = "";
+      } else {
+        $hitlHumanSummary.textContent = "";
+        $hitlHumanSummary.style.display = "none";
+      }
+    }
+    if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
     if ($hitlAction) $hitlAction.textContent = action;
     if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "run_page_script") ? "" : "none";
     if ($hitlOverlay) { $hitlOverlay.style.display = "flex"; $hitlOverlay.setAttribute("aria-hidden", "false"); }
@@ -1622,6 +1636,12 @@
     if (!id) return;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed, addToAllowList: !!addToAllowList }));
     pendingConfirmId = null;
+    // 对齐 chrome-extension/sidepanel.js sendConfirmResponse
+    if ($hitlHumanSummary) {
+      $hitlHumanSummary.textContent = "";
+      $hitlHumanSummary.style.display = "none";
+    }
+    if ($hitlRawLabel) $hitlRawLabel.style.display = "none";
     if ($hitlOverlay) { $hitlOverlay.style.display = "none"; $hitlOverlay.setAttribute("aria-hidden", "true"); }
   }
 

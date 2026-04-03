@@ -873,7 +873,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  max-width: 360px;
+  max-width: 420px;
   max-height: min(85vh, 600px);
   width: 100%;
 }
@@ -882,6 +882,24 @@ html, body {
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text-primary);
+}
+
+.hitl-human-summary {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.hitl-raw-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  text-transform: none;
+  letter-spacing: 0.02em;
 }
 
 .hitl-action {

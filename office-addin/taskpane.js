@@ -2126,8 +2126,11 @@
     ws.send(JSON.stringify({ type: "rpc_response", id: id, result: result != null ? result : null, error: error || null }));
   }
 
+  // HITL：与 chrome-extension/sidepanel.js 同协议与同套 DOM 清理；规范源在 Chrome，勿以 WPS 为准。
   let pendingConfirmId = null;
   const $hitlOverlay = document.getElementById("hitl-overlay");
+  const $hitlHumanSummary = document.getElementById("hitl-human-summary");
+  const $hitlRawLabel = document.getElementById("hitl-raw-label");
   const $hitlAction = document.getElementById("hitl-action");
   const $hitlAllowBtn = document.getElementById("hitl-allow-btn");
   const $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
@@ -2136,9 +2139,20 @@
   function handleConfirmRequest(msg) {
     const requestId = msg.id || msg.requestId;
     const action = msg.content || msg.action || "未知操作";
+    const humanSummary = (msg.humanSummary && String(msg.humanSummary).trim()) || "";
     const hitlKind = msg.hitlKind;
     if (!requestId) return;
     pendingConfirmId = requestId;
+    if ($hitlHumanSummary) {
+      if (humanSummary) {
+        $hitlHumanSummary.textContent = humanSummary;
+        $hitlHumanSummary.style.display = "";
+      } else {
+        $hitlHumanSummary.textContent = "";
+        $hitlHumanSummary.style.display = "none";
+      }
+    }
+    if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
     if ($hitlAction) $hitlAction.textContent = action;
     if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "run_page_script") ? "" : "none";
     if ($hitlOverlay) {
@@ -2153,6 +2167,12 @@
       ws.send(JSON.stringify({ type: "confirm_response", id: id, allowed: allowed, addToAllowList: !!addToAllowList }));
     }
     pendingConfirmId = null;
+    // 对齐 chrome-extension/sidepanel.js sendConfirmResponse
+    if ($hitlHumanSummary) {
+      $hitlHumanSummary.textContent = "";
+      $hitlHumanSummary.style.display = "none";
+    }
+    if ($hitlRawLabel) $hitlRawLabel.style.display = "none";
     if ($hitlOverlay) {
       $hitlOverlay.style.display = "none";
       $hitlOverlay.setAttribute("aria-hidden", "true");

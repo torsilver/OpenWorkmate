@@ -41,6 +41,7 @@ public sealed class HitlManager
         string action,
         string? hitlKind = null,
         string? addToAllowListKey = null,
+        string? humanSummary = null,
         CancellationToken ct = default)
     {
         var requestId = Guid.NewGuid().ToString("N");
@@ -59,6 +60,8 @@ public sealed class HitlManager
             msg["hitlKind"] = hitlKind;
         if (!string.IsNullOrEmpty(addToAllowListKey))
             msg["addToAllowListKey"] = addToAllowListKey;
+        if (!string.IsNullOrWhiteSpace(humanSummary))
+            msg["humanSummary"] = humanSummary.Trim();
 
         var json = JsonSerializer.Serialize(msg, JsonOptions);
         await _sessionManager.SendToAsync(sessionId, json);

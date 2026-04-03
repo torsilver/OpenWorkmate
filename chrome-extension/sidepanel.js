@@ -1847,9 +1847,12 @@ function sendRpcResponse(id, result, error) {
   debugLog("WS Send", "type=rpc_response id=" + id + (error ? " error=1" : ""), "send");
 }
 
-// ───── HITL (危险操作人机确认) ─────
+// ───── HITL（危险操作人机确认）─────
+// 规范源在本文件：Office / WPS 任务窗应对齐此处协议与 DOM 行为；勿以 WPS（含 Vue / public）为参考改 Chrome。
 let pendingConfirmId = null;
 const $hitlOverlay = document.getElementById("hitl-overlay");
+const $hitlHumanSummary = document.getElementById("hitl-human-summary");
+const $hitlRawLabel = document.getElementById("hitl-raw-label");
 const $hitlAction = document.getElementById("hitl-action");
 const $hitlAllowBtn = document.getElementById("hitl-allow-btn");
 const $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
@@ -1858,12 +1861,23 @@ const $hitlDenyBtn = document.getElementById("hitl-deny-btn");
 function handleConfirmRequest(msg) {
   const requestId = msg.id || msg.requestId;
   const action = msg.content || msg.action || "未知操作";
+  const humanSummary = (msg.humanSummary && String(msg.humanSummary).trim()) || "";
   const hitlKind = msg.hitlKind;
   if (!requestId) {
     debugLog("HITL", "confirm_request missing id", "err");
     return;
   }
   pendingConfirmId = requestId;
+  if ($hitlHumanSummary) {
+    if (humanSummary) {
+      $hitlHumanSummary.textContent = humanSummary;
+      $hitlHumanSummary.style.display = "";
+    } else {
+      $hitlHumanSummary.textContent = "";
+      $hitlHumanSummary.style.display = "none";
+    }
+  }
+  if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
   if ($hitlAction) $hitlAction.textContent = action;
   const showAddToList = hitlKind === "run_command" || hitlKind === "run_page_script";
   if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = showAddToList ? "" : "none";
@@ -1882,6 +1896,12 @@ function sendConfirmResponse(id, allowed, addToAllowList) {
     debugLog("WS Send", "type=confirm_response id=" + id + " allowed=" + allowed + " addToAllowList=" + !!addToAllowList, "send");
   }
   pendingConfirmId = null;
+  // 关闭时清空 HITL 文案：与 handleConfirmRequest 成对；其它端应对齐本函数（见 .cursor/rules/multi-client-chrome-canonical.mdc）
+  if ($hitlHumanSummary) {
+    $hitlHumanSummary.textContent = "";
+    $hitlHumanSummary.style.display = "none";
+  }
+  if ($hitlRawLabel) $hitlRawLabel.style.display = "none";
   if ($hitlOverlay) {
     $hitlOverlay.style.display = "none";
     $hitlOverlay.setAttribute("aria-hidden", "true");

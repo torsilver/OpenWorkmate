@@ -18,19 +18,50 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
     private readonly ConfigService _configService;
     private readonly HitlManager _hitlManager;
     private readonly SessionManager _sessionManager;
+    private readonly IHitlPlainLanguageExplainer _hitlPlainLanguage;
 
-    public SecurityFilter(ILogger<SecurityFilter> logger, ConfigService configService, HitlManager hitlManager, SessionManager sessionManager)
+    public SecurityFilter(
+        ILogger<SecurityFilter> logger,
+        ConfigService configService,
+        HitlManager hitlManager,
+        SessionManager sessionManager,
+        IHitlPlainLanguageExplainer hitlPlainLanguage)
     {
         _logger = logger;
         _configService = configService;
         _hitlManager = hitlManager;
         _sessionManager = sessionManager;
+        _hitlPlainLanguage = hitlPlainLanguage;
+    }
+
+    /// <summary>
+    /// 下发与模型概括相同的截断后原文为 <paramref name="content"/>，并附带可选白话说明。
+    /// </summary>
+    private async Task<HitlResult> RequestHitlWithPlainSummaryAsync(
+        string sessionId,
+        string rawExecutableForDisplay,
+        string hitlKind,
+        string? addToAllowListKey,
+        CancellationToken ct)
+    {
+        var raw = HitlPlainLanguageExplainer.TruncateRawExecutable(rawExecutableForDisplay);
+        string? summary = null;
+        if (raw.Length > 0)
+        {
+            _logger.LogDebug("HITL plain summary kind={Kind} rawLen={Len}", hitlKind, raw.Length);
+            summary = await _hitlPlainLanguage.SummarizeAsync(raw, ct).ConfigureAwait(false);
+        }
+
+        return await _hitlManager
+            .RequestConfirmationAsync(sessionId, raw, hitlKind, addToAllowListKey, summary, ct)
+            .ConfigureAwait(false);
     }
 
     public async Task OnFunctionInvocationAsync(
         FunctionInvocationContext context,
         Func<FunctionInvocationContext, Task> next)
     {
+        var ct = context.CancellationToken;
         var pluginName = context.Function.Metadata?.PluginName ?? context.Function.PluginName ?? "";
         var functionName = context.Function.Name ?? "";
         var ruleEffect = ToolPermissionRuleEvaluator.Evaluate(_configService.Current.ToolPermissionRules, pluginName, functionName);
@@ -86,8 +117,8 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                         "[系统拦截] 安全策略禁止执行该命令，且当前无会话无法进行人工确认。");
                     return;
                 }
-                var action = "执行命令: " + (cmdObj?.ToString()?.Trim() ?? command);
-                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_command", cmdName);
+                var commandLine = cmdObj?.ToString()?.Trim() ?? "";
+                var result = await RequestHitlWithPlainSummaryAsync(sessionId, commandLine, "run_command", cmdName, ct);
                 if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -144,8 +175,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                         "[系统拦截] 安全策略禁止执行该页面脚本，且当前无会话无法进行人工确认。");
                     return;
                 }
-                var action = "执行页面脚本: " + (scriptId ?? "");
-                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_page_script", scriptId ?? "");
+                var result = await RequestHitlWithPlainSummaryAsync(sessionId, scriptId ?? "", "run_page_script", scriptId ?? "", ct);
                 if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -204,8 +234,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                         "[系统拦截] 安全策略禁止执行该文档脚本，且当前无会话无法进行人工确认。");
                     return;
                 }
-                var action = "执行文档预定义脚本: " + (scriptId ?? "");
-                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "current_run_document_script", scriptId ?? "");
+                var result = await RequestHitlWithPlainSummaryAsync(sessionId, scriptId ?? "", "current_run_document_script", scriptId ?? "", ct);
                 if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -237,9 +266,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 var code = scriptCodeObj?.ToString()?.Trim() ?? "";
-                const int PreviewLen = 200;
-                var action = "执行自定义页面脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
-                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_page_script", null);
+                var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_page_script", null, ct);
                 if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,
@@ -270,9 +297,7 @@ public sealed class SecurityFilter : IFunctionInvocationFilter
                     return;
                 }
                 var code = docScriptCodeObj?.ToString()?.Trim() ?? "";
-                const int PreviewLen = 200;
-                var action = "执行自定义文档脚本: " + (code.Length <= PreviewLen ? code : code.Substring(0, PreviewLen) + "...");
-                var result = await _hitlManager.RequestConfirmationAsync(sessionId, action, "run_custom_document_script", null);
+                var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_document_script", null, ct);
                 if (!result.Allowed)
                 {
                     context.Result = new FunctionResult(context.Function,

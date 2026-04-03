@@ -285,6 +285,8 @@
     >
       <div class="hitl-card">
         <p class="hitl-title">AI 请求执行</p>
+        <p v-show="hitlHumanSummary" class="hitl-human-summary">{{ hitlHumanSummary }}</p>
+        <p v-show="hitlHumanSummary" class="hitl-raw-label">原文</p>
         <p class="hitl-action">{{ hitlAction }}</p>
         <div class="hitl-buttons">
           <button type="button" class="hitl-btn hitl-btn--allow" @click="sendConfirmResponse(true, false)">允许</button>
@@ -1111,7 +1113,7 @@ export default {
   border: 1px solid var(--copilot-border, #333);
   border-radius: 12px;
   padding: 20px;
-  max-width: 360px;
+  max-width: 420px;
   width: 100%;
 }
 
@@ -1120,11 +1122,30 @@ export default {
   margin-bottom: 8px;
 }
 
+.hitl-human-summary {
+  color: var(--copilot-text-primary, #e8e8e8);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.hitl-raw-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--copilot-text-secondary, #999);
+  margin-bottom: 4px;
+}
+
 .hitl-action {
   color: var(--copilot-text-secondary, #999);
   font-size: 13px;
   margin-bottom: 16px;
   word-break: break-word;
+  white-space: pre-wrap;
+  max-height: min(40vh, 280px);
+  overflow-y: auto;
 }
 
 .hitl-buttons {

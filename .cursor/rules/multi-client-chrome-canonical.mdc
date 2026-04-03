@@ -1,0 +1,30 @@
+---
+description: 所有功能与产品行为以 Chrome 扩展为规范源；Office/WPS 尚未细究，禁止以其它端为参考改 Chrome 或互相抄错样板
+alwaysApply: true
+---
+
+# 多端产品：一律以 Chrome 为准
+
+## 原则
+
+- **所有功能**（UI、交互、WebSocket 协议与字段、错误提示、HITL、设置页逻辑、侧栏行为等）的 **规范实现与「应该怎样」的定义**，均以 [chrome-extension/](chrome-extension/) 为 **唯一权威**。
+- **Office**（[office-addin/](office-addin/)）与 **WPS**（[wps-addin-new/](wps-addin-new/)，含 Vue 与 `public` 遗留栈）当前 **尚未逐一细究、对齐**；实现上可能滞后或不完整，**不得**当作正确样板。
+
+## 开发时怎么做
+
+1. **新功能或改行为**：先在 Chrome 扩展里实现并验证；需要多端一致时，再按 Chrome 行为迁到 Office / WPS。
+2. **发现多端不一致**：**以 Chrome 为准** 纠偏其它端；不要为「和 Office/WPS 一致」而改 Chrome。
+3. **禁止反向参考**：不要以 WPS 或 Office 的实现去推断「产品就该这样」，也不要用其它端代码当主依据去改 Chrome。
+
+## 实现形态
+
+- 其它端可用不同技术栈（如 Vue + ref、Office 宿主脚本），但 **对用户可见的行为、协议与数据字段** 应与 Chrome 侧一致；非 Chrome 代码中宜注释说明对齐 `chrome-extension/` 中对应逻辑。
+
+## 反例
+
+- 「WPS 已经这样写了，把 Chrome 改成一样。」
+- 未看 `chrome-extension/`，只复制 `wps-addin-new/public/taskpane.js` 或 Office `taskpane.js` 当需求来源。
+
+## 正例
+
+- 先读/改 `sidepanel.js`、`sidepanel.html` 等，再按需同步 Office / WPS，并注明「对齐 Chrome」。

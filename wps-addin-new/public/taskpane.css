@@ -420,11 +420,25 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  max-width: 360px;
+  max-width: 420px;
   width: 100%;
 }
 .hitl-title { font-weight: 600; margin-bottom: 8px; }
-.hitl-action { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; word-break: break-word; }
+.hitl-human-summary {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.hitl-raw-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.hitl-action { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; word-break: break-word; white-space: pre-wrap; max-height: min(40vh, 280px); overflow-y: auto; }
 .hitl-buttons { display: flex; gap: 10px; justify-content: flex-end; }
 .hitl-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; border: none; }
 .hitl-btn--allow { background: var(--accent); color: #fff; }
