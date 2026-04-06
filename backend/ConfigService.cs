@@ -266,14 +266,12 @@ public class OcrConfig
     public string? Language { get; set; }
 }
 
-/// <summary>Semantic Kernel 实验性功能开关（user-config.json 中 <c>semanticKernel</c>）。</summary>
+/// <summary>MAF 对话编排实验开关（user-config.json 键名仍为历史名 <c>semanticKernel</c>）。</summary>
 public class SemanticKernelFeaturesConfig
 {
-    /// <summary>为 true 时 <c>run_subtask</c> 使用 MAF <c>ChatClientAgent</c> 流式路径。</summary>
-    public bool UseChatCompletionAgentForSubtask { get; set; }
-    /// <summary>主模型流式前增加轻量 Host Agent，输出走 agent_trace；可临时影响本轮 <c>historyToUse</c>。</summary>
+    /// <summary>主模型流式前增加轻量 <c>ChatClientAgent</c>（Host 前言），输出走 agent_trace；可临时影响本轮 <c>historyToUse</c>。</summary>
     public bool UseHostPreambleAgent { get; set; }
-    /// <summary>主会话使用 Host + Worker 多 Agent 路径（现为 MAF 工作流/编排）；延迟与 token 消耗显著增加，实验用。</summary>
+    /// <summary>主会话使用 MAF <c>AgentGroupChat</c>（Host + Worker）；延迟与 token 消耗显著增加，实验用。</summary>
     public bool UseAgentGroupChatMainSession { get; set; }
 
     public static SemanticKernelFeaturesConfig Clone(SemanticKernelFeaturesConfig? src)
@@ -281,36 +279,17 @@ public class SemanticKernelFeaturesConfig
         if (src == null) return new SemanticKernelFeaturesConfig();
         return new SemanticKernelFeaturesConfig
         {
-            UseChatCompletionAgentForSubtask = src.UseChatCompletionAgentForSubtask,
             UseHostPreambleAgent = src.UseHostPreambleAgent,
             UseAgentGroupChatMainSession = src.UseAgentGroupChatMainSession
         };
     }
 }
 
-/// <summary>Microsoft Agent Framework（MAF）与 MEAI 相关开关（user-config.json 中 <c>agentFramework</c>）。</summary>
-public class AgentFrameworkConfig
-{
-    /// <summary>已废弃：主会话固定走 MAF/MEAI（<see cref="IChatClient"/>）；保留字段仅避免旧配置反序列化丢失。不再影响行为。</summary>
-    [Obsolete("主会话已仅使用 MAF 流式；此字段已忽略。")]
-    public bool UseMafMainStream { get; set; } = true;
-
-    public static AgentFrameworkConfig Clone(AgentFrameworkConfig? src)
-    {
-        if (src == null) return new AgentFrameworkConfig();
-#pragma warning disable CS0618
-        return new AgentFrameworkConfig { UseMafMainStream = src.UseMafMainStream };
-#pragma warning restore CS0618
-    }
-}
-
 public class AppConfig
 {
     public AiConfig AI { get; set; } = new();
-    /// <summary>SK 遗留实验开关（多 Agent / Host 前言等）；未配置时均为 false。</summary>
+    /// <summary>MAF 编排实验开关（JSON 键 <c>semanticKernel</c> 为历史名）；未配置时均为 false。</summary>
     public SemanticKernelFeaturesConfig? SemanticKernel { get; set; }
-    /// <summary>MAF / Microsoft.Extensions.AI 能力开关。</summary>
-    public AgentFrameworkConfig? AgentFramework { get; set; }
     /// <summary>会话配置（历史轮数、超时等）；未配置时使用默认值。</summary>
     public SessionConfig? Session { get; set; }
     /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
@@ -745,7 +724,6 @@ public sealed class ConfigService
             CliRunMode = "UseAllowList",
             RagStorageType = "Sqlite",
             SemanticKernel = new SemanticKernelFeaturesConfig(),
-            AgentFramework = new AgentFrameworkConfig(),
         };
         ApplyActivePresetIfSet(appConfig);
         MigrateLegacyAiIfNeeded(appConfig);
@@ -1100,8 +1078,6 @@ public sealed class ConfigService
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
-                if (newConfig.AgentFramework == null)
-                    newConfig.AgentFramework = AgentFrameworkConfig.Clone(_currentConfig.AgentFramework);
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {

@@ -1580,11 +1580,8 @@ function collectSemanticKernelPayload() {
     return !!(el && el.checked);
   }
   return {
-    useChatCompletionAgentForSubtask: ck('skUseChatCompletionAgentForSubtask'),
-    useLocalProcessForStreamChatTooling: ck('skUseLocalProcessForStreamChatTooling'),
-    useLocalProcessForStreamChatContext: ck('skUseLocalProcessForStreamChatContext'),
-    useHostPreambleAgent: ck('skUseHostPreambleAgent'),
-    useAgentGroupChatMainSession: ck('skUseAgentGroupChatMainSession')
+    useHostPreambleAgent: ck('mafUseHostPreambleAgent'),
+    useAgentGroupChatMainSession: ck('mafUseAgentGroupChatMainSession')
   };
 }
 
@@ -1594,11 +1591,8 @@ function applySemanticKernelToForm(sk) {
     var el = document.getElementById(id);
     if (el) el.checked = !!v;
   }
-  setCk('skUseChatCompletionAgentForSubtask', sk.useChatCompletionAgentForSubtask ?? sk.UseChatCompletionAgentForSubtask);
-  setCk('skUseLocalProcessForStreamChatTooling', sk.useLocalProcessForStreamChatTooling ?? sk.UseLocalProcessForStreamChatTooling);
-  setCk('skUseLocalProcessForStreamChatContext', sk.useLocalProcessForStreamChatContext ?? sk.UseLocalProcessForStreamChatContext);
-  setCk('skUseHostPreambleAgent', sk.useHostPreambleAgent ?? sk.UseHostPreambleAgent);
-  setCk('skUseAgentGroupChatMainSession', sk.useAgentGroupChatMainSession ?? sk.UseAgentGroupChatMainSession);
+  setCk('mafUseHostPreambleAgent', sk.useHostPreambleAgent ?? sk.UseHostPreambleAgent);
+  setCk('mafUseAgentGroupChatMainSession', sk.useAgentGroupChatMainSession ?? sk.UseAgentGroupChatMainSession);
 }
 
 async function loadConfig() {

@@ -322,7 +322,6 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(ToolPermissionRule))]
 [JsonSerializable(typeof(List<ToolPermissionRule>))]
 [JsonSerializable(typeof(SemanticKernelFeaturesConfig))]
-[JsonSerializable(typeof(AgentFrameworkConfig))]
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]
