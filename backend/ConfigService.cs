@@ -271,10 +271,6 @@ public class SemanticKernelFeaturesConfig
 {
     /// <summary>为 true 时 <c>run_subtask</c> 使用 MAF <c>ChatClientAgent</c> 流式路径。</summary>
     public bool UseChatCompletionAgentForSubtask { get; set; }
-    /// <summary>为 true 时主会话在工具筛选与流式前准备阶段经 <c>ChatToolingRegistry</c> 顺序执行（与内联逻辑等价）。</summary>
-    public bool UseLocalProcessForStreamChatTooling { get; set; }
-    /// <summary>为 true 时主会话「上下文准备」阶段（摘要/记忆/RAG/计划注入等）也经 Process 执行。</summary>
-    public bool UseLocalProcessForStreamChatContext { get; set; }
     /// <summary>主模型流式前增加轻量 Host Agent，输出走 agent_trace；可临时影响本轮 <c>historyToUse</c>。</summary>
     public bool UseHostPreambleAgent { get; set; }
     /// <summary>主会话使用 Host + Worker 多 Agent 路径（现为 MAF 工作流/编排）；延迟与 token 消耗显著增加，实验用。</summary>
@@ -286,8 +282,6 @@ public class SemanticKernelFeaturesConfig
         return new SemanticKernelFeaturesConfig
         {
             UseChatCompletionAgentForSubtask = src.UseChatCompletionAgentForSubtask,
-            UseLocalProcessForStreamChatTooling = src.UseLocalProcessForStreamChatTooling,
-            UseLocalProcessForStreamChatContext = src.UseLocalProcessForStreamChatContext,
             UseHostPreambleAgent = src.UseHostPreambleAgent,
             UseAgentGroupChatMainSession = src.UseAgentGroupChatMainSession
         };

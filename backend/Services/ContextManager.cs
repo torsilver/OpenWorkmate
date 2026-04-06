@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.DashScope;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -121,73 +120,6 @@ public sealed class ContextManager
             history.RemoveAt(start);
             total -= removed;
         }
-    }
-
-    /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换为带 <see cref="ConversationCompactBoundary"/> 的单条用户消息。</summary>
-    public static async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> SummarizeOldTurnsCoreAsync(
-        List<ChatMessage> history, IChatClient chatClient,
-        ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
-    {
-        const int maxTurnsToSummarize = 6;
-        var toTake = Math.Min(maxTurnsToSummarize * 2, history.Count - 1);
-        if (toTake < 4)
-            return (false, 0, 0);
-        var sb = new System.Text.StringBuilder();
-        for (var i = 1; i <= toTake && i < history.Count; i++)
-        {
-            var msg = history[i];
-            var role = msg.Role.Value ?? "unknown";
-            var content = msg.Text ?? "";
-            sb.AppendLine($"[{role}] {content}");
-        }
-        var input = sb.ToString().Trim();
-        if (input.Length == 0)
-            return (false, 0, 0);
-
-        if (!string.IsNullOrEmpty(offloadDirectory))
-        {
-            try
-            {
-                Directory.CreateDirectory(offloadDirectory);
-                var safeName = string.Join("_", (sessionId ?? "").Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
-                if (string.IsNullOrEmpty(safeName)) safeName = "session";
-                var path = Path.Combine(offloadDirectory, safeName + ".md");
-                var section = $"\n\n## Summarized at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z\n\n{input}\n\n";
-                await File.AppendAllTextAsync(path, section, ct).ConfigureAwait(false);
-            }
-            catch { /* offload best-effort */ }
-        }
-
-        var maxChars = Math.Max(100, Math.Min(ctx.SummarizationMaxSummaryChars, 2000));
-        var systemPrompt =
-            $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。"
-            + " 摘要中不要断言「当前文件里仍是…」「文档现在一定…」等磁盘实时状态；优先概括用户曾提出的要求、助手曾执行的操作与结论，并可用「当时曾…」表述，避免读者把摘要当作此刻本机文件的真相。";
-        var summaryMessages = new List<ChatMessage>
-        {
-            new(ChatRole.System, systemPrompt),
-            new(ChatRole.User, input)
-        };
-        var options = new ChatOptions { MaxOutputTokens = 800, Temperature = 0.2f };
-        var summaryBuilder = new System.Text.StringBuilder();
-        using (DashScopeCallKindContext.EnterBackground())
-        {
-            await foreach (var update in chatClient.GetStreamingResponseAsync(summaryMessages, options, ct).ConfigureAwait(false))
-            {
-                if (update.Text is { Length: > 0 } text)
-                    summaryBuilder.Append(text);
-            }
-        }
-        var summary = summaryBuilder.ToString().Trim();
-        if (string.IsNullOrEmpty(summary))
-            return (false, 0, 0);
-        if (summary.Length > ctx.SummarizationMaxSummaryChars)
-            summary = summary.AsSpan(0, ctx.SummarizationMaxSummaryChars).ToString() + "…";
-        for (var i = 0; i < toTake; i++)
-            history.RemoveAt(1);
-        var body = ConversationCompactBoundary.BuildSummaryMessageBody(summary, DateTimeOffset.UtcNow);
-        history.Insert(1, new ChatMessage(ChatRole.User, body));
-        SessionAuditLog.TryAppend(ctx, sessionId ?? "", "compact_applied", new { messagesRemoved = toTake, summaryChars = summary.Length });
-        return (true, toTake, summary.Length);
     }
 
     public static bool IsContextLengthError(Exception ex)

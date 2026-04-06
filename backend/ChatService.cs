@@ -11,6 +11,7 @@ using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.ScheduledTask;
+using OfficeCopilot.Server.Services.ContextProviders;
 using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Services.Chat;
@@ -37,12 +38,9 @@ public sealed partial class ChatService : IDisposable
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly AgentDebugStatsService _agentDebugStats;
-    private readonly ChatToolingRegistry _chatToolingRegistry;
-    private readonly MafSubtaskChatClientAgentRunner _mafSubtaskAgentRunner;
-    private readonly IChatTurnProcessCoordinator _turnCoordinator;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, ChatToolingRegistry chatToolingRegistry, MafSubtaskChatClientAgentRunner mafSubtaskAgentRunner, IChatTurnProcessCoordinator turnCoordinator)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -57,9 +55,6 @@ public sealed partial class ChatService : IDisposable
         _embeddingProvider = embeddingProvider;
         _planStore = planStore;
         _agentDebugStats = agentDebugStats;
-        _chatToolingRegistry = chatToolingRegistry;
-        _mafSubtaskAgentRunner = mafSubtaskAgentRunner;
-        _turnCoordinator = turnCoordinator;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -403,9 +398,6 @@ public sealed partial class ChatService : IDisposable
         if (string.IsNullOrEmpty(activeId) || entries.All(e => !string.Equals(e.Id, activeId, StringComparison.OrdinalIgnoreCase)))
             activeId = entries.Count > 0 ? entries[0].Id : "default";
 
-        var pipelineServices = _serviceProvider.GetRequiredService<Services.ToolInvocation.ToolInvocationPipelineServices>();
-        toolRegistry.WrapAllTools(pipelineServices);
-
         lock (_runtimeLock)
         {
             _activeModelId = activeId;
@@ -421,8 +413,7 @@ public sealed partial class ChatService : IDisposable
             _ = SyncUserToolIndexInBackgroundAsync(toolRegistry);
     }
 
-    /// <summary>直接从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>，不经过 SK。
-    /// OpenAI SDK v2.5+ 的 <c>ChatClient</c> 直接实现 <see cref="IChatClient"/>。</summary>
+    /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
     private IChatClient CreateDirectChatClient(string entryId, string modelId, string apiKey, Uri? endpointUri)
     {
         var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>());
@@ -436,11 +427,10 @@ public sealed partial class ChatService : IDisposable
         var credential = new System.ClientModel.ApiKeyCredential(
             string.IsNullOrEmpty(apiKey) ? "placeholder" : apiKey);
         var openAiClient = new OpenAI.OpenAIClient(credential, options);
-        return (IChatClient)openAiClient.GetChatClient(modelId);
+        return openAiClient.GetChatClient(modelId).AsIChatClient();
     }
 
-    /// <summary>直接从 OpenAI SDK 创建 MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>，不经过 SK。
-    /// OpenAI SDK v2.5+ 的 <c>EmbeddingClient</c> 提供到 <see cref="IEmbeddingGenerator{String, Embedding}"/> 的显式转换。</summary>
+    /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
     private IEmbeddingGenerator<string, Embedding<float>> CreateDirectEmbeddingGenerator(string modelId, string apiKey, Uri endpointUri)
     {
         var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>());
@@ -453,7 +443,7 @@ public sealed partial class ChatService : IDisposable
         var credential = new System.ClientModel.ApiKeyCredential(
             string.IsNullOrEmpty(apiKey) ? "placeholder" : apiKey);
         var openAiClient = new OpenAI.OpenAIClient(credential, options);
-        return (IEmbeddingGenerator<string, Embedding<float>>)openAiClient.GetEmbeddingClient(modelId);
+        return openAiClient.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(null);
     }
 
     /// <summary>后台增量同步用户工具索引（配置/技能变更后）；不阻塞请求。</summary>
@@ -615,115 +605,15 @@ public sealed partial class ChatService : IDisposable
             };
 
             var skFeat = _configService.Current.SemanticKernel;
-            var ctxProc = skFeat?.UseLocalProcessForStreamChatContext == true;
-            var toolProc = skFeat?.UseLocalProcessForStreamChatTooling == true;
 
-            async Task RunContextBothPartsAsync()
-            {
-                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
-                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
-            }
+            var workflow = Services.Chat.Executors.ChatTurnWorkflow.Build(_serviceProvider);
+            await Services.Chat.Executors.ChatTurnWorkflow.RunAsync(workflow, turn, ct).ConfigureAwait(false);
 
-            async Task RunToolingAsync() =>
-                await _turnCoordinator.RunToolingPhaseAsync(turn, ct).ConfigureAwait(false);
+            foreach (var w in turn.ContextWarnings)
+                yield return new StreamItem(IsWarning: true, Content: w);
+            turn.ContextWarnings.Clear();
 
-            if (ctxProc && toolProc)
-            {
-                var correlationId = Guid.NewGuid().ToString("N");
-                _chatToolingRegistry.Register(correlationId, RunContextBothPartsAsync, RunToolingAsync);
-                var fullProcessFailed = false;
-                try
-                {
-                    await _chatToolingRegistry.RunFullStreamChatProcessAsync(correlationId, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[{SessionId}] SK Process 全阶段失败，回退内联。", sessionId);
-                    fullProcessFailed = true;
-                }
-                finally
-                {
-                    _chatToolingRegistry.Unregister(correlationId);
-                }
-                if (fullProcessFailed)
-                {
-                    await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
-                    foreach (var w in turn.ContextWarnings)
-                        yield return new StreamItem(IsWarning: true, Content: w);
-                    turn.ContextWarnings.Clear();
-                    await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
-                    await RunToolingAsync().ConfigureAwait(false);
-                }
-                else
-                {
-                    foreach (var w in turn.ContextWarnings)
-                        yield return new StreamItem(IsWarning: true, Content: w);
-                    turn.ContextWarnings.Clear();
-                }
-            }
-            else if (ctxProc && !toolProc)
-            {
-                var correlationId = Guid.NewGuid().ToString("N");
-                _chatToolingRegistry.Register(correlationId, RunContextBothPartsAsync, null);
-                var contextProcessFailed = false;
-                try
-                {
-                    await _chatToolingRegistry.RunContextOnlyProcessAsync(correlationId, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[{SessionId}] SK Process 上下文阶段失败，回退内联。", sessionId);
-                    contextProcessFailed = true;
-                }
-                finally
-                {
-                    _chatToolingRegistry.Unregister(correlationId);
-                }
-                if (contextProcessFailed)
-                {
-                    await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
-                    foreach (var w in turn.ContextWarnings)
-                        yield return new StreamItem(IsWarning: true, Content: w);
-                    turn.ContextWarnings.Clear();
-                    await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
-                }
-                foreach (var w in turn.ContextWarnings)
-                    yield return new StreamItem(IsWarning: true, Content: w);
-                turn.ContextWarnings.Clear();
-                await RunToolingAsync().ConfigureAwait(false);
-            }
-            else if (!ctxProc && toolProc)
-            {
-                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
-                foreach (var w in turn.ContextWarnings)
-                    yield return new StreamItem(IsWarning: true, Content: w);
-                turn.ContextWarnings.Clear();
-                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
-                var correlationId = Guid.NewGuid().ToString("N");
-                _chatToolingRegistry.Register(correlationId, RunToolingAsync);
-                try
-                {
-                    await _chatToolingRegistry.RunToolingProcessAsync(correlationId, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[{SessionId}] SK Process 工具阶段失败，回退内联执行。", sessionId);
-                    await RunToolingAsync().ConfigureAwait(false);
-                }
-                finally
-                {
-                    _chatToolingRegistry.Unregister(correlationId);
-                }
-            }
-            else
-            {
-                await _turnCoordinator.RunContextPreparationPart1Async(turn, ct).ConfigureAwait(false);
-                foreach (var w in turn.ContextWarnings)
-                    yield return new StreamItem(IsWarning: true, Content: w);
-                turn.ContextWarnings.Clear();
-                await _turnCoordinator.RunContextPreparationPart2Async(turn, ct).ConfigureAwait(false);
-                await RunToolingAsync().ConfigureAwait(false);
-            }
+            var contextProviders = BuildContextProviders(turn, sessionManagerForStatus);
 
             var fullResponse = new System.Text.StringBuilder();
 
@@ -828,6 +718,7 @@ public sealed partial class ChatService : IDisposable
                                            streamOutcome,
                                            attempt,
                                            requireToolInvocation: false,
+                                           contextProviders: contextProviders,
                                            ct).ConfigureAwait(false))
                         {
                             if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
@@ -902,7 +793,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: true,
-                                               ct).ConfigureAwait(false))
+                                               ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
                                     fullResponse.Append(streamItem.Content);
@@ -944,7 +835,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: false,
-                                               ct).ConfigureAwait(false))
+                                               ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
                                     fullResponse.Append(streamItem.Content);
@@ -1004,7 +895,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: true,
-                                               ct).ConfigureAwait(false))
+                                               ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
                                     fullResponse.Append(streamItem.Content);
@@ -1046,7 +937,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: false,
-                                               ct).ConfigureAwait(false))
+                                               ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
                                     fullResponse.Append(streamItem.Content);
@@ -1109,17 +1000,6 @@ public sealed partial class ChatService : IDisposable
                 && (msg.Contains("tools", StringComparison.OrdinalIgnoreCase) || msg.Contains("function", StringComparison.OrdinalIgnoreCase)));
     }
 
-    /// <summary>将最旧若干轮（最多 6 轮）压缩为一段摘要并替换为一条消息；若配置了落盘目录则先将被压缩的原文追加写入会话历史文件。</summary>
-    private async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> TrySummarizeOldTurnsAsync(List<ChatMessage> history, ContextWindowConfig ctx, string sessionId, CancellationToken ct)
-    {
-        var chatClient = _runtime.GetChatClient();
-        if (chatClient == null) return (false, 0, 0);
-        var dir = GetConversationHistoryDirectory(ctx);
-        var r = await ContextManager.SummarizeOldTurnsCoreAsync(history, chatClient, ctx, sessionId, dir, ct).ConfigureAwait(false);
-        if (r.DidCompact)
-            _logger.LogDebug("[{SessionId}] Summarized {MessagesRemoved} messages into one block.", sessionId, r.MessagesRemoved);
-        return r;
-    }
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
     public async Task<string> RunSubtaskAsync(string sessionId, string taskDescription, string? constraints, CancellationToken ct = default)
@@ -1181,20 +1061,30 @@ public sealed partial class ChatService : IDisposable
             }).ConfigureAwait(false);
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await _mafSubtaskAgentRunner.RunStreamingAsync(
-                    chatClient,
-                    _runtime.GetPluginServices() ?? _serviceProvider,
-                    allowedTools,
-                    systemPrompt,
-                    userContent,
-                    async text =>
+                var pluginServices = _serviceProvider.GetRequiredService<Services.ToolInvocation.ToolInvocationPipelineServices>();
+                var chatOpts = Services.Maf.MafChatOptionsMapper.ToChatOptions(settings, allowedTools);
+                chatOpts.Instructions = systemPrompt;
+                var agentOpts = new Microsoft.Agents.AI.ChatClientAgentOptions { ChatOptions = chatOpts };
+                var subtaskAgent = new Microsoft.Agents.AI.ChatClientAgent(chatClient, agentOpts, _loggerFactory, _runtime.GetPluginServices() ?? _serviceProvider)
+                    .AsBuilder()
+                    .Use(Services.ToolInvocation.ToolInvocationMiddleware.Create(_runtime.ToolRegistry, pluginServices))
+                    .Build();
+                var subtaskSession = await subtaskAgent.CreateSessionAsync(timeoutCts.Token).ConfigureAwait(false);
+                var subtaskMessages = new List<ChatMessage> { new(ChatRole.User, userContent) };
+                var runOpts = new Microsoft.Agents.AI.ChatClientAgentRunOptions(chatOpts);
+                var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
+                var callState = new Dictionary<string, (string Name, string ArgsSoFar)>(StringComparer.Ordinal);
+                await foreach (var update in subtaskAgent.RunStreamingAsync(subtaskMessages, subtaskSession, runOpts, timeoutCts.Token).ConfigureAwait(false))
+                {
+                    foreach (var d in Services.Maf.MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolCallArgBudget, callState))
+                        await SendSubtaskToolDeltaAsync(d).ConfigureAwait(false);
+                    var text = update.Text;
+                    if (text is { Length: > 0 })
                     {
                         fullResponse.Append(text);
                         await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_chunk", Content = text }).ConfigureAwait(false);
-                    },
-                    settings,
-                    timeoutCts.Token,
-                    onToolCallDeltaAsync: SendSubtaskToolDeltaAsync).ConfigureAwait(false);
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -1241,7 +1131,7 @@ public sealed partial class ChatService : IDisposable
         }
     }
 
-    /// <summary>供 compact_conversation 工具调用：主动压缩当前会话的最旧若干轮为摘要。返回可展示给模型的结果文案。</summary>
+    /// <summary>供 compact_conversation 工具调用：主动压缩当前会话的最旧若干轮为摘要（MAF Compaction）。返回可展示给模型的结果文案。</summary>
     public async Task<string> CompactConversationAsync(string sessionId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -1252,50 +1142,33 @@ public sealed partial class ChatService : IDisposable
         var chatClient = _runtime.GetChatClient();
         if (chatClient == null)
             return "[错误] 未找到对话服务。";
-        var dir = GetConversationHistoryDirectory(ctx);
-        var (didCompact, messagesRemoved, _) = await ContextManager.SummarizeOldTurnsCoreAsync(state.History, chatClient, ctx, sessionId, dir, ct).ConfigureAwait(false);
-        if (didCompact)
-        {
-            var sessionManager = _serviceProvider.GetService<SessionManager>();
-            if (sessionManager != null && messagesRemoved > 0)
-            {
-                var summaryLen = state.History.Count > 1 ? (state.History[1].Text?.Length ?? 0) : 0;
-                var offloadConfigured = !string.IsNullOrWhiteSpace(dir);
-                var ctxTrace = AgentTraceFormatter.BuildContextSummarizationSuccessTrace(messagesRemoved, summaryLen, ctx, offloadConfigured);
-                await NotifyAgentTraceAsync(sessionManager, sessionId, "context", ctxTrace.Title, ctxTrace.Detail, ct).ConfigureAwait(false);
-            }
-            var turns = Math.Max(1, messagesRemoved / 2);
-            return $"[已压缩] 已将最近约 {turns} 轮对话合并为一段摘要，上下文已释放。";
-        }
         if (state.History.Count <= 3)
             return "[无需压缩] 当前对话轮次较少，无需压缩。";
+        var beforeCount = state.History.Count;
+#pragma warning disable MAAI001
+        var strategy = BuildCompactionStrategy(chatClient, triggerTokens: 0, budgetTokens: 0);
+        var compacted = await Microsoft.Agents.AI.Compaction.CompactionProvider.CompactAsync(
+            strategy, state.History, _logger, ct).ConfigureAwait(false);
+#pragma warning restore MAAI001
+        var compactedList = compacted.ToList();
+        if (compactedList.Count < beforeCount)
+        {
+            var removed = beforeCount - compactedList.Count;
+            state.History.Clear();
+            state.History.AddRange(compactedList);
+            var sessionManager = _serviceProvider.GetService<SessionManager>();
+            if (sessionManager != null)
+            {
+                await NotifyAgentTraceAsync(sessionManager, sessionId, "context",
+                    $"手动压缩：{removed} 条消息已整理",
+                    $"压缩前 {beforeCount} 条 → 压缩后 {compactedList.Count} 条", ct).ConfigureAwait(false);
+            }
+            var turns = Math.Max(1, removed / 2);
+            return $"[已压缩] 已将约 {turns} 轮对话合并/整理，上下文已释放。";
+        }
         return "[未压缩] 当前对话轮次或内容不足，未执行压缩。";
     }
 
-    /// <summary>解析摘要落盘目录：优先 ContextWindow.ConversationHistoryDirectory，否则与 PlansDirectory 同级的 ConversationHistory，再否则 %LocalAppData%/OfficeCopilot/ConversationHistory。</summary>
-    private string? GetConversationHistoryDirectory(ContextWindowConfig ctx)
-    {
-        var dir = (ctx.ConversationHistoryDirectory ?? "").Trim();
-        if (dir.Length > 0)
-        {
-            dir = Environment.ExpandEnvironmentVariables(dir);
-            if (!Path.IsPathRooted(dir))
-                dir = Path.Combine(AppContext.BaseDirectory, dir);
-            return dir;
-        }
-        var plansDir = (_configService.Current.PlansDirectory ?? "").Trim();
-        if (plansDir.Length > 0)
-        {
-            plansDir = Environment.ExpandEnvironmentVariables(plansDir);
-            if (!Path.IsPathRooted(plansDir))
-                plansDir = Path.Combine(AppContext.BaseDirectory, plansDir);
-            var parent = Path.GetDirectoryName(plansDir);
-            if (!string.IsNullOrEmpty(parent))
-                return Path.Combine(parent, "ConversationHistory");
-        }
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return string.IsNullOrEmpty(appData) ? null : Path.Combine(appData, "OfficeCopilot", "ConversationHistory");
-    }
 
     /// <summary>估算整个历史的 token 总数，含图片的视觉 token 估算。</summary>
     private static int EstimateHistoryTokens(IList<ChatMessage> history, ContextWindowConfig ctx) =>
@@ -1463,6 +1336,39 @@ public sealed partial class ChatService : IDisposable
         if (string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase))
             return "你是 PowerPoint 侧助手，负责当前打开的 PowerPoint 演示文稿；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         return "";
+    }
+
+    /// <summary>按当前 turn 状态构建 MAF <see cref="MessageAIContextProvider"/> 数组，供主会话 Agent 注入上下文。</summary>
+    private MessageAIContextProvider[] BuildContextProviders(Services.Chat.StreamChatTurnContext turn, SessionManager sm)
+    {
+        var providers = new List<MessageAIContextProvider>();
+
+        var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
+        if (memorySvc?.IsAvailable == true)
+        {
+            providers.Add(new MemoryContextProvider(
+                memorySvc, turn.UserMessage, turn.SessionId, turn.CtxConfig, sm, _logger, turn.ContextWarnings));
+
+            if (!string.IsNullOrWhiteSpace(turn.KnowledgeBaseId))
+            {
+                providers.Add(new KnowledgeBaseContextProvider(
+                    memorySvc, turn.KnowledgeBaseId!.Trim(), turn.UserMessage, turn.SessionId, sm, _logger, turn.ContextWarnings));
+            }
+        }
+
+        var taskStore = _serviceProvider.GetService<ICrossAgentTaskStore>();
+        if (taskStore != null)
+        {
+            providers.Add(new CrossAgentTaskContextProvider(taskStore, sm, turn.SessionId, _logger));
+        }
+
+        if (!string.IsNullOrWhiteSpace(turn.PlanId))
+        {
+            providers.Add(new PlanContextProvider(
+                () => turn.PlanResult, turn.PlanCurrentStepIndex, turn.CtxConfig.PlanContentMaxChars));
+        }
+
+        return providers.ToArray();
     }
 
     private static bool IsOfficeOrWpsClient(string? clientType)

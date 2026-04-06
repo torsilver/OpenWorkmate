@@ -1,14 +1,18 @@
 using System.Text;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
 
-/// <summary>主会话实验路径：Host + Worker 各一轮（MAF ChatClientAgent），流式输出映射为 <see cref="StreamItem"/>。</summary>
+/// <summary>
+/// 主会话 Host + Worker 多 Agent 编排（MAF <see cref="AgentWorkflowBuilder.BuildSequential"/>）。
+/// Host 输出走 <c>agent_trace</c>，Worker 输出流式 yield 给用户。
+/// </summary>
 public static class MafAgentGroupChatSessionRunner
 {
     public static async IAsyncEnumerable<StreamItem> InvokeStreamingAsync(
@@ -48,61 +52,69 @@ public static class MafAgentGroupChatSessionRunner
             ? "你是执行助手 Worker：根据对话与可用工具完成用户任务，向用户输出最终可用答案。"
             : systemText + "\n\n你是执行助手 Worker：根据对话与可用工具完成用户任务，向用户输出最终可用答案。";
 
-        var hostMessages = new List<ChatMessage>(msgs);
-
+        // --- Build agents ---
         var hostOpts = new ChatClientAgentOptions
         {
-            ChatOptions = new ChatOptions
-            {
-                MaxOutputTokens = 384,
-                Temperature = 0.2f,
-                Instructions = hostPreamble,
-            },
+            Name = "Host",
+            ChatOptions = new ChatOptions { MaxOutputTokens = 384, Temperature = 0.2f, Instructions = hostPreamble },
         };
         var hostAgent = new ChatClientAgent(chatClient, hostOpts, loggerFactory, pluginServices);
-        var hostSession = await hostAgent.CreateSessionAsync(ct).ConfigureAwait(false);
-        var hostRun = new ChatClientAgentRunOptions(hostOpts.ChatOptions ?? new ChatOptions());
-        var hostSb = new StringBuilder();
-        await foreach (var u in hostAgent.RunStreamingAsync(hostMessages, hostSession, hostRun, ct).ConfigureAwait(false))
-        {
-            if (u.Text is { Length: > 0 } ht)
-                hostSb.Append(ht);
-        }
-        var hostCombined = hostSb.ToString().Trim();
-        if (hostCombined.Length > 0)
-            await NotifyTraceAsync(sessionManager, sessionId, hostCombined, ct).ConfigureAwait(false);
-
-        var workerMessages = new List<ChatMessage>(msgs)
-        {
-            new(ChatRole.Assistant, hostCombined)
-        };
 
         var clientType = sessionManager.GetClientType(sessionId);
         var tools = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
-
         var workerChatOpts = MafChatOptionsMapper.ToChatOptions(workerBaseChatOptions, tools);
         workerChatOpts.Instructions = workerPreamble;
         var workerAgentOpts = new ChatClientAgentOptions
         {
+            Name = "Worker",
             ChatOptions = workerChatOpts,
         };
-        var workerAgent = new ChatClientAgent(chatClient, workerAgentOpts, loggerFactory, pluginServices);
-        var workerSession = await workerAgent.CreateSessionAsync(ct).ConfigureAwait(false);
-        var workerRun = new ChatClientAgentRunOptions(workerChatOpts);
+        var pipelineServices = pluginServices.GetRequiredService<ToolInvocationPipelineServices>();
+        var toolRegistry = runtime.ToolRegistry;
+        var workerAgent = new ChatClientAgent(chatClient, workerAgentOpts, loggerFactory, pluginServices)
+            .AsBuilder()
+            .Use(ToolInvocationMiddleware.Create(toolRegistry, pipelineServices))
+            .Build();
+
+        // --- Build sequential workflow ---
+        var workflow = AgentWorkflowBuilder.BuildSequential([hostAgent, workerAgent]);
+
         var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
         var callState = new Dictionary<string, (string Name, string ArgsSoFar)>(StringComparer.Ordinal);
+        var hostSb = new StringBuilder();
 
-        await foreach (var streaming in workerAgent.RunStreamingAsync(workerMessages, workerSession, workerRun, ct).ConfigureAwait(false))
+        await using var run = await InProcessExecution.RunStreamingAsync(workflow, msgs, cancellationToken: ct).ConfigureAwait(false);
+        await foreach (var evt in run.WatchStreamAsync(ct).ConfigureAwait(false))
         {
-            foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(streaming, toolCallArgBudget, callState))
-                yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+            if (evt is AgentResponseUpdateEvent updateEvt)
+            {
+                var isHost = updateEvt.ExecutorId?.Contains("Host", StringComparison.OrdinalIgnoreCase) == true;
 
-            foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
-                yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+                if (isHost)
+                {
+                    if (updateEvt.Update?.Text is { Length: > 0 } ht)
+                        hostSb.Append(ht);
+                }
+                else
+                {
+                    var streaming = updateEvt.Update;
+                    if (streaming == null) continue;
 
-            if (streaming.Text is { Length: > 0 } text)
-                yield return new StreamItem(IsWarning: false, Content: text);
+                    foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(streaming, toolCallArgBudget, callState))
+                        yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+
+                    foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                        yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+
+                    if (streaming.Text is { Length: > 0 } text)
+                        yield return new StreamItem(IsWarning: false, Content: text);
+                }
+            }
         }
+
+        var hostCombined = hostSb.ToString().Trim();
+        if (hostCombined.Length > 0)
+            await NotifyTraceAsync(sessionManager, sessionId, hostCombined, ct).ConfigureAwait(false);
     }
 
     private static async Task NotifyTraceAsync(SessionManager sessionManager, string sessionId, string detail, CancellationToken ct)

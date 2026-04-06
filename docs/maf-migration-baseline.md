@@ -1,11 +1,11 @@
 # MAF 迁移基线
 
-生成时间：Phase F 完成后更新。
+生成时间：Phase J 完成后更新。
 
 ## 测试基线
 
 - 命令：`dotnet test backend.Tests/backend.Tests.csproj`
-- **最近一次全绿计数**：318（`net10.0`，Unit）。
+- **最近一次全绿计数**：354（`net10.0`，Unit + Integration）。
 
 ## 完全 MAF 迁移进度（摘要）
 
@@ -24,7 +24,7 @@
 | 工具索引 | `IToolIndexService.BuildIndexAsync(ToolRegistry)` / `SyncUserToolIndexAsync(ToolRegistry)`。 |
 | MCP | `McpKernelPlugin.BuildMcpAIToolsAsync()` 产出 `IReadOnlyList<AITool>`，注册到 `ToolRegistry`。 |
 | UserSkill (Prompt) | `AIFunctionFactory.Create` 包装为 `AIFunction`，通过 `IChatClient` 执行。 |
-| 横切（安全/会话/tool 状态） | `ToolInvocationPipelineFunction` → `SecurityPipeline`（HITL/白名单）→ SessionContext 注入 → `ToolStatusNotifier`（前端推送/审计）。所有工具在 `ToolRegistry.WrapAllTools()` 时自动包装。 |
+| 横切（安全/会话/tool 状态） | **MAF Function Calling Middleware** (`ToolInvocationMiddleware.Create`) → `SecurityPipeline`（HITL/白名单）→ SessionContext 注入 → `ToolStatusNotifier`（前端推送/审计）。通过 `agent.AsBuilder().Use(middleware).Build()` 注册到每个 `ChatClientAgent`，无需手动包装工具。 |
 | SK 过滤器 | **已删除** — `FunctionInvocationGatewayFilter`、`SecurityFilter`、`SessionContextFilter`、`ToolStatusFilter` 文件已移除。 |
 | `MafChatHistoryConverter` | **已删除** — 不再需要 SK↔MEAI 消息转换。 |
 
@@ -35,6 +35,9 @@
 | `Microsoft.Agents.AI` | 1.0.0 |
 | `Microsoft.Agents.AI.OpenAI` | 1.0.0 |
 | `Microsoft.Agents.AI.Workflows` | 1.0.0 |
+| `Microsoft.Agents.AI.DevUI` | 1.0.0-preview |
+| `Microsoft.Agents.AI.Hosting` | 1.0.0-preview |
+| `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore` | 1.0.0-preview |
 | `Microsoft.Extensions.AI` | 10.4.0 |
 
 ## DashScope / 推理流（迁移时需逐项对照）
@@ -44,6 +47,10 @@
 - [ ] 非流式路径与工具调用一致性
 - [ ] `DashScopeCallKindContext` / 后台调用分类
 
-## 后续待办
-
-1. **MAF Workflows 进阶**（可选）：将 `ChatToolingRegistry` 的 context/tooling 编排升级为 `WorkflowBuilder + InProcessExecution`。
+| 主会话阶段编排 | **MAF Workflows** (`ChatTurnWorkflow` → `FunctionExecutor` × 3 → `InProcessExecution.Default.RunAsync`)，替代旧 `ChatToolingRegistry`+`IChatTurnProcessCoordinator`（已删除）。内置 OpenTelemetry 可观测性。 |
+| 上下文注入（记忆/知识库/计划/跨端） | **MAF `MessageAIContextProvider`**（`MemoryContextProvider`、`KnowledgeBaseContextProvider`、`PlanContextProvider`、`CrossAgentTaskContextProvider`），通过 `agent.AsBuilder().UseAIContextProviders(...)` 注册到主会话 `ChatClientAgent`。每轮按需创建，各 Provider 独立检索数据并返回额外 system 消息。原 `ChatService.StreamPhases` 中对 `state.History[0]` 的手工拼接已移除。 |
+| DevUI 开发调试面板 | **MAF DevUI**（`Microsoft.Agents.AI.DevUI` preview），仅开发环境启用。`builder.AddAIAgent` 注册 OfficeCopilot Agent，`RuntimeDelegatingChatClient` 桥接运行时动态 `IChatClient`。访问 `/devui` 可视化测试 Agent。 |
+| Compaction 内置摘要压缩 | **MAF `PipelineCompactionStrategy`**（`ToolResultCompactionStrategy` → `SummarizationCompactionStrategy` → `TruncationCompactionStrategy`），替代自定义 `TrySummarizeOldTurnsAsync` + `SummarizeOldTurnsCoreAsync`。通过 `CompactionProvider.CompactAsync` ad-hoc 应用。 |
+| GroupChat 编排 | **MAF `AgentWorkflowBuilder.BuildSequential`** 替代手写 Host+Worker 两阶段循环。通过 `AgentResponseUpdateEvent.ExecutorId` 区分 Host/Worker 流式输出。 |
+| Workflow Checkpoint | **MAF `CheckpointManager.CreateInMemory()`** 集成到 `ChatTurnWorkflow.RunAsync`。`HitlWorkflowContracts` + `WorkflowHitlBridge` 为 HITL→RequestPort 迁移预置基础设施。 |
+| AG-UI 标准协议 | **MAF AG-UI** SSE 端点（`/agui`），仅开发环境启用，与 WebSocket 双轨运行。`AgUiEventMapping` 记录 WS→AG-UI 事件映射。 |

@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -120,20 +119,18 @@ public sealed class ToolRegistry
         return list;
     }
 
-    /// <summary>
-    /// 用 <see cref="ToolInvocationPipelineFunction"/> 包装注册表中每个 <see cref="AIFunction"/>，
-    /// 注入安全检查、SessionContext 注入和工具状态推送。
-    /// </summary>
-    public void WrapAllTools(ToolInvocationPipelineServices pipelineServices)
+    /// <summary>按 functionName 反查 pluginName（用于 MAF middleware 中获取 plugin 分组信息）。</summary>
+    public bool TryGetPluginName(string functionName, out string pluginName)
     {
-        foreach (var (pluginName, funcs) in _plugins)
+        foreach (var (plugin, funcs) in _plugins)
         {
-            var keys = funcs.Keys.ToList();
-            foreach (var funcName in keys)
+            if (funcs.ContainsKey(functionName))
             {
-                if (funcs[funcName] is AIFunction inner)
-                    funcs[funcName] = new ToolInvocationPipelineFunction(inner, pluginName, pipelineServices);
+                pluginName = plugin;
+                return true;
             }
         }
+        pluginName = "";
+        return false;
     }
 }

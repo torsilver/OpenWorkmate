@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Diagnostics;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
 
@@ -26,6 +28,7 @@ public static class MafMainSessionStreamRunner
         StreamPassOutcome outcome,
         int contextAttemptIndex,
         bool requireToolInvocation = false,
+        MessageAIContextProvider[]? contextProviders = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
@@ -42,7 +45,16 @@ public static class MafMainSessionStreamRunner
             ChatOptions = chatOpts,
         };
 
-        var agent = new ChatClientAgent(chatClient, agentOpts, loggerFactory, services);
+        var pipelineServices = services.GetRequiredService<ToolInvocationPipelineServices>();
+        var toolRegistry = runtime.ToolRegistry;
+        var allowContextRetry = contextAttemptIndex == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled;
+        var builder = new ChatClientAgent(chatClient, agentOpts, loggerFactory, services)
+            .AsBuilder()
+            .Use(ToolInvocationMiddleware.Create(toolRegistry, pipelineServices))
+            .Use(AgentRunMiddleware.CreateContextLengthRetry(state, ctxConfig, outcome, allowContextRetry));
+        if (contextProviders is { Length: > 0 })
+            builder = builder.UseAIContextProviders(contextProviders);
+        var agent = builder.Build();
         var session = await agent.CreateSessionAsync(ct).ConfigureAwait(false);
         var messages = history;
         var runOpts = new ChatClientAgentRunOptions(chatOpts);
@@ -50,27 +62,8 @@ public static class MafMainSessionStreamRunner
         var toolBudget = new Dictionary<string, int>(StringComparer.Ordinal);
         var callState = new Dictionary<string, (string Name, string ArgsSoFar)>(StringComparer.Ordinal);
 
-        var allowContextRetry = contextAttemptIndex == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled;
-
-        await using var enumerator = agent.RunStreamingAsync(messages, session, runOpts, ct).GetAsyncEnumerator(ct);
-        while (true)
+        await foreach (var update in agent.RunStreamingAsync(messages, session, runOpts, ct).ConfigureAwait(false))
         {
-            bool moved;
-            try
-            {
-                moved = await enumerator.MoveNextAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex) when (allowContextRetry && ContextLengthRetryHelper.IsContextLengthError(ex))
-            {
-                ContextLengthRetryHelper.TrimHistoryForRetry(state.History, ctxConfig.ContextLengthRetryMaxTurns, ctxConfig);
-                outcome.ContextLengthRetryRequested = true;
-                yield break;
-            }
-
-            if (!moved)
-                break;
-
-            var update = enumerator.Current;
 
             foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
                 yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);

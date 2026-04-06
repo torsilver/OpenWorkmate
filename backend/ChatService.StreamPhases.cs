@@ -1,210 +1,95 @@
-using System.Linq;
 using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.CrossAgentTask;
-using OfficeCopilot.Server.Services.Memory;
-using OfficeCopilot.Server.Services.Plan;
 using OfficeCopilot.Server.Services.Chat;
+
+#pragma warning disable MAAI001 // Compaction API is experimental
 
 namespace OfficeCopilot.Server;
 
 public sealed partial class ChatService
 {
-    /// <summary>上下文阶段 Part1：预算/摘要/截断、记忆与知识库；警告写入 <see cref="StreamChatTurnContext.ContextWarnings"/>（在 Part2 之前由调用方 yield）。</summary>
+    /// <summary>上下文阶段 Part1：预算 + MAF Compaction（摘要/工具结果折叠/截断）。记忆与知识库已迁移到 MAF <c>MessageAIContextProvider</c>。</summary>
     internal async Task RunStreamChatContextPhasePart1Async(StreamChatTurnContext turn, CancellationToken ct)
     {
         var sessionId = turn.SessionId;
         var sessionManagerForStatus = turn.SessionManager;
         var state = turn.State;
         var ctxConfig = turn.CtxConfig;
-        var userMessage = turn.UserMessage;
-        var knowledgeBaseId = turn.KnowledgeBaseId;
 
         var historyBudget = GetEffectiveMaxContextTokens()
             - ctxConfig.ReservedSystemTokens
             - ctxConfig.ReservedToolsTokens
             - ctxConfig.ReservedOutputTokens;
 
-        if (historyBudget > 0 && !ctxConfig.PassThroughContext)
+        if (historyBudget > 0 && !ctxConfig.PassThroughContext && ctxConfig.SummarizationEnabled && state.History.Count > 5)
         {
-            var totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
-
-            var summarized = false;
-            if (ctxConfig.SummarizationEnabled && state.History.Count > 5
-                && totalTokens >= (int)(historyBudget * ctxConfig.SummarizationTriggerRatio))
+            var beforeCount = state.History.Count;
+            try
             {
-                try
+                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在整理历史对话…", ct).ConfigureAwait(false);
+
+                var chatClient = _runtime.GetChatClient();
+                if (chatClient != null)
                 {
-                    await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在整理历史对话…", ct).ConfigureAwait(false);
-                    var sumResult = await TrySummarizeOldTurnsAsync(state.History, ctxConfig, sessionId, ct).ConfigureAwait(false);
-                    totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
-                    summarized = sumResult.DidCompact;
-                    if (sumResult.DidCompact)
+                    var triggerTokens = (int)(historyBudget * ctxConfig.SummarizationTriggerRatio);
+                    var strategy = BuildCompactionStrategy(chatClient, triggerTokens, historyBudget);
+                    var compacted = await Microsoft.Agents.AI.Compaction.CompactionProvider.CompactAsync(
+                        strategy, state.History, _logger, ct).ConfigureAwait(false);
+                    var compactedList = compacted.ToList();
+                    if (compactedList.Count < beforeCount)
                     {
-                        var offloadDir = GetConversationHistoryDirectory(ctxConfig);
-                        var offloadConfigured = !string.IsNullOrWhiteSpace(offloadDir);
-                        var ctxTrace = AgentTraceFormatter.BuildContextSummarizationSuccessTrace(
-                            sumResult.MessagesRemoved, sumResult.SummaryLength, ctxConfig, offloadConfigured);
-                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", ctxTrace.Title, ctxTrace.Detail, ct).ConfigureAwait(false);
+                        state.History.Clear();
+                        state.History.AddRange(compactedList);
+                        var removed = beforeCount - compactedList.Count;
+                        _logger.LogDebug("[{SessionId}] MAF Compaction removed {Removed} messages ({Before} → {After}).",
+                            sessionId, removed, beforeCount, compactedList.Count);
+                        await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context",
+                            $"历史压缩：{removed} 条消息已整理",
+                            $"压缩前 {beforeCount} 条 → 压缩后 {compactedList.Count} 条（token 预算 {historyBudget}）", ct).ConfigureAwait(false);
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "[{SessionId}] Summarization failed, continuing without.", sessionId);
-                    var failTrace = AgentTraceFormatter.BuildContextSummarizationFailureTrace(ErrorMessageHelper.GetFriendlyMessage(ex));
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", failTrace.Title, failTrace.Detail, ct).ConfigureAwait(false);
-                }
-            }
-
-            if (!summarized && ctxConfig.TruncateToolArgsThresholdRatio > 0 && ctxConfig.TruncateToolArgsMaxChars > 0
-                && totalTokens >= (int)(historyBudget * ctxConfig.TruncateToolArgsThresholdRatio))
-            {
-                var keep = Math.Max(0, ctxConfig.TruncateToolArgsKeepMessages);
-                var maxChars = Math.Max(100, ctxConfig.TruncateToolArgsMaxChars);
-                var truncateSuffix = "…(已截断)";
-                var oldEndIndex = Math.Max(0, state.History.Count - keep - 1);
-                var truncatedCount = 0;
-                for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
-                {
-                    var msg = state.History[i];
-                    var content = msg.Text ?? "";
-                    if (content.Length <= maxChars) continue;
-                    var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
-                    state.History[i] = new ChatMessage(msg.Role, truncated);
-                    truncatedCount++;
-                }
-                if (truncatedCount > 0)
-                {
-                    var trTrace = AgentTraceFormatter.BuildContextTruncateTrace(
-                        truncatedCount, keep, maxChars, ctxConfig.TruncateToolArgsThresholdRatio, totalTokens, historyBudget);
-                    await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", trTrace.Title, trTrace.Detail, ct).ConfigureAwait(false);
-                }
-            }
-        }
-
-        var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
-        if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
-        {
-            try
-            {
-                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索相关记忆…", ct).ConfigureAwait(false);
-                var sessionTopK = Math.Clamp(ctxConfig.MemorySessionTopK, 1, 20);
-                var sharedTopK = Math.Clamp(ctxConfig.MemorySharedTopK, 1, 20);
-                var sessionResults = await memorySvc.SearchAsync(userMessage, sessionTopK, sessionId, ct).ConfigureAwait(false);
-                var sharedResults = await memorySvc.SearchSharedAsync(userMessage, sharedTopK, ct).ConfigureAwait(false);
-                var memTrace = AgentTraceFormatter.BuildMemoryTrace(sessionResults, sharedResults, sessionTopK, sharedTopK);
-                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", memTrace.Title, memTrace.Detail, ct).ConfigureAwait(false);
-                if (sessionResults.Count > 0 || sharedResults.Count > 0)
-                {
-                    var parts = new List<string>();
-                    if (sessionResults.Count > 0)
-                        parts.Add("[以下是与当前对话相关的长期记忆，供参考]\n[本会话记忆]\n" + string.Join("\n", sessionResults.Select(r => "- " + r.Text)));
-                    if (sharedResults.Count > 0)
-                        parts.Add("[来自共享记忆]\n" + string.Join("\n", sharedResults.Select(r => "- " + r.Text)));
-                    var memoryBlock = string.Join("\n\n", parts);
-                    if (ctxConfig.MemoryInjectionMaxChars > 0 && memoryBlock.Length > ctxConfig.MemoryInjectionMaxChars)
-                        memoryBlock = memoryBlock.AsSpan(0, ctxConfig.MemoryInjectionMaxChars).ToString() + "\n（前文已截断）";
-                    var currentSystem = state.History[0].Text ?? "";
-                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + memoryBlock);
-                }
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[{SessionId}] Memory search failed, continuing without injection.", sessionId);
-                var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
-                turn.ContextWarnings.Add("记忆检索失败：" + friendly + " 当前对话未注入长期记忆。");
-                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "memory", "长期记忆检索失败", friendly, ct).ConfigureAwait(false);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(knowledgeBaseId) && memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
-        {
-            try
-            {
-                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在检索知识库…", ct).ConfigureAwait(false);
-                var kbResults = await memorySvc.SearchKnowledgeBaseAsync(knowledgeBaseId!.Trim(), userMessage, 5, ct).ConfigureAwait(false);
-                var kbTrace = AgentTraceFormatter.BuildKnowledgeBaseTrace(knowledgeBaseId!.Trim(), kbResults);
-                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", kbTrace.Title, kbTrace.Detail, ct).ConfigureAwait(false);
-                if (kbResults.Count > 0)
-                {
-                    var kbLines = kbResults.Select(r => $"- {r.Text}").ToList();
-                    var kbBlock = "[以下来自知识库的参考内容]\n" + string.Join("\n", kbLines);
-                    var currentSystem = state.History[0].Text ?? "";
-                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + kbBlock);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "[{SessionId}] Knowledge base search failed for {KbId}.", sessionId, knowledgeBaseId);
-                var friendly = ErrorMessageHelper.GetFriendlyMessage(ex);
-                turn.ContextWarnings.Add("知识库检索失败：" + friendly);
-                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "knowledgeBase", "知识库检索失败", friendly, ct).ConfigureAwait(false);
+                _logger.LogDebug(ex, "[{SessionId}] MAF Compaction failed, continuing without.", sessionId);
+                var failTrace = AgentTraceFormatter.BuildContextSummarizationFailureTrace(ErrorMessageHelper.GetFriendlyMessage(ex));
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", failTrace.Title, failTrace.Detail, ct).ConfigureAwait(false);
             }
         }
     }
 
-    /// <summary>上下文阶段 Part2：跨端待办、计划/plan 注入、AI-REQUEST 日志。</summary>
+    /// <summary>构建 MAF <see cref="Microsoft.Agents.AI.Compaction.PipelineCompactionStrategy"/>：工具结果折叠 → 摘要 → 滑动窗口 → 截断兜底。</summary>
+    private static Microsoft.Agents.AI.Compaction.CompactionStrategy BuildCompactionStrategy(
+        IChatClient summarizerClient, int triggerTokens, int budgetTokens)
+    {
+        const string summarizationPrompt =
+            "你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论，不超过 500 字。"
+            + " 摘要中不要断言「当前文件里仍是…」「文档现在一定…」等磁盘实时状态；"
+            + "优先概括用户曾提出的要求、助手曾执行的操作与结论，并可用「当时曾…」表述，避免读者把摘要当作此刻本机文件的真相。";
+
+        return new Microsoft.Agents.AI.Compaction.PipelineCompactionStrategy(
+            new Microsoft.Agents.AI.Compaction.ToolResultCompactionStrategy(
+                Microsoft.Agents.AI.Compaction.CompactionTriggers.TokensExceed(triggerTokens)),
+            new Microsoft.Agents.AI.Compaction.SummarizationCompactionStrategy(
+                summarizerClient,
+                Microsoft.Agents.AI.Compaction.CompactionTriggers.TokensExceed(triggerTokens),
+                minimumPreservedGroups: 4,
+                summarizationPrompt: summarizationPrompt),
+            new Microsoft.Agents.AI.Compaction.TruncationCompactionStrategy(
+                Microsoft.Agents.AI.Compaction.CompactionTriggers.TokensExceed(budgetTokens)));
+    }
+
+    /// <summary>上下文阶段 Part2：计划加载（供 MergePlanTools 使用）、AI-REQUEST 日志。跨端待办与计划内容注入已迁移到 MAF <c>MessageAIContextProvider</c>。</summary>
     internal async Task RunStreamChatContextPhasePart2Async(StreamChatTurnContext turn, CancellationToken ct)
     {
         var sessionId = turn.SessionId;
         var state = turn.State;
         var planId = turn.PlanId;
-        var planCurrentStepIndex = turn.PlanCurrentStepIndex;
-        var ctxConfig = turn.CtxConfig;
-
-        var taskStore = _serviceProvider.GetService<ICrossAgentTaskStore>();
-        var sessionManagerForTask = _serviceProvider.GetService<SessionManager>();
-        if (taskStore != null && sessionManagerForTask != null && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
-        {
-            try
-            {
-                var clientTypeForTask = sessionManagerForTask.GetClientType(sessionId);
-                var pending = await taskStore.GetPendingForTargetAsync(clientTypeForTask, sessionId, ct).ConfigureAwait(false);
-                if (pending.Count > 0)
-                {
-                    var taskLines = pending.Select(t => $"- [id={t.Id}] {t.Description}").ToList();
-                    var taskBlock = "[以下来自其他端的待办，请在本轮完成并调用 complete_cross_agent_task 标记完成]\n" + string.Join("\n", taskLines);
-                    var currentSystem = state.History[0].Text ?? "";
-                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + taskBlock);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "[{SessionId}] Cross-agent task pull failed.", sessionId);
-            }
-        }
 
         turn.PlanResult = null;
-        if (state.History.Count > 0 && state.History[0].Role == ChatRole.System)
+        if (!string.IsNullOrWhiteSpace(planId))
         {
-            var currentSystem = state.History[0].Text ?? "";
-            var systemModified = false;
-            if (!string.IsNullOrWhiteSpace(planId))
-            {
-                turn.PlanResult = await _planStore.GetAsync(planId.Trim(), ct).ConfigureAwait(false);
-                if (turn.PlanResult != null)
-                {
-                    var planContent = turn.PlanResult.Value.Content;
-                    var stepIndex = planCurrentStepIndex is > 0 ? planCurrentStepIndex.Value : 1;
-                    var stepOnly = PlanStepParser.GetStepAt(planContent, stepIndex);
-                    if (!string.IsNullOrWhiteSpace(stepOnly))
-                    {
-                        currentSystem += "\n\n[当前绑定的计划·第 " + stepIndex + " 步]\n" + stepOnly;
-                    }
-                    else
-                    {
-                        var planMaxChars = ctxConfig.PlanContentMaxChars;
-                        if (planMaxChars > 0 && planContent.Length > planMaxChars)
-                            planContent = planContent.AsSpan(0, planMaxChars).ToString() + "\n（前文已截断）";
-                        currentSystem += "\n\n[当前绑定的计划]\n" + planContent;
-                    }
-                    systemModified = true;
-                }
-            }
-            if (systemModified)
-            {
-                state.History[0] = new ChatMessage(ChatRole.System, currentSystem);
-            }
+            turn.PlanResult = await _planStore.GetAsync(planId.Trim(), ct).ConfigureAwait(false);
         }
 
         var payloadChars = 0;

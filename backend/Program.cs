@@ -17,6 +17,9 @@ using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Security;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Agents.AI.DevUI;
+using Microsoft.Agents.AI.Hosting;
+using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -63,8 +66,6 @@ try
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.IChatTurnProcessCoordinator, OfficeCopilot.Server.Services.Chat.DefaultChatTurnProcessCoordinator>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ChatToolingRegistry>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline, OfficeCopilot.Server.Services.ToolInvocation.SecurityPipeline>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier, OfficeCopilot.Server.Services.ToolInvocation.ToolStatusNotifier>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ToolInvocationPipelineServices>(sp =>
@@ -74,7 +75,6 @@ try
             SecurityPipeline = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline>(),
             ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>()
         });
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Maf.MafSubtaskChatClientAgentRunner>();
     builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
     builder.Services.AddSingleton<EmbeddingProvider>();
     builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());
@@ -118,6 +118,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.WorkflowHitlBridge>();
     builder.Services.AddSingleton<ContextManager>();
     builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
         sp.GetRequiredService<ILogger<AgentDebugStatsService>>(),
@@ -171,6 +172,19 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddCors();
     builder.Services.AddHostedService<ChatServiceWarmupHostedService>();
     builder.Services.AddHostedService<ScheduledTaskRunnerService>();
+
+    // --- DevUI + AG-UI (development only) ---
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Services.AddChatClient(sp =>
+            new OfficeCopilot.Server.Services.RuntimeDelegatingChatClient(
+                sp.GetRequiredService<IChatRuntimeAccessor>()));
+        builder.Services.AddOpenAIResponses();
+        builder.Services.AddOpenAIConversations();
+        builder.Services.AddAGUI();
+        builder.AddAIAgent("OfficeCopilot",
+            "You are Office Copilot, a helpful AI assistant integrated into the user's browser and office applications.");
+    }
 
     var app = builder.Build();
 
@@ -276,6 +290,30 @@ app.UseCors(policy =>
 app.UseMiddleware<LocalApiAuthMiddleware>();
 
 app.UseStaticFiles();
+
+// --- DevUI + AG-UI endpoints (development only) ---
+if (isDev)
+{
+    app.MapOpenAIResponses();
+    app.MapOpenAIConversations();
+    app.MapDevUI();
+
+    var aguiChatClient = new OfficeCopilot.Server.Services.RuntimeDelegatingChatClient(
+        app.Services.GetRequiredService<IChatRuntimeAccessor>());
+    var aguiAgentOpts = new Microsoft.Agents.AI.ChatClientAgentOptions
+    {
+        Name = "OfficeCopilot",
+        ChatOptions = new Microsoft.Extensions.AI.ChatOptions
+        {
+            Instructions = "You are Office Copilot, a helpful AI assistant.",
+        },
+    };
+    var aguiAgent = new Microsoft.Agents.AI.ChatClientAgent(
+        aguiChatClient, aguiAgentOpts,
+        app.Services.GetRequiredService<ILoggerFactory>(),
+        app.Services);
+    app.MapAGUI("/agui", aguiAgent);
+}
 
 app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService chatService, ConfigService configService) =>
 {
