@@ -1,31 +1,25 @@
-using Microsoft.SemanticKernel.Embeddings;
+using Microsoft.Extensions.AI;
 
 namespace OfficeCopilot.Server.Services.Memory;
 
-/// <summary>持有当前 Kernel 的嵌入服务引用，由 ChatService 在 RebuildKernelAsync 后更新。</summary>
-#pragma warning disable CS0618 // ITextEmbeddingGenerationService 在 SK 1.72 中标记为过时，仍可用；后续可迁移至 IEmbeddingGenerator
+/// <summary>持有当前嵌入服务引用（MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>），由 ChatService 在 RebuildRuntimeAsync 后更新。</summary>
 public sealed class EmbeddingProvider : IEmbeddingProvider
 {
-    private volatile ITextEmbeddingGenerationService? _service;
+    private volatile IEmbeddingGenerator<string, Embedding<float>>? _generator;
 
-    public bool IsConfigured => _service != null;
+    public bool IsConfigured => _generator != null;
 
-    public void SetService(ITextEmbeddingGenerationService? service)
+    public void SetGenerator(IEmbeddingGenerator<string, Embedding<float>>? generator)
     {
-        _service = service;
+        _generator = generator;
     }
 
     public async Task<float[]?> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        var svc = _service;
-        if (svc == null || string.IsNullOrWhiteSpace(text)) return null;
-        var data = new List<string> { text };
-        var result = await svc.GenerateEmbeddingsAsync(data, cancellationToken: ct).ConfigureAwait(false);
-        if (result == null || result.Count == 0) return null;
-        var src = result[0];
-        var arr = new float[src.Length];
-        src.CopyTo(arr);
-        return arr;
+        var gen = _generator;
+        if (gen == null || string.IsNullOrWhiteSpace(text)) return null;
+        var result = await gen.GenerateAsync([text], cancellationToken: ct).ConfigureAwait(false);
+        if (result is not { Count: > 0 }) return null;
+        return result[0].Vector.ToArray();
     }
 }
-#pragma warning restore CS0618

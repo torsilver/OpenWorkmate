@@ -1,15 +1,15 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Services.SemanticKernel;
+using OfficeCopilot.Server.Services;
 using Xunit;
 
 namespace OfficeCopilot.Server.Tests.Unit;
 
-public sealed class SkStreamChatPhasedRegistryTests
+public sealed class ChatToolingPhasedRegistryTests
 {
     [Fact]
     public async Task ExecuteContextPhaseAsync_then_ExecuteToolingPhaseAsync_runs_in_registration_order()
     {
-        var reg = new SkStreamChatToolingProcessRegistry(NullLogger<SkStreamChatToolingProcessRegistry>.Instance);
+        var reg = new ChatToolingRegistry(NullLogger<ChatToolingRegistry>.Instance);
         var order = new List<string>();
         reg.Register("p1",
             () =>
@@ -31,7 +31,7 @@ public sealed class SkStreamChatPhasedRegistryTests
     [Fact]
     public async Task ExecuteContextPhaseAsync_when_no_context_registered_is_noop()
     {
-        var reg = new SkStreamChatToolingProcessRegistry(NullLogger<SkStreamChatToolingProcessRegistry>.Instance);
+        var reg = new ChatToolingRegistry(NullLogger<ChatToolingRegistry>.Instance);
         reg.Register("t1", () => Task.CompletedTask);
         await reg.ExecuteContextPhaseAsync("t1");
         reg.Unregister("t1");

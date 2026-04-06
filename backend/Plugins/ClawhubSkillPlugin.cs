@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
@@ -24,7 +23,7 @@ public sealed class ClawhubSkillPlugin
         _logger = logger;
     }
 
-    [KernelFunction("run_clawhub_script")]
+    [ToolFunction("run_clawhub_script")]
     [Description("在后端本机 Node 下运行技能目录 scripts/ 中的脚本（.mjs 优先，否则 .js）。scriptName 不含扩展名；arguments 按空格切分，含空格的参数须用双引号包裹。")]
     public async Task<string> RunClawhubScriptAsync(
         [Description("技能 ID，与 SKILL.md 中 name 一致，如 tavily")] string skillId,

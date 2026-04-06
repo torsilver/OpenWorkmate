@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using OfficeCopilot.Server.Services.SemanticKernel;
+using OfficeCopilot.Server.Services.Chat;
 using Xunit;
 
 namespace OfficeCopilot.Server.Tests.Unit;

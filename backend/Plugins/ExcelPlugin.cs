@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -257,7 +257,7 @@ public sealed class ExcelPlugin
         return Regex.IsMatch(s, @"^[A-Za-z_][\w.]*$", RegexOptions.CultureInvariant);
     }
 
-    [KernelFunction("excel_sheets_list")]
+    [ToolFunction("excel_sheets_list")]
     [Description("列出 Excel 工作簿中所有工作表名称。filePath 支持环境变量与相对路径（相对路径相对当前用户约定目录，多为 Downloads）。")]
     public string ExcelSheetsList(
         [Description("Excel 文件完整路径，.xlsx 或 .xlsm")] string filePath)
@@ -275,7 +275,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 无法打开文件: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_range_read")]
+    [ToolFunction("excel_range_read")]
     [Description("读取指定工作表区域的值或公式，返回制表符分隔文本。大文件可设 maxRows 或 endCell 控制内存；includeFormulas 为 true 时返回公式字符串。")]
     public string ExcelRangeRead(
         [Description("Excel 文件完整路径")] string filePath,
@@ -342,7 +342,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_range_write")]
+    [ToolFunction("excel_range_write")]
     [Description("向指定工作表和起始单元格写入 JSON 二维数组数据；文件不存在则创建。路径须对应当前登录用户：优先仅文件名或相对路径；勿用 Public/%PUBLIC% 或臆测用户名目录。")]
     public string ExcelRangeWrite(
         [Description("Excel 路径：优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；绝对路径用 %USERPROFILE%\\…")] string filePath,
@@ -417,7 +417,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_formula_write")]
+    [ToolFunction("excel_formula_write")]
     [Description("向指定单元格写入公式字符串。")]
     public string ExcelFormulaWrite(
         [Description("Excel 文件完整路径")] string filePath,
@@ -453,7 +453,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 写入公式失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_cells_merge")]
+    [ToolFunction("excel_cells_merge")]
     [Description("合并指定矩形区域单元格，仅左上角保留内容。")]
     public string ExcelCellsMerge(
         [Description("Excel 文件完整路径")] string filePath,
@@ -482,7 +482,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 合并失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_cells_unmerge")]
+    [ToolFunction("excel_cells_unmerge")]
     [Description("取消指定区域的合并。")]
     public string ExcelCellsUnmerge(
         [Description("Excel 文件完整路径")] string filePath,
@@ -508,7 +508,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 取消合并失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_named_ranges_list")]
+    [ToolFunction("excel_named_ranges_list")]
     [Description("列出工作簿中所有命名区域（名称与引用）。")]
     public string ExcelNamedRangesList(
         [Description("Excel 文件完整路径")] string filePath)
@@ -529,7 +529,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_named_range_read")]
+    [ToolFunction("excel_named_range_read")]
     [Description("按命名区域名称读取其引用范围内的数据（值）。")]
     public string ExcelNamedRangeRead(
         [Description("Excel 文件完整路径")] string filePath,
@@ -554,7 +554,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_named_range_define")]
+    [ToolFunction("excel_named_range_define")]
     [Description("定义或覆盖一个命名区域，引用给定工作表中的区域。")]
     public string ExcelNamedRangeDefine(
         [Description("Excel 文件完整路径")] string filePath,
@@ -597,7 +597,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 定义失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_column_width_set")]
+    [ToolFunction("excel_column_width_set")]
     [Description("设置指定列的宽度。width 为字符宽度数。")]
     public string ExcelColumnWidthSet(
         [Description("Excel 文件完整路径")] string filePath,
@@ -624,7 +624,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_row_height_set")]
+    [ToolFunction("excel_row_height_set")]
     [Description("设置指定行的高度。height 为磅值。")]
     public string ExcelRowHeightSet(
         [Description("Excel 文件完整路径")] string filePath,
@@ -650,7 +650,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_validations_list")]
+    [ToolFunction("excel_validations_list")]
     [Description("列出工作表中所有数据验证规则。")]
     public string ExcelValidationsList(
         [Description("Excel 文件完整路径")] string filePath,
@@ -673,7 +673,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_validation_set")]
+    [ToolFunction("excel_validation_set")]
     [Description("为区域设置数据验证。type: list|whole|decimal|textLength；list 时 formula1 为英文逗号分隔的选项（如 优,良,差）或区域/名称/=公式，服务端会按 Excel 要求写入带引号的列表源。")]
     public string ExcelValidationSet(
         [Description("Excel 文件完整路径")] string filePath,
@@ -721,7 +721,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_validation_clear")]
+    [ToolFunction("excel_validation_clear")]
     [Description("清除指定区域的数据验证。")]
     public string ExcelValidationClear(
         [Description("Excel 文件完整路径")] string filePath,
@@ -747,7 +747,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 清除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_conditional_formats_list")]
+    [ToolFunction("excel_conditional_formats_list")]
     [Description("列出工作表中所有条件格式规则。")]
     public string ExcelConditionalFormatsList(
         [Description("Excel 文件完整路径")] string filePath,
@@ -773,7 +773,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_conditional_format_add")]
+    [ToolFunction("excel_conditional_format_add")]
     [Description("为区域添加条件格式（如单元格值介于两数之间）；写入浅黄底+加粗 dxf，满足条件时在 Excel 中可见。比较的是单元格数值：文本数字不会匹配 between/大于等，需先改为数字（如分列或 excel_range_write 写入数值）。")]
     public string ExcelConditionalFormatAdd(
         [Description("Excel 文件完整路径")] string filePath,
@@ -820,7 +820,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 添加失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_conditional_format_clear")]
+    [ToolFunction("excel_conditional_format_clear")]
     [Description("清除指定区域的条件格式。")]
     public string ExcelConditionalFormatClear(
         [Description("Excel 文件完整路径")] string filePath,
@@ -844,7 +844,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 清除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_hyperlink_set")]
+    [ToolFunction("excel_hyperlink_set")]
     [Description("为单元格设置超链接。")]
     public string ExcelHyperlinkSet(
         [Description("Excel 文件完整路径")] string filePath,
@@ -881,7 +881,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 设置失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_sheet_add")]
+    [ToolFunction("excel_sheet_add")]
     [Description("在工作簿末尾添加新工作表。")]
     public string ExcelSheetAdd(
         [Description("Excel 文件完整路径")] string filePath,
@@ -906,7 +906,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 添加失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_sheet_remove")]
+    [ToolFunction("excel_sheet_remove")]
     [Description("按名称删除工作表。")]
     public string ExcelSheetRemove(
         [Description("Excel 文件完整路径")] string filePath,
@@ -930,7 +930,7 @@ public sealed class ExcelPlugin
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("excel_charts_list")]
+    [ToolFunction("excel_charts_list")]
     [Description("列出各工作表内嵌入式图表数量（插入→图表中的柱形/折线/饼图等均算；迷你图、纯形状/图片不算）。")]
     public string ExcelChartsList(
         [Description("Excel 文件完整路径")] string filePath)

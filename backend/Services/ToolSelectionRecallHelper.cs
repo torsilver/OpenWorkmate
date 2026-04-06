@@ -1,5 +1,5 @@
 using System.Text;
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -26,7 +26,7 @@ internal static class ToolSelectionRecallHelper
         List<string> selectedSubcategoryIds,
         string? clientType,
         string? userMessage,
-        ChatHistory? recentHistory,
+        IReadOnlyList<ChatMessage>? recentHistory,
         HashSet<string> validSubcategoryIds)
     {
         if (!IsChromeClient(clientType))
@@ -46,7 +46,7 @@ internal static class ToolSelectionRecallHelper
         return string.IsNullOrEmpty(ct) || string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal static bool HistoryOrMessageSuggestsExcelContext(string? userMessage, ChatHistory? recentHistory)
+    internal static bool HistoryOrMessageSuggestsExcelContext(string? userMessage, IReadOnlyList<ChatMessage>? recentHistory)
     {
         var sb = new StringBuilder();
         sb.Append(userMessage);
@@ -56,7 +56,7 @@ internal static class ToolSelectionRecallHelper
             var start = Math.Max(0, recentHistory.Count - 8);
             for (var i = start; i < recentHistory.Count; i++)
             {
-                sb.Append(recentHistory[i].Content);
+                sb.Append(recentHistory[i].Text);
                 sb.Append('\n');
             }
         }

@@ -1,6 +1,5 @@
 using System.Globalization;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -27,11 +26,11 @@ public static class ConversationCompactBoundary
         return $"{SummaryPrefix}\n{SummaryScopeNotice}\n{SummaryXmlOpen}\n{summaryBody}\n{SummaryXmlClose}\n{BoundaryMarkerPrefix}{iso}]";
     }
 
-    public static bool MessageContainsCompactBoundary(ChatMessageContent msg) =>
-        (msg.Content ?? "").Contains(BoundaryMarkerPrefix, StringComparison.Ordinal);
+    public static bool MessageContainsCompactBoundary(ChatMessage msg) =>
+        (msg.Text ?? "").Contains(BoundaryMarkerPrefix, StringComparison.Ordinal);
 
     /// <summary>自索引 1 起第一条含压缩边界的消息索引；无则 -1。</summary>
-    public static int FindCompactSummaryMessageIndex(ChatHistory history)
+    public static int FindCompactSummaryMessageIndex(IList<ChatMessage> history)
     {
         for (var i = 1; i < history.Count; i++)
         {
@@ -43,9 +42,9 @@ public static class ConversationCompactBoundary
 
     /// <summary>
     /// 裁剪「最旧对话」时可删除的第一条消息索引（≥1）。无压缩块时为 1；
-    /// 有压缩块时为「摘要 + 其后一条锚点」之后的索引；若仅余 system+摘要则返回 <see cref="ChatHistory.Count"/>（表示不可再删对话消息）。
+    /// 有压缩块时为「摘要 + 其后一条锚点」之后的索引；若仅余 system+摘要则返回 history.Count（表示不可再删对话消息）。
     /// </summary>
-    public static int GetFirstRemovableChatIndex(ChatHistory history)
+    public static int GetFirstRemovableChatIndex(IList<ChatMessage> history)
     {
         var idx = FindCompactSummaryMessageIndex(history);
         if (idx < 0)

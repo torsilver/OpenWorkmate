@@ -1,8 +1,7 @@
 using System.Reflection;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using Xunit;
@@ -11,7 +10,6 @@ namespace backend.Tests.Unit;
 
 public class ContextManagerTests
 {
-    /// <summary>当 PassThroughContext = true 时，TrimHistory 只按轮数裁、不按 token 裁。</summary>
     [Fact]
     public void TrimHistory_PassThroughContextTrue_OnlyTrimsByTurnsNotByTokenBudget()
     {
@@ -19,11 +17,11 @@ public class ContextManagerTests
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<ContextManager>();
         var manager = new ContextManager(configService, logger);
 
-        var history = new ChatHistory("system");
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
         for (var i = 0; i < 5; i++)
         {
-            history.AddUserMessage("user " + i);
-            history.AddAssistantMessage(new string('x', 5000));
+            history.Add(new ChatMessage(ChatRole.User, "user " + i));
+            history.Add(new ChatMessage(ChatRole.Assistant, new string('x', 5000)));
         }
         Assert.True(history.Count > 5);
 
@@ -33,7 +31,6 @@ public class ContextManagerTests
         Assert.Equal(maxMessagesByTurns, history.Count);
     }
 
-    /// <summary>存在压缩摘要 + 锚点消息时，按轮数裁剪不得删除摘要与锚点。</summary>
     [Fact]
     public void TrimHistory_WithCompactBoundary_DoesNotRemoveSummaryOrAnchor()
     {
@@ -41,21 +38,21 @@ public class ContextManagerTests
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<ContextManager>();
         var manager = new ContextManager(configService, logger);
 
-        var history = new ChatHistory("system");
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
         var summary = ConversationCompactBoundary.BuildSummaryMessageBody("summarized", DateTimeOffset.UtcNow);
-        history.AddUserMessage(summary);
-        history.AddAssistantMessage("after-compact-anchor");
+        history.Add(new ChatMessage(ChatRole.User, summary));
+        history.Add(new ChatMessage(ChatRole.Assistant, "after-compact-anchor"));
         for (var i = 0; i < 4; i++)
         {
-            history.AddUserMessage("user " + i);
-            history.AddAssistantMessage("asst " + i);
+            history.Add(new ChatMessage(ChatRole.User, "user " + i));
+            history.Add(new ChatMessage(ChatRole.Assistant, "asst " + i));
         }
 
         manager.TrimHistory(history, activeEntry: null);
 
         Assert.True(history.Count >= 3);
-        Assert.Contains(ConversationCompactBoundary.BoundaryMarkerPrefix, history[1].Content ?? "", StringComparison.Ordinal);
-        Assert.Equal("after-compact-anchor", history[2].Content);
+        Assert.Contains(ConversationCompactBoundary.BoundaryMarkerPrefix, history[1].Text ?? "", StringComparison.Ordinal);
+        Assert.Equal("after-compact-anchor", history[2].Text);
     }
 
     private static ConfigService CreateConfigServiceWithPassThrough(int maxHistoryTurns)

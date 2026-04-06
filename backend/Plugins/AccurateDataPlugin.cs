@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -68,7 +68,7 @@ public sealed class AccurateDataPlugin
             throw new UnauthorizedAccessException("Path must be within the accurate data directory.");
     }
 
-    [KernelFunction("accurate_data_write")]
+    [ToolFunction("accurate_data_write")]
     [Description("Write or overwrite one accurate data entry. Use when you need to persist data for later exact retrieval. id: unique key (alphanumeric, dash, underscore). format: 'md' or 'json' (default md). Max content size: 100,000 chars.")]
     public async Task<string> AccurateDataWriteAsync(
         [Description("Unique identifier for this entry (e.g. task_summary, report_20240314)")] string id,
@@ -99,7 +99,7 @@ public sealed class AccurateDataPlugin
         }
     }
 
-    [KernelFunction("accurate_data_read")]
+    [ToolFunction("accurate_data_read")]
     [Description("Read one accurate data entry by id. Returns the raw content. Use when you need to use previously stored data.")]
     public async Task<string> AccurateDataReadAsync(
         [Description("Id of the entry (as used in accurate_data_write)")] string id,
@@ -121,7 +121,7 @@ public sealed class AccurateDataPlugin
         return text;
     }
 
-    [KernelFunction("accurate_data_list")]
+    [ToolFunction("accurate_data_list")]
     [Description("List accurate data entries. Optionally filter by id prefix and limit count. Returns id and format for each entry.")]
     public Task<string> AccurateDataListAsync(
         [Description("Optional prefix to filter ids (e.g. 'task_')")] string? prefix = null,
@@ -155,7 +155,7 @@ public sealed class AccurateDataPlugin
         return Task.FromResult(string.Join("\n", lines));
     }
 
-    [KernelFunction("accurate_data_delete")]
+    [ToolFunction("accurate_data_delete")]
     [Description("Delete one accurate data entry by id (removes both content and meta).")]
     public Task<string> AccurateDataDeleteAsync(
         [Description("Id of the entry to delete")] string id,

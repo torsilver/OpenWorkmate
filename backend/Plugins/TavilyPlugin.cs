@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -17,7 +17,7 @@ public sealed class TavilyPlugin
         _logger = logger;
     }
 
-    [KernelFunction("tavily_search")]
+    [ToolFunction("tavily_search")]
     [Description("使用 Tavily API 进行网页搜索，返回简洁相关结果，适合 AI 摘要。当用户需要查实时信息、新闻或网络资料时使用。")]
     public async Task<string> SearchAsync(
         [Description("检索式：简短关键词或问句，勿粘贴整篇正文；空则无法搜索")] string query,
@@ -89,7 +89,7 @@ public sealed class TavilyPlugin
         }
     }
 
-    [KernelFunction("tavily_extract")]
+    [ToolFunction("tavily_extract")]
     [Description("从指定 URL 提取正文内容，适用于需要阅读网页全文时。多个 URL 用英文逗号或空格分隔。")]
     public async Task<string> ExtractAsync(
         [Description("一个或多个绝对 URL（https://…）；多个用逗号或空格分隔，勿在单个 URL 内换行")] string urls)

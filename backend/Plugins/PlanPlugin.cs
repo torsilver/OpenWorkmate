@@ -1,7 +1,5 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
@@ -13,32 +11,27 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class PlanPlugin
 {
     private readonly IPlanStore _store;
-    private readonly IKernelAccessor _kernelAccessor;
+    private readonly IChatRuntimeAccessor _runtime;
     private readonly SessionManager _sessionManager;
     private readonly ILogger<PlanPlugin> _logger;
 
-    public PlanPlugin(IPlanStore store, IKernelAccessor kernelAccessor, SessionManager sessionManager, ILogger<PlanPlugin> logger)
+    public PlanPlugin(IPlanStore store, IChatRuntimeAccessor runtimeAccessor, SessionManager sessionManager, ILogger<PlanPlugin> logger)
     {
         _store = store;
-        _kernelAccessor = kernelAccessor;
+        _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
         _logger = logger;
     }
 
-    [KernelFunction("create_plan")]
+    [ToolFunction("create_plan")]
     [Description("根据用户目标生成一份实现计划（Markdown），并保存到计划库。用户可明确要求列计划；你也可在任务复杂、需多步拆解与落库执行时主动调用。生成后返回 planId 供后续查看或按步执行。")]
     public async Task<string> CreatePlanAsync(
         [Description("用户的目标或任务描述")] string goal,
         [Description("可选上下文，如当前对话摘要")] string? context = null,
         CancellationToken ct = default)
     {
-        var kernel = _kernelAccessor.Kernel;
-        if (kernel == null)
-            return "[Plan 插件] 内核未就绪，无法生成计划。";
-
-        var chat = kernel.Services.GetKeyedService<IChatCompletionService>(_kernelAccessor.ActiveModelId)
-            ?? kernel.Services.GetService<IChatCompletionService>();
-        if (chat == null)
+        var client = _runtime.GetChatClient();
+        if (client == null)
             return "[Plan 插件] 未找到对话服务，无法生成计划。";
 
         var systemPrompt = "你是一个实现计划撰写助手。根据用户目标，输出一份 Markdown 格式的实现计划。\n\n格式要求（必须遵守）：\n- 每步以「## 步骤 N」为标题，N 从 1 开始连续编号（例如：## 步骤 1、## 步骤 2）。\n- 步骤之间不要插入其他一级/二级标题；可选在开头写一段目标简述，然后从「## 步骤 1」开始。\n- 每步内容写在该标题下方，直到下一个「## 步骤 N」或文末。\n- 只输出计划正文，不要输出「好的」「以下是计划」等前缀。";
@@ -46,18 +39,21 @@ public sealed class PlanPlugin
             ? goal
             : $"目标：{goal}\n\n上下文：{context}";
 
-        var history = new ChatHistory(systemPrompt);
-        history.AddUserMessage(userContent);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userContent)
+        };
 
-        var settings = new OpenAIPromptExecutionSettings { MaxTokens = 4000, Temperature = 0.3f };
+        var options = new ChatOptions { MaxOutputTokens = 4000, Temperature = 0.3f };
         var sb = new System.Text.StringBuilder();
         try
         {
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var msg in chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).ConfigureAwait(false))
+                await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct).ConfigureAwait(false))
                 {
-                    if (msg.Content is { Length: > 0 } text)
+                    if (update.Text is { Length: > 0 } text)
                         sb.Append(text);
                 }
             }
@@ -92,7 +88,7 @@ public sealed class PlanPlugin
         return $"[计划已生成] planId={planId}，标题：{meta.Title}。请在计划页查看与编辑；确认后在计划页点击执行以开始按步任务。";
     }
 
-    [KernelFunction("get_plan")]
+    [ToolFunction("get_plan")]
     [Description("根据 planId 读取计划全文与元数据，用于查看或作为执行上下文。")]
     public async Task<string> GetPlanAsync(
         [Description("计划 ID，由 create_plan 返回或从计划列表获得")] string planId,
@@ -104,7 +100,7 @@ public sealed class PlanPlugin
         return $"# {result.Value.Meta.Title}\n\n{result.Value.Content}";
     }
 
-    [KernelFunction("update_plan")]
+    [ToolFunction("update_plan")]
     [Description("更新计划内容（用户编辑后同步到后端）。")]
     public async Task<string> UpdatePlanAsync(
         [Description("计划 ID")] string planId,
@@ -121,7 +117,7 @@ public sealed class PlanPlugin
         return "[计划已更新]";
     }
 
-    [KernelFunction("execute_plan_step")]
+    [ToolFunction("execute_plan_step")]
     [Description("读取计划中指定步骤的内容并返回给你执行。stepIndex 从 1 开始。请在拿到步骤内容后使用你的工具完成该步骤。")]
     public async Task<string> ExecutePlanStepAsync(
         [Description("计划 ID")] string planId,
@@ -149,7 +145,7 @@ public sealed class PlanPlugin
         return $"[计划步骤 {stepIndex}/{totalSteps}] 请使用你的工具完成以下步骤，完成后简要说明做了什么：\n\n{stepContent}";
     }
 
-    [KernelFunction("complete_plan")]
+    [ToolFunction("complete_plan")]
     [Description("将计划标记为已完成。在全部步骤执行完毕后调用。")]
     public async Task<string> CompletePlanAsync(
         [Description("计划 ID")] string planId,

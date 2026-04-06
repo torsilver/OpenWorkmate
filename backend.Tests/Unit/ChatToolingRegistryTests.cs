@@ -1,15 +1,15 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Services.SemanticKernel;
+using OfficeCopilot.Server.Services;
 using Xunit;
 
 namespace OfficeCopilot.Server.Tests.Unit;
 
-public sealed class SkStreamChatToolingProcessRegistryTests
+public sealed class ChatToolingRegistryTests
 {
     [Fact]
     public async Task ExecuteAsync_invokes_registered_operation()
     {
-        var reg = new SkStreamChatToolingProcessRegistry(NullLogger<SkStreamChatToolingProcessRegistry>.Instance);
+        var reg = new ChatToolingRegistry(NullLogger<ChatToolingRegistry>.Instance);
         var id = "t1";
         var called = false;
         reg.Register(id, () =>
@@ -25,7 +25,7 @@ public sealed class SkStreamChatToolingProcessRegistryTests
     [Fact]
     public async Task ExecuteAsync_unknown_id_is_noop()
     {
-        var reg = new SkStreamChatToolingProcessRegistry(NullLogger<SkStreamChatToolingProcessRegistry>.Instance);
+        var reg = new ChatToolingRegistry(NullLogger<ChatToolingRegistry>.Instance);
         await reg.ExecuteToolingPhaseAsync("missing");
         Assert.True(true);
     }

@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -16,7 +16,7 @@ public sealed class MeetingTranscriptPlugin
         _store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
-    [KernelFunction("meeting_transcript_read")]
+    [ToolFunction("meeting_transcript_read")]
     [Description("Read a chunk of meeting transcript text persisted for a session (from Chrome meeting listener). Use sessionId from the user's message. Call repeatedly with nextOffset until hasMore is false to read the entire transcript before summarizing.")]
     public async Task<string> MeetingTranscriptReadAsync(
         [Description("Session id (e.g. meeting_abc123)")] string sessionId,
@@ -40,7 +40,7 @@ public sealed class MeetingTranscriptPlugin
         }
     }
 
-    [KernelFunction("meeting_transcript_meta")]
+    [ToolFunction("meeting_transcript_meta")]
     [Description("Get total character count and segment line count for a meeting transcript session without loading full text.")]
     public async Task<string> MeetingTranscriptMetaAsync(
         [Description("Session id")] string sessionId,

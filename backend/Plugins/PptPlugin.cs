@@ -6,7 +6,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -23,7 +23,7 @@ public sealed class PptPlugin
         if (s.Length > maxChars) return s[..maxChars] + "…(truncated)";
         return s;
     }
-    [KernelFunction("ppt_document_create")]
+    [ToolFunction("ppt_document_create")]
     [Description("创建新的空白 PPT 文件（至少含一张可编辑幻灯片）。若文件已存在则覆盖。新建后可用 ppt_slide_write / ppt_slide_insert 编辑。勿用 shell 重定向伪造 .pptx。路径支持环境变量与相对路径；须对应当前登录用户，勿用 Public/%PUBLIC% 代替用户主目录。")]
     public string PptDocumentCreate(
         [Description("优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；须 .pptx 或 .pptm；绝对路径用 %USERPROFILE%\\…")] string filePath)
@@ -44,7 +44,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 创建失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slides_list")]
+    [ToolFunction("ppt_slides_list")]
     [Description("列出 PPT 演示文稿中所有幻灯片的序号与简要信息（按播放顺序）。filePath 支持环境变量与相对路径（相对当前用户约定目录，多为 Downloads）。回答用户时必须引用并归纳本工具输出中的要点，勿假设用户能看到工具原始返回。")]
     public string PptSlidesList(
         [Description("PPT 文件完整路径，.pptx 或 .pptm")] string filePath)
@@ -82,7 +82,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slide_read")]
+    [ToolFunction("ppt_slide_read")]
     [Description("按播放顺序读取指定幻灯片全文；可选附带带文本形状的编号列表（Name、占位符类型、预览），便于 ppt_slide_write 使用 shapeIndex/shapeName。回答用户时必须引用并归纳本工具输出中的正文与要点，勿假设用户能看到工具原始返回。")]
     public string PptSlideRead(
         [Description("PPT 文件完整路径")] string filePath,
@@ -127,7 +127,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slide_write")]
+    [ToolFunction("ppt_slide_write")]
     [Description("向指定幻灯片写入文本。优先使用 shapeIndex（1 起，见 ppt_slide_read 形状列表）或 shapeName；否则按 placeholderType 匹配占位符：title、body、subtitle、ctrTitle。须先 ppt_document_create 或打开已有合法 pptx。text 支持用 |、空行或换行分段，服务端拆成多行；- 或 * 行首为项目符号。")]
     public string PptSlideWrite(
         [Description("PPT 文件完整路径")] string filePath,
@@ -177,7 +177,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slide_insert")]
+    [ToolFunction("ppt_slide_insert")]
     [Description("插入新幻灯片：克隆插入锚点页的 Slide 再写入标题/正文（避免「先改首页再插入」时 Open XML 保存丢字）。当前最小模板版式无正文占位符时，正文会写入标题文本框的后续段落（ppt_slide_read 仍可读全文）；若克隆源页含 body 占位符则标题、正文分形状写入。position=0：插到最前；position=k：紧接第 k 页之后；position≥总页数：末尾。")]
     public string PptSlideInsert(
         [Description("PPT 文件完整路径")] string filePath,
@@ -320,7 +320,7 @@ public sealed class PptPlugin
         }
     }
 
-    [KernelFunction("ppt_slide_delete")]
+    [ToolFunction("ppt_slide_delete")]
     [Description("按播放顺序删除指定幻灯片。slideIndex 从 1 开始。")]
     public string PptSlideDelete(
         [Description("PPT 文件完整路径")] string filePath,
@@ -350,7 +350,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slide_image_add")]
+    [ToolFunction("ppt_slide_image_add")]
     [Description("向指定幻灯片插入本地图片（PNG/JPEG/GIF/BMP）。默认放在左上角附近固定区域。")]
     public string PptSlideImageAdd(
         [Description("PPT 文件完整路径")] string filePath,
@@ -380,7 +380,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 插入图片失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_notes_read")]
+    [ToolFunction("ppt_notes_read")]
     [Description("读取指定幻灯片的演讲者备注文本。")]
     public string PptNotesRead(
         [Description("PPT 文件完整路径")] string filePath,
@@ -401,7 +401,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 读取备注失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_notes_write")]
+    [ToolFunction("ppt_notes_write")]
     [Description("写入指定幻灯片的演讲者备注（纯文本）；若无备注页则创建。")]
     public string PptNotesWrite(
         [Description("PPT 文件完整路径")] string filePath,
@@ -425,7 +425,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 写入备注失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slides_reorder")]
+    [ToolFunction("ppt_slides_reorder")]
     [Description("按新顺序重排全部幻灯片。newOrder 为逗号分隔的序号列表，表示播放顺序：第 1 个数字=原第几页放到首位。例：3,2,1 表示倒序。长度须等于总页数。")]
     public string PptSlidesReorder(
         [Description("PPT 文件完整路径")] string filePath,
@@ -456,7 +456,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 重排失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_table_create")]
+    [ToolFunction("ppt_table_create")]
     [Description("在指定幻灯片末尾添加一个简单表格（DrawingML）。行 1–20，列 1–10。")]
     public string PptTableCreate(
         [Description("PPT 文件完整路径")] string filePath,
@@ -482,7 +482,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 创建表格失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_table_write_cells")]
+    [ToolFunction("ppt_table_write_cells")]
     [Description("向该页第一张表格写入文本。rowsCsv：多行用 | 分隔，行内单元格用英文逗号分隔（内容勿含未转义逗号）。")]
     public string PptTableWriteCells(
         [Description("PPT 文件完整路径")] string filePath,
@@ -506,7 +506,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 写入表格失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_hyperlink_add")]
+    [ToolFunction("ppt_hyperlink_add")]
     [Description("为指定幻灯片上某一文本形状的首个文本 Run 设置点击超链接（外部 URL）。优先 shapeIndex，否则 shapeName。")]
     public string PptHyperlinkAdd(
         [Description("PPT 文件完整路径")] string filePath,
@@ -537,7 +537,7 @@ public sealed class PptPlugin
         catch (Exception ex) { return $"[错误] 添加超链接失败: {ex.Message}"; }
     }
 
-    [KernelFunction("ppt_slide_duplicate")]
+    [ToolFunction("ppt_slide_duplicate")]
     [Description("在紧接指定页之后复制一张内容相同的幻灯片（嵌入图随 SlidePart 的 ImagePart 一并复制；复杂图表/视频等可能不完整）。")]
     public string PptSlideDuplicate(
         [Description("PPT 文件完整路径")] string filePath,

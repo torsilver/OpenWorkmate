@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -22,7 +22,7 @@ public sealed class UserOptionsPlugin
         PropertyNameCaseInsensitive = true
     };
 
-    [KernelFunction("ask_options")]
+    [ToolFunction("ask_options")]
     [Description("当模型需要用户对候选项进行分步确认时调用。stepsJson 是一个 JSON 数组字符串：每个元素包含 stepId、question、options（optionId、label）。调用后会等待用户在侧边栏依次选择每一步的一个选项，并在最后一次性返回所有 selections。")]
     public async Task<string> AskOptionsAsync(
         [Description("对用户展示的标题")] string title,

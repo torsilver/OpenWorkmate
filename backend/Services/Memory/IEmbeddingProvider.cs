@@ -1,6 +1,6 @@
 namespace OfficeCopilot.Server.Services.Memory;
 
-/// <summary>当前可用的嵌入服务；由 ChatService 在 RebuildKernelAsync 后设置，未配置时为 null。</summary>
+/// <summary>当前可用的嵌入服务；由 ChatService 在 RebuildRuntimeAsync 后设置，未配置时为 null。</summary>
 public interface IEmbeddingProvider
 {
     /// <summary>是否已配置嵌入模型（本地或远程）。</summary>

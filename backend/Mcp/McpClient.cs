@@ -7,8 +7,7 @@ using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 namespace OfficeCopilot.Server.Mcp;
 
 /// <summary>
-/// MCP 客户端：基于官方 <see href="https://www.nuget.org/packages/ModelContextProtocol">ModelContextProtocol</see> SDK（stdio），
-/// 替代自研 JSON-RPC。Microsoft.SemanticKernel.Connectors.Mcp.Core 在 NuGet 上不存在，故采用 MCP 官方 C# SDK。
+/// MCP 客户端：基于官方 <see href="https://www.nuget.org/packages/ModelContextProtocol">ModelContextProtocol</see> SDK（stdio）。
 /// </summary>
 public sealed class McpClient : IAsyncDisposable, IDisposable
 {

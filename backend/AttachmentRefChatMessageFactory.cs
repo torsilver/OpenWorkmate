@@ -1,18 +1,17 @@
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server;
 
 /// <summary>
-/// 将带 <c>attachment:</c> 引用的用户轮次组装为 <see cref="ChatMessageContent"/>；可选注入 <see cref="ImageContent"/>（多模态）。
+/// 将带 <c>attachment:</c> 引用的用户轮次组装为 <see cref="ChatMessage"/>；可选注入图片（多模态）。
 /// </summary>
 internal static class AttachmentRefChatMessageFactory
 {
     public const int VisionMaxImagesPerMessage = 8;
     public const int VisionMaxBytesPerImage = 8 * 1024 * 1024;
 
-    public static ChatMessageContent Build(
+    public static ChatMessage Build(
         string userMessage,
         IReadOnlyList<string> attachmentRefs,
         bool supportsVision,
@@ -24,9 +23,9 @@ internal static class AttachmentRefChatMessageFactory
             + (string.IsNullOrWhiteSpace(userMessage) ? "" : " 用户说：" + userMessage);
 
         if (!supportsVision)
-            return new ChatMessageContent(AuthorRole.User, messageText);
+            return new ChatMessage(ChatRole.User, messageText);
 
-        var items = new ChatMessageContentItemCollection { new TextContent(messageText) };
+        var items = new List<AIContent> { new TextContent(messageText) };
         var added = 0;
         foreach (var rawRef in attachmentRefs)
         {
@@ -51,12 +50,10 @@ internal static class AttachmentRefChatMessageFactory
                 continue;
             }
 
-            var b64 = Convert.ToBase64String(data);
-            var dataUri = "data:" + mime.Trim() + ";base64," + b64;
-            items.Add(new ImageContent(dataUri));
+            items.Add(new DataContent(data, mime.Trim()));
             added++;
         }
 
-        return new ChatMessageContent(AuthorRole.User, items);
+        return new ChatMessage(ChatRole.User, items);
     }
 }

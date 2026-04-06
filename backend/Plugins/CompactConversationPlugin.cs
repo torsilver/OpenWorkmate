@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -15,7 +15,7 @@ public sealed class CompactConversationPlugin
     }
 
     /// <summary>主动压缩当前对话：将最旧若干轮合并为一段摘要，释放上下文窗口。适合在开始全新任务或已给出最终结论后调用。</summary>
-    [KernelFunction("compact_conversation")]
+    [ToolFunction("compact_conversation")]
     [Description("当对话较长且你要开始全新任务、或已给出最终结论不再需要此前详细内容时，可调用此工具压缩对话，将较早的轮次合并为摘要以释放上下文。")]
     public async Task<string> CompactConversationAsync(CancellationToken cancellationToken = default)
     {

@@ -114,7 +114,8 @@ public static class AgentTraceFormatter
     private static string MapTwoStageReason(string reasonCode) => reasonCode switch
     {
         "kernel_null" => "Kernel 为空，使用全量工具。",
-        "no_functions" => "Kernel 中无函数，使用全量工具。",
+        "tool_registry_null" => "ToolRegistry 为空，使用全量工具。",
+        "no_functions" => "注册表中无可用函数，使用全量工具。",
         "no_subcategories" => "无可用子类列表，使用全量工具。",
         "stage1_fallback" => "一阶段子类选择返回「全部」或失败，使用全量工具。",
         "no_candidates_after_stage1" => "一阶段选中的子类下无候选函数，使用全量工具。",

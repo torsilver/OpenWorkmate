@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
@@ -20,7 +19,7 @@ public sealed class MemoryPlugin
         _logger = logger;
     }
 
-    [KernelFunction("save_memory")]
+    [ToolFunction("save_memory")]
     [Description("将用户或对话中的一条重要信息保存为长期记忆，便于后续对话检索。例如：用户偏好、关键事实、待办等。saveToShared 为 true 时写入共享记忆，其他端（如 Word/Chrome）也可检索到。")]
     public async Task<string> SaveMemoryAsync(
         [Description("要记住的文本内容")] string text,
@@ -50,7 +49,7 @@ public sealed class MemoryPlugin
         }
     }
 
-    [KernelFunction("search_memory")]
+    [ToolFunction("search_memory")]
     [Description("根据查询从长期记忆中检索相关条目（本会话 + 共享记忆），返回与当前问题最相关的记忆列表；结果会标明来自本会话或共享。")]
     public async Task<string> SearchMemoryAsync(
         [Description("检索关键词或问题")] string query,

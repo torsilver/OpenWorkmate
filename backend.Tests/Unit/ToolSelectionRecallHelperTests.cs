@@ -1,4 +1,4 @@
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
 using Xunit;
 
@@ -20,16 +20,18 @@ public sealed class ToolSelectionRecallHelperTests
     [Fact]
     public void HistorySuggestsExcel_when_user_message_has_xlsx()
     {
-        var h = new ChatHistory();
+        var h = new List<ChatMessage>();
         Assert.True(ToolSelectionRecallHelper.HistoryOrMessageSuggestsExcelContext("open foo.xlsx", h));
     }
 
     [Fact]
     public void HistorySuggestsExcel_from_recent_history()
     {
-        var h = new ChatHistory();
-        h.AddUserMessage("hello");
-        h.AddAssistantMessage("已处理 taskly-excel-test.xlsx 的合并");
+        var h = new List<ChatMessage>
+        {
+            new(ChatRole.User, "hello"),
+            new(ChatRole.Assistant, "已处理 taskly-excel-test.xlsx 的合并")
+        };
         Assert.True(ToolSelectionRecallHelper.HistoryOrMessageSuggestsExcelContext("再来一次", h));
     }
 

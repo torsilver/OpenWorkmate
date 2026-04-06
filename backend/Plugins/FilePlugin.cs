@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -19,7 +19,7 @@ public sealed class FilePlugin
         _logger = logger;
     }
 
-    [KernelFunction("get_attachment_path")]
+    [ToolFunction("get_attachment_path")]
     [Description("Returns the local file path for a user attachment reference (e.g. attachment:xxx). Use this when you need to pass the file to another tool (e.g. OCR) that accepts a path. Returns empty or error message if the reference is invalid or expired.")]
     public string GetAttachmentPath(
         [Description("The attachment reference from the user message, e.g. attachment:abc123")] string attachmentRef)
@@ -52,7 +52,7 @@ public sealed class FilePlugin
         return path;
     }
 
-    [KernelFunction("get_file_size")]
+    [ToolFunction("get_file_size")]
     [Description("Get the size of a file in bytes and human-readable form. Use when you need to decide whether to include file content in context or which tool to use (e.g. OCR, STT, or read in chunks). Path can be from get_attachment_path or a local file path. Returns size or an error message if the file does not exist or is not accessible.")]
     public string GetFileSize(
         [Description("Full local path to the file (e.g. from get_attachment_path or C:\\temp\\doc.pdf)")] string filePath)
@@ -96,7 +96,7 @@ public sealed class FilePlugin
         return i == 0 ? $"{v} {units[i]}" : $"{v:F2} {units[i]}";
     }
 
-    [KernelFunction("save_screenshot_to_downloads")]
+    [ToolFunction("save_screenshot_to_downloads")]
     [Description("Saves a screenshot (previously captured via capture_full_page) to the user's Downloads folder. Pass the screenshot reference returned by capture_full_page as the first argument; optional second argument is the filename without extension.")]
     public string SaveScreenshotToDownloads(
         [Description("The screenshot reference from capture_full_page, e.g. screenshot:abc123")] string screenshotRef,

@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 
@@ -21,7 +21,7 @@ public sealed class CrossAgentTaskPlugin
     }
 
     /// <summary>创建跨 Agent 任务：让目标端的 Agent 执行某任务。目标端在下次对话时会看到待办并执行。</summary>
-    [KernelFunction("create_cross_agent_task")]
+    [ToolFunction("create_cross_agent_task")]
     [Description("当用户要求「让 Word/Chrome/Excel/WPS/PowerPoint 的 Agent 做某事」时调用。创建一条发给目标端的待办，目标端在下次对话时会看到并执行。targetClientType 取 office-word、chrome、office-excel、office-powerpoint、wps 之一。")]
     public async Task<string> CreateCrossAgentTaskAsync(
         [Description("目标端类型：office-word（Word）、chrome（浏览器）、office-excel（Excel）、office-powerpoint（PowerPoint）、wps（WPS）")] string targetClientType,
@@ -71,7 +71,7 @@ public sealed class CrossAgentTaskPlugin
     }
 
     /// <summary>将跨 Agent 任务标记为已完成或失败（由执行端在完成后调用）。</summary>
-    [KernelFunction("complete_cross_agent_task")]
+    [ToolFunction("complete_cross_agent_task")]
     [Description("当本端完成了一条来自其他端的待办任务后调用，标记该任务为 done 或 failed，并可选写入结果摘要。")]
     public async Task<string> CompleteCrossAgentTaskAsync(
         [Description("任务 id（从待办列表中获取）")] string taskId,

@@ -1,6 +1,5 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using Xunit;
@@ -24,14 +23,14 @@ public class AttachmentRefChatMessageFactoryTests
             cache,
             NullLogger.Instance);
 
-        Assert.Equal(AuthorRole.User, msg.Role);
-        Assert.Contains("attachment:", msg.Content ?? "", StringComparison.Ordinal);
-        Assert.Contains("hello", msg.Content ?? "", StringComparison.Ordinal);
-        Assert.DoesNotContain(msg.Items ?? [], i => i is ImageContent);
+        Assert.Equal(ChatRole.User, msg.Role);
+        Assert.Contains("attachment:", msg.Text ?? "", StringComparison.Ordinal);
+        Assert.Contains("hello", msg.Text ?? "", StringComparison.Ordinal);
+        Assert.DoesNotContain(msg.Contents ?? [], i => i is DataContent);
     }
 
     [Fact]
-    public void Build_WithVision_AddsImageContentItems()
+    public void Build_WithVision_AddsDataContentItems()
     {
         var cache = new AttachmentCacheService(NullLogger<AttachmentCacheService>.Instance);
         var refId = cache.StoreFromBase64(
@@ -45,11 +44,11 @@ public class AttachmentRefChatMessageFactoryTests
             cache,
             NullLogger.Instance);
 
-        Assert.Equal(AuthorRole.User, msg.Role);
-        Assert.NotNull(msg.Items);
-        Assert.True(msg.Items.Count >= 2);
-        Assert.Contains(msg.Items, i => i is TextContent);
-        Assert.Contains(msg.Items, i => i is ImageContent);
+        Assert.Equal(ChatRole.User, msg.Role);
+        Assert.NotNull(msg.Contents);
+        Assert.True(msg.Contents.Count >= 2);
+        Assert.Contains(msg.Contents, i => i is TextContent);
+        Assert.Contains(msg.Contents, i => i is DataContent);
     }
 
     [Fact]
@@ -65,8 +64,8 @@ public class AttachmentRefChatMessageFactoryTests
             cache,
             NullLogger.Instance);
 
-        Assert.NotNull(msg.Items);
-        Assert.DoesNotContain(msg.Items, i => i is ImageContent);
-        Assert.Contains(msg.Items, i => i is TextContent);
+        Assert.NotNull(msg.Contents);
+        Assert.DoesNotContain(msg.Contents, i => i is DataContent);
+        Assert.Contains(msg.Contents, i => i is TextContent);
     }
 }

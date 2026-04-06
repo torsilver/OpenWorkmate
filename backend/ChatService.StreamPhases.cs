@@ -1,12 +1,10 @@
 using System.Linq;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.Memory;
 using OfficeCopilot.Server.Services.Plan;
-using OfficeCopilot.Server.Services.SemanticKernel;
+using OfficeCopilot.Server.Services.Chat;
 
 namespace OfficeCopilot.Server;
 
@@ -18,8 +16,6 @@ public sealed partial class ChatService
         var sessionId = turn.SessionId;
         var sessionManagerForStatus = turn.SessionManager;
         var state = turn.State;
-        var kernel = turn.Kernel;
-        var chat = turn.Chat;
         var ctxConfig = turn.CtxConfig;
         var userMessage = turn.UserMessage;
         var knowledgeBaseId = turn.KnowledgeBaseId;
@@ -40,7 +36,7 @@ public sealed partial class ChatService
                 try
                 {
                     await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在整理历史对话…", ct).ConfigureAwait(false);
-                    var sumResult = await TrySummarizeOldTurnsAsync(state.History, kernel, chat, ctxConfig, sessionId, ct).ConfigureAwait(false);
+                    var sumResult = await TrySummarizeOldTurnsAsync(state.History, ctxConfig, sessionId, ct).ConfigureAwait(false);
                     totalTokens = EstimateHistoryTokens(state.History, ctxConfig);
                     summarized = sumResult.DidCompact;
                     if (sumResult.DidCompact)
@@ -71,10 +67,10 @@ public sealed partial class ChatService
                 for (var i = 1; i <= oldEndIndex && i < state.History.Count; i++)
                 {
                     var msg = state.History[i];
-                    var content = msg.Content ?? "";
+                    var content = msg.Text ?? "";
                     if (content.Length <= maxChars) continue;
                     var truncated = content.AsSpan(0, maxChars).ToString() + truncateSuffix;
-                    state.History[i] = new ChatMessageContent(msg.Role, truncated);
+                    state.History[i] = new ChatMessage(msg.Role, truncated);
                     truncatedCount++;
                 }
                 if (truncatedCount > 0)
@@ -87,7 +83,7 @@ public sealed partial class ChatService
         }
 
         var memorySvc = _serviceProvider.GetService<IMemoryStoreService>();
-        if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+        if (memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
         {
             try
             {
@@ -108,9 +104,8 @@ public sealed partial class ChatService
                     var memoryBlock = string.Join("\n\n", parts);
                     if (ctxConfig.MemoryInjectionMaxChars > 0 && memoryBlock.Length > ctxConfig.MemoryInjectionMaxChars)
                         memoryBlock = memoryBlock.AsSpan(0, ctxConfig.MemoryInjectionMaxChars).ToString() + "\n（前文已截断）";
-                    var currentSystem = state.History[0].Content ?? "";
-                    state.History.RemoveAt(0);
-                    state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + memoryBlock));
+                    var currentSystem = state.History[0].Text ?? "";
+                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + memoryBlock);
                 }
             }
             catch (Exception ex)
@@ -122,7 +117,7 @@ public sealed partial class ChatService
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(knowledgeBaseId) && memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+        if (!string.IsNullOrWhiteSpace(knowledgeBaseId) && memorySvc?.IsAvailable == true && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
         {
             try
             {
@@ -134,9 +129,8 @@ public sealed partial class ChatService
                 {
                     var kbLines = kbResults.Select(r => $"- {r.Text}").ToList();
                     var kbBlock = "[以下来自知识库的参考内容]\n" + string.Join("\n", kbLines);
-                    var currentSystem = state.History[0].Content ?? "";
-                    state.History.RemoveAt(0);
-                    state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + kbBlock));
+                    var currentSystem = state.History[0].Text ?? "";
+                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + kbBlock);
                 }
             }
             catch (Exception ex)
@@ -160,7 +154,7 @@ public sealed partial class ChatService
 
         var taskStore = _serviceProvider.GetService<ICrossAgentTaskStore>();
         var sessionManagerForTask = _serviceProvider.GetService<SessionManager>();
-        if (taskStore != null && sessionManagerForTask != null && state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+        if (taskStore != null && sessionManagerForTask != null && state.History.Count > 0 && state.History[0].Role == ChatRole.System)
         {
             try
             {
@@ -170,9 +164,8 @@ public sealed partial class ChatService
                 {
                     var taskLines = pending.Select(t => $"- [id={t.Id}] {t.Description}").ToList();
                     var taskBlock = "[以下来自其他端的待办，请在本轮完成并调用 complete_cross_agent_task 标记完成]\n" + string.Join("\n", taskLines);
-                    var currentSystem = state.History[0].Content ?? "";
-                    state.History.RemoveAt(0);
-                    state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem + "\n\n" + taskBlock));
+                    var currentSystem = state.History[0].Text ?? "";
+                    state.History[0] = new ChatMessage(ChatRole.System, currentSystem + "\n\n" + taskBlock);
                 }
             }
             catch (Exception ex)
@@ -182,9 +175,9 @@ public sealed partial class ChatService
         }
 
         turn.PlanResult = null;
-        if (state.History.Count > 0 && state.History[0].Role == AuthorRole.System)
+        if (state.History.Count > 0 && state.History[0].Role == ChatRole.System)
         {
-            var currentSystem = state.History[0].Content ?? "";
+            var currentSystem = state.History[0].Text ?? "";
             var systemModified = false;
             if (!string.IsNullOrWhiteSpace(planId))
             {
@@ -210,14 +203,13 @@ public sealed partial class ChatService
             }
             if (systemModified)
             {
-                state.History.RemoveAt(0);
-                state.History.Insert(0, new ChatMessageContent(AuthorRole.System, currentSystem));
+                state.History[0] = new ChatMessage(ChatRole.System, currentSystem);
             }
         }
 
         var payloadChars = 0;
         for (var i = 0; i < state.History.Count; i++)
-            payloadChars += (state.History[i].Content?.Length ?? 0);
+            payloadChars += (state.History[i].Text?.Length ?? 0);
         _logger.LogInformation(
             "[AI-REQUEST] SessionId={SessionId} phase=agent turns={Turns} payloadChars={PayloadChars}",
             sessionId, state.History.Count, payloadChars);
@@ -228,7 +220,6 @@ public sealed partial class ChatService
         var sessionId = turn.SessionId;
         var userMessage = turn.UserMessage;
         var state = turn.State;
-        var kernel = turn.Kernel;
         var ctxConfig = turn.CtxConfig;
         var sessionManagerForStatus = turn.SessionManager;
         var planResult = turn.PlanResult;
@@ -282,7 +273,7 @@ public sealed partial class ChatService
                 var twoStage = await _toolSelector.SelectFunctionsAsync(
                     userMessage,
                     recentHistory,
-                    kernel,
+                    _runtime.ToolRegistry,
                     ct,
                     new ToolSelectionContext(vectorToolHint, clientType)).ConfigureAwait(false);
                 selectedPairs = twoStage.SelectedPairs;
@@ -306,7 +297,7 @@ public sealed partial class ChatService
                 var twoStage = await _toolSelector.SelectFunctionsAsync(
                     userMessage,
                     recentHistory,
-                    kernel,
+                    _runtime.ToolRegistry,
                     ct,
                     new ToolSelectionContext(null, clientType)).ConfigureAwait(false);
                 selectedPairs = twoStage.SelectedPairs;
@@ -326,40 +317,38 @@ public sealed partial class ChatService
                 ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
         }
 
-        IReadOnlyList<KernelFunction>? selectedFunctions;
-        selectedFunctions = ResolveFunctionsByClientType(kernel, selectedPairs, clientType, sessionId);
-        if (planResult != null && selectedFunctions != null)
-            selectedFunctions = MergePlanFunctions(kernel, selectedFunctions);
+        IReadOnlyList<AITool>? selectedTools;
+        selectedTools = ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
+        if (planResult != null && selectedTools != null)
+            selectedTools = MergePlanTools(_runtime.ToolRegistry, selectedTools);
         var pairsCount = selectedPairs?.Count ?? 0;
-        var funcsCount = selectedFunctions?.Count ?? 0;
-        var useAllTools = selectedFunctions == null || selectedFunctions.Count == 0;
+        var funcsCount = selectedTools?.Count ?? 0;
+        var useAllTools = selectedTools == null || selectedTools.Count == 0;
         _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
             sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
 
         var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
-        if (selectedFunctions is { Count: > 0 })
+        if (selectedTools is { Count: > 0 })
         {
-            turn.ExecSettings = new OpenAIPromptExecutionSettings
+            turn.ExecSettings = new ChatOptions
             {
-                MaxTokens = maxOutputTokens,
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(selectedFunctions)
+                MaxOutputTokens = maxOutputTokens,
             };
             _logger.LogInformation("[{SessionId}] ToolSelection: final restricted to {FunctionCount} functions clientType={ClientType}.",
-                sessionId, selectedFunctions.Count, clientType ?? "(null)");
+                sessionId, selectedTools.Count, clientType ?? "(null)");
             _logger.LogDebug("[{SessionId}] Tool selection: clientType={ClientType} {FunctionCount} functions",
-                sessionId, clientType ?? "(null)", selectedFunctions.Count);
+                sessionId, clientType ?? "(null)", selectedTools.Count);
         }
         else
         {
-            turn.ExecSettings = new OpenAIPromptExecutionSettings
+            turn.ExecSettings = new ChatOptions
             {
-                MaxTokens = maxOutputTokens,
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+                MaxOutputTokens = maxOutputTokens,
             };
             _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
         }
 
-        turn.SelectedKernelFunctions = selectedFunctions is { Count: > 0 } ? selectedFunctions : null;
+        turn.SelectedTools = selectedTools is { Count: > 0 } ? selectedTools : null;
 
         turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
@@ -376,12 +365,12 @@ public sealed partial class ChatService
     }
 
     /// <summary>将 Host 前言合并进本轮流式用历史的 system 首条，不写入持久 <see cref="SessionState.History"/>。</summary>
-    private static ChatHistory InjectHostPreambleIntoStreamingHistory(ChatHistory baseHistory, string preamble)
+    private static List<ChatMessage> InjectHostPreambleIntoStreamingHistory(List<ChatMessage> baseHistory, string preamble)
     {
         if (string.IsNullOrWhiteSpace(preamble) || baseHistory.Count == 0) return baseHistory;
-        if (baseHistory[0].Role != AuthorRole.System) return baseHistory;
-        var augmented = (baseHistory[0].Content ?? "") + "\n\n[Host 工作思路，仅本轮参考]\n" + preamble.Trim();
-        var nh = new ChatHistory(augmented);
+        if (baseHistory[0].Role != ChatRole.System) return baseHistory;
+        var augmented = (baseHistory[0].Text ?? "") + "\n\n[Host 工作思路，仅本轮参考]\n" + preamble.Trim();
+        var nh = new List<ChatMessage>(baseHistory.Count) { new(ChatRole.System, augmented) };
         for (var i = 1; i < baseHistory.Count; i++)
             nh.Add(baseHistory[i]);
         return nh;

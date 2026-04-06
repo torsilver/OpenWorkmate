@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -8,7 +8,7 @@ namespace OfficeCopilot.Server.Plugins;
 /// </summary>
 public sealed class SystemPlugin
 {
-    [KernelFunction("get_current_time")]
+    [ToolFunction("get_current_time")]
     [Description("Get the current date and time. Call when the user asks about current date, time, today, this week, or any time-related question. Returns ISO 8601 UTC time and local time in human-readable form.")]
     public string GetCurrentTime()
     {

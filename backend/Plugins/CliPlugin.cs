@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -9,7 +9,7 @@ public sealed class CliPlugin
     private const int DefaultTimeoutMs = 30_000;
     private const int MaxOutputLength = 8_000;
 
-    [KernelFunction("run_command")]
+    [ToolFunction("run_command")]
     [Description("运行位置：用户本机（后端服务所在机器）的 CMD。在用户 Windows 电脑上执行一条 CMD 命令并返回输出，适用于查看文件列表、系统信息、执行脚本等。当没有更合适的专用工具时可用作兜底。用户要求核实本机目录或桌面内容时，须先调用本工具列出目录或文件再描述，勿仅凭对话推断。禁止执行删除、格式化等危险操作。")]
     public async Task<string> RunCommandAsync(
         [Description("要执行的 CMD 命令，例如 dir D:\\、echo hello、type file.txt")] string command,

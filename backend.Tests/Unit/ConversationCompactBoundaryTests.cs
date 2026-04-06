@@ -1,4 +1,4 @@
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
 using Xunit;
 
@@ -22,28 +22,37 @@ public class ConversationCompactBoundaryTests
     [Fact]
     public void GetFirstRemovableChatIndex_NoBoundary_ReturnsOne()
     {
-        var h = new ChatHistory("sys");
-        h.AddUserMessage("u1");
-        h.AddAssistantMessage("a1");
+        var h = new List<ChatMessage>
+        {
+            new(ChatRole.System, "sys"),
+            new(ChatRole.User, "u1"),
+            new(ChatRole.Assistant, "a1")
+        };
         Assert.Equal(1, ConversationCompactBoundary.GetFirstRemovableChatIndex(h));
     }
 
     [Fact]
     public void GetFirstRemovableChatIndex_WithBoundaryAndAnchor_StartsAfterAnchor()
     {
-        var h = new ChatHistory("sys");
         var summary = ConversationCompactBoundary.BuildSummaryMessageBody("s", DateTimeOffset.UtcNow);
-        h.AddUserMessage(summary);
-        h.AddAssistantMessage("anchor");
-        h.AddUserMessage("old");
+        var h = new List<ChatMessage>
+        {
+            new(ChatRole.System, "sys"),
+            new(ChatRole.User, summary),
+            new(ChatRole.Assistant, "anchor"),
+            new(ChatRole.User, "old")
+        };
         Assert.Equal(3, ConversationCompactBoundary.GetFirstRemovableChatIndex(h));
     }
 
     [Fact]
     public void GetFirstRemovableChatIndex_OnlySystemAndSummary_ReturnsCount()
     {
-        var h = new ChatHistory("sys");
-        h.AddUserMessage(ConversationCompactBoundary.BuildSummaryMessageBody("x", DateTimeOffset.UtcNow));
+        var h = new List<ChatMessage>
+        {
+            new(ChatRole.System, "sys"),
+            new(ChatRole.User, ConversationCompactBoundary.BuildSummaryMessageBody("x", DateTimeOffset.UtcNow))
+        };
         Assert.Equal(h.Count, ConversationCompactBoundary.GetFirstRemovableChatIndex(h));
     }
 }

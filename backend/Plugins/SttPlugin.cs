@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -19,7 +19,7 @@ public sealed class SttPlugin
         _logger = logger;
     }
 
-    [KernelFunction("transcribe_audio")]
+    [ToolFunction("transcribe_audio")]
     [Description("Transcribe an audio file at the given local path to text using Alibaba DashScope real-time ASR (v1/inference). Requires realtime ASR API key in settings. Use when the user asks to convert speech/audio to text. Path must be accessible from this machine.")]
     public async Task<string> TranscribeAudioAsync(
         [Description("Full local path to the audio file (e.g. C:\\recordings\\meeting.mp3)")] string filePath,

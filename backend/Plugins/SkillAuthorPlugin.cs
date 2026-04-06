@@ -1,8 +1,6 @@
 using System.ComponentModel;
 using System.Text;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
@@ -13,17 +11,17 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class SkillAuthorPlugin
 {
     private readonly SkillService _skillService;
-    private readonly IKernelAccessor _kernelAccessor;
+    private readonly IChatRuntimeAccessor _runtime;
     private readonly ILogger<SkillAuthorPlugin> _logger;
 
-    public SkillAuthorPlugin(SkillService skillService, IKernelAccessor kernelAccessor, ILogger<SkillAuthorPlugin> logger)
+    public SkillAuthorPlugin(SkillService skillService, IChatRuntimeAccessor runtimeAccessor, ILogger<SkillAuthorPlugin> logger)
     {
         _skillService = skillService;
-        _kernelAccessor = kernelAccessor;
+        _runtime = runtimeAccessor;
         _logger = logger;
     }
 
-    [KernelFunction("generate_user_skill")]
+    [ToolFunction("generate_user_skill")]
     [Description("根据用户目标与可选对话摘要，调用模型生成一份完整的 SKILL.md（含 YAML frontmatter），保存为可复用用户技能。用户明确要求「把刚才聊的做成技能」等时使用。生成内容中应写明推荐使用的内置插件名（如 Excel、Word、Memory）以便后续工具选择命中。")]
     public async Task<string> GenerateUserSkillAsync(
         [Description("用户希望技能解决什么问题（必填）")] string goal,
@@ -34,13 +32,8 @@ public sealed class SkillAuthorPlugin
         if (string.IsNullOrWhiteSpace(goal))
             return "[技能生成失败] goal 不能为空。";
 
-        var kernel = _kernelAccessor.Kernel;
-        if (kernel == null)
-            return "[技能生成失败] 内核未就绪。";
-
-        var chat = kernel.Services.GetKeyedService<IChatCompletionService>(_kernelAccessor.ActiveModelId)
-            ?? kernel.Services.GetService<IChatCompletionService>();
-        if (chat == null)
+        var client = _runtime.GetChatClient();
+        if (client == null)
             return "[技能生成失败] 未找到对话服务。";
 
         var systemPrompt = BuildSkillGenerationSystemPrompt();
@@ -48,18 +41,21 @@ public sealed class SkillAuthorPlugin
             ? $"目标：{goal.Trim()}"
             : $"目标：{goal.Trim()}\n\n上下文（对话摘要或要点）：{context.Trim()}";
 
-        var history = new ChatHistory(systemPrompt);
-        history.AddUserMessage(userContent);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userContent)
+        };
 
-        var settings = new OpenAIPromptExecutionSettings { MaxTokens = 4000, Temperature = 0.3f };
+        var options = new ChatOptions { MaxOutputTokens = 4000, Temperature = 0.3f };
         var sb = new StringBuilder();
         try
         {
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var msg in chat.GetStreamingChatMessageContentsAsync(history, settings, kernel, ct).ConfigureAwait(false))
+                await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct).ConfigureAwait(false))
                 {
-                    if (msg.Content is { Length: > 0 } text)
+                    if (update.Text is { Length: > 0 } text)
                         sb.Append(text);
                 }
             }
@@ -77,7 +73,7 @@ public sealed class SkillAuthorPlugin
         return SaveParsedSkillMarkdown(content, overwrite);
     }
 
-    [KernelFunction("save_user_skill_markdown")]
+    [ToolFunction("save_user_skill_markdown")]
     [Description("将已写好的完整 SKILL.md 文本保存为用户技能（与设置页同源）。当模型已在回复中写出全文时使用，避免再次调用生成。")]
     public Task<string> SaveUserSkillMarkdownAsync(
         [Description("完整 SKILL.md：含 --- 包裹的 YAML（name、description、可选 title/enabled）与正文")] string skillMarkdown,

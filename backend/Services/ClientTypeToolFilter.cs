@@ -1,5 +1,3 @@
-using Microsoft.SemanticKernel;
-
 namespace OfficeCopilot.Server.Services;
 
 /// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument（工具选择一阶段亦不为 Chrome 列出 CurrentDocument-* 子类，见 <see cref="ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome"/>）；Office/WPS 只暴露 CurrentDocument + 通用插件，不暴露 Browser/File/CLI/Word/Excel。</summary>
@@ -129,22 +127,6 @@ public static class ClientTypeToolFilter
         }
 
         return true;
-    }
-
-    /// <summary>从 Kernel 中取出该 clientType 允许的全部函数，用于「全量工具」路径的按端过滤。</summary>
-    public static IReadOnlyList<KernelFunction> GetAllowedFunctions(Kernel kernel, string? clientType, string? sessionId = null)
-    {
-        if (kernel == null) return Array.Empty<KernelFunction>();
-        var list = new List<KernelFunction>();
-        foreach (var plugin in kernel.Plugins)
-        {
-            foreach (KernelFunction func in plugin)
-            {
-                if (IsAllowed(plugin.Name, func.Name, clientType, sessionId))
-                    list.Add(func);
-            }
-        }
-        return list;
     }
 
     /// <summary>过滤 (PluginName, FunctionName) 列表，只保留该 clientType 允许的项。</summary>

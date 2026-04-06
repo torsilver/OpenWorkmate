@@ -1,7 +1,6 @@
 using System.Collections.Frozen;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.AI;
+
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services.DashScope;
 
@@ -13,13 +12,13 @@ namespace OfficeCopilot.Server.Services;
 public sealed class ToolSelectionService : IToolSelector
 {
     private readonly ConfigService _configService;
-    private readonly IKernelAccessor _kernelAccessor;
+    private readonly IChatRuntimeAccessor _runtime;
     private readonly ILogger<ToolSelectionService> _logger;
 
     private const string FallbackAllKeyword = "全部";
 
-    // Harness / 新鲜度：新增或重命名 Kernel 插件时，须同步下方 PluginDescriptions、SubcategoryDescriptions，
-    // 并与 Program.cs 中实际 AddPlugin 名称一致，避免工具选择阶段与真实 Kernel 能力漂移。
+    // Harness / 新鲜度：新增或重命名插件时，须同步下方 PluginDescriptions、SubcategoryDescriptions，
+    // 并与 Program.cs 中实际注册到 ToolRegistry 的名称一致，避免工具选择阶段与真实能力漂移。
 
     /// <summary>内置语音/OCR 以 MCP_ 前缀注册，但不走外接 MCP；工具选择子类「多媒体」与「外部」据此区分。</summary>
     private static bool IsBuiltinMediaMcpPlugin(string pluginName) =>
@@ -89,7 +88,7 @@ public sealed class ToolSelectionService : IToolSelector
         ["System"] = "当前日期与时间：回答用户问今天几号、现在几点、本周/本月等时间相关问题时使用",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>子类 id -> (插件名, 函数名) 列表；仅内置固定子类，技能/外部由 Kernel 动态收集。</summary>
+    /// <summary>子类 id -> (插件名, 函数名) 列表；仅内置固定子类，技能/外部由 ToolRegistry 动态收集。</summary>
     private static readonly FrozenDictionary<string, List<(string Plugin, string Function)>> SubcategoryToFunctions = BuildSubcategoryToFunctions();
 
     private static FrozenDictionary<string, List<(string Plugin, string Function)>> BuildSubcategoryToFunctions()
@@ -176,17 +175,17 @@ public sealed class ToolSelectionService : IToolSelector
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
-    public ToolSelectionService(ConfigService configService, IKernelAccessor kernelAccessor, ILogger<ToolSelectionService> logger)
+    public ToolSelectionService(ConfigService configService, IChatRuntimeAccessor runtimeAccessor, ILogger<ToolSelectionService> logger)
     {
         _configService = configService;
-        _kernelAccessor = kernelAccessor;
+        _runtime = runtimeAccessor;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> SelectPluginNamesAsync(
         string userMessage,
-        ChatHistory? recentHistory,
+        IReadOnlyList<ChatMessage>? recentHistory,
         IReadOnlyList<string> availablePluginNames,
         CancellationToken ct = default)
     {
@@ -200,32 +199,32 @@ public sealed class ToolSelectionService : IToolSelector
     /// <inheritdoc />
     public async Task<ToolSelectionOutcome> SelectFunctionsAsync(
         string userMessage,
-        ChatHistory? recentHistory,
-        Kernel kernel,
+        IReadOnlyList<ChatMessage>? recentHistory,
+        ToolRegistry toolRegistry,
         CancellationToken ct = default,
         ToolSelectionContext? context = null)
     {
-        if (kernel == null)
+        if (toolRegistry == null)
         {
-            _logger.LogDebug("ToolSelection two-stage: Kernel null, return null (use all tools).");
-            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "Kernel null");
-            return new ToolSelectionOutcome(null, "kernel_null", null, 0, 0);
+            _logger.LogDebug("ToolSelection two-stage: ToolRegistry null, return null (use all tools).");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "ToolRegistry null");
+            return new ToolSelectionOutcome(null, "tool_registry_null", null, 0, 0);
         }
 
         var ai = _configService.Current.AI;
-        var allKernelFunctions = GetAllFunctionsFromKernel(kernel);
+        var allKernelFunctions = toolRegistry.GetAllFunctionPairs().ToList();
         if (allKernelFunctions.Count == 0)
         {
-            _logger.LogDebug("ToolSelection two-stage: no functions in kernel, return null.");
-            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no functions in kernel");
+            _logger.LogDebug("ToolSelection two-stage: no functions in registry, return null.");
+            _logger.LogInformation("ToolSelection two-stage: not used, use all tools. Reason={Reason}.", "no functions in registry");
             return new ToolSelectionOutcome(null, "no_functions", null, 0, 0);
         }
 
         var subcategories = ToolSelectionRecallHelper.ExcludeCurrentDocumentSubcategoriesForChrome(
-            BuildSubcategoryListFromKernel(kernel, allKernelFunctions),
+            BuildSubcategoryListFromRegistry(toolRegistry, allKernelFunctions),
             context?.ClientType);
         _logger.LogInformation("ToolSelection two-stage: entry pluginCount={PluginCount} totalFunctions={FuncCount} subcategoryCount={SubCount}.",
-            kernel.Plugins.Count, allKernelFunctions.Count, subcategories.Count);
+            toolRegistry.GetPluginNames().Count, allKernelFunctions.Count, subcategories.Count);
 
         if (subcategories.Count == 0)
         {
@@ -239,7 +238,7 @@ public sealed class ToolSelectionService : IToolSelector
             userPrompt = userPrompt + "\n\n" + context.VectorToolHint.Trim();
 
         // 一阶段：选子类
-        var selectedSubcategoryIds = await SelectSubcategoriesWithMainModelAsync(kernel, subcategories, userPrompt, ct).ConfigureAwait(false);
+        var selectedSubcategoryIds = await SelectSubcategoriesWithMainModelAsync(subcategories, userPrompt, ct).ConfigureAwait(false);
         if (selectedSubcategoryIds == null)
         {
             _logger.LogDebug("ToolSelection two-stage stage1: 全部 or fallback, return null (use all tools).");
@@ -251,7 +250,7 @@ public sealed class ToolSelectionService : IToolSelector
         ToolSelectionRecallHelper.MergeChromeExcelStyleSubcategoryIfNeeded(
             selectedSubcategoryIds, context?.ClientType, userMessage, recentHistory, validSubcategoryIds);
 
-        var candidateFunctions = GetCandidateFunctionsFromSubcategoryIds(kernel, selectedSubcategoryIds, allKernelFunctions);
+        var candidateFunctions = GetCandidateFunctionsFromSubcategoryIds(toolRegistry, selectedSubcategoryIds, allKernelFunctions);
         if (candidateFunctions.Count == 0)
         {
             _logger.LogDebug("ToolSelection two-stage: no candidate functions after stage1, return null.");
@@ -270,20 +269,8 @@ public sealed class ToolSelectionService : IToolSelector
         return new ToolSelectionOutcome(merged, "ok_two_stage", selectedSubcategoryIds, candidateFunctions.Count, merged.Count);
     }
 
-    /// <summary>从 Kernel 收集所有 (PluginName, FunctionName)，用于子类过滤与描述。</summary>
-    private static List<(string Plugin, string Function)> GetAllFunctionsFromKernel(Kernel kernel)
-    {
-        var list = new List<(string, string)>();
-        foreach (var plugin in kernel.Plugins)
-        {
-            foreach (KernelFunction func in plugin)
-                list.Add((plugin.Name, func.Name));
-        }
-        return list;
-    }
-
-    /// <summary>构建一阶段可选的子类列表（仅包含在 Kernel 中至少有一个函数的子类）；含动态 技能/外部；自动为未映射的插件生成子类。</summary>
-    private static List<(string Id, string Description)> BuildSubcategoryListFromKernel(Kernel kernel, List<(string Plugin, string Function)> allFunctions)
+    /// <summary>构建一阶段可选的子类列表（仅包含在注册表中至少有一个函数的子类）；含动态 技能/外部；自动为未映射的插件生成子类。</summary>
+    private static List<(string Id, string Description)> BuildSubcategoryListFromRegistry(ToolRegistry toolRegistry, List<(string Plugin, string Function)> allFunctions)
     {
         var presentSet = new HashSet<(string, string)>(allFunctions, new PluginFunctionComparer());
         var result = new List<(string, string)>();
@@ -300,38 +287,41 @@ public sealed class ToolSelectionService : IToolSelector
             }
         }
 
-        var skillPlugins = kernel.Plugins.Where(p => string.Equals(p.Name, "ClawhubSkill", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)).ToList();
-        if (skillPlugins.Count > 0)
+        var skillPluginNames = toolRegistry.GetPluginNames()
+            .Where(n => string.Equals(n, "ClawhubSkill", StringComparison.OrdinalIgnoreCase) || n.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (skillPluginNames.Count > 0)
         {
             if (SubcategoryDescriptions.TryGetValue("技能", out var skillDesc))
                 result.Add(("技能", skillDesc));
-            foreach (var p in skillPlugins)
-                coveredPlugins.Add(p.Name);
+            foreach (var n in skillPluginNames)
+                coveredPlugins.Add(n);
         }
 
-        var externalMcpPlugins = kernel.Plugins
-            .Where(p => p.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) && !IsBuiltinMediaMcpPlugin(p.Name))
+        var externalMcpPluginNames = toolRegistry.GetPluginNames()
+            .Where(n => n.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) && !IsBuiltinMediaMcpPlugin(n))
             .ToList();
-        if (externalMcpPlugins.Count > 0)
+        if (externalMcpPluginNames.Count > 0)
         {
             if (SubcategoryDescriptions.TryGetValue("外部", out var extDesc))
                 result.Add(("外部", extDesc));
-            foreach (var p in externalMcpPlugins)
-                coveredPlugins.Add(p.Name);
+            foreach (var n in externalMcpPluginNames)
+                coveredPlugins.Add(n);
         }
 
         // Auto-discover plugins not covered by hardcoded mappings
-        foreach (var plugin in kernel.Plugins)
+        foreach (var g in allFunctions.GroupBy(pf => pf.Plugin, StringComparer.OrdinalIgnoreCase))
         {
-            if (coveredPlugins.Contains(plugin.Name)) continue;
-            var funcCount = plugin.Count();
+            var pluginName = g.Key;
+            if (coveredPlugins.Contains(pluginName)) continue;
+            var funcCount = g.Count();
             if (funcCount == 0) continue;
-            var autoId = $"Auto_{plugin.Name}";
-            var firstFunc = plugin.FirstOrDefault();
-            var descHint = firstFunc?.Description;
+            var autoId = $"Auto_{pluginName}";
+            var first = g.First();
+            var descHint = toolRegistry.FindTool(pluginName, first.Function)?.Description;
             var autoDesc = !string.IsNullOrWhiteSpace(descHint)
-                ? $"{plugin.Name}: {descHint}"
-                : $"{plugin.Name} 插件（{funcCount} 个工具）";
+                ? $"{pluginName}: {descHint}"
+                : $"{pluginName} 插件（{funcCount} 个工具）";
             result.Add((autoId, autoDesc));
         }
 
@@ -347,40 +337,40 @@ public sealed class ToolSelectionService : IToolSelector
     }
 
     /// <summary>一阶段选子类：主模型输出子类 id 或「全部」（无 tools，轻量调用）。</summary>
-    private async Task<List<string>?> SelectSubcategoriesWithMainModelAsync(Kernel kernel, List<(string Id, string Description)> subcategories, string userPrompt, CancellationToken ct)
+    private async Task<List<string>?> SelectSubcategoriesWithMainModelAsync(List<(string Id, string Description)> subcategories, string userPrompt, CancellationToken ct)
     {
         var systemPrompt = BuildStage1SystemPrompt(subcategories);
-        var chat = new ChatHistory(systemPrompt);
-        chat.AddUserMessage(userPrompt);
-
-        var serviceId = _kernelAccessor.ActiveModelId;
-        if (string.IsNullOrEmpty(serviceId)) serviceId = null;
-        var chatService = serviceId != null ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId) : null;
-        chatService ??= kernel.Services.GetService<IChatCompletionService>();
-        if (chatService == null)
+        var messages = new List<ChatMessage>
         {
-            _logger.LogDebug("ToolSelection stage1: No chat service for main model.");
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userPrompt)
+        };
+
+        var client = _runtime.GetChatClient();
+        if (client == null)
+        {
+            _logger.LogDebug("ToolSelection stage1: No chat client for main model.");
             return null;
         }
 
         var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
-        _logger.LogDebug("ToolSelection stage1 request serviceId={ServiceId} subcategoriesCount={Count} userPreview={UserPreview}", serviceId ?? "(default)", subcategories.Count, userPreview);
+        _logger.LogDebug("ToolSelection stage1 request subcategoriesCount={Count} userPreview={UserPreview}", subcategories.Count, userPreview);
 
         try
         {
-            var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
+            var options = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.1f };
             var responseText = new System.Text.StringBuilder();
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+                await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct).ConfigureAwait(false))
                 {
-                    if (msg.Content is { Length: > 0 } content)
+                    if (update.Text is { Length: > 0 } content)
                         responseText.Append(content);
                 }
             }
 
             var raw = responseText.ToString().Trim();
-            _logger.LogDebug("ToolSelection stage1 response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
+            _logger.LogDebug("ToolSelection stage1 response raw={Raw}", raw);
             if (string.IsNullOrEmpty(raw)) return null;
 
             if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
@@ -453,11 +443,12 @@ public sealed class ToolSelectionService : IToolSelector
         return result;
     }
 
-    /// <summary>根据一阶段选中的子类 id 得到候选函数列表（与 Kernel 取交集）。</summary>
-    private static List<(string Plugin, string Function)> GetCandidateFunctionsFromSubcategoryIds(Kernel kernel, List<string> subcategoryIds, List<(string Plugin, string Function)> allKernelFunctions)
+    /// <summary>根据一阶段选中的子类 id 得到候选函数列表（与注册表中的函数取交集）。</summary>
+    private static List<(string Plugin, string Function)> GetCandidateFunctionsFromSubcategoryIds(ToolRegistry toolRegistry, List<string> subcategoryIds, List<(string Plugin, string Function)> allKernelFunctions)
     {
         var presentSet = new HashSet<(string, string)>(allKernelFunctions, new PluginFunctionComparer());
         var result = new HashSet<(string, string)>(new PluginFunctionComparer());
+        var registryPairs = toolRegistry.GetAllFunctionPairs();
 
         foreach (var id in subcategoryIds)
         {
@@ -473,26 +464,24 @@ public sealed class ToolSelectionService : IToolSelector
 
             if (string.Equals(id, "技能", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var plugin in kernel.Plugins)
+                foreach (var (plugin, func) in registryPairs)
                 {
-                    if (!string.Equals(plugin.Name, "ClawhubSkill", StringComparison.OrdinalIgnoreCase) && !plugin.Name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(plugin, "ClawhubSkill", StringComparison.OrdinalIgnoreCase) && !plugin.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    foreach (KernelFunction f in plugin)
-                        result.Add((plugin.Name, f.Name));
+                    result.Add((plugin, func));
                 }
                 continue;
             }
 
             if (string.Equals(id, "外部", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var plugin in kernel.Plugins)
+                foreach (var (plugin, func) in registryPairs)
                 {
-                    if (!plugin.Name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase))
+                    if (!plugin.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    if (IsBuiltinMediaMcpPlugin(plugin.Name))
+                    if (IsBuiltinMediaMcpPlugin(plugin))
                         continue;
-                    foreach (KernelFunction f in plugin)
-                        result.Add((plugin.Name, f.Name));
+                    result.Add((plugin, func));
                 }
                 continue;
             }
@@ -501,12 +490,11 @@ public sealed class ToolSelectionService : IToolSelector
             if (id.StartsWith("Auto_", StringComparison.OrdinalIgnoreCase))
             {
                 var pluginName = id["Auto_".Length..];
-                foreach (var plugin in kernel.Plugins)
+                foreach (var (plugin, func) in registryPairs)
                 {
-                    if (!string.Equals(plugin.Name, pluginName, StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(plugin, pluginName, StringComparison.OrdinalIgnoreCase))
                         continue;
-                    foreach (KernelFunction f in plugin)
-                        result.Add((plugin.Name, f.Name));
+                    result.Add((plugin, func));
                 }
             }
         }
@@ -528,23 +516,23 @@ public sealed class ToolSelectionService : IToolSelector
         return result.ToList();
     }
 
-    private static string BuildUserPromptWithHistory(string userMessage, ChatHistory? recentHistory)
+    private static string BuildUserPromptWithHistory(string userMessage, IReadOnlyList<ChatMessage>? recentHistory)
     {
         var userPrompt = (userMessage ?? "").Trim();
         if (userPrompt.Length > 1000)
             userPrompt = userPrompt[..1000] + "...";
         if (recentHistory != null && recentHistory.Count > 0)
         {
-            var lastContent = recentHistory[^1].Content ?? "";
+            var lastContent = recentHistory[^1].Text ?? "";
             if (lastContent.Length > 0 && lastContent.Length < 500)
                 userPrompt = userPrompt + "\n[上一条] " + lastContent;
 
             if (recentHistory.Count >= 2 && userPrompt.Length < 600)
             {
                 var prev = recentHistory[^2];
-                if (prev.Role == AuthorRole.Assistant)
+                if (prev.Role == ChatRole.Assistant)
                 {
-                    var ac = (prev.Content ?? "").Trim();
+                    var ac = (prev.Text ?? "").Trim();
                     if (ac.Length > 0)
                     {
                         var snippet = ac.Length > 450 ? ac[..450] + "…" : ac;
@@ -558,15 +546,14 @@ public sealed class ToolSelectionService : IToolSelector
 
     private async Task<IReadOnlyList<string>> SelectByLlmAsync(
         string userMessage,
-        ChatHistory? recentHistory,
+        IReadOnlyList<ChatMessage>? recentHistory,
         IReadOnlyList<string> availablePluginNames,
         AiConfig ai,
         CancellationToken ct)
     {
-        var kernel = _kernelAccessor.Kernel;
-        if (kernel == null)
+        if (!_runtime.IsReady)
         {
-            _logger.LogDebug("ToolSelection LLM: Kernel not ready, using all tools.");
+            _logger.LogDebug("ToolSelection LLM: Runtime not ready, using all tools.");
             return Array.Empty<string>();
         }
 
@@ -577,44 +564,42 @@ public sealed class ToolSelectionService : IToolSelector
             userPrompt = userPrompt[..1000] + "...";
         if (recentHistory != null && recentHistory.Count > 0)
         {
-            var lastContent = recentHistory[^1].Content ?? "";
+            var lastContent = recentHistory[^1].Text ?? "";
             if (lastContent.Length > 0 && lastContent.Length < 500)
                 userPrompt = userPrompt + "\n[上一条] " + lastContent;
         }
 
-        var chat = new ChatHistory(systemPrompt);
-        chat.AddUserMessage(userPrompt);
-
-        var serviceId = _kernelAccessor.ActiveModelId;
-        if (string.IsNullOrEmpty(serviceId)) serviceId = null;
-        var chatService = serviceId != null
-            ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId)
-            : null;
-        chatService ??= kernel.Services.GetService<IChatCompletionService>();
-        if (chatService == null)
+        var chatMessages = new List<ChatMessage>
         {
-            _logger.LogDebug("ToolSelection LLM: No chat service for main model, using all tools.");
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userPrompt)
+        };
+
+        var client = _runtime.GetChatClient();
+        if (client == null)
+        {
+            _logger.LogDebug("ToolSelection LLM: No chat client for main model, using all tools.");
             return Array.Empty<string>();
         }
 
         var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
-        _logger.LogDebug("ToolSelection LLM request serviceId={ServiceId} systemLen={SystemLen} userPreview={UserPreview}", serviceId ?? "(default)", systemPrompt.Length, userPreview);
+        _logger.LogDebug("ToolSelection LLM request systemLen={SystemLen} userPreview={UserPreview}", systemPrompt.Length, userPreview);
 
         try
         {
-            var settings = new OpenAIPromptExecutionSettings { MaxTokens = 256, Temperature = 0.1f };
+            var options = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.1f };
             var responseText = new System.Text.StringBuilder();
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, settings, kernel, ct).ConfigureAwait(false))
+                await foreach (var update in client.GetStreamingResponseAsync(chatMessages, options, ct).ConfigureAwait(false))
                 {
-                    if (msg.Content is { Length: > 0 } content)
+                    if (update.Text is { Length: > 0 } content)
                         responseText.Append(content);
                 }
             }
 
             var raw = responseText.ToString().Trim();
-            _logger.LogDebug("ToolSelection LLM response serviceId={ServiceId} raw={Raw}", serviceId ?? "(default)", raw);
+            _logger.LogDebug("ToolSelection LLM response raw={Raw}", raw);
             if (string.IsNullOrEmpty(raw))
                 return Array.Empty<string>();
             if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)

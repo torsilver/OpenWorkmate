@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -20,7 +20,7 @@ public sealed class OcrPlugin
         _logger = logger;
     }
 
-    [KernelFunction("ocr_image")]
+    [ToolFunction("ocr_image")]
     [Description("Extract text from an image file at the given local path. Use when the user asks to get text from an image or to turn images into a document. Path must be accessible from this machine (e.g. from get_attachment_path). Returns the recognized text or an error message.")]
     public async Task<string> OcrImageAsync(
         [Description("Full local path to the image file (e.g. C:\\temp\\screenshot.png or path from get_attachment_path)")] string filePath,

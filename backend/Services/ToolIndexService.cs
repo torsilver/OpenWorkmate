@@ -1,4 +1,4 @@
-using Microsoft.SemanticKernel;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services.Memory;
 
 namespace OfficeCopilot.Server.Services;
@@ -44,11 +44,11 @@ public sealed class ToolIndexService : IToolIndexService
     }
 
     /// <inheritdoc />
-    public async Task BuildIndexAsync(Kernel kernel, ToolIndexBuildMode mode = ToolIndexBuildMode.UserOnly, CancellationToken ct = default)
+    public async Task BuildIndexAsync(ToolRegistry toolRegistry, ToolIndexBuildMode mode = ToolIndexBuildMode.UserOnly, CancellationToken ct = default)
     {
-        if (kernel == null || !_embedding.IsConfigured)
+        if (toolRegistry == null || !_embedding.IsConfigured)
         {
-            _logger.LogDebug("ToolIndex: Skip build (kernel null or embedding not configured).");
+            _logger.LogDebug("ToolIndex: Skip build (registry null or embedding not configured).");
             return;
         }
         if (!_store.IsPersistent)
@@ -72,19 +72,19 @@ public sealed class ToolIndexService : IToolIndexService
         {
             var collection = CollectionPrefix + clientType;
             var count = 0;
-            foreach (var plugin in kernel.Plugins)
+            foreach (var pluginName in toolRegistry.GetPluginNames())
             {
-                if (mode == ToolIndexBuildMode.BuiltinOnly && !BuiltinPluginNames.Contains(plugin.Name))
+                if (mode == ToolIndexBuildMode.BuiltinOnly && !BuiltinPluginNames.Contains(pluginName))
                     continue;
-                if (mode == ToolIndexBuildMode.UserOnly && !IsUserPlugin(plugin.Name))
+                if (mode == ToolIndexBuildMode.UserOnly && !IsUserPlugin(pluginName))
                     continue;
 
-                foreach (KernelFunction func in plugin)
+                foreach (var (pName, fName, tool) in toolRegistry.GetToolsByPlugin(pluginName))
                 {
-                    if (!ClientTypeToolFilter.IsAllowed(plugin.Name, func.Name, clientType))
+                    if (!ClientTypeToolFilter.IsAllowed(pName, fName, clientType))
                         continue;
-                    var id = $"{collection}|{plugin.Name}|{func.Name}";
-                    var text = BuildToolText(plugin.Name, func.Name, func);
+                    var id = $"{collection}|{pName}|{fName}";
+                    var text = BuildToolText(pName, fName, tool);
                     var existing = await _store.GetAsync(id, ct).ConfigureAwait(false);
                     if (existing.HasValue && existing.Value.Text == text)
                         continue;
@@ -102,11 +102,11 @@ public sealed class ToolIndexService : IToolIndexService
     }
 
     /// <inheritdoc />
-    public async Task SyncUserToolIndexAsync(Kernel kernel, CancellationToken ct = default)
+    public async Task SyncUserToolIndexAsync(ToolRegistry toolRegistry, CancellationToken ct = default)
     {
-        if (kernel == null || !_embedding.IsConfigured)
+        if (toolRegistry == null || !_embedding.IsConfigured)
         {
-            _logger.LogDebug("ToolIndex: Skip SyncUserToolIndex (kernel null or embedding not configured).");
+            _logger.LogDebug("ToolIndex: Skip SyncUserToolIndex (registry null or embedding not configured).");
             return;
         }
         if (!_store.IsPersistent)
@@ -120,17 +120,17 @@ public sealed class ToolIndexService : IToolIndexService
             var collection = CollectionPrefix + clientType;
             var expectedIds = new HashSet<string>(StringComparer.Ordinal);
             var upserted = 0;
-            foreach (var plugin in kernel.Plugins)
+            foreach (var pluginName in toolRegistry.GetPluginNames())
             {
-                if (!IsUserPlugin(plugin.Name))
+                if (!IsUserPlugin(pluginName))
                     continue;
-                foreach (KernelFunction func in plugin)
+                foreach (var (pName, fName, tool) in toolRegistry.GetToolsByPlugin(pluginName))
                 {
-                    if (!ClientTypeToolFilter.IsAllowed(plugin.Name, func.Name, clientType))
+                    if (!ClientTypeToolFilter.IsAllowed(pName, fName, clientType))
                         continue;
-                    var id = $"{collection}|{plugin.Name}|{func.Name}";
+                    var id = $"{collection}|{pName}|{fName}";
                     expectedIds.Add(id);
-                    var text = BuildToolText(plugin.Name, func.Name, func);
+                    var text = BuildToolText(pName, fName, tool);
                     var existing = await _store.GetAsync(id, ct).ConfigureAwait(false);
                     if (existing.HasValue && existing.Value.Text == text)
                         continue;
@@ -221,27 +221,13 @@ public sealed class ToolIndexService : IToolIndexService
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Plugin) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Function);
     }
 
-    private static string BuildToolText(string pluginName, string functionName, KernelFunction func)
+    private static string BuildToolText(string pluginName, string functionName, AITool tool)
     {
-        var desc = GetFunctionDescription(func);
+        var desc = (tool as AIFunction)?.Description;
         var parts = new List<string> { pluginName, functionName };
         if (!string.IsNullOrWhiteSpace(desc))
             parts.Add(desc);
         return string.Join(" ", parts);
-    }
-
-    private static string? GetFunctionDescription(KernelFunction func)
-    {
-        try
-        {
-            var meta = func.Metadata;
-            if (meta == null) return null;
-            return meta.Description;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static (string PluginName, string FunctionName)? ParseToolId(string id)

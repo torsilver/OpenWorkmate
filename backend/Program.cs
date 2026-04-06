@@ -63,10 +63,19 @@ try
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.IChatTurnProcessCoordinator, OfficeCopilot.Server.Services.SemanticKernel.DefaultChatTurnProcessCoordinator>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.SkStreamChatToolingProcessRegistry>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.SemanticKernel.SkSubtaskChatCompletionAgentRunner>();
-    builder.Services.AddSingleton<IKernelAccessor, KernelAccessor>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.IChatTurnProcessCoordinator, OfficeCopilot.Server.Services.Chat.DefaultChatTurnProcessCoordinator>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ChatToolingRegistry>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline, OfficeCopilot.Server.Services.ToolInvocation.SecurityPipeline>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier, OfficeCopilot.Server.Services.ToolInvocation.ToolStatusNotifier>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ToolInvocationPipelineServices>(sp =>
+        new OfficeCopilot.Server.Services.ToolInvocation.ToolInvocationPipelineServices
+        {
+            ConfigService = sp.GetRequiredService<ConfigService>(),
+            SecurityPipeline = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline>(),
+            ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>()
+        });
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Maf.MafSubtaskChatClientAgentRunner>();
+    builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
     builder.Services.AddSingleton<EmbeddingProvider>();
     builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());
     builder.Services.AddSingleton<IVectorStore>(sp =>
@@ -160,7 +169,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
     });
 
     builder.Services.AddCors();
-    builder.Services.AddHostedService<ChatServiceKernelWarmupHostedService>();
+    builder.Services.AddHostedService<ChatServiceWarmupHostedService>();
     builder.Services.AddHostedService<ScheduledTaskRunnerService>();
 
     var app = builder.Build();
@@ -216,29 +225,27 @@ builder.Services.AddSingleton<UserOptionsManager>();
         using (var scope = app.Services.CreateScope())
         {
             var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
-            await chat.RebuildKernelAsync(skipUserToolIndexSync: true);
-            var kernelAccessor = scope.ServiceProvider.GetRequiredService<IKernelAccessor>();
-            var kernel = kernelAccessor.Kernel;
-            if (kernel == null)
+            await chat.RebuildRuntimeAsync(skipUserToolIndexSync: true);
+            var runtimeAccessor = scope.ServiceProvider.GetRequiredService<IChatRuntimeAccessor>();
+            if (!runtimeAccessor.IsReady)
             {
-                Log.Error("Kernel is null after RebuildKernelAsync.");
+                Log.Error("Runtime not ready after RebuildRuntimeAsync.");
                 Environment.Exit(1);
             }
             var toolIndex = scope.ServiceProvider.GetRequiredService<IToolIndexService>();
-            await toolIndex.BuildIndexAsync(kernel, ToolIndexBuildMode.BuiltinOnly);
+            await toolIndex.BuildIndexAsync(runtimeAccessor.ToolRegistry, ToolIndexBuildMode.BuiltinOnly);
 
             // 阶段 2：真实用户配置 + Skills + 可连接的 MCP，用户工具索引（与运行时增量逻辑一致）
             skillService.SetReturnEmptySkillsForToolIndexBuild(false);
             configService.ReloadConfigFromDisk();
             configService.ApplyToolIndexBuildEmbeddingCredentials(endpoint.Trim(), apiKey.Trim(), modelId.Trim());
-            await chat.RebuildKernelAsync(skipUserToolIndexSync: true);
-            kernel = kernelAccessor.Kernel;
-            if (kernel == null)
+            await chat.RebuildRuntimeAsync(skipUserToolIndexSync: true);
+            if (!runtimeAccessor.IsReady)
             {
-                Log.Error("Kernel is null after phase-2 RebuildKernelAsync.");
+                Log.Error("Runtime not ready after phase-2 RebuildRuntimeAsync.");
                 Environment.Exit(1);
             }
-            await toolIndex.SyncUserToolIndexAsync(kernel);
+            await toolIndex.SyncUserToolIndexAsync(runtimeAccessor.ToolRegistry);
         }
         Log.Information("Tool index built successfully (builtin + user tools). DB: {Path}", Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db"));
         Environment.Exit(0);

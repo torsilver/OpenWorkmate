@@ -1,7 +1,5 @@
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services.DashScope;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -30,7 +28,7 @@ public sealed class ContextManager
     }
 
     /// <summary>按轮数和 token 预算裁剪历史。</summary>
-    public void TrimHistory(ChatHistory history, AiModelEntry? activeEntry)
+    public void TrimHistory(List<ChatMessage> history, AiModelEntry? activeEntry)
     {
         var session = _configService.Current.Session ?? new SessionConfig();
         var ctx = _configService.Current.ContextWindow ?? new ContextWindowConfig();
@@ -77,8 +75,8 @@ public sealed class ContextManager
         }
     }
 
-    /// <summary>估算整个历史的 token 总数，含 ImageContent 的视觉 token 估算。</summary>
-    public static int EstimateHistoryTokens(ChatHistory history, ContextWindowConfig ctx)
+    /// <summary>估算整个历史的 token 总数，含图片的视觉 token 估算。</summary>
+    public static int EstimateHistoryTokens(IList<ChatMessage> history, ContextWindowConfig ctx)
     {
         var total = 0;
         for (var i = 0; i < history.Count; i++)
@@ -86,17 +84,17 @@ public sealed class ContextManager
         return total;
     }
 
-    /// <summary>估算单条消息的 token 数，含 ImageContent 的视觉 token 估算。</summary>
-    public static int EstimateMessageTokens(ChatMessageContent msg, ContextWindowConfig ctx)
+    /// <summary>估算单条消息的 token 数，含图片的视觉 token 估算。</summary>
+    public static int EstimateMessageTokens(ChatMessage msg, ContextWindowConfig ctx)
     {
-        var tokens = TokenEstimator.EstimateTokens(msg.Content ?? "", ctx);
-        if (msg.Items is { Count: > 0 })
+        var tokens = TokenEstimator.EstimateTokens(msg.Text ?? "", ctx);
+        if (msg.Contents is { Count: > 0 })
         {
-            foreach (var item in msg.Items)
+            foreach (var item in msg.Contents)
             {
-                if (item is Microsoft.SemanticKernel.TextContent text)
+                if (item is TextContent text)
                     tokens += TokenEstimator.EstimateTokens(text.Text ?? "", ctx);
-                else if (item is Microsoft.SemanticKernel.ImageContent)
+                else if (item is DataContent)
                     tokens += TokenEstimator.EstimateImageTokens(1024, 1024);
             }
         }
@@ -104,7 +102,7 @@ public sealed class ContextManager
     }
 
     /// <summary>为 context_length 重试裁剪历史：先按轮数限制，再按预算减半裁剪。</summary>
-    public static void TrimHistoryForRetry(ChatHistory history, int maxTurns, ContextWindowConfig ctx)
+    public static void TrimHistoryForRetry(List<ChatMessage> history, int maxTurns, ContextWindowConfig ctx)
     {
         var keepMessages = 1 + Math.Max(0, maxTurns) * 2;
         while (history.Count > keepMessages)
@@ -113,13 +111,13 @@ public sealed class ContextManager
         if (halfBudget <= 0) return;
         var total = 0;
         for (var i = 0; i < history.Count; i++)
-            total += TokenEstimator.EstimateTokens(history[i].Content ?? "", ctx);
+            total += TokenEstimator.EstimateTokens(history[i].Text ?? "", ctx);
         while (total > halfBudget && history.Count > 3)
         {
             var start = ConversationCompactBoundary.GetFirstRemovableChatIndex(history);
             if (start >= history.Count)
                 break;
-            var removed = TokenEstimator.EstimateTokens(history[start].Content ?? "", ctx);
+            var removed = TokenEstimator.EstimateTokens(history[start].Text ?? "", ctx);
             history.RemoveAt(start);
             total -= removed;
         }
@@ -127,7 +125,7 @@ public sealed class ContextManager
 
     /// <summary>执行摘要压缩核心逻辑：落盘、生成摘要、替换为带 <see cref="ConversationCompactBoundary"/> 的单条用户消息。</summary>
     public static async Task<(bool DidCompact, int MessagesRemoved, int SummaryLength)> SummarizeOldTurnsCoreAsync(
-        ChatHistory history, Kernel kernel, IChatCompletionService chatService,
+        List<ChatMessage> history, IChatClient chatClient,
         ContextWindowConfig ctx, string sessionId, string? offloadDirectory, CancellationToken ct)
     {
         const int maxTurnsToSummarize = 6;
@@ -138,8 +136,8 @@ public sealed class ContextManager
         for (var i = 1; i <= toTake && i < history.Count; i++)
         {
             var msg = history[i];
-            var role = msg.Role.Label ?? msg.Role.ToString() ?? "unknown";
-            var content = msg.Content ?? "";
+            var role = msg.Role.Value ?? "unknown";
+            var content = msg.Text ?? "";
             sb.AppendLine($"[{role}] {content}");
         }
         var input = sb.ToString().Trim();
@@ -164,15 +162,18 @@ public sealed class ContextManager
         var systemPrompt =
             $"你是一个对话摘要助手。请将以下对话压缩为一段简短摘要，保留关键事实与结论。摘要不超过 {maxChars} 字。只输出摘要正文，不要输出「摘要：」等前缀。"
             + " 摘要中不要断言「当前文件里仍是…」「文档现在一定…」等磁盘实时状态；优先概括用户曾提出的要求、助手曾执行的操作与结论，并可用「当时曾…」表述，避免读者把摘要当作此刻本机文件的真相。";
-        var summaryHistory = new ChatHistory(systemPrompt);
-        summaryHistory.AddUserMessage(input);
-        var settings = new OpenAIPromptExecutionSettings { MaxTokens = 800, Temperature = 0.2f };
+        var summaryMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, input)
+        };
+        var options = new ChatOptions { MaxOutputTokens = 800, Temperature = 0.2f };
         var summaryBuilder = new System.Text.StringBuilder();
         using (DashScopeCallKindContext.EnterBackground())
         {
-            await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(summaryHistory, settings, kernel, ct).ConfigureAwait(false))
+            await foreach (var update in chatClient.GetStreamingResponseAsync(summaryMessages, options, ct).ConfigureAwait(false))
             {
-                if (chunk.Content is { Length: > 0 } text)
+                if (update.Text is { Length: > 0 } text)
                     summaryBuilder.Append(text);
             }
         }
@@ -184,7 +185,7 @@ public sealed class ContextManager
         for (var i = 0; i < toTake; i++)
             history.RemoveAt(1);
         var body = ConversationCompactBoundary.BuildSummaryMessageBody(summary, DateTimeOffset.UtcNow);
-        history.Insert(1, new ChatMessageContent(AuthorRole.User, body));
+        history.Insert(1, new ChatMessage(ChatRole.User, body));
         SessionAuditLog.TryAppend(ctx, sessionId ?? "", "compact_applied", new { messagesRemoved = toTake, summaryChars = summary.Length });
         return (true, toTake, summary.Length);
     }

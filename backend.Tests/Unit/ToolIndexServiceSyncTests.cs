@@ -1,5 +1,5 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
 using Xunit;
@@ -19,16 +19,14 @@ public sealed class ToolIndexServiceSyncTests
         }
     }
 
-    private static Kernel KernelWithUserSkill(string pluginName, string description)
+    private static ToolRegistry RegistryWithUserSkill(string pluginName, string description)
     {
-        var fn = KernelFunctionFactory.CreateFromMethod(
+        var registry = new ToolRegistry();
+        var fn = AIFunctionFactory.Create(
             () => Task.FromResult("ok"),
-            functionName: "run",
-            description: description);
-        var plugin = KernelPluginFactory.CreateFromFunctions(pluginName, new[] { fn });
-        var kernel = new Kernel();
-        kernel.Plugins.Add(plugin);
-        return kernel;
+            new AIFunctionFactoryOptions { Name = "run", Description = description });
+        registry.Register(pluginName, "run", fn);
+        return registry;
     }
 
     [Fact]
@@ -38,14 +36,14 @@ public sealed class ToolIndexServiceSyncTests
         var embedding = new CountingEmbedding();
         var store = new SqliteVectorStore("Data Source=" + dbPath);
         var svc = new ToolIndexService(embedding, store, NullLogger<ToolIndexService>.Instance);
-        var kernel = KernelWithUserSkill("UserSkill_Alpha", "same");
+        var registry = RegistryWithUserSkill("UserSkill_Alpha", "same");
 
         try
         {
-            await svc.SyncUserToolIndexAsync(kernel);
+            await svc.SyncUserToolIndexAsync(registry);
             var afterFirst = embedding.Calls;
             Assert.True(afterFirst > 0);
-            await svc.SyncUserToolIndexAsync(kernel);
+            await svc.SyncUserToolIndexAsync(registry);
             Assert.Equal(afterFirst, embedding.Calls);
         }
         finally
@@ -64,9 +62,9 @@ public sealed class ToolIndexServiceSyncTests
 
         try
         {
-            await svc.SyncUserToolIndexAsync(KernelWithUserSkill("UserSkill_Beta", "v1"));
+            await svc.SyncUserToolIndexAsync(RegistryWithUserSkill("UserSkill_Beta", "v1"));
             var afterFirst = embedding.Calls;
-            await svc.SyncUserToolIndexAsync(KernelWithUserSkill("UserSkill_Beta", "v2"));
+            await svc.SyncUserToolIndexAsync(RegistryWithUserSkill("UserSkill_Beta", "v2"));
             Assert.True(embedding.Calls > afterFirst);
         }
         finally
@@ -85,11 +83,11 @@ public sealed class ToolIndexServiceSyncTests
 
         try
         {
-            await svc.SyncUserToolIndexAsync(KernelWithUserSkill("UserSkill_Old", "x"));
+            await svc.SyncUserToolIndexAsync(RegistryWithUserSkill("UserSkill_Old", "x"));
             var orphansBefore = await store.ListIdsByCollectionAndToolSourceAsync("tools:chrome", "user");
             Assert.Contains(orphansBefore, id => id.Contains("UserSkill_Old", StringComparison.Ordinal));
 
-            await svc.SyncUserToolIndexAsync(KernelWithUserSkill("UserSkill_New", "y"));
+            await svc.SyncUserToolIndexAsync(RegistryWithUserSkill("UserSkill_New", "y"));
             var orphansAfter = await store.ListIdsByCollectionAndToolSourceAsync("tools:chrome", "user");
             Assert.DoesNotContain(orphansAfter, id => id.Contains("UserSkill_Old", StringComparison.Ordinal));
             Assert.Contains(orphansAfter, id => id.Contains("UserSkill_New", StringComparison.Ordinal));

@@ -7,7 +7,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using DocumentFormat.OpenXml.Wordprocessing;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -38,7 +38,7 @@ public sealed class WordPlugin
         return true;
     }
 
-    [KernelFunction("word_body_read")]
+    [ToolFunction("word_body_read")]
     [Description("读取 Word 文档正文：段落（可选含表格）。支持段落范围与长度截断。")]
     public string WordBodyRead(
         [Description("Word 文件完整路径，支持环境变量与相对路径")] string filePath,
@@ -88,7 +88,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_tables_list")]
+    [ToolFunction("word_tables_list")]
     [Description("列出文档中所有表格的索引与简要信息。")]
     public string WordTablesList(
         [Description("Word 文件完整路径")] string filePath)
@@ -113,7 +113,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_tables_read")]
+    [ToolFunction("word_tables_read")]
     [Description("读取一个或全部表格内容，制表符分隔。tableIndex 为 0 时读全部。")]
     public string WordTablesRead(
         [Description("Word 文件完整路径")] string filePath,
@@ -142,7 +142,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_document_create")]
+    [ToolFunction("word_document_create")]
     [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。Markdown：以 # / ## / ### 开头的行变为标题，以 - 或 * 开头的行变为列表项，其余为正文。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。")]
     public string WordDocumentCreate(
         [Description("目标路径：优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
@@ -320,7 +320,7 @@ public sealed class WordPlugin
         return new Paragraph(normalPPr, new Run(new Text(text)));
     }
 
-    [KernelFunction("word_find_replace")]
+    [ToolFunction("word_find_replace")]
     [Description("在文档中查找并替换文本。")]
     public string WordFindReplace(
         [Description("Word 文件完整路径")] string filePath,
@@ -348,7 +348,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 替换失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_paragraphs_format")]
+    [ToolFunction("word_paragraphs_format")]
     [Description("对指定段落范围设置对齐、样式、段前段后间距。alignment: left|center|right|justify。用户只说「第 N 段」且未提「到第 M 段 / 以下 / 直至末尾」时，视为只改该一段：须令 endParagraph 与 startParagraph 均为 N；若省略 endParagraph 或传 0，则从 startParagraph 一直格式化到文档最后一个段落。")]
     public string WordParagraphsFormat(
         [Description("Word 文件完整路径")] string filePath,
@@ -400,7 +400,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 格式化失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_text_format")]
+    [ToolFunction("word_text_format")]
     [Description("对包含指定文字的所有 Run 设置字体、字号、加粗、斜体、颜色。")]
     public string WordTextFormat(
         [Description("Word 文件完整路径")] string filePath,
@@ -436,7 +436,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 格式化失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_comments_list")]
+    [ToolFunction("word_comments_list")]
     [Description("列出文档中所有批注的 Id、作者与摘要。")]
     public string WordCommentsList(
         [Description("Word 文件完整路径")] string filePath)
@@ -462,7 +462,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_comments_read")]
+    [ToolFunction("word_comments_read")]
     [Description("读取所有批注内容，含被批注原文（若有）。")]
     public string WordCommentsRead(
         [Description("Word 文件完整路径")] string filePath)
@@ -495,7 +495,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_comment_add")]
+    [ToolFunction("word_comment_add")]
     [Description("在正文按 WordprocessingML 惯例定位：遍历 body 内 Run（文档顺序），在第一个「含 anchorText 子串」的 Run 内插入 CommentRangeStart/CommentRangeEnd 与 comments.xml 中的批注。OpenXML 以 Run/Text 为粒度，无单独「第几处」API；若多处文字相同，请用更长的唯一锚点字符串区分。")]
     public string WordCommentAdd(
         [Description("Word 文件完整路径")] string filePath,
@@ -554,7 +554,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 添加批注失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_comments_delete")]
+    [ToolFunction("word_comments_delete")]
     [Description("按批注 Id 删除批注，或删除全部。commentId 留空且 deleteAll 为 true 时删除全部。")]
     public string WordCommentsDelete(
         [Description("Word 文件完整路径")] string filePath,
@@ -599,7 +599,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 删除失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_headers_footers_list")]
+    [ToolFunction("word_headers_footers_list")]
     [Description("列出文档中页眉、页脚部件的数量；每项给出索引（与 word_header_read / word_header_write 的 index 一致，从 1 起）及正文摘要，便于选用索引。不返回包内路径。")]
     public string WordHeadersFootersList(
         [Description("Word 文件完整路径")] string filePath)
@@ -634,7 +634,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_header_read")]
+    [ToolFunction("word_header_read")]
     [Description("读取指定索引的页眉文本。index 从 1 开始。")]
     public string WordHeaderRead(
         [Description("Word 文件完整路径")] string filePath,
@@ -653,7 +653,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_footer_read")]
+    [ToolFunction("word_footer_read")]
     [Description("读取指定索引的页脚文本。index 从 1 开始。")]
     public string WordFooterRead(
         [Description("Word 文件完整路径")] string filePath,
@@ -672,7 +672,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_header_write")]
+    [ToolFunction("word_header_write")]
     [Description("写入或替换指定页眉的文本。若不存在则创建。")]
     public string WordHeaderWrite(
         [Description("Word 文件完整路径")] string filePath,
@@ -710,7 +710,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_footer_write")]
+    [ToolFunction("word_footer_write")]
     [Description("写入或替换指定页脚的文本。")]
     public string WordFooterWrite(
         [Description("Word 文件完整路径")] string filePath,
@@ -748,7 +748,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_bookmarks_list")]
+    [ToolFunction("word_bookmarks_list")]
     [Description("列出文档中所有书签名称。")]
     public string WordBookmarksList(
         [Description("Word 文件完整路径")] string filePath)
@@ -765,7 +765,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_bookmark_read")]
+    [ToolFunction("word_bookmark_read")]
     [Description("读取书签所标记范围的文本。")]
     public string WordBookmarkRead(
         [Description("Word 文件完整路径")] string filePath,
@@ -795,7 +795,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_bookmark_insert")]
+    [ToolFunction("word_bookmark_insert")]
     [Description("在指定位置插入书签。paragraphIndex 从 1 开始，表示在该段末尾插入。")]
     public string WordBookmarkInsert(
         [Description("Word 文件完整路径")] string filePath,
@@ -824,7 +824,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_images_list")]
+    [ToolFunction("word_images_list")]
     [Description("列出文档中图片部件数量与关系 Id。")]
     public string WordImagesList(
         [Description("Word 文件完整路径")] string filePath)
@@ -843,7 +843,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_image_insert")]
+    [ToolFunction("word_image_insert")]
     [Description("在指定段落后插入图片。imagePath 为本地图片文件路径。支持 png、jpg/jpeg、gif、bmp。")]
     public string WordImageInsert(
         [Description("Word 文件完整路径")] string filePath,
@@ -923,7 +923,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 插入失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_sections_list")]
+    [ToolFunction("word_sections_list")]
     [Description("列出文档中的节（SectionProperties 数量）。")]
     public string WordSectionsList(
         [Description("Word 文件完整路径")] string filePath)
@@ -940,7 +940,7 @@ public sealed class WordPlugin
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }
 
-    [KernelFunction("word_hyperlink_insert")]
+    [ToolFunction("word_hyperlink_insert")]
     [Description("在指定段落插入超链接文本。")]
     public string WordHyperlinkInsert(
         [Description("Word 文件完整路径")] string filePath,

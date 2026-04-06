@@ -1,5 +1,3 @@
-using Microsoft.SemanticKernel;
-
 namespace OfficeCopilot.Server.Services;
 
 /// <summary>工具向量检索结果：去重后的命中（按分数降序）、是否足够好、带分数列表（供 agent_trace）。</summary>
@@ -25,26 +23,18 @@ public enum ToolIndexBuildMode
 public interface IToolIndexService
 {
     /// <summary>
-    /// 使用当前 Kernel 的插件/函数列表，按端（clientType）分别写入工具向量索引。仅对 ClientTypeToolFilter.IsAllowed 允许的工具写入对应端的 collection。
+    /// 使用 ToolRegistry 中的工具列表，按端（clientType）分别写入工具向量索引。
     /// </summary>
-    /// <param name="mode">BuiltinOnly 只写内置并标 tool_source=builtin；UserOnly 只写用户工具并标 tool_source=user；All 写全部（不标 tool_source，兼容）。</param>
-    Task BuildIndexAsync(Kernel kernel, ToolIndexBuildMode mode = ToolIndexBuildMode.UserOnly, CancellationToken ct = default);
+    Task BuildIndexAsync(ToolRegistry toolRegistry, ToolIndexBuildMode mode = ToolIndexBuildMode.UserOnly, CancellationToken ct = default);
 
     /// <summary>
-    /// 增量同步用户工具索引（UserSkill / MCP，不含 STT/OCR）：仅对缺失或描述文本变化的条目 embedding；删除已从 Kernel 消失的 user 工具向量。
+    /// 增量同步用户工具索引（UserSkill / MCP，不含 STT/OCR）：仅对缺失或描述文本变化的条目 embedding；删除已从 ToolRegistry 消失的 user 工具向量。
     /// </summary>
-    Task SyncUserToolIndexAsync(Kernel kernel, CancellationToken ct = default);
+    Task SyncUserToolIndexAsync(ToolRegistry toolRegistry, CancellationToken ct = default);
 
     /// <summary>
     /// 按用户查询在指定端的工具 collection 中检索，返回候选 (PluginName, FunctionName) 及是否「足够好」。
     /// </summary>
-    /// <param name="userQuery">用户消息（可含简短最近历史）</param>
-    /// <param name="clientType">当前端，空视为 chrome</param>
-    /// <param name="topK">返回条数上限</param>
-    /// <param name="minScore">最低分数阈值，用于判定足够好</param>
-    /// <param name="minCount">最少条数，用于判定足够好</param>
-    /// <param name="ct">取消令牌</param>
-    /// <returns>候选列表（去重、按分数降序）；GoodEnough 表示是否满足 minCount 且最高分 ≥ minScore；ScoredHits 与 Results 顺序一致。</returns>
     Task<ToolSearchResult> SearchToolsAsync(
         string userQuery,
         string? clientType,

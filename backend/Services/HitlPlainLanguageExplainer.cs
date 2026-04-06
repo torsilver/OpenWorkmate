@@ -1,7 +1,5 @@
 using System.Text;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services.DashScope;
 
 namespace OfficeCopilot.Server.Services;
@@ -30,12 +28,12 @@ public sealed class HitlPlainLanguageExplainer : IHitlPlainLanguageExplainer
         不要输出思考过程或 think、thinking 等 XML 式标签。
         """;
 
-    private readonly IKernelAccessor _kernelAccessor;
+    private readonly IChatRuntimeAccessor _runtime;
     private readonly ILogger<HitlPlainLanguageExplainer> _logger;
 
-    public HitlPlainLanguageExplainer(IKernelAccessor kernelAccessor, ILogger<HitlPlainLanguageExplainer> logger)
+    public HitlPlainLanguageExplainer(IChatRuntimeAccessor runtimeAccessor, ILogger<HitlPlainLanguageExplainer> logger)
     {
-        _kernelAccessor = kernelAccessor;
+        _runtime = runtimeAccessor;
         _logger = logger;
     }
 
@@ -57,43 +55,33 @@ public sealed class HitlPlainLanguageExplainer : IHitlPlainLanguageExplainer
         if (trimmed.Length == 0)
             return null;
 
-        var kernel = _kernelAccessor.Kernel;
-        if (kernel == null)
+        var client = _runtime.GetChatClient();
+        if (client == null)
         {
-            _logger.LogDebug("HitlPlainLanguage: kernel 未就绪，跳过概括。");
+            _logger.LogDebug("HitlPlainLanguage: 无 IChatClient，跳过概括。");
             return null;
         }
 
-        var serviceId = _kernelAccessor.ActiveModelId;
-        if (string.IsNullOrEmpty(serviceId))
-            serviceId = null;
-        var chatService = serviceId != null
-            ? kernel.Services.GetKeyedService<IChatCompletionService>(serviceId)
-            : null;
-        chatService ??= kernel.Services.GetService<IChatCompletionService>();
-        if (chatService == null)
+        var messages = new List<ChatMessage>
         {
-            _logger.LogDebug("HitlPlainLanguage: 无 IChatCompletionService，跳过概括。");
-            return null;
-        }
-
-        var chat = new ChatHistory(SystemPrompt);
-        chat.AddUserMessage(trimmed);
+            new(ChatRole.System, SystemPrompt),
+            new(ChatRole.User, trimmed)
+        };
 
         using var timeoutCts = new CancellationTokenSource(SummarizeTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-        var settings = new OpenAIPromptExecutionSettings { MaxTokens = 384, Temperature = 0.15f };
+        var options = new ChatOptions { MaxOutputTokens = 384, Temperature = 0.15f };
         var responseText = new StringBuilder();
         try
         {
             using (DashScopeCallKindContext.EnterBackground())
             {
-                await foreach (var msg in chatService
-                                   .GetStreamingChatMessageContentsAsync(chat, settings, kernel, linked.Token)
+                await foreach (var update in client
+                                   .GetStreamingResponseAsync(messages, options, linked.Token)
                                    .ConfigureAwait(false))
                 {
-                    if (msg.Content is { Length: > 0 } content)
+                    if (update.Text is { Length: > 0 } content)
                         responseText.Append(content);
                 }
             }

@@ -1,8 +1,12 @@
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
 
 namespace OfficeCopilot.Server.Mcp;
 
+/// <summary>
+/// 将 MCP 服务器工具暴露为 MEAI <see cref="AITool"/> 列表。
+/// </summary>
 public sealed class McpKernelPlugin
 {
     private readonly McpClient _client;
@@ -16,39 +20,40 @@ public sealed class McpKernelPlugin
         _logger = logger;
     }
 
-    public async Task<KernelPlugin> BuildPluginAsync(CancellationToken ct = default)
+    /// <summary>构建 MEAI 工具列表。</summary>
+    public async Task<IReadOnlyList<AITool>> BuildMcpAIToolsAsync(CancellationToken ct = default)
     {
         var tools = await _client.ListToolsAsync(ct);
-        var functions = new List<KernelFunction>();
-
+        var list = new List<AITool>();
         foreach (var tool in tools)
         {
-            var function = KernelFunctionFactory.CreateFromMethod(
-                async (KernelArguments args) => await InvokeMcpToolAsync(tool.Name, args, ct),
-                functionName: SanitizeFunctionName(tool.Name),
-                description: tool.Description
-            );
-            
-            functions.Add(function);
+            var fnName = SanitizeFunctionName(tool.Name);
+            var mcpName = tool.Name;
+            var fn = AIFunctionFactory.Create(
+                async (JsonElement arguments, CancellationToken cancellationToken) =>
+                    await InvokeMcpToolFromJsonAsync(mcpName, arguments, cancellationToken).ConfigureAwait(false),
+                new AIFunctionFactoryOptions
+                {
+                    Name = fnName,
+                    Description = tool.Description ?? "",
+                });
+            list.Add(fn);
         }
 
-        return KernelPluginFactory.CreateFromFunctions(_pluginName, functions);
+        return list;
     }
 
-    private async Task<string> InvokeMcpToolAsync(string toolName, KernelArguments args, CancellationToken ct)
+    private async Task<string> InvokeMcpToolFromJsonAsync(string toolName, JsonElement arguments, CancellationToken ct)
+    {
+        var mcpArgs = McpJsonArgNormalizer.JsonElementToObjectDict(arguments);
+        return await InvokeMcpCoreAsync(toolName, mcpArgs, ct).ConfigureAwait(false);
+    }
+
+    private async Task<string> InvokeMcpCoreAsync(string toolName, Dictionary<string, object> mcpArgs, CancellationToken ct)
     {
         try
         {
-            var mcpArgs = new Dictionary<string, object>();
-            foreach (var arg in args)
-            {
-                if (arg.Value != null)
-                {
-                    mcpArgs[arg.Key] = arg.Value;
-                }
-            }
-
-            var result = await _client.CallToolAsync(toolName, mcpArgs, ct);
+            var result = await _client.CallToolAsync(toolName, mcpArgs, ct).ConfigureAwait(false);
             if (result.IsError)
             {
                 var errorMsg = string.Join("\n", result.Content.Select(c => c.Text));

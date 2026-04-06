@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Microsoft.SemanticKernel;
+using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services.ScheduledTask;
 
 namespace OfficeCopilot.Server.Plugins;
@@ -17,7 +17,7 @@ public sealed class ScheduledTaskPlugin
         _store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
-    [KernelFunction("scheduled_task_create")]
+    [ToolFunction("scheduled_task_create")]
     [Description(
         "Create a scheduled task. Two kinds: (1) ONCE: scheduleType 'once' — run exactly one time. Provide runAt (ISO8601 absolute time) OR intervalSeconds/intervalMinutes (>0) as delay from now; do not pass both. Task is removed after run. (2) REPEATING: scheduleType 'interval' — repeat every intervalSeconds or intervalMinutes (recurring); OR scheduleType 'cron' with cronExpression. For interval repeating, deleteAfterRun defaults false. Backend runs at nextRunAt (backend CLI policy, no browser HITL). Omit id to auto-generate.")]
     public async Task<string> ScheduledTaskCreateAsync(
@@ -83,7 +83,7 @@ public sealed class ScheduledTaskPlugin
         return $"[OK] Scheduled task created: id={savedId}, nextRunAt={meta.NextRunAt?.ToString("O") ?? "-"}.";
     }
 
-    [KernelFunction("scheduled_task_list")]
+    [ToolFunction("scheduled_task_list")]
     [Description("List scheduled tasks. Returns id, title, nextRunAt, enabled for each.")]
     public async Task<string> ScheduledTaskListAsync(
         [Description("If true, only return enabled tasks")] bool enabledOnly = false,
@@ -99,7 +99,7 @@ public sealed class ScheduledTaskPlugin
         return sb.ToString();
     }
 
-    [KernelFunction("scheduled_task_read")]
+    [ToolFunction("scheduled_task_read")]
     [Description("Read one scheduled task by id. Returns task content and meta.")]
     public async Task<string> ScheduledTaskReadAsync(
         [Description("Task id")] string id,
@@ -116,7 +116,7 @@ public sealed class ScheduledTaskPlugin
         return $"--- meta ---\n{metaJson}\n--- content ---\n{content}";
     }
 
-    [KernelFunction("scheduled_task_update")]
+    [ToolFunction("scheduled_task_update")]
     [Description("Update a scheduled task. Omit optional params to keep current value. For scheduleType 'once', to change fire time pass runAt or intervalSeconds/intervalMinutes.")]
     public async Task<string> ScheduledTaskUpdateAsync(
         [Description("Task id")] string id,
@@ -184,7 +184,7 @@ public sealed class ScheduledTaskPlugin
         return $"[OK] Updated task id={safeId}, nextRunAt={meta.NextRunAt?.ToString("O") ?? "-"}.";
     }
 
-    [KernelFunction("scheduled_task_delete")]
+    [ToolFunction("scheduled_task_delete")]
     [Description("Delete a scheduled task (removes .task.md and .meta.json).")]
     public async Task<string> ScheduledTaskDeleteAsync(
         [Description("Task id")] string id,
