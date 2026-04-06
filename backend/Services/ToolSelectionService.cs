@@ -119,6 +119,10 @@ public sealed class ToolSelectionService : IToolSelector
             ["Browser-截图与页面"] = new List<(string, string)> { ("Browser", "capture_full_page"), ("Browser", "run_page_script") },
             ["Browser-高亮与笔记"] = new List<(string, string)> { ("Browser", "highlight_webpage_text"), ("Browser", "add_floating_note") },
             ["File"] = new List<(string, string)> { ("File", "get_attachment_path"), ("File", "get_file_size"), ("File", "save_screenshot_to_downloads") },
+            ["PDF"] = new List<(string, string)>
+            {
+                ("Pdf", "get_pdf_text"), ("Pdf", "get_pdf_info"), ("Pdf", "pdf_document_create"), ("Pdf", "pdf_merge")
+            },
             ["CLI"] = new List<(string, string)> { ("CLI", "run_command") },
             ["ClawhubSkill"] = new List<(string, string)> { ("ClawhubSkill", "run_clawhub_script") },
             ["CurrentDocument-Word"] = new List<(string, string)>

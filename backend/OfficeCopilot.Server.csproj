@@ -25,6 +25,8 @@
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="SharpToken" Version="2.0.4" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />

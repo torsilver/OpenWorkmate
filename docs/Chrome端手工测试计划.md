@@ -17,7 +17,7 @@
 | Z2  | `chrome-extension` 已加载 | `chrome://extensions` 中已启用本扩展，版本与仓库一致                             |
 | Z3  | 访问密钥 / Token           | 与 `user-config` 或选项页配置一致，请求不被 401                                 |
 | Z4  | 模型与 Embedding 等        | 按需：Memory 需 Embedding；联网问答需在百炼模型上开启 **enable_search**；OCR/STT 需选项页中对应配置 |
-| Z5  | 下载目录                   | File 保存截图、Word/Excel/Ppt 写本地文件时，路径解析以本机「下载」或配置为准                  |
+| Z5  | 下载目录                   | File 保存截图、Word/Excel/Ppt/Pdf 写本地文件时，路径解析以本机「下载」或配置为准；相对文件名同 §3 约定              |
 
 
 ---
@@ -102,6 +102,7 @@
 2. **W01** `word_document_create` 生成 `taskly-word-test.docx`。
 3. **P01** `ppt_document_create` 生成 `taskly-ppt-test.pptx`。
 4. 下载目录放一张图片 `**taskly-img.png`**，供 Word/Ppt 插图用例。
+5. **PD01** `pdf_document_create` 生成 `taskly-pdf-a.pdf`；**PD04**（见 §3.2a）再生成 `taskly-pdf-b.pdf`，供 **PD05** `pdf_merge` 使用。可选：自备一份含可选中文字的小 PDF 做附件 + `get_pdf_text`（扫描件可能几乎无字，属预期）。
 
 ### 3.1 Browser
 
@@ -123,6 +124,23 @@
 | F01 | `get_attachment_path`          | 先附件一张图    | 「请对我上一张附件调用 get_attachment_path。」                     | `get_attachment_path`          | 本机路径   |
 | F02 | `get_file_size`                | 有测试文件     | 「请 get_file_size：taskly-excel-test.xlsx。」             | `get_file_size`                | 字节数    |
 | F03 | `save_screenshot_to_downloads` | 已有 B05 引用 | 「请 save_screenshot_to_downloads，文件名 taskly-fullpage。」 | `save_screenshot_to_downloads` | 下载目录有图 |
+
+
+### 3.2a Pdf（内置，插件名 `Pdf`）
+
+**说明**：`DisabledBuiltInPlugins` 含 **`pdf`** 时本节全部跳过。读工具路径可为下载目录相对名（同 §3）；或先 **附件 PDF** 再 `get_attachment_path` 得到绝对路径。扫描件可能抽不到字，工具返回会提示可配合 OCR；加密无密码时应返回明确失败原因。
+
+
+| 编号  | 工具名                  | 前置              | 建议粘贴到对话框的话术                                                                                                                                 | 应核对工具名                | 预期要点        |
+| --- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------- |
+| PD01 | `pdf_document_create` | —               | 「请必须调用工具 pdf_document_create：输出 taskly-pdf-a.pdf，正文【第一段手工测PDF】。overwrite 为 false。」                                                                  | `pdf_document_create` | 下载目录生成可打开 PDF |
+| PD02 | `get_pdf_info`       | PD01            | 「请 get_pdf_info：taskly-pdf-a.pdf。」                                                                                                         | `get_pdf_info`        | 页数、是否加密、元数据摘要 |
+| PD03 | `get_pdf_text`       | PD01            | 「请 get_pdf_text：taskly-pdf-a.pdf，maxChars 50000。」（可不写 firstPage、lastPage）                                                                  | `get_pdf_text`        | 含 `Page` 分段或正文；过长有截断说明 |
+| PD04 | `pdf_document_create` | —               | 「请 pdf_document_create：输出 taskly-pdf-b.pdf，正文【第二份合并用】。overwrite false。」                                                           | `pdf_document_create` | 第二文件存在      |
+| PD05 | `pdf_merge`          | PD01 且 PD04      | 「请 pdf_merge：输出 taskly-pdf-merged.pdf；inputPdfPaths 里分两行写 taskly-pdf-a.pdf 与 taskly-pdf-b.pdf（或同一行用分号分隔）；overwrite false。」 | `pdf_merge`           | 合并成功，总页数合理  |
+| PD06 | `get_attachment_path` + `get_pdf_text` | 侧栏附件一份非扫描小 PDF | 「请先对我附件调用 get_attachment_path，再对返回路径调用 get_pdf_text，maxChars 200000。」                                                                      | 两个工具名                 | 两跳均成功；无字时返回说明非静默 |
+
+**负向（可选）**：`pdf_document_create` 目标已存在且 `overwrite=false` 时应失败并含原因；`pdf_merge` 仅给一个路径时应失败并含原因。
 
 
 ### 3.3 System
@@ -395,6 +413,7 @@
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Browser           | `highlight_webpage_text`, `add_floating_note`, `run_page_script`, `run_custom_page_script`, `capture_full_page`         |
 | File              | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`                                                  |
+| Pdf               | `get_pdf_text`, `get_pdf_info`, `pdf_document_create`, `pdf_merge`                                                      |
 | System            | `get_current_time`                                                                                                      |
 | UserOptions       | `ask_options`                                                                                                           |
 | MCP_STT           | `transcribe_audio`                                                                                                      |

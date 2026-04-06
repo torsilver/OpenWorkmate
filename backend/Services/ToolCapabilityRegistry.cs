@@ -32,6 +32,7 @@ public static class ToolCapabilityRegistry
             ["Subagent:run_subtask"] = new(false, false, false, false),
             ["Context:compact_conversation"] = new(false, true, false, false),
             ["ClawhubSkill:run_clawhub_script"] = new(false, true, true, false),
+            ["Pdf:pdf_merge"] = new(false, true, false, false),
         };
         return d.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }

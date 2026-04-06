@@ -259,6 +259,11 @@ public sealed partial class ChatService : IDisposable
             var ocrPluginLogger = _loggerFactory.CreateLogger<OcrPlugin>();
             RegisterPlugin(new OcrPlugin(ocrService, ocrPluginLogger), "MCP_OCR");
         }
+        if (!disabledBuiltIn.Contains("pdf"))
+        {
+            var pdfPluginLogger = _loggerFactory.CreateLogger<PdfPlugin>();
+            RegisterPlugin(new PdfPlugin(pdfPluginLogger), "Pdf");
+        }
 
         if (!disabledBuiltIn.Contains("currentdocument"))
         {

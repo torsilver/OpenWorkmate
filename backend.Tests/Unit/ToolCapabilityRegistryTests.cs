@@ -29,4 +29,13 @@ public class ToolCapabilityRegistryTests
         Assert.True(c.Destructive);
         Assert.False(c.AllowParallelSameTurn);
     }
+
+    [Fact]
+    public void Get_ExactOverride_PdfMerge()
+    {
+        var c = ToolCapabilityRegistry.Get("Pdf", "pdf_merge");
+        Assert.False(c.ReadOnly);
+        Assert.True(c.Destructive);
+        Assert.False(c.AllowParallelSameTurn);
+    }
 }
