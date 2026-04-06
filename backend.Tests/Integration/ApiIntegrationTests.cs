@@ -223,6 +223,44 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PutScheduledTasks_EnabledFalse_ReflectsInGetList()
+    {
+        var createPayload = new
+        {
+            title = "t-enabled-flag",
+            content = "body",
+            scheduleType = "cron",
+            cronExpression = "0 0 * * *"
+        };
+        var createBody = JsonSerializer.Serialize(createPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var createContent = new StringContent(createBody, Encoding.UTF8, "application/json");
+        var createRes = await _client.PostAsync("/api/scheduled-tasks", createContent);
+        createRes.EnsureSuccessStatusCode();
+        var id = JsonDocument.Parse(await createRes.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetString()!;
+
+        var putBody = JsonSerializer.Serialize(new { enabled = false }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        using var putContent = new StringContent(putBody, Encoding.UTF8, "application/json");
+        var putRes = await _client.PutAsync("/api/scheduled-tasks/" + Uri.EscapeDataString(id), putContent);
+        putRes.EnsureSuccessStatusCode();
+
+        var listRes = await _client.GetAsync("/api/scheduled-tasks");
+        listRes.EnsureSuccessStatusCode();
+        var arr = JsonDocument.Parse(await listRes.Content.ReadAsStringAsync()).RootElement;
+        JsonElement? found = null;
+        foreach (var el in arr.EnumerateArray())
+        {
+            if (el.TryGetProperty("id", out var idProp) && idProp.GetString() == id)
+            {
+                found = el;
+                break;
+            }
+        }
+        Assert.True(found.HasValue);
+        Assert.True(found.Value.TryGetProperty("enabled", out var en));
+        Assert.False(en.GetBoolean());
+    }
+
+    [Fact]
     public async Task PostScheduledTasks_IntervalSeconds_Returns200_WithIdAndNextRunAt()
     {
         var payload = new

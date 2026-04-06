@@ -460,6 +460,14 @@ els.tabs.forEach(tab => {
   });
 });
 
+// 从侧栏/工具更新定时任务后，若设置页停在本标签，焦点回到本窗口时刷新列表（避免仍显示旧状态）
+window.addEventListener('focus', function () {
+  var plans = document.getElementById('tab-plans-automation');
+  if (plans && plans.classList.contains('active')) {
+    loadScheduledTasks();
+  }
+});
+
 // ───── AI Config ─────
 let fullConfig = null;
 /** 当前渲染的「技能环境变量」键名列表，保存时据此收集表单值 */
@@ -2916,6 +2924,30 @@ document.getElementById('saveMcpBtn').addEventListener('click', async () => {
 // ───── 定时任务 Tab ─────
 const BASE_URL = () => API_URL.replace('/api/config', '');
 
+/** API 列表项或 meta：与 MCP 列表一致，兼容 camelCase / PascalCase；缺省视为启用 */
+function scheduledTaskEnabledFromDto(obj) {
+  if (!obj) return true;
+  if (obj.enabled === false || obj.Enabled === false) return false;
+  return true;
+}
+
+async function setScheduledTaskEnabledFromList(id, enabled) {
+  try {
+    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !!enabled })
+    });
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      throw new Error(data.message || '更新启用状态失败');
+    }
+    loadScheduledTasks();
+  } catch (err) {
+    alert(err.message || String(err));
+  }
+}
+
 async function loadScheduledTasks() {
   const listEl = document.getElementById('scheduledTasksList');
   if (!listEl) return;
@@ -2933,21 +2965,34 @@ async function loadScheduledTasks() {
       return;
     }
     listEl.innerHTML = list.map(t => {
-      const next = t.nextRunAt ? new Date(t.nextRunAt).toLocaleString() : '-';
-      const en = t.enabled !== false;
-      return `<div class="mcp-server-row" data-scheduled-task-id="${escapeHtml(t.id)}">
+      const taskId = t.id || t.Id || '';
+      const title = t.title || t.Title || taskId;
+      const nextRaw = t.nextRunAt || t.NextRunAt;
+      const next = nextRaw ? new Date(nextRaw).toLocaleString() : '-';
+      const st = t.scheduleType || t.ScheduleType || 'cron';
+      const en = scheduledTaskEnabledFromDto(t);
+      const toggleLabel = en ? '禁用' : '启用';
+      const setEnabled = en ? 'false' : 'true';
+      return `<div class="mcp-server-row" data-scheduled-task-id="${escapeAttr(taskId)}">
         <div class="mcp-info">
-          <div class="mcp-name">${escapeHtml(t.title || t.id)}</div>
-          <div class="mcp-desc">下次运行: ${next} · ${t.scheduleType || 'cron'} · ${en ? '已启用' : '已禁用'}</div>
+          <div class="mcp-name">${escapeHtml(title)}</div>
+          <div class="mcp-desc">下次运行: ${next} · ${escapeHtml(st)} · ${en ? '已启用' : '已禁用'}</div>
         </div>
         <div class="mcp-actions">
-          <button type="button" class="btn-secondary scheduled-task-edit" data-id="${escapeHtml(t.id)}">编辑</button>
-          <button type="button" class="btn-secondary scheduled-task-delete" data-id="${escapeHtml(t.id)}">删除</button>
+          <button type="button" class="btn-secondary scheduled-task-edit" data-id="${escapeAttr(taskId)}">编辑</button>
+          <button type="button" class="btn-secondary scheduled-task-toggle-enabled" data-id="${escapeAttr(taskId)}" data-set-enabled="${setEnabled}">${toggleLabel}</button>
+          <button type="button" class="btn-secondary scheduled-task-delete" data-id="${escapeAttr(taskId)}">删除</button>
         </div>
       </div>`;
     }).join('');
     listEl.querySelectorAll('.scheduled-task-edit').forEach(btn => {
       btn.addEventListener('click', () => editScheduledTask(btn.getAttribute('data-id')));
+    });
+    listEl.querySelectorAll('.scheduled-task-toggle-enabled').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-set-enabled') === 'true';
+        setScheduledTaskEnabledFromList(btn.getAttribute('data-id'), target);
+      });
     });
     listEl.querySelectorAll('.scheduled-task-delete').forEach(btn => {
       btn.addEventListener('click', () => deleteScheduledTask(btn.getAttribute('data-id')));
@@ -3008,7 +3053,7 @@ async function editScheduledTask(id) {
     document.getElementById('scheduledTaskScheduleType').value = data.meta?.scheduleType || 'cron';
     document.getElementById('scheduledTaskCron').value = data.meta?.cronExpression ?? '';
     document.getElementById('scheduledTaskIntervalMinutes').value = data.meta?.intervalMinutes ?? '';
-    document.getElementById('scheduledTaskEnabled').checked = data.meta?.enabled !== false;
+    document.getElementById('scheduledTaskEnabled').checked = scheduledTaskEnabledFromDto(data.meta);
     document.getElementById('scheduledTaskDeleteAfterRun').checked = !!data.meta?.deleteAfterRun;
     toggleScheduledTaskScheduleType();
     document.getElementById('scheduledTaskEditorTitle').textContent = '编辑定时任务';
