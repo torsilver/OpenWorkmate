@@ -28,13 +28,13 @@ public sealed class ScheduledTaskPlugin
         [Description("Markdown content describing what the AI should do when the task runs")] string? content = null,
         [Description("'once' (single run), 'interval' (repeat every N min/sec), or 'cron'")] string scheduleType = "cron",
         [Description("When scheduleType is 'cron', 5-field cron expression")] string? cronExpression = null,
-        [Description("When scheduleType is 'interval' (repeating): every N whole minutes. For 'once' with delay: use as delay minutes (mutually exclusive with runAt and intervalSeconds). JSON number or string accepted.")] JsonElement intervalMinutes = default,
-        [Description("When scheduleType is 'interval' (repeating): every N seconds (precedence over intervalMinutes). For 'once': delay seconds (mutually exclusive with runAt and intervalMinutes). JSON number or string accepted.")] JsonElement intervalSeconds = default,
+        [Description("When scheduleType is 'interval' (repeating): every N whole minutes. For 'once' with delay: use as delay minutes (mutually exclusive with runAt and intervalSeconds). JSON number or string accepted.")] JsonElement? intervalMinutes = null,
+        [Description("When scheduleType is 'interval' (repeating): every N seconds (precedence over intervalMinutes). For 'once': delay seconds (mutually exclusive with runAt and intervalMinutes). JSON number or string accepted.")] JsonElement? intervalSeconds = null,
         [Description("When scheduleType is 'once': absolute first run time as ISO8601 (mutually exclusive with intervalSeconds/intervalMinutes).")] string? runAt = null,
         [Description("Optional timezone id for cron, e.g. 'China Standard Time'")] string? timeZone = null,
         [Description("Optional end date for recurring task")] string? endAt = null,
-        [Description("Optional max number of runs. JSON number or string accepted.")] JsonElement maxRuns = default,
-        [Description("If true, delete after one run (for repeating types). Ignored for scheduleType 'once' (always one-shot). JSON boolean or string accepted.")] JsonElement deleteAfterRun = default,
+        [Description("Optional max number of runs. JSON number or string accepted.")] JsonElement? maxRuns = null,
+        [Description("If true, delete after one run (for repeating types). Ignored for scheduleType 'once' (always one-shot). JSON boolean or string accepted.")] JsonElement? deleteAfterRun = null,
         CancellationToken cancellationToken = default)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(deleteAfterRun, false, out var deleteAfterRunValue))
@@ -99,7 +99,7 @@ public sealed class ScheduledTaskPlugin
     [ToolFunction("scheduled_task_list")]
     [Description("List scheduled tasks. Returns id, title, nextRunAt, enabled for each.")]
     public async Task<string> ScheduledTaskListAsync(
-        [Description("If true, only return enabled tasks. JSON boolean or string accepted.")] JsonElement enabledOnly = default,
+        [Description("If true, only return enabled tasks. JSON boolean or string accepted.")] JsonElement? enabledOnly = null,
         CancellationToken cancellationToken = default)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(enabledOnly, false, out var enabledOnlyValue))
@@ -139,10 +139,10 @@ public sealed class ScheduledTaskPlugin
         [Description("New markdown content")] string? content = null,
         [Description("New schedule type: once | interval | cron")] string? scheduleType = null,
         [Description("New cron expression")] string? cronExpression = null,
-        [Description("New interval minutes (repeating or once delay). JSON number or string accepted.")] JsonElement intervalMinutes = default,
-        [Description("New interval seconds (repeating or once delay). JSON number or string accepted.")] JsonElement intervalSeconds = default,
+        [Description("New interval minutes (repeating or once delay). JSON number or string accepted.")] JsonElement? intervalMinutes = null,
+        [Description("New interval seconds (repeating or once delay). JSON number or string accepted.")] JsonElement? intervalSeconds = null,
         [Description("For once: ISO8601 absolute run time")] string? runAt = null,
-        [Description("Enable or disable. Omit to keep current. Use JSON boolean; some models send quoted strings — both accepted.")] JsonElement enabled = default,
+        [Description("Enable or disable. Omit to keep current. Use JSON boolean; some models send quoted strings — both accepted.")] JsonElement? enabled = null,
         CancellationToken cancellationToken = default)
     {
         var safeId = FileScheduledTaskStore.SanitizeId(id);
@@ -163,9 +163,9 @@ public sealed class ScheduledTaskPlugin
         if (cronExpression != null) meta.CronExpression = string.IsNullOrWhiteSpace(cronExpression) ? null : cronExpression.Trim();
         if (intervalMinutesSpec && intervalMinutesOpt.HasValue) meta.IntervalMinutes = intervalMinutesOpt;
         if (intervalSecondsSpec && intervalSecondsOpt.HasValue) meta.IntervalSeconds = intervalSecondsOpt;
-        if (!ToolScalarArgumentParser.IsUnspecifiedOrNull(enabled))
+        if (!ToolScalarArgumentParser.IsOmitted(enabled))
         {
-            if (!ToolScalarArgumentParser.TryReadBool(enabled, out var en))
+            if (!ToolScalarArgumentParser.TryReadBool(enabled!.Value, out var en))
                 return "[Error] enabled 无效：请使用 JSON 布尔 true/false，或字符串 \"true\"/\"false\"。";
             meta.Enabled = en;
         }

@@ -525,7 +525,7 @@
                 <option value="true">开启</option>
                 <option value="false">关闭</option>
               </select>
-              <p class="help-text" style="margin-top:6px;">开启后由百炼在对话生成时检索网络（如 qwen3.6-plus 等支持联网的模型）；无需再配置外置 Tavily。Endpoint 须含 <code>dashscope</code>。</p>
+              <p class="help-text" style="margin-top:6px;">开启后由<strong>模型厂商</strong>在对话生成侧完成联网检索（百炼等为 <code>enable_search</code>，需选用支持联网的模型）。Endpoint 须含 <code>dashscope</code>。</p>
             </div>
             <div class="form-group" style="margin-bottom: 10px;">
               <label for="aiModelSearchOptionsJson">search_options（JSON 对象，可选）</label>
@@ -748,7 +748,7 @@
       <details class="settings-block">
         <summary>技能所需环境变量</summary>
         <div class="settings-block-inner">
-        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 OPENAI_API_KEY 等）。</p>
+        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。安装<strong>可执行脚本类</strong>技能并刷新本页后，可出现对应输入项（如 <code>OPENAI_API_KEY</code> 等）。</p>
         <div id="skillEnvList"></div>
         </div>
       </details>
@@ -762,13 +762,40 @@
       <details class="settings-block">
         <summary>自定义技能 (Skills)</summary>
         <div class="settings-block-inner">
-      <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
-        <p class="help-text" style="font-size: 14px; margin: 0;">你可以用自然语言编写业务流程，AI 会将它视为一个独立的高级技能。</p>
-        <button id="newSkillBtn" class="btn-secondary">新增技能</button>
+      <p class="help-text" style="font-size: 14px; margin: 0 0 20px 0;">技能分两类：<strong>提示类</strong>（本页表单维护，引导模型行为）与<strong>可执行脚本类</strong>（本机 <code>Skills</code> 目录安装，由 Node 执行 <code>scripts/*.mjs</code>）。二者都会出现在对话的 <code>@</code> 技能列表中；仅后者可通过工具 <code>run_clawhub_script</code> 跑脚本。</p>
+
+      <div id="skillsListsWrapper">
+        <div class="skill-category-block" style="margin-bottom: 28px;">
+          <h4 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">提示类技能</h4>
+          <p class="help-text" style="font-size: 13px; margin: 0 0 12px 0;">用自然语言描述流程与约束；保存后写入服务端 <code>Skills/&lt;id&gt;/SKILL.md</code>（不含可执行脚本）。</p>
+          <div style="display:flex; justify-content:flex-end; margin-bottom: 12px;">
+            <button type="button" id="newSkillBtn" class="btn-secondary">新增提示类技能</button>
+          </div>
+          <div id="skillsListPrompt"></div>
+        </div>
+
+        <div class="skill-category-block" style="margin-bottom: 8px;">
+          <h4 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">可执行脚本类技能</h4>
+          <p class="help-text" style="font-size: 13px; margin: 0 0 10px 0;">由本页<strong>仅展示与启用/停用、删除</strong>；请勿点「编辑」用提示类表单保存（会覆盖 <code>SKILL.md</code> 中的 Clawhub 元数据）。</p>
+          <details class="settings-block" style="margin-bottom: 14px; border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px;">
+            <summary style="padding: 10px 12px; cursor: pointer; font-weight: 600; font-size: 13px;">安装说明（本机目录）</summary>
+            <div class="settings-block-inner" style="padding-top: 0;">
+              <ol class="help-text" style="font-size: 13px; margin: 0; padding-left: 1.25rem; line-height: 1.6;">
+                <li>在<strong>运行 Office Copilot 服务端</strong>的机器上，找到与可执行文件同级的 <code>Skills</code> 文件夹（若不存在可自建）。</li>
+                <li>每个技能一个子文件夹，根目录放置 <code>SKILL.md</code>（frontmatter 中 <code>name</code> 即为对话里的技能 ID）；可执行类需另有 <code>scripts/</code> 目录，内含 <code>.mjs</code> 或 <code>.js</code>（由本机已安装的 <strong>Node.js</strong> 运行）。</li>
+                <li>可从 OpenClaw / Clawhub 生态拷贝符合上述结构的技能包，解压到 <code>Skills/&lt;文件夹名&gt;/</code> 即可（文件夹名可与 <code>name</code> 不同）。</li>
+                <li>对话中通过内置插件 <strong>ClawhubSkill</strong> 的工具 <code>run_clawhub_script</code> 调用：<code>skillId</code> 与 <code>SKILL.md</code> 的 <code>name</code> 一致，<code>scriptName</code> 为 <code>scripts/</code> 下文件名（不含扩展名）。</li>
+                <li>若 <code>SKILL.md</code> 的 metadata 声明了环境变量，请在上方「技能所需环境变量」中填写，或写入系统环境变量。</li>
+                <li>放置或修改文件后<strong>重启服务端</strong>或等待重载，并<strong>刷新本页</strong>以更新列表。</li>
+              </ol>
+            </div>
+          </details>
+          <div id="skillsListExecutable"></div>
+        </div>
       </div>
-      <div id="skillsList"></div>
+
       <div id="skillEditor" style="display:none; border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px;">
-        <h3 style="margin-bottom: 16px;" id="skillEditorTitle">新增技能</h3>
+        <h3 style="margin-bottom: 16px;" id="skillEditorTitle">新增提示类技能</h3>
         <input type="hidden" id="skillId">
         <div class="form-group">
           <label>技能名称 (仅限英文/拼音，用于工具注册)</label>

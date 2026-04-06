@@ -26,7 +26,7 @@ public sealed class MemoryPlugin
     public async Task<string> SaveMemoryAsync(
         [Description("要记住的文本内容")] string text,
         [Description("可选标签，逗号分隔，便于分类")] string tags = "",
-        [Description("是否写入共享记忆（跨端可见）；仅对用户明确要求跨端记住的内容设为 true。JSON 布尔或字符串均可。")] JsonElement saveToShared = default)
+        [Description("是否写入共享记忆（跨端可见）；仅对用户明确要求跨端记住的内容设为 true。JSON 布尔或字符串均可。")] JsonElement? saveToShared = null)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(saveToShared, false, out var saveToSharedValue))
             return "[无效] saveToShared 参数无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
@@ -57,7 +57,7 @@ public sealed class MemoryPlugin
     [Description("根据查询从长期记忆中检索相关条目（本会话 + 共享记忆），返回与当前问题最相关的记忆列表；结果会标明来自本会话或共享。")]
     public async Task<string> SearchMemoryAsync(
         [Description("检索关键词或问题")] string query,
-        [Description("返回条数，默认 5。JSON 数字或字符串均可。")] JsonElement topK = default)
+        [Description("返回条数，默认 5。JSON 数字或字符串均可。")] JsonElement? topK = null)
     {
         if (!ToolScalarArgumentParser.TryReadInt32WithDefault(topK, 5, out var topKValue))
             return "[无效] topK 无效：须为整数。";

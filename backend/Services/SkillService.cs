@@ -315,8 +315,30 @@ public sealed class SkillService
                 skill.Id = Guid.NewGuid().ToString("N");
 
             var safeId = SanitizeId(skill.Id);
-            var dir = Path.Combine(_skillsDir, safeId);
+            var dir = ResolveSkillDirectory(skill, safeId);
             Directory.CreateDirectory(dir);
+
+            var skillMdPath = Path.Combine(dir, "SKILL.md");
+            // 可执行脚本类且正文未改：只改 enabled，避免整文件重写抹掉 Clawhub metadata
+            if (IsExecutableScriptDir(dir) && File.Exists(skillMdPath))
+            {
+                try
+                {
+                    var existingRaw = File.ReadAllText(skillMdPath, Encoding.UTF8);
+                    var existingBody = ExtractMarkdownBodyAfterFrontmatter(existingRaw);
+                    if (string.Equals(existingBody.Trim(), (skill.PromptTemplate ?? "").Trim(), StringComparison.Ordinal)
+                        && TryPatchSkillMdEnabled(skillMdPath, skill.Enabled))
+                    {
+                        _logger.LogInformation("Patched skill enabled flag only {Path}", skillMdPath);
+                        OnSkillsChanged?.Invoke();
+                        return;
+                    }
+                }
+                catch
+                {
+                    // fall through to full write
+                }
+            }
 
             var sb = new StringBuilder();
             sb.AppendLine("---");
@@ -329,7 +351,6 @@ public sealed class SkillService
             sb.AppendLine();
             sb.Append(skill.PromptTemplate);
 
-            var skillMdPath = Path.Combine(dir, "SKILL.md");
             File.WriteAllText(skillMdPath, sb.ToString(), Encoding.UTF8);
             _logger.LogInformation("Saved skill {Name} to {Path}", skill.Name, skillMdPath);
 
@@ -352,6 +373,97 @@ public sealed class SkillService
         return value;
     }
 
+    private string ResolveSkillDirectory(SkillDefinition skill, string safeId)
+    {
+        if (!string.IsNullOrWhiteSpace(skill.BaseDir) && IsUnderSkillsRoot(skill.BaseDir.Trim()))
+            return Path.GetFullPath(skill.BaseDir.Trim());
+        var found = FindSkillDirectoryById(skill.Id);
+        if (!string.IsNullOrEmpty(found))
+            return found;
+        return Path.Combine(_skillsDir, safeId);
+    }
+
+    private bool IsUnderSkillsRoot(string candidate)
+    {
+        try
+        {
+            var root = Path.GetFullPath(_skillsDir);
+            var c = Path.GetFullPath(candidate);
+            if (!c.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return false;
+            if (c.Length == root.Length) return true;
+            return c[root.Length] == Path.DirectorySeparatorChar || c[root.Length] == Path.AltDirectorySeparatorChar;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private string? FindSkillDirectoryById(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        foreach (var d in Directory.GetDirectories(_skillsDir))
+        {
+            var md = Path.Combine(d, "SKILL.md");
+            if (!File.Exists(md)) continue;
+            try
+            {
+                var def = ParseSkillMd(md, Path.GetFileName(d), d);
+                if (def != null && string.Equals(def.Id, id.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return Path.GetFullPath(d);
+            }
+            catch
+            {
+                // skip invalid
+            }
+        }
+        return null;
+    }
+
+    private static bool IsExecutableScriptDir(string dir)
+    {
+        var scripts = Path.Combine(dir, "scripts");
+        if (!Directory.Exists(scripts)) return false;
+        foreach (var f in Directory.EnumerateFiles(scripts))
+        {
+            var ext = Path.GetExtension(f);
+            if (ext.Equals(".mjs", StringComparison.OrdinalIgnoreCase) || ext.Equals(".js", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static string ExtractMarkdownBodyAfterFrontmatter(string raw)
+    {
+        var m = Regex.Match(raw, @"^\s*---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n([\s\S]*)", RegexOptions.Singleline);
+        return m.Success ? m.Groups[1].Value : raw;
+    }
+
+    private static bool TryPatchSkillMdEnabled(string skillMdPath, bool enabled)
+    {
+        try
+        {
+            var text = File.ReadAllText(skillMdPath, Encoding.UTF8);
+            var match = Regex.Match(text, @"^\s*---\s*\r?\n(?<fm>[\s\S]*?)\r?\n---\s*\r?\n");
+            if (!match.Success) return false;
+            var fm = match.Groups["fm"].Value;
+            string newFm;
+            if (Regex.IsMatch(fm, @"(?m)^enabled:\s*"))
+                newFm = Regex.Replace(fm, @"(?m)^enabled:\s*\S+.*$", "enabled: " + (enabled ? "true" : "false"));
+            else
+                newFm = "enabled: " + (enabled ? "true" : "false") + Environment.NewLine + fm;
+
+            var mid = "---" + Environment.NewLine + newFm.TrimEnd() + Environment.NewLine + "---" + Environment.NewLine;
+            var newText = text[..match.Index] + mid + text[(match.Index + match.Length)..];
+            File.WriteAllText(skillMdPath, newText, Encoding.UTF8);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public SkillDeleteResult DeleteSkill(string id)
     {
         lock (_lock)
@@ -363,7 +475,7 @@ public sealed class SkillService
             if (string.IsNullOrEmpty(safeId))
                 return SkillDeleteResult.BadRequest("请求参数无效：技能 id 无效。");
 
-            var dir = Path.Combine(_skillsDir, safeId);
+            var dir = FindSkillDirectoryById(id.Trim()) ?? Path.Combine(_skillsDir, safeId);
             var jsonPath = Path.Combine(_skillsDir, safeId + ".json");
             var hadDir = Directory.Exists(dir);
             var hadJson = File.Exists(jsonPath);

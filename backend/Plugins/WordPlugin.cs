@@ -46,7 +46,7 @@ public sealed class WordPlugin
         [Description("Word 文件完整路径，支持环境变量与相对路径")] string filePath,
         [Description("起始段落号，从 1 开始，0 表示从头")] int startParagraph = 0,
         [Description("最多读取段落数，0 表示全部")] int maxParagraphs = 0,
-        [Description("是否同时输出表格内容。JSON 布尔或字符串均可。")] JsonElement includeTables = default)
+        [Description("是否同时输出表格内容。JSON 布尔或字符串均可。")] JsonElement? includeTables = null)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeTables, true, out var includeTablesValue))
             return "[错误] includeTables 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
@@ -409,8 +409,8 @@ public sealed class WordPlugin
     public string WordTextFormat(
         [Description("Word 文件完整路径")] string filePath,
         [Description("要格式化的文字（包含该文字的 Run 会应用格式）")] string searchText,
-        [Description("是否加粗；省略表示不改。JSON 布尔或字符串均可。")] JsonElement bold = default,
-        [Description("是否斜体；省略表示不改。JSON 布尔或字符串均可。")] JsonElement italic = default,
+        [Description("是否加粗；省略表示不改。JSON 布尔或字符串均可。")] JsonElement? bold = null,
+        [Description("是否斜体；省略表示不改。JSON 布尔或字符串均可。")] JsonElement? italic = null,
         [Description("字号（磅）")] int fontSize = 0,
         [Description("字体名称")] string? fontName = null,
         [Description("颜色 6 位十六进制，如 FF0000")] string? colorHex = null)
@@ -573,7 +573,7 @@ public sealed class WordPlugin
     public string WordCommentsDelete(
         [Description("Word 文件完整路径")] string filePath,
         [Description("要删除的批注 Id，多个用逗号分隔")] string commentId = "",
-        [Description("是否删除全部批注。JSON 布尔或字符串均可。")] JsonElement deleteAll = default)
+        [Description("是否删除全部批注。JSON 布尔或字符串均可。")] JsonElement? deleteAll = null)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(deleteAll, false, out var deleteAllValue))
             return "[错误] deleteAll 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";

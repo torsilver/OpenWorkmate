@@ -207,7 +207,7 @@ public sealed class CurrentDocumentPlugin
     public Task<string> CurrentWordSearchReplaceAsync(
         [Description("要查找的文本")] string searchText,
         [Description("替换成的文本")] string replaceText,
-        [Description("是否全部替换，默认 true。JSON 布尔或字符串均可。")] JsonElement replaceAll = default,
+        [Description("是否全部替换，默认 true。JSON 布尔或字符串均可。")] JsonElement? replaceAll = null,
         CancellationToken cancellationToken = default)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(replaceAll, true, out var replaceAllValue))
@@ -231,7 +231,7 @@ public sealed class CurrentDocumentPlugin
     [Description("按播放顺序读取当前演示文稿中指定幻灯片的文本。slideIndex 从 1 开始；includeShapeDetails 为 true 时附加形状编号列表。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。回答用户时必须引用并归纳本工具输出中的正文与要点，勿假设用户能看到工具原始返回。")]
     public Task<string> CurrentPptSlideReadAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
-        [Description("是否附加形状列表（默认 true）。JSON 布尔或字符串均可。")] JsonElement includeShapeDetails = default,
+        [Description("是否附加形状列表（默认 true）。JSON 布尔或字符串均可。")] JsonElement? includeShapeDetails = null,
         CancellationToken cancellationToken = default)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeShapeDetails, true, out var includeShapeDetailsValue))

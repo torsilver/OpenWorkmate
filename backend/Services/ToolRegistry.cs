@@ -28,6 +28,7 @@ public sealed class ToolRegistry
     /// <remarks>
     /// Microsoft.Extensions.AI 10.4.0 的 <c>AIFunctionFactoryOptions</c> 在公开 API 中未提供针对工具参数体的 <c>JsonSerializerOptions</c>（如字符串布尔宽松转换）；
     /// 绑定期类型错误会以 <see cref="System.Text.Json.JsonException"/> 抛出，由中间件 <c>ToolInvocationMiddleware</c> 转为模型可读说明，并在各插件中对易错标量使用 <c>ToolScalarArgumentParser</c>。
+    /// 可选参数若用 <see cref="System.Text.Json.JsonElement"/> 做宽松解析，须写 <c>JsonElement? … = null</c>，勿用 <c>JsonElement … = default</c>：<c>AIFunctionFactory</c> 生成 JSON Schema 时会序列化默认值，<c>default(JsonElement)</c> 为 <c>Undefined</c> 会导致 <c>JsonElementConverter.Write</c> 抛错、宿主无法启动。
     /// </remarks>
     public void RegisterPluginFromObject(object instance, string pluginName)
     {

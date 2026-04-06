@@ -189,7 +189,9 @@ const els = {
   tabContents: document.querySelectorAll('.tab-content'),
   
   // Skills
-  skillsList: document.getElementById('skillsList'),
+  skillsListsWrapper: document.getElementById('skillsListsWrapper'),
+  skillsListPrompt: document.getElementById('skillsListPrompt'),
+  skillsListExecutable: document.getElementById('skillsListExecutable'),
   newSkillBtn: document.getElementById('newSkillBtn'),
   skillEditor: document.getElementById('skillEditor'),
   skillEditorTitle: document.getElementById('skillEditorTitle'),
@@ -1525,7 +1527,7 @@ async function loadSkillEnvSection() {
   } catch (e) { /* 忽略，仅用已有 key 渲染 */ }
   skillEnvKeys = Array.from(keysSet).sort();
   if (skillEnvKeys.length === 0) {
-    listEl.innerHTML = '<p class="help-text" style="margin:0;">当前没有需要配置环境变量的技能。安装带 requires.env 的 Clawhub 技能后刷新本页即可出现对应输入项。</p>';
+    listEl.innerHTML = '<p class="help-text" style="margin:0;">当前没有需要配置环境变量的技能。安装带 requires.env 的<strong>可执行脚本类</strong>技能后刷新本页即可出现对应输入项。</p>';
     return;
   }
   listEl.innerHTML = skillEnvKeys.map(function (key) {
@@ -2169,6 +2171,61 @@ async function testAiConnection() {
 // ───── Skills ─────
 let currentSkills = [];
 
+function skillIsExecutable(skill) {
+  return !!(skill && (skill.isExecutable === true || skill.IsExecutable === true));
+}
+
+function bindSkillCardEvents(listRoot) {
+  if (!listRoot) return;
+  listRoot.querySelectorAll('.skill-btn-edit').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const card = this.closest('[data-skill-id]');
+      if (card) window.editSkill(card.getAttribute('data-skill-id') || '');
+    });
+  });
+  listRoot.querySelectorAll('.skill-btn-delete').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const card = this.closest('[data-skill-id]');
+      if (card) window.deleteSkill(card.getAttribute('data-skill-id') || '');
+    });
+  });
+  listRoot.querySelectorAll('.skill-btn-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const card = this.closest('[data-skill-id]');
+      if (card) window.toggleSkillEnabled(card.getAttribute('data-skill-id') || '');
+    });
+  });
+}
+
+function renderSkillCardHtml(skill, opts) {
+  const executable = !!(opts && opts.executable);
+  const id = skill.id || skill.Id || '';
+  const name = skill.name || skill.Name || '';
+  const desc = skill.description || skill.Description || '';
+  const prompt = skill.promptTemplate || skill.PromptTemplate || '';
+  const enabled = skill.enabled !== false && skill.Enabled !== false;
+  const idAttr = escapeAttr(id);
+  const badge = executable
+    ? '<span style="margin-left:8px;font-size:11px;font-weight:600;color:var(--accent,#2563eb);vertical-align:middle;">可执行脚本</span>'
+    : '';
+  const editBtn = executable
+    ? ''
+    : '<button type="button" class="btn-secondary skill-btn-edit" style="padding: 4px 12px; font-size: 12px;">编辑</button>';
+  return (
+    '<div class="skill-card" data-skill-id="' + idAttr + '"' + (executable ? ' data-skill-executable="1"' : '') + '>' +
+    '<div class="skill-header">' +
+    '<div class="skill-title">' + escapeHtml(name) + badge + (enabled ? '' : ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>') + '</div>' +
+    '<div class="skill-actions">' +
+    editBtn +
+    '<button type="button" class="btn-secondary skill-btn-toggle" style="padding: 4px 12px; font-size: 12px;">' + (enabled ? '停用' : '启用') + '</button>' +
+    '<button type="button" class="btn-danger skill-btn-delete" style="padding: 4px 12px; font-size: 12px;">删除</button>' +
+    '</div></div>' +
+    '<div class="skill-desc">' + escapeHtml(desc) + '</div>' +
+    '<div class="skill-prompt">' + escapeHtml(prompt.substring(0, 100)) + (prompt.length > 100 ? '...' : '') + '</div>' +
+    '</div>'
+  );
+}
+
 async function loadSkills() {
   try {
     const res = await tasklyFetch(SKILLS_API_URL);
@@ -2191,53 +2248,21 @@ async function loadSkills() {
 }
 
 function renderSkills() {
-  if (currentSkills.length === 0) {
-    els.skillsList.innerHTML = '<div style="text-align:center; padding: 20px; color:#999;">暂无自定义技能</div>';
-    return;
-  }
-  
-  els.skillsList.innerHTML = currentSkills.map(skill => {
-    const id = skill.id || skill.Id || '';
-    const name = skill.name || skill.Name || '';
-    const desc = skill.description || skill.Description || '';
-    const prompt = skill.promptTemplate || skill.PromptTemplate || '';
-    const enabled = skill.enabled !== false && skill.Enabled !== false;
-    const idAttr = escapeAttr(id);
-    return `
-    <div class="skill-card" data-skill-id="${idAttr}">
-      <div class="skill-header">
-        <div class="skill-title">${escapeHtml(name)}${enabled ? '' : ' <span style="color:#94a3b8;font-weight:normal;">(已停用)</span>'}</div>
-        <div class="skill-actions">
-          <button type="button" class="btn-secondary skill-btn-edit" style="padding: 4px 12px; font-size: 12px;">编辑</button>
-          <button type="button" class="btn-secondary skill-btn-toggle" style="padding: 4px 12px; font-size: 12px;">${enabled ? '停用' : '启用'}</button>
-          <button type="button" class="btn-danger skill-btn-delete" style="padding: 4px 12px; font-size: 12px;">删除</button>
-        </div>
-      </div>
-      <div class="skill-desc">${escapeHtml(desc)}</div>
-      <div class="skill-prompt">${escapeHtml(prompt.substring(0, 100))}${prompt.length > 100 ? '...' : ''}</div>
-    </div>
-  `;
-  }).join('');
+  const promptSkills = currentSkills.filter(function (s) { return !skillIsExecutable(s); });
+  const execSkills = currentSkills.filter(skillIsExecutable);
 
-  // 事件委托：避免 onclick 中 id 含引号导致编辑/删除/停用失效
-  els.skillsList.querySelectorAll('.skill-btn-edit').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const card = this.closest('[data-skill-id]');
-      if (card) editSkill(card.getAttribute('data-skill-id') || '');
-    });
-  });
-  els.skillsList.querySelectorAll('.skill-btn-delete').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const card = this.closest('[data-skill-id]');
-      if (card) deleteSkill(card.getAttribute('data-skill-id') || '');
-    });
-  });
-  els.skillsList.querySelectorAll('.skill-btn-toggle').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const card = this.closest('[data-skill-id]');
-      if (card) toggleSkillEnabled(card.getAttribute('data-skill-id') || '');
-    });
-  });
+  if (els.skillsListPrompt) {
+    els.skillsListPrompt.innerHTML = promptSkills.length === 0
+      ? '<div style="text-align:center; padding: 16px; color:#94a3b8; font-size: 13px;">暂无提示类技能。可点击「新增提示类技能」添加。</div>'
+      : promptSkills.map(function (s) { return renderSkillCardHtml(s, { executable: false }); }).join('');
+    bindSkillCardEvents(els.skillsListPrompt);
+  }
+  if (els.skillsListExecutable) {
+    els.skillsListExecutable.innerHTML = execSkills.length === 0
+      ? '<div style="text-align:center; padding: 16px; color:#94a3b8; font-size: 13px;">暂无可执行脚本类技能。请按上方「安装说明」将技能目录放入服务端 <code>Skills</code> 文件夹后刷新本页。</div>'
+      : execSkills.map(function (s) { return renderSkillCardHtml(s, { executable: true }); }).join('');
+    bindSkillCardEvents(els.skillsListExecutable);
+  }
 }
 
 function escapeAttr(str) {
@@ -2252,14 +2277,18 @@ function escapeAttr(str) {
 window.editSkill = (id) => {
   const skill = currentSkills.find(s => (s.id || s.Id) === id);
   if (!skill) return;
+  if (skillIsExecutable(skill)) {
+    alert('此为可执行脚本类技能，请勿用本表单编辑。请在本机服务端 Skills 目录中直接修改该技能的文件，或删除后重新安装。说明见「可执行脚本类技能 → 安装说明」。');
+    return;
+  }
   els.skillId.value = skill.id || skill.Id || '';
   els.skillName.value = skill.name || skill.Name || '';
   els.skillDesc.value = skill.description || skill.Description || '';
   els.skillPrompt.value = skill.promptTemplate || skill.PromptTemplate || '';
   
-  els.skillEditorTitle.textContent = '编辑技能';
+  els.skillEditorTitle.textContent = '编辑提示类技能';
   els.skillEditor.style.display = 'block';
-  els.skillsList.style.display = 'none';
+  if (els.skillsListsWrapper) els.skillsListsWrapper.style.display = 'none';
   els.newSkillBtn.style.display = 'none';
 };
 
@@ -2283,15 +2312,15 @@ els.newSkillBtn.addEventListener('click', () => {
   els.skillDesc.value = '';
   els.skillPrompt.value = '';
   
-  els.skillEditorTitle.textContent = '新增技能';
+  els.skillEditorTitle.textContent = '新增提示类技能';
   els.skillEditor.style.display = 'block';
-  els.skillsList.style.display = 'none';
+  if (els.skillsListsWrapper) els.skillsListsWrapper.style.display = 'none';
   els.newSkillBtn.style.display = 'none';
 });
 
 els.cancelSkillBtn.addEventListener('click', () => {
   els.skillEditor.style.display = 'none';
-  els.skillsList.style.display = 'block';
+  if (els.skillsListsWrapper) els.skillsListsWrapper.style.display = '';
   els.newSkillBtn.style.display = 'block';
 });
 
@@ -2319,7 +2348,7 @@ els.saveSkillBtn.addEventListener('click', async () => {
     
     if (res.ok) {
       els.skillEditor.style.display = 'none';
-      els.skillsList.style.display = 'block';
+      if (els.skillsListsWrapper) els.skillsListsWrapper.style.display = '';
       els.newSkillBtn.style.display = 'block';
       await loadSkills();
     } else {
@@ -2342,7 +2371,8 @@ window.toggleSkillEnabled = async function (id) {
     name: skill.name || skill.Name || '',
     description: skill.description || skill.Description || '',
     promptTemplate: skill.promptTemplate || skill.PromptTemplate || '',
-    enabled: nextEnabled
+    enabled: nextEnabled,
+    baseDir: skill.baseDir || skill.BaseDir || ''
   };
   try {
     const res = await tasklyFetch(SKILLS_API_URL, {

@@ -284,7 +284,7 @@ public sealed class ExcelPlugin
         [Description("起始单元格，如 A1")] string startCell = "A1",
         [Description("结束单元格，如 D10；留空自动检测")] string endCell = "",
         [Description("单次最多读取行数，0 不限制；大文件建议 50000～100000")] int maxRows = 0,
-        [Description("是否返回公式而非缓存值。JSON 布尔或字符串均可。")] JsonElement includeFormulas = default)
+        [Description("是否返回公式而非缓存值。JSON 布尔或字符串均可。")] JsonElement? includeFormulas = null)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeFormulas, false, out var includeFormulasValue))
             return "[错误] includeFormulas 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";

@@ -58,6 +58,24 @@ public sealed class ToolScalarArgumentParserTests
     }
 
     [Fact]
+    public void TryReadBoolWithDefault_NullableOmitted_UsesDefault()
+    {
+        JsonElement? omitted = null;
+        Assert.True(ToolScalarArgumentParser.TryReadBoolWithDefault(omitted, true, out var v) && v);
+    }
+
+    [Fact]
+    public void IsOmitted_NullOrUndefined_True()
+    {
+        JsonElement? n = null;
+        Assert.True(ToolScalarArgumentParser.IsOmitted(n));
+        var u = default(JsonElement);
+        Assert.True(ToolScalarArgumentParser.IsOmitted(u));
+        using var doc = JsonDocument.Parse("null");
+        Assert.True(ToolScalarArgumentParser.IsOmitted(doc.RootElement));
+    }
+
+    [Fact]
     public void TryReadNullableBool_Undefined_NotSpecified()
     {
         var u = default(JsonElement);

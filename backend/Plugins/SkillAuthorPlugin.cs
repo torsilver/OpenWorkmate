@@ -28,7 +28,7 @@ public sealed class SkillAuthorPlugin
     public async Task<string> GenerateUserSkillAsync(
         [Description("用户希望技能解决什么问题（必填）")] string goal,
         [Description("可选：当前对话摘要或关键要点，便于生成贴合语境的技能说明")] string? context = null,
-        [Description("若已存在同名技能，为 true 则覆盖；默认 false。JSON 布尔或字符串均可。")] JsonElement overwrite = default,
+        [Description("若已存在同名技能，为 true 则覆盖；默认 false。JSON 布尔或字符串均可。")] JsonElement? overwrite = null,
         CancellationToken ct = default)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(overwrite, false, out var overwriteValue))
@@ -81,7 +81,7 @@ public sealed class SkillAuthorPlugin
     [Description("将已写好的完整 SKILL.md 文本保存为用户技能（与设置页同源）。当模型已在回复中写出全文时使用，避免再次调用生成。")]
     public Task<string> SaveUserSkillMarkdownAsync(
         [Description("完整 SKILL.md：含 --- 包裹的 YAML（name、description、可选 title/enabled）与正文")] string skillMarkdown,
-        [Description("若已存在同名技能，为 true 则覆盖；默认 false。JSON 布尔或字符串均可。")] JsonElement overwrite = default,
+        [Description("若已存在同名技能，为 true 则覆盖；默认 false。JSON 布尔或字符串均可。")] JsonElement? overwrite = null,
         CancellationToken ct = default)
     {
         _ = ct;

@@ -89,7 +89,7 @@ public sealed class PptPlugin
     public string PptSlideRead(
         [Description("PPT 文件完整路径")] string filePath,
         [Description("幻灯片序号，从 1 开始，与播放顺序一致")] int slideIndex = 1,
-        [Description("为 true 时附加「形状列表」段落（默认 true）。JSON 布尔或字符串均可。")] JsonElement includeShapeDetails = default)
+        [Description("为 true 时附加「形状列表」段落（默认 true）。JSON 布尔或字符串均可。")] JsonElement? includeShapeDetails = null)
     {
         if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeShapeDetails, true, out var includeShapeDetailsValue))
             return "[错误] includeShapeDetails 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";

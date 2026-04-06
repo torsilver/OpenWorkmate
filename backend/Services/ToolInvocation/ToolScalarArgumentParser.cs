@@ -13,6 +13,12 @@ public static class ToolScalarArgumentParser
         el.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null;
 
     /// <summary>
+    /// 工具参数用 <see cref="JsonElement?"/>（默认 <c>null</c>）以便 MEAI 生成 JSON Schema 时不序列化无效的 <c>default(JsonElement)</c>（Undefined）。
+    /// </summary>
+    public static bool IsOmitted(JsonElement? el) =>
+        !el.HasValue || IsUnspecifiedOrNull(el.Value);
+
+    /// <summary>
     /// 解析布尔：JSON true/false、字符串 "true"/"false"/"1"/"0"/yes/no（大小写不敏感）。
     /// </summary>
     public static bool TryReadBool(JsonElement el, out bool value)
@@ -55,6 +61,18 @@ public static class ToolScalarArgumentParser
         return TryReadBool(el, out value);
     }
 
+    /// <inheritdoc cref="TryReadBoolWithDefault(JsonElement,bool,out bool)"/>
+    public static bool TryReadBoolWithDefault(JsonElement? el, bool defaultIfUnspecified, out bool value)
+    {
+        if (IsOmitted(el))
+        {
+            value = defaultIfUnspecified;
+            return true;
+        }
+
+        return TryReadBool(el!.Value, out value);
+    }
+
     /// <summary>
     /// 用于 <c>bool?</c> 工具参数：<c>Undefined</c> → <paramref name="wasSpecified"/> false；
     /// JSON <c>null</c> → <paramref name="wasSpecified"/> true 且 <paramref name="value"/> null（显式空）；
@@ -78,6 +96,16 @@ public static class ToolScalarArgumentParser
         wasSpecified = true;
         value = b;
         return true;
+    }
+
+    /// <inheritdoc cref="TryReadNullableBool(JsonElement,out bool?,out bool)"/>
+    public static bool TryReadNullableBool(JsonElement? el, out bool? value, out bool wasSpecified)
+    {
+        value = null;
+        wasSpecified = false;
+        if (!el.HasValue)
+            return true;
+        return TryReadNullableBool(el.Value, out value, out wasSpecified);
     }
 
     public static bool TryParseBoolString(string? s, out bool value)
@@ -129,6 +157,18 @@ public static class ToolScalarArgumentParser
         return TryReadInt32(el, out value);
     }
 
+    /// <inheritdoc cref="TryReadInt32WithDefault(JsonElement,int,out int)"/>
+    public static bool TryReadInt32WithDefault(JsonElement? el, int defaultIfUnspecified, out int value)
+    {
+        if (IsOmitted(el))
+        {
+            value = defaultIfUnspecified;
+            return true;
+        }
+
+        return TryReadInt32(el!.Value, out value);
+    }
+
     public static bool TryReadInt64(JsonElement el, out long value)
     {
         value = default;
@@ -176,6 +216,16 @@ public static class ToolScalarArgumentParser
         wasSpecified = true;
         value = i;
         return true;
+    }
+
+    /// <inheritdoc cref="TryReadNullableInt32(JsonElement,out int?,out bool)"/>
+    public static bool TryReadNullableInt32(JsonElement? el, out int? value, out bool wasSpecified)
+    {
+        value = null;
+        wasSpecified = false;
+        if (!el.HasValue)
+            return true;
+        return TryReadNullableInt32(el.Value, out value, out wasSpecified);
     }
 
     /// <summary>省略或 null → false（未提供）；否则解析 long。</summary>
