@@ -1,28 +1,28 @@
 # 应用内开放给对话模型的插件列表（内部）
 
-本文描述 **Taskly / Office Copilot 后端** 在 Semantic Kernel 上注册、供**本应用内对话 AI** 调用的插件（工具）范围。  
+本文描述 **Taskly / Office Copilot 后端** 在 **`ToolRegistry`**（MAF / MEAI `AITool`）上注册、供**本应用内对话 AI** 调用的插件（工具）范围。  
 **不以 Cursor 或其它 IDE 的 Skill 为准**；与 Cursor `.cursor/skills` 无关。
 
 ## 权威来源与变更方式
 
-- **注册逻辑**：`backend/ChatService.cs` 在重建 Kernel 时 `Plugins.AddFromObject` / `AddFromFunctions` / 外部 MCP 包装注册。
+- **注册逻辑**：`backend/ChatService.cs` 在 **`RebuildRuntimeAsync`** 中通过 `ToolRegistry.RegisterPluginFromObject` / MCP 包装（`McpKernelPlugin`）等注册工具；详见 [`maf-migration-baseline.md`](./maf-migration-baseline.md)。
 - **按端裁剪**：`backend/Services/ClientTypeToolFilter.cs` 决定某 `clientType` 下模型**实际可见**的插件与函数（同名插件在不同端暴露的子集不同）。
 - **工具选择文案**：`backend/Services/ToolSelectionService.cs` 中 `PluginDescriptions` 供两阶段选工具时的简短说明。
-- **设置页「内置工具」列表**（与 Kernel 可能略不同步）：`backend/Program.cs` 的 `GET /api/tools/builtin`（例如未列出 `Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 时，以代码注册为准）。
+- **设置页「内置工具」列表**（与运行时注册可能略不同步）：`backend/Program.cs` 的 `GET /api/tools/builtin`（例如未列出 `Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 时，以代码注册为准）。
 
 若增删插件或改端侧过滤，请**先改代码**，再同步本文。
 
-### 与代码核对（`ChatService` 主 Kernel）
+### 与代码核对（主会话 `ToolRegistry`）
 
 - **内置插件共 21 个插件名**（下表第一节逐项列出；`ToolIndexService.BuiltinPluginNames` 与之一致）。
 - **另有两类动态插件**：用户 Prompt 技能 `UserSkill_*`；配置中的外接 MCP `MCP_{McpServers.Name}`（不含内置的 `MCP_STT` / `MCP_OCR`）。
-- **未发现**其它向主会话 Kernel 注册插件的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂一套插件。
+- **未发现**其它向主会话注册工具的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂一套插件列表。
 
 ---
 
 ## 一、内置插件（固定代码注册）
 
-以下插件名即 Kernel 中的 **Plugin 名称**（工具调用时的命名空间前缀）。是否进入 Kernel 受配置项 **`disabledBuiltInPlugins`** 影响：值为**小写** id 列表，与下表「配置 id」列对应。
+以下插件名即 **`ToolRegistry` 中的插件名**（工具调用时的命名空间前缀）。是否注册受配置项 **`disabledBuiltInPlugins`** 影响：值为**小写** id 列表，与下表「配置 id」列对应。
 
 ### 1.1 `disabledBuiltInPlugins` 配置 id 一览
 
@@ -98,13 +98,13 @@
 
 | clientType | 模型侧要点 |
 |------------|------------|
-| **chrome**（默认） | **仅排除** `CurrentDocument`：**其余所有已在 Kernel 中注册的插件**（含 System、Plan、UserOptions、CLI、Browser、Office 三件套等，若未禁用）均可能暴露。 |
+| **chrome**（默认） | **仅排除** `CurrentDocument`：**其余所有已在 ToolRegistry 中注册的插件**（含 System、Plan、UserOptions、CLI、Browser、Office 三件套等，若未禁用）均可能暴露。 |
 | **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkill_*`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
 | **office-excel** | 同上结构，`CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
 | **office-powerpoint** | 同上结构，`CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
 | **wps** | 通用插件 + `CurrentDocument` 下 Word/Excel/PPT 函数及脚本的并集。 |
 
-**重要**：**System**、**Plan**、**UserOptions** 虽在 Kernel 中注册，但 **未** 列入 `IsCommonPlugin`，因此在 **office-word / office-excel / office-powerpoint / wps** 下**不会**进入模型工具列表；仅在 **chrome**（及 `clientType` 为空时按 chrome 处理）侧可用。
+**重要**：**System**、**Plan**、**UserOptions** 虽在注册表中存在，但 **未** 列入 `IsCommonPlugin`，因此在 **office-word / office-excel / office-powerpoint / wps** 下**不会**进入模型工具列表；仅在 **chrome**（及 `clientType` 为空时按 chrome 处理）侧可用。
 
 ---
 
@@ -112,7 +112,7 @@
 
 | 用途 | 路径 |
 |------|------|
-| Kernel 注册 | `backend/ChatService.cs` |
+| 工具注册 / 运行时重建 | `backend/ChatService.cs`（`RebuildRuntimeAsync`） |
 | 端侧过滤 | `backend/Services/ClientTypeToolFilter.cs` |
 | 选工具描述 | `backend/Services/ToolSelectionService.cs` |
 | 内置插件名集合（向量索引） | `backend/Services/ToolIndexService.cs` → `BuiltinPluginNames` |

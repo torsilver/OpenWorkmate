@@ -2,7 +2,7 @@
 
 > **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Office Copilot Server**；测试素材与操作在 Chrome 内完成。  
 > **不包含**：Cursor/VSCode 侧自行配置的 MCP、Office/WPS 任务窗格专属能力。  
-> **内置工具定义**：与后端 Kernel 注册一致；**Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余内置插件在满足配置前提下均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。
+> **内置工具定义**：与后端 `ToolRegistry` 注册一致；**Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余内置插件在满足配置前提下均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。
 
 **通过标准（每条用例）**：行为符合描述；失败时 **HTTP 4xx/5xx 或工具返回中带明确原因**（见项目错误可见性约定），侧栏/选项页能展示服务端 `message`。
 
@@ -89,12 +89,12 @@
 
 ## 三、按内置插件与工具（逐项可测）
 
-下列每条**工具名**与后端 `[KernelFunction("...")]` 一致。
+下列每条**工具名**与后端插件上的 **`[ToolFunction("...")]`** 元数据一致。
 
 - **路径约定**：未写盘符的**相对文件名**解析到当前 Windows 用户的下载目录（常为文件夹 `Downloads`，与后端 `OpenXmlHelpers.ResolvePath` 一致）。下文固定使用 `taskly-excel-test.xlsx`、`taskly-word-test.docx`、`taskly-ppt-test.pptx`、`taskly-img.png`，你可改名但同一轮请保持一致。
 - **应核对工具名**：侧栏/调试统计/后端日志中是否出现该调用（用于统计**工具调用成功率**）。
 - **表格与 Markdown**：下列表格用竖线分列；**话术列**内勿再写入与列分隔符相同的竖线字符（否则整行窜列），勿在单元格内写 Markdown 超链接语法（方括号 + 圆括号 URL）。需表示「竖线分段」时用文字 **U+007C** 或见 **§3.9 / §3.10**。
-- 模型未选型时：先发「**请必须调用 Kernel 工具 xxx**」，或用 `@Excel` 等约束。
+- 模型未选型时：先发「**请必须调用工具 xxx**」，或用 `@Excel` 等约束。
 
 ### 3.0 数据准备顺序（建议）
 
@@ -199,7 +199,7 @@
 
 **文件**：`taskly-word-test.docx`。**无表格时** `word_tables_list` / `word_tables_read` 会得到「无表格」——可先在 Word 手工插入 2×2 表再测 W02/W03，或接受「无表格」作为预期。
 
-**说明**：`word_document_create` 有 **W01**（空行拆段）与 **W01b**（换行/空行场景）两条；其余每行对应一个 Kernel 工具。竖线分段与表格语法冲突处见 §3 段首「表格与 Markdown」。
+**说明**：`word_document_create` 有 **W01**（空行拆段）与 **W01b**（换行/空行场景）两条；其余每行对应一个内置工具函数。竖线分段与表格语法冲突处见第 3 节段首「表格与 Markdown」。
 
 
 | 编号   | 工具名                         | 依赖               | 建议粘贴到对话框的话术                                                                                                                             | 应核对工具名                      | 预期要点        |
@@ -391,7 +391,7 @@
 在以下插件**未**被 `DisabledBuiltInPlugins` 停用、且依赖配置已满足时，**Chrome 端应可测到**下列工具（`CurrentDocument` 整组跳过）。
 
 
-| 插件                | 工具函数（KernelFunction 名）                                                                                                  |
+| 插件                | 工具函数名（`ToolFunction`）                                                                                                  |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Browser           | `highlight_webpage_text`, `add_floating_note`, `run_page_script`, `run_custom_page_script`, `capture_full_page`         |
 | File              | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`                                                  |
@@ -421,7 +421,7 @@
 
 ## 七、记录模板（测试时可复制）
 
-**工具调用成功率**：`命中次数 / 计划用例数`，其中「命中」指日志或 UI 中可见对应 `KernelFunction` 被调用（模型未调用记为 MISS）。
+**工具调用成功率**：`命中次数 / 计划用例数`，其中「命中」指日志或 UI 中可见对应工具函数被调用（模型未调用记为 MISS）。
 
 ```
 日期：

@@ -5,7 +5,7 @@
 ## 测试基线
 
 - 命令：`dotnet test backend.Tests/backend.Tests.csproj`
-- **最近一次全绿计数**：354（`net10.0`，Unit + Integration）。
+- **最近一次全绿计数**：381（`net10.0`，Unit + Integration，2026-04 校验）。
 
 ## 完全 MAF 迁移进度（摘要）
 
@@ -35,9 +35,6 @@
 | `Microsoft.Agents.AI` | 1.0.0 |
 | `Microsoft.Agents.AI.OpenAI` | 1.0.0 |
 | `Microsoft.Agents.AI.Workflows` | 1.0.0 |
-| `Microsoft.Agents.AI.DevUI` | 1.0.0-preview |
-| `Microsoft.Agents.AI.Hosting` | 1.0.0-preview |
-| `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore` | 1.0.0-preview |
 | `Microsoft.Extensions.AI` | 10.4.0 |
 
 ## DashScope / 推理流（迁移时需逐项对照）
@@ -49,8 +46,7 @@
 
 | 主会话阶段编排 | **MAF Workflows** (`ChatTurnWorkflow` → `FunctionExecutor` × 3 → `InProcessExecution.Default.RunAsync`)，替代旧 `ChatToolingRegistry`+`IChatTurnProcessCoordinator`（已删除）。内置 OpenTelemetry 可观测性。 |
 | 上下文注入（记忆/知识库/计划/跨端） | **MAF `MessageAIContextProvider`**（`MemoryContextProvider`、`KnowledgeBaseContextProvider`、`PlanContextProvider`、`CrossAgentTaskContextProvider`），通过 `agent.AsBuilder().UseAIContextProviders(...)` 注册到主会话 `ChatClientAgent`。每轮按需创建，各 Provider 独立检索数据并返回额外 system 消息。原 `ChatService.StreamPhases` 中对 `state.History[0]` 的手工拼接已移除。 |
-| DevUI 开发调试面板 | **MAF DevUI**（`Microsoft.Agents.AI.DevUI` preview），仅开发环境启用。`builder.AddAIAgent` 注册 OfficeCopilot Agent，`RuntimeDelegatingChatClient` 桥接运行时动态 `IChatClient`。访问 `/devui` 可视化测试 Agent。 |
+| MAF 宿主调试 HTTP 端点（DevUI / AG-UI） | **已移除**：不引用 `Microsoft.Agents.AI.DevUI` 与 `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore`；不映射 `/devui`、`/agui` 及 OpenAI Responses/Conversations 调试端点；已删除 `RuntimeDelegatingChatClient`、`AgUiEventMapping.cs`。主会话仍仅经 WebSocket + `/api/*`。 |
 | Compaction 内置摘要压缩 | **MAF `PipelineCompactionStrategy`**（`ToolResultCompactionStrategy` → `SummarizationCompactionStrategy` → `TruncationCompactionStrategy`），替代自定义 `TrySummarizeOldTurnsAsync` + `SummarizeOldTurnsCoreAsync`。通过 `CompactionProvider.CompactAsync` ad-hoc 应用。 |
 | GroupChat 编排 | **MAF `AgentWorkflowBuilder.BuildSequential`** 替代手写 Host+Worker 两阶段循环。通过 `AgentResponseUpdateEvent.ExecutorId` 区分 Host/Worker 流式输出。 |
 | Workflow Checkpoint | **MAF `CheckpointManager.CreateInMemory()`** 集成到 `ChatTurnWorkflow.RunAsync`。`HitlWorkflowContracts` + `WorkflowHitlBridge` 为 HITL→RequestPort 迁移预置基础设施。 |
-| AG-UI 标准协议 | **MAF AG-UI** SSE 端点（`/agui`），仅开发环境启用，与 WebSocket 双轨运行。`AgUiEventMapping` 记录 WS→AG-UI 事件映射。 |

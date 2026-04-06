@@ -3,7 +3,8 @@
 本文用 **Markdown + Mermaid** 从多个角度描述仓库与运行时结构，便于新人定位代码与排障。  
 在支持 Mermaid 的编辑器中打开本文件即可预览图；GitHub 对 Mermaid 也有基础支持。
 
-> **说明**：图中名称与路径以当前仓库为准；默认监听端口以 `appsettings` / 扫描结果为准（常见为 `8765` 起跳）。
+> **说明**：图中名称与路径以当前仓库为准；默认监听端口以 `appsettings` / 扫描结果为准（常见为 `8765` 起跳）。  
+> **编排栈**：主会话已迁移至 **MAF + MEAI**（`IChatClient` / `ChatClientAgent`），不再使用 Semantic Kernel；详见 [`maf-migration-baseline.md`](./maf-migration-baseline.md)。已移除的 MAF 宿主调试端点见 [`maf-host-debug-removal.md`](./maf-host-debug-removal.md)。
 
 ---
 
@@ -74,11 +75,13 @@ flowchart LR
 flowchart TB
   subgraph entry["入口与宿主"]
     PROG["Program.cs<br/>DI 注册 / 中间件 / 路由 / WS 循环"]
-    CHAT["ChatService（+ partial）<br/>Kernel 生命周期、会话、流式对话"]
+    CHAT["ChatService（+ partial）<br/>RebuildRuntimeAsync、会话、MAF 流式对话"]
   end
 
-  subgraph sk["SemanticKernel"]
-    SKDIR["Services/SemanticKernel/*<br/>流式工具编排、子 Agent、回合协调"]
+  subgraph maf["MAF / MEAI / Workflows"]
+    MAF["Services/Maf/*<br/>主会话流式、工具门面、中间件"]
+    WF["Services/Chat/*<br/>ChatTurnWorkflow、阶段 Executor"]
+    TREG["ToolRegistry + ToolInvocationMiddleware<br/>AIFunction / `[ToolFunction]` 插件"]
   end
 
   subgraph plugins["Plugins/*"]
@@ -90,18 +93,20 @@ flowchart TB
   end
 
   subgraph infra["横切与集成"]
-    MCPPKG["Mcp/*<br/>McpClient、Manager、Kernel 插件"]
+    MCPPKG["Mcp/*<br/>McpClient、Manager、McpKernelPlugin"]
     SEC["Security/*<br/>监听地址、CORS、本地 API 鉴权、发现文件"]
-    FILT["Filters/*<br/>SecurityFilter、会话上下文等"]
+    TINV["Services/ToolInvocation/*<br/>SecurityPipeline、工具状态通知"]
   end
 
   PROG --> CHAT
-  CHAT --> SKDIR
+  CHAT --> MAF
+  CHAT --> WF
+  CHAT --> TREG
   CHAT --> PL
   CHAT --> SVC
   CHAT --> MCPPKG
   PROG --> SEC
-  CHAT --> FILT
+  CHAT --> TINV
 ```
 
 ---
@@ -118,15 +123,12 @@ flowchart LR
   CS --> TS["IToolSelector / ToolSelectionService"]
   CS --> TI["IToolIndexService"]
   CS --> VS["IVectorStore"]
-  CS --> KA["IKernelAccessor"]
+  CS --> CRA["IChatRuntimeAccessor<br/>ToolRegistry + 模型 IChatClient"]
   CS --> EP["EmbeddingProvider"]
   CS --> PS["IPlanStore"]
-  CS --> REG["SkStreamChatToolingProcessRegistry"]
-  CS --> SUB["SkSubtaskChatCompletionAgentRunner"]
-  CS --> COO["IChatTurnProcessCoordinator"]
 ```
 
-配置或技能变更时会触发 **重建 Kernel**（与 MCP、内置/用户工具索引同步相关逻辑在 `ChatService` 内）。
+配置或技能变更时会触发 **`RebuildRuntimeAsync`**（与 MCP、内置/用户工具索引同步相关逻辑在 `ChatService` 内）。
 
 ---
 
@@ -139,15 +141,15 @@ sequenceDiagram
   participant SM as SessionManager
   participant H as HandleSessionAsync
   participant CH as ChatService
-  participant K as Semantic Kernel<br/>+ Plugins
+  participant MAF as MAF ChatClientAgent<br/>+ ToolRegistry
 
   C->>W: 连接 token / sessionId / clientType
   W->>SM: Add(session)
   loop 收消息
     C->>H: JSON WsMessage
     H->>CH: 路由到业务处理
-    CH->>K: 聊天补全 + 工具调用
-    K-->>CH: 流式 token / 工具结果
+    CH->>MAF: 流式补全 + 工具调用（Workflow / Middleware）
+    MAF-->>CH: 流式 token / 工具结果
     CH-->>H: 流式下行
     H-->>C: stream_chunk / stream_end 等
   end
@@ -247,7 +249,7 @@ flowchart LR
 flowchart TB
   T["backend.Tests"]
 
-  T --> U["Unit/<br/>纯逻辑、解析、安全规则、<br/>SK 编排片段等"]
+  T --> U["Unit/<br/>纯逻辑、解析、安全规则、<br/>工具/协议片段等"]
   T --> I["Integration/<br/>WebApplicationFactory<br/>HTTP 契约与鉴权等"]
 
   U --> X["xUnit + 断言"]
@@ -262,7 +264,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  H1["ChatServiceKernelWarmupHostedService<br/>启动预热 Kernel"]
+  H1["ChatServiceWarmupHostedService<br/>启动预热运行时（RebuildRuntimeAsync）"]
   H2["ScheduledTaskRunnerService<br/>定时任务调度执行"]
   PROG2["Program.cs<br/>AddHostedService"]
   PROG2 --> H1
@@ -275,9 +277,9 @@ flowchart LR
 
 对照 `.cursor/rules/harness-engineering.mdc`：Agent 可靠性优先靠**环境与边界**，而非只加长提示词。
 
-**改 Kernel 插件或函数时建议同步检查：**
+**改插件工具函数时建议同步检查：**
 
-1. 函数上的 `[Description]` / 参数 `[Description]` 是否写清输入形状与失败时模型可执行的重试方式（另见 `error-visibility`）。
+1. 函数上的 `[Description]`（及 `[ToolFunction]` 元数据）是否写清输入形状与失败时模型可执行的重试方式（另见 `error-visibility`）。
 2. [`docs/提示词清单.md`](docs/提示词清单.md) 中与默认 system 相关的句子是否与 [`ConfigService`](backend/ConfigService.cs) 一致。
 3. [`ToolSelectionService`](backend/Services/ToolSelectionService.cs) 中的 `PluginDescriptions` / `SubcategoryDescriptions` 是否与 `Program.cs` 里实际注册的插件名一致。
 4. 若涉及**多行/结构化字符串**工具参数，优先在服务端做确定性解析（例如 Word `paragraphs`、PPT `bodyText` 经 `ToolMultilineTextNormalizer`），并补 [`backend.Tests/Unit`](backend.Tests/Unit) 单测。
