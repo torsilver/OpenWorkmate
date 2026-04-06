@@ -14,7 +14,7 @@
 
 ### 与代码核对（`ChatService` 主 Kernel）
 
-- **内置插件共 22 个插件名**（下表第一节逐项列出；`ToolIndexService.BuiltinPluginNames` 与之一致）。
+- **内置插件共 21 个插件名**（下表第一节逐项列出；`ToolIndexService.BuiltinPluginNames` 与之一致）。
 - **另有两类动态插件**：用户 Prompt 技能 `UserSkill_*`；配置中的外接 MCP `MCP_{McpServers.Name}`（不含内置的 `MCP_STT` / `MCP_OCR`）。
 - **未发现**其它向主会话 Kernel 注册插件的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂一套插件。
 
@@ -38,7 +38,6 @@
 | `mcp_stt` | MCP_STT |
 | `mcp_ocr` | MCP_OCR |
 | `currentdocument` | CurrentDocument |
-| `tavily` | Tavily |
 | `clawhub` | ClawhubSkill |
 | `memory` | Memory |
 | `context` | Context |
@@ -65,7 +64,6 @@
 | **MCP_STT** | 内置语音转文字（百炼实时 ASR） | 名称含 `MCP_` 但**不是**外接 MCP；需配置实时 ASR |
 | **MCP_OCR** | 内置图片 OCR | 同上，**不是**外接 MCP；需配置 OCR |
 | **CurrentDocument** | 当前打开的 Word/Excel/PPT（任务窗格 RPC）：正文/选区/表格/区域/公式/幻灯片/脚本等 | 仅 Office/WPS 等连接任务窗格时可用；**Chrome 端整插件不暴露** |
-| **Tavily** | 网页搜索与摘要 | 需 `tavilyApiKey` 或 `skillEnv.TAVILY_API_KEY`；无 Key 时插件仍会注册，调用可能失败 |
 | **ClawhubSkill** | 运行 Clawhub 可执行技能中的脚本 | |
 | **Memory** | 长期记忆 save/search | **仅当已配置 Embedding** 时注册 |
 | **Context** | 对话压缩、释放上下文 | |
@@ -86,8 +84,6 @@
 
 - 来自设置中的 **用户技能**（有 `PromptTemplate`、已启用等）。
 - 插件名为 `UserSkill_{经净化的技能 id}`，每个技能通常对应一个 Prompt 型函数。
-- 可执行且 id 为 `tavily` 的技能**不**再注册为 Prompt，避免与原生 Tavily 重复。
-
 ### 2.2 外接 MCP：`MCP_{配置名}`
 
 - 来自 `AppConfig.McpServers` 中 **已启用** 的条目：`McpKernelPlugin` 动态挂载，插件名为 `MCP_` + 该条目的 **Name**。
@@ -103,7 +99,7 @@
 | clientType | 模型侧要点 |
 |------------|------------|
 | **chrome**（默认） | **仅排除** `CurrentDocument`：**其余所有已在 Kernel 中注册的插件**（含 System、Plan、UserOptions、CLI、Browser、Office 三件套等，若未禁用）均可能暴露。 |
-| **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Tavily、Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkill_*`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
+| **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkill_*`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
 | **office-excel** | 同上结构，`CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
 | **office-powerpoint** | 同上结构，`CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
 | **wps** | 通用插件 + `CurrentDocument` 下 Word/Excel/PPT 函数及脚本的并集。 |

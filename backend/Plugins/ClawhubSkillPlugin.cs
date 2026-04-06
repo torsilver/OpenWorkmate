@@ -26,7 +26,7 @@ public sealed class ClawhubSkillPlugin
     [ToolFunction("run_clawhub_script")]
     [Description("在后端本机 Node 下运行技能目录 scripts/ 中的脚本（.mjs 优先，否则 .js）。scriptName 不含扩展名；arguments 按空格切分，含空格的参数须用双引号包裹。")]
     public async Task<string> RunClawhubScriptAsync(
-        [Description("技能 ID，与 SKILL.md 中 name 一致，如 tavily")] string skillId,
+        [Description("技能 ID，与 SKILL.md 中 name 一致")] string skillId,
         [Description("脚本名（不含扩展名），如 search 或 extract")] string scriptName,
         [Description("传给脚本的参数：空格分隔；含空格的值用双引号包起来，例如 search \"量子计算\" zh。若失败，根据返回中的 stderr 调整参数或检查技能 RequiresEnv")] string arguments = "")
     {
@@ -56,17 +56,12 @@ public sealed class ClawhubSkillPlugin
         var args = SplitArguments(arguments);
         var env = new Dictionary<string, string>();
         var skillEnv = _configService.Current.SkillEnv;
-        var tavilyKey = (_configService.Current.TavilyApiKey ?? "").Trim();
-        if (string.IsNullOrEmpty(tavilyKey) && skillEnv != null && skillEnv.TryGetValue("TAVILY_API_KEY", out var tk) && !string.IsNullOrEmpty(tk))
-            tavilyKey = tk.Trim();
         foreach (var key in skill.RequiresEnv)
         {
             if (string.IsNullOrEmpty(key)) continue;
             string? value = skillEnv != null && skillEnv.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v)
                 ? v
                 : null;
-            if (value == null && string.Equals(key, "TAVILY_API_KEY", StringComparison.OrdinalIgnoreCase))
-                value = tavilyKey;
             if (value == null)
                 value = Environment.GetEnvironmentVariable(key);
             if (!string.IsNullOrEmpty(value))

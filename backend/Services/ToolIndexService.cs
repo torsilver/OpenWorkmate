@@ -18,7 +18,7 @@ public sealed class ToolIndexService : IToolIndexService
     private static readonly HashSet<string> BuiltinPluginNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "CLI", "Excel", "Word", "Ppt", "Browser", "File", "System",
-        "MCP_STT", "MCP_OCR", "CurrentDocument", "Tavily", "ClawhubSkill",
+        "MCP_STT", "MCP_OCR", "CurrentDocument", "ClawhubSkill",
         "Memory", "Context", "Subagent", "CrossAgentTask", "Plan", "SkillAuthor",
         "UserOptions", "AccurateData", "MeetingTranscript", "ScheduledTask"
     };

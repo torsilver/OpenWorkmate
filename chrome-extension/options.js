@@ -380,6 +380,10 @@ function onAiVendorChange() {
     if (preset.defaultEndpoint && els.aiModelEndpoint) els.aiModelEndpoint.value = preset.defaultEndpoint;
     if (preset.defaultModelId !== undefined && preset.defaultModelId !== null && preset.defaultModelId !== '' && els.aiModelModelId) els.aiModelModelId.value = preset.defaultModelId;
   }
+  if (el.value === 'aliyun_bailian') {
+    var esBailian = document.getElementById('aiModelEnableSearch');
+    if (esBailian) esBailian.value = 'true';
+  }
   updateChatProviderUi(!!preset);
   if (prevVid === 'aliyun_bailian' && el.value !== 'aliyun_bailian') resetBailianAdvancedFormFields();
   el.dataset.prevVendorId = el.value;
@@ -1916,7 +1920,6 @@ async function saveConfig() {
       ai: aiPayload,
       aiModels: aiModelsToSave,
       activeModelId: activeId,
-      tavilyApiKey: (function () { var se = collectSkillEnv(); return (se && se.TAVILY_API_KEY) || (fullConfig && (fullConfig.tavilyApiKey ?? fullConfig.TavilyApiKey)) || ''; })(),
       skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
       cliRunMode: perEnd.cliRunMode,
@@ -1950,7 +1953,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, tavilyApiKey: payload.tavilyApiKey, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';

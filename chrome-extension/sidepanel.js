@@ -279,7 +279,9 @@ if ($currentPlanLabel) {
     const planId = getCurrentPlanId();
     if (!planId) return;
     if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.create({ url: `plans.html?id=${planId}` });
+      chrome.tabs.create({
+        url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)),
+      });
     }
   });
 }
@@ -2345,23 +2347,40 @@ function addFloatingNoteInPage(message, title, anchorText) {
 
 // ───── Canvas Rendering ─────
 async function extractAndRenderCanvas(rawText) {
-  const msgs = document.querySelectorAll('.msg--bot');
-  if (msgs.length === 0) return;
-  const lastMsg = msgs[msgs.length - 1];
-  const text = rawText || lastMsg.textContent;
-  
-  const startIdx = text.indexOf('<html_canvas>');
-  const endIdx = text.indexOf('</html_canvas>');
-  
+  const raw = rawText != null ? String(rawText) : "";
+  const msgs = document.querySelectorAll(".msg--bot");
+  const rounds = document.querySelectorAll(".msg--round");
+
+  let text = raw.trim() ? raw : "";
+  if (!text && msgs.length) text = msgs[msgs.length - 1].textContent || "";
+  if (!text && rounds.length) text = rounds[rounds.length - 1].innerText || "";
+  if (!text) return;
+
+  /** 流式 UI 用 .msg--round + 时间线，无 .msg--bot；占位替换须落在「助手回复」Markdown 容器上 */
+  let domPatchEl = null;
+  if (msgs.length) domPatchEl = msgs[msgs.length - 1];
+  else if (rounds.length) {
+    const lastRound = rounds[rounds.length - 1];
+    domPatchEl =
+      lastRound.querySelector(".timeline-seg--answer .timeline-seg__body--md") || lastRound;
+  }
+
+  const startIdx = text.indexOf("<html_canvas>");
+  const endIdx = text.indexOf("</html_canvas>");
+
   let htmlCode = null;
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
     htmlCode = text.substring(startIdx + 13, endIdx).trim();
-    // 隐藏原始代码文本
-    const displayHtml = lastMsg.innerHTML.replace(/&lt;html_canvas&gt;[\s\S]*?&lt;\/html_canvas&gt;|<html_canvas>[\s\S]*?<\/html_canvas>/g, '<i>[交互式图表已生成在展示板]</i>');
-    lastMsg.innerHTML = displayHtml;
+    if (domPatchEl) {
+      const displayHtml = domPatchEl.innerHTML.replace(
+        /&lt;html_canvas&gt;[\s\S]*?&lt;\/html_canvas&gt;|<html_canvas>[\s\S]*?<\/html_canvas>/g,
+        "<i>[交互式图表已生成在展示板]</i>"
+      );
+      domPatchEl.innerHTML = displayHtml;
+    }
   }
-  
-  const hasMermaid = text.includes('```mermaid');
+
+  const hasMermaid = text.includes("```mermaid");
   const isComplex = htmlCode || hasMermaid || text.length > 500;
   if (isComplex) {
     await sendToWorkspace(htmlCode, text);
@@ -2391,6 +2410,12 @@ async function sendToWorkspace(htmlCode, markdown) {
         resolve();
       }, 1500);
     });
+  } else if (wsTab.id != null) {
+    try {
+      await chrome.tabs.update(wsTab.id, { active: true });
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   chrome.tabs.sendMessage(wsTab.id, {

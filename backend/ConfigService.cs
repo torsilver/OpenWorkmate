@@ -344,9 +344,7 @@ public class AppConfig
     public Dictionary<string, List<string>> AllowedDocumentScriptIdsByClient { get; set; } = new();
     /// <summary>已停用的内置插件 ID 列表（如 Browser、File、CLI、Excel、Word），这些插件不会注册到 Kernel。</summary>
     public List<string> DisabledBuiltInPlugins { get; set; } = new();
-    /// <summary>Tavily API Key，用于网页搜索技能；请在 user-config.json 中填写。</summary>
-    public string TavilyApiKey { get; set; } = "";
-    /// <summary>技能所需环境变量统一配置：键为环境变量名（如 TAVILY_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取。可在设置页或 user-config.json 中配置。</summary>
+    /// <summary>技能所需环境变量统一配置：键为环境变量名（如 OPENAI_API_KEY），值为配置内容。执行 Clawhub 脚本时优先从此处读取。可在设置页或 user-config.json 中配置。</summary>
     public Dictionary<string, string> SkillEnv { get; set; } = new();
     // ----- 阶段 3：嵌入与 RAG / 记忆 -----
     /// <summary>Embedding 模型列表；支持多条，仅 Remote 远程 API。</summary>

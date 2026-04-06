@@ -16,7 +16,7 @@
 | Z1  | 后端已启动                  | 扩展能连上 API（侧栏状态或选项页「连接」正常）                                         |
 | Z2  | `chrome-extension` 已加载 | `chrome://extensions` 中已启用本扩展，版本与仓库一致                             |
 | Z3  | 访问密钥 / Token           | 与 `user-config` 或选项页配置一致，请求不被 401                                 |
-| Z4  | 模型与 Embedding 等        | 按需：Memory 需 Embedding；Tavily 需 `TAVILY_API_KEY`；OCR/STT 需选项页中对应配置 |
+| Z4  | 模型与 Embedding 等        | 按需：Memory 需 Embedding；联网问答需在百炼模型上开启 **enable_search**；OCR/STT 需选项页中对应配置 |
 | Z5  | 下载目录                   | File 保存截图、Word/Excel/Ppt 写本地文件时，路径解析以本机「下载」或配置为准                  |
 
 
@@ -257,13 +257,12 @@
 | P14 | `ppt_slide_duplicate`   | P01 或 P07           | 「请 ppt_slide_duplicate：slideIndex=1。」后端复制 `ImagePart` 并重映射 `blip/@embed`；极复杂页（图表等）失败请看工具返回。                                                                 | `ppt_slide_duplicate`   | 成功      |
 
 
-### 3.11 Tavily
+### 3.11 联网搜索（百炼 enable_search）
 
 
-| 编号  | 工具名              | 前置      | 建议粘贴到对话框的话术                                                             | 应核对工具名           | 预期要点    |
-| --- | ---------------- | ------- | ----------------------------------------------------------------------- | ---------------- | ------- |
-| TV1 | `tavily_search`  | API Key | 「请 tavily_search：查询【2026 年某项科技新闻关键词】。」                                  | `tavily_search`  | 多条摘要    |
-| TV2 | `tavily_extract` | 同上      | 「请 tavily_extract：urls 填 [https://example.com。」](https://example.com。」) | `tavily_extract` | 正文或失败原因 |
+| 编号  | 工具名   | 前置                                       | 建议粘贴到对话框的话术                                      | 应核对工具名 | 预期要点                    |
+| --- | ----- | ---------------------------------------- | -------------------------------------------------- | ------- | ----------------------- |
+| WS1 | （无）   | 当前模型为百炼兼容地址且已开启 enable_search | 「请根据公开网络信息简要说明【2026 年某项科技新闻关键词】近况。」 | —       | 回答含检索依据或来源说明；**无** `tavily_*` 工具调用 |
 
 
 ### 3.12 ClawhubSkill
@@ -404,7 +403,6 @@
 | Excel             | 见 §3.8 共 21 个                                                                                                           |
 | Word              | 见 §3.9 共 23 个                                                                                                           |
 | Ppt               | 见 §3.10 共 14 个                                                                                                          |
-| Tavily            | `tavily_search`, `tavily_extract`                                                                                       |
 | ClawhubSkill      | `run_clawhub_script`                                                                                                    |
 | Memory            | `save_memory`, `search_memory`                                                                                          |
 | AccurateData      | `accurate_data_write`, `accurate_data_read`, `accurate_data_list`, `accurate_data_delete`                               |

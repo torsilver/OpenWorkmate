@@ -30,7 +30,7 @@ public class SkillDefinition
     public string BaseDir { get; set; } = "";
     /// <summary>Clawhub metadata：依赖的可执行程序，如 ["node"]。</summary>
     public List<string> RequiresBins { get; set; } = new();
-    /// <summary>Clawhub metadata：依赖的环境变量，如 ["TAVILY_API_KEY"]。</summary>
+    /// <summary>Clawhub metadata：依赖的环境变量，如 ["OPENAI_API_KEY"]。</summary>
     public List<string> RequiresEnv { get; set; } = new();
     /// <summary>主环境变量 key，用于配置展示/校验。</summary>
     public string? PrimaryEnv { get; set; }

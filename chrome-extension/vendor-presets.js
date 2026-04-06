@@ -6,7 +6,7 @@
  */
 window.OFFICE_COPILOT_VENDOR_PRESETS = {
   chat: [
-    { id: 'aliyun_bailian', label: '阿里巴巴 通义百炼', provider: 'OpenAI', defaultEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModelId: 'qwen-turbo' },
+    { id: 'aliyun_bailian', label: '阿里巴巴 通义百炼', provider: 'OpenAI', defaultEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModelId: 'qwen3.6-plus' },
     { id: 'zhipu_glm', label: '智谱 GLM（BigModel）', provider: 'OpenAI', defaultEndpoint: 'https://open.bigmodel.cn/api/paas/v4', defaultModelId: 'glm-4-flash' },
     { id: 'deepseek', label: 'DeepSeek', provider: 'OpenAI', defaultEndpoint: 'https://api.deepseek.com/v1', defaultModelId: 'deepseek-chat' },
     { id: 'moonshot', label: '月之暗面 Moonshot（Kimi）', provider: 'OpenAI', defaultEndpoint: 'https://api.moonshot.cn/v1', defaultModelId: 'moonshot-v1-8k' },

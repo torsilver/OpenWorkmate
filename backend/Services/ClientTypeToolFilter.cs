@@ -8,8 +8,7 @@ public static class ClientTypeToolFilter
     private static bool IsCommonPlugin(string pluginName)
     {
         if (string.IsNullOrEmpty(pluginName)) return false;
-        return PluginComparer.Equals(pluginName, "Tavily")
-            || PluginComparer.Equals(pluginName, "Memory")
+        return PluginComparer.Equals(pluginName, "Memory")
             || PluginComparer.Equals(pluginName, "Context")
             || PluginComparer.Equals(pluginName, "Subagent")
             || PluginComparer.Equals(pluginName, "CrossAgentTask")

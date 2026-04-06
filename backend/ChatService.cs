@@ -266,16 +266,6 @@ public sealed partial class ChatService : IDisposable
             RegisterPlugin(new CurrentDocumentPlugin(sessionManager, rpcManager, currentDocLogger), "CurrentDocument");
         }
 
-        // Tavily 原生插件：未停用时始终注册；Key 来自 user-config 的 tavilyApiKey 或 skillEnv.TAVILY_API_KEY
-        var tavilyApiKey = (_configService.Current.TavilyApiKey ?? "").Trim();
-        if (string.IsNullOrEmpty(tavilyApiKey) && _configService.Current.SkillEnv != null && _configService.Current.SkillEnv.TryGetValue("TAVILY_API_KEY", out var fromSkillEnv) && !string.IsNullOrEmpty(fromSkillEnv))
-            tavilyApiKey = fromSkillEnv.Trim();
-        if (!disabledBuiltIn.Contains("tavily"))
-        {
-            var tavilyLogger = _loggerFactory.CreateLogger<TavilyPlugin>();
-            RegisterPlugin(new TavilyPlugin(tavilyApiKey, tavilyLogger), "Tavily");
-        }
-
         var clawhubRunner = _serviceProvider.GetRequiredService<ClawhubScriptRunner>();
         if (!disabledBuiltIn.Contains("clawhub"))
             RegisterPlugin(new ClawhubSkillPlugin(_skillService, clawhubRunner, _configService, _loggerFactory.CreateLogger<ClawhubSkillPlugin>()), "ClawhubSkill");
@@ -343,8 +333,6 @@ public sealed partial class ChatService : IDisposable
         foreach (var skill in userSkills)
         {
             if (!skill.Enabled || string.IsNullOrWhiteSpace(skill.PromptTemplate)) continue;
-            if (skill.IsExecutable && string.Equals(skill.Id, "tavily", StringComparison.OrdinalIgnoreCase))
-                continue;
             try
             {
                 var safeName = SanitizeSkillFunctionName(skill.Id);

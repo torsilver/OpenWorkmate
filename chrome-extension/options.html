@@ -531,12 +531,13 @@
               <input type="number" id="aiModelThinkingBudget" name="thinkingBudget" min="1" step="1" placeholder="留空则不写入">
             </div>
             <div class="form-group" style="margin-bottom: 10px;">
-              <label for="aiModelEnableSearch">联网搜索 enable_search</label>
+              <label for="aiModelEnableSearch">联网搜索 enable_search（百炼）</label>
               <select id="aiModelEnableSearch" name="enableSearch">
                 <option value="">默认（不写入）</option>
                 <option value="true">开启</option>
                 <option value="false">关闭</option>
               </select>
+              <p class="help-text" style="margin-top:6px;">开启后由百炼在对话生成时检索网络（如 qwen3.6-plus 等支持联网的模型）；无需再配置外置 Tavily。Endpoint 须含 <code>dashscope</code>。</p>
             </div>
             <div class="form-group" style="margin-bottom: 10px;">
               <label for="aiModelSearchOptionsJson">search_options（JSON 对象，可选）</label>
@@ -759,7 +760,7 @@
       <details class="settings-block">
         <summary>技能所需环境变量</summary>
         <div class="settings-block-inner">
-        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 TAVILY_API_KEY、OPENAI_API_KEY 等）。</p>
+        <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。新增 Clawhub 技能后刷新本页即可出现对应输入项（如 OPENAI_API_KEY 等）。</p>
         <div id="skillEnvList"></div>
         </div>
       </details>

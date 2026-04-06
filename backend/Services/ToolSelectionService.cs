@@ -34,7 +34,6 @@ public sealed class ToolSelectionService : IToolSelector
         ["Ppt"] = "读写 PPT 演示文稿",
         ["Browser"] = "网页截图、高亮、页面脚本",
         ["File"] = "附件路径、文件大小、保存截图到下载",
-        ["Tavily"] = "网页搜索、查资料",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["CurrentDocument"] = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：插入/读正文、选区、表格、查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本",
         ["Context"] = "对话上下文管理：主动压缩对话以释放上下文",
@@ -64,8 +63,6 @@ public sealed class ToolSelectionService : IToolSelector
         ["Browser-高亮与笔记"] = "高亮、浮动笔记",
         ["File"] = "附件路径解析、文件大小查询、截图保存到下载",
         ["CLI"] = "执行 CMD 命令",
-        ["Tavily-搜索"] = "网页搜索",
-        ["Tavily-提取"] = "URL 内容提取",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["技能"] = "用户技能与 Clawhub 脚本",
         ["多媒体"] = "内置语音转文字与图片 OCR（MCP_STT、MCP_OCR），与外接 MCP 无关",
@@ -123,8 +120,6 @@ public sealed class ToolSelectionService : IToolSelector
             ["Browser-高亮与笔记"] = new List<(string, string)> { ("Browser", "highlight_webpage_text"), ("Browser", "add_floating_note") },
             ["File"] = new List<(string, string)> { ("File", "get_attachment_path"), ("File", "get_file_size"), ("File", "save_screenshot_to_downloads") },
             ["CLI"] = new List<(string, string)> { ("CLI", "run_command") },
-            ["Tavily-搜索"] = new List<(string, string)> { ("Tavily", "tavily_search") },
-            ["Tavily-提取"] = new List<(string, string)> { ("Tavily", "tavily_extract") },
             ["ClawhubSkill"] = new List<(string, string)> { ("ClawhubSkill", "run_clawhub_script") },
             ["CurrentDocument-Word"] = new List<(string, string)>
             {
@@ -415,7 +410,7 @@ public sealed class ToolSelectionService : IToolSelector
         };
         foreach (var (id, desc) in subcategories)
             lines.Add($"- {id}: {desc}");
-        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Tavily-搜索, Word-编辑内容。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。Chrome 侧栏对话操作本机路径上的 docx/xlsx/pptx→选 Word-* / Excel-* / Ppt-*（如批注/查找替换→Word-编辑内容），勿选 CurrentDocument-*（仅 office-word / WPS / office-excel / office-powerpoint 任务窗格可用）。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word（任务窗格端）。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。Chrome 会议监听结束且含 sessionId、要生成纪要→MeetingTranscript。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
+        lines.Add("示例：读Excel某区域→Excel-获取信息。搜索并写Word→Word-编辑内容（实时资讯由当前对话模型在设置中开启百炼 enable_search 完成，勿选不存在的独立搜索插件）。总结当前页面并生成excel放到下载→Browser-截图与页面, Excel-编辑内容, File。Chrome 侧栏对话操作本机路径上的 docx/xlsx/pptx→选 Word-* / Excel-* / Ppt-*（如批注/查找替换→Word-编辑内容），勿选 CurrentDocument-*（仅 office-word / WPS / office-excel / office-powerpoint 任务窗格可用）。改当前 Word 选中文字、在文档末尾加表格→CurrentDocument-Word（任务窗格端）。读当前 Excel 某表、写公式→CurrentDocument-Excel。新建空白 PPT 文件→Ppt-新建文稿。读 PPT 幻灯片/备注→Ppt-获取信息 或 CurrentDocument-Ppt；写/插/删/重排/复制→Ppt-编辑内容 或 CurrentDocument-Ppt；插图/表格/超链接→Ppt-图形与表格。用户问今天几号、现在几点→System。用户附带图片要提取文字、音频转文字、或判断文件大小→File, 多媒体。用户说「帮我记住…」→Memory。用户说「把这段存成准确数据 id 为…」→AccurateData。Chrome 会议监听结束且含 sessionId、要生成纪要→MeetingTranscript。用户说「帮我列个多步计划」→Plan。需侧栏分步选方案/格式、或「两个方案让我选」→UserOptions。复杂调研需多步落地但未明说→可加 Plan, AccurateData。用户要把对话整理成可复用技能→Auto_SkillAuthor。仅当需要设置里配置的外接 MCP 能力时才选：外部。");
         return string.Join("\n", lines);
     }
 
@@ -640,7 +635,7 @@ public sealed class ToolSelectionService : IToolSelector
             var desc = PluginDescriptions.TryGetValue(name, out var d) ? d : (name.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase) ? "用户技能" : name.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase) ? "MCP 工具" : name);
             lines.Add($"- {name}: {desc}");
         }
-        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Tavily, Word。用户说「记住我以后…」→ Memory。用户说「存成准确数据」→ AccurateData。用户说「会议监听 sessionId=… 生成纪要」→ MeetingTranscript。用户说「列个实现计划」→ Plan。用户说「给我两个方案让我选」或存在明显歧义需确认→ UserOptions。多步复杂任务未明说→可输出 Plan, AccurateData。用户说「把刚才聊的做成技能」→ SkillAuthor。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
+        lines.Add("示例：用户说「打开 Excel」→ 只输出 Excel。用户说「搜索并写进文档」→ 只输出 Word（联网由已开启 enable_search 的对话模型完成，勿输出不存在的搜索插件）。用户说「记住我以后…」→ Memory。用户说「存成准确数据」→ AccurateData。用户说「会议监听 sessionId=… 生成纪要」→ MeetingTranscript。用户说「列个实现计划」→ Plan。用户说「给我两个方案让我选」或存在明显歧义需确认→ UserOptions。多步复杂任务未明说→可输出 Plan, AccurateData。用户说「把刚才聊的做成技能」→ SkillAuthor。用户插入明确 token：`[TOOL:Excel]` → 只输出 Excel。用户插入 token：`[TOOL:UserSkill_Excel___XLSX]` → 只输出 UserSkill_Excel___XLSX。尽量只输出会用到的插件，不要输出 全部。");
         return string.Join("\n", lines);
     }
 

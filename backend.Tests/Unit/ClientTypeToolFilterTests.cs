@@ -61,7 +61,7 @@ public class ClientTypeToolFilterTests
         foreach (var ct in clientTypes)
         {
             Assert.True(ClientTypeToolFilter.IsAllowed("Memory", "recall", ct), $"Memory should be allowed for {ct}");
-            Assert.True(ClientTypeToolFilter.IsAllowed("Tavily", "search", ct), $"Tavily should be allowed for {ct}");
+            Assert.True(ClientTypeToolFilter.IsAllowed("ClawhubSkill", "run_clawhub_script", ct), $"ClawhubSkill should be allowed for {ct}");
             Assert.True(ClientTypeToolFilter.IsAllowed("UserSkill_foo", "bar", ct), $"UserSkill_* should be allowed for {ct}");
             Assert.True(ClientTypeToolFilter.IsAllowed("MCP_xyz", "tool", ct), $"MCP_* should be allowed for {ct}");
         }

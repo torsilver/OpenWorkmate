@@ -839,7 +839,6 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
         new() { Id = "Ppt", Name = "Ppt", Description = "读写 PPT 演示文稿" },
         new() { Id = "CurrentDocument", Name = "CurrentDocument", Description = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：正文/选区/表格/查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本" },
-        new() { Id = "Tavily", Name = "Tavily", Description = "Tavily 网页搜索与 URL 正文提取（需配置 TAVILY_API_KEY）" },
         new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
         new() { Id = "Memory", Name = "Memory", Description = "长期记忆：用户可点名「记住」；也可主动保存/检索习惯、取向与关键事实（需配置 Embedding）" },
         new() { Id = "AccurateData", Name = "AccurateData", Description = "准确数据：用户可点名按 id 存取；复杂任务中可主动落盘大块结构化中间结果以减上下文" },
