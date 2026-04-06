@@ -74,9 +74,10 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         var pluginName = ctx.PluginName;
         var functionName = ctx.FunctionName;
 
+        var resultText = NormalizeToolResultToString(result);
         var content = "";
-        if (result is string s && !string.IsNullOrEmpty(s))
-            content = s.Length <= 200 ? s : s[..200];
+        if (!string.IsNullOrEmpty(resultText))
+            content = resultText.Length <= 200 ? resultText : resultText[..200];
 
         var isSuccess = success && !IsToolResultFailure(content);
         _debugStats.RecordToolInvocation(pluginName, functionName, isSuccess);
@@ -97,11 +98,31 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase)
             && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
         {
-            await TryEmitPlanCreatedAsync(sessionId, result as string);
+            await TryEmitPlanCreatedAsync(sessionId, resultText);
         }
     }
 
     // ─── helpers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// MAF/MEAI 管道里工具返回值可能是 <see cref="string"/>、<see cref="JsonElement"/> 等，不能只用 <c>as string</c>，
+    /// 否则 <c>plan_created</c> 等依赖全文结果的逻辑会静默跳过。
+    /// </summary>
+    internal static string? NormalizeToolResultToString(object? result)
+    {
+        if (result is null) return null;
+        if (result is string s) return s;
+        if (result is JsonElement je)
+        {
+            return je.ValueKind switch
+            {
+                JsonValueKind.String => je.GetString(),
+                JsonValueKind.Null or JsonValueKind.Undefined => null,
+                _ => je.ToString()
+            };
+        }
+        return Convert.ToString(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
 
     private async Task TryEmitPlanCreatedAsync(string sessionId, string? fullResult)
     {
