@@ -876,7 +876,7 @@ postgresql://localhost/mydb"></textarea>
       <details class="settings-block">
         <summary>定时任务</summary>
         <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 16px;">到点后后台会将任务内容（MD）发给 AI 执行。与内置定时任务插件共用同一批任务数据。</p>
+      <p class="help-text" style="margin-bottom: 16px;">到点后后台会将任务内容（MD）发给 AI 执行。与内置定时任务插件共用同一批任务数据。是否在计划时间执行由列表中的「启用 / 禁用」控制。</p>
       <div style="margin-bottom: 16px;">
         <button type="button" id="scheduledTaskNewBtn" class="btn-secondary">新建定时任务</button>
       </div>
@@ -908,10 +908,6 @@ postgresql://localhost/mydb"></textarea>
         <div class="form-group" id="scheduledTaskIntervalGroup" style="display:none;">
           <label>间隔（分钟）</label>
           <input type="number" id="scheduledTaskIntervalMinutes" min="1" placeholder="60">
-        </div>
-        <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" id="scheduledTaskEnabled" checked>
-          <label for="scheduledTaskEnabled" style="margin: 0;">启用</label>
         </div>
         <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
           <input type="checkbox" id="scheduledTaskDeleteAfterRun">

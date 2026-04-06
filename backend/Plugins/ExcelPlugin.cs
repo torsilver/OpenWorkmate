@@ -6,6 +6,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -283,8 +284,10 @@ public sealed class ExcelPlugin
         [Description("起始单元格，如 A1")] string startCell = "A1",
         [Description("结束单元格，如 D10；留空自动检测")] string endCell = "",
         [Description("单次最多读取行数，0 不限制；大文件建议 50000～100000")] int maxRows = 0,
-        [Description("是否返回公式而非缓存值")] bool includeFormulas = false)
+        [Description("是否返回公式而非缓存值。JSON 布尔或字符串均可。")] JsonElement includeFormulas = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeFormulas, false, out var includeFormulasValue))
+            return "[错误] includeFormulas 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateExcelExtension(filePath, out var extErr)) return extErr;
         try
@@ -302,7 +305,7 @@ public sealed class ExcelPlugin
             var (startRow, startCol) = ParseCellRef(startCell);
 
             if (maxRows > 0)
-                return ReadRangeSax(wsPart, sst, startRow, startCol, endCell, maxRows, includeFormulas);
+                return ReadRangeSax(wsPart, sst, startRow, startCol, endCell, maxRows, includeFormulasValue);
 
             var sheetData = RequireWorksheet(wsPart).Elements<SheetData>().First();
             int endRow, endCol;
@@ -333,7 +336,7 @@ public sealed class ExcelPlugin
                     var colLetter = GetColLetter(c);
                     var cellRef = $"{colLetter}{r}";
                     var cell = row.Elements<Cell>().FirstOrDefault(x => x.CellReference?.Value == cellRef);
-                    cells.Add(includeFormulas ? GetCellFormulaOrValue(cell, sst) : GetCellValue(cell, sst));
+                    cells.Add(includeFormulasValue ? GetCellFormulaOrValue(cell, sst) : GetCellValue(cell, sst));
                 }
                 sb.AppendLine(string.Join('\t', cells));
             }
@@ -549,7 +552,7 @@ public sealed class ExcelPlugin
             if (string.IsNullOrEmpty(refText)) return "该命名区域无有效引用。";
             var (sheetName, range) = ParseDefinedNameRef(refText);
             if (string.IsNullOrEmpty(range)) return $"无法解析引用: {refText}";
-            return ExcelRangeRead(filePath, sheetName ?? "", range.Split(':')[0].Trim(), range.Contains(':') ? range.Split(':')[1].Trim() : "", 0, false);
+            return ExcelRangeRead(filePath, sheetName ?? "", range.Split(':')[0].Trim(), range.Contains(':') ? range.Split(':')[1].Trim() : "", 0, JsonSerializer.SerializeToElement(false));
         }
         catch (Exception ex) { return $"[错误] 读取失败: {ex.Message}"; }
     }

@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Text.Json;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -24,8 +26,10 @@ public sealed class MemoryPlugin
     public async Task<string> SaveMemoryAsync(
         [Description("要记住的文本内容")] string text,
         [Description("可选标签，逗号分隔，便于分类")] string tags = "",
-        [Description("是否写入共享记忆（跨端可见）；仅对用户明确要求跨端记住的内容设为 true")] bool saveToShared = false)
+        [Description("是否写入共享记忆（跨端可见）；仅对用户明确要求跨端记住的内容设为 true。JSON 布尔或字符串均可。")] JsonElement saveToShared = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(saveToShared, false, out var saveToSharedValue))
+            return "[无效] saveToShared 参数无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
         if (!_memory.IsAvailable)
             return "[记忆未启用] 未配置 Embedding 模型，无法保存记忆。请在设置中配置 Embedding 模型（本地或远程）。";
         if (string.IsNullOrWhiteSpace(text))
@@ -35,9 +39,9 @@ public sealed class MemoryPlugin
         var metadata = string.IsNullOrWhiteSpace(tags) ? null : new Dictionary<string, string> { ["tags"] = tags.Trim() };
         try
         {
-            var id = await _memory.SaveAsync(null, text.Trim(), sessionId, metadata, saveToShared, agentName).ConfigureAwait(false);
-            _logger?.LogInformation("save_memory: id={Id} sessionId={SessionId} shared={Shared}", id, sessionId, saveToShared);
-            return saveToShared ? $"[已记住] 已保存为共享记忆（id={id}），其他端也可检索。" : $"[已记住] 已保存为长期记忆（id={id}）。";
+            var id = await _memory.SaveAsync(null, text.Trim(), sessionId, metadata, saveToSharedValue, agentName).ConfigureAwait(false);
+            _logger?.LogInformation("save_memory: id={Id} sessionId={SessionId} shared={Shared}", id, sessionId, saveToSharedValue);
+            return saveToSharedValue ? $"[已记住] 已保存为共享记忆（id={id}），其他端也可检索。" : $"[已记住] 已保存为长期记忆（id={id}）。";
         }
         catch (Exception ex)
         {
@@ -53,8 +57,10 @@ public sealed class MemoryPlugin
     [Description("根据查询从长期记忆中检索相关条目（本会话 + 共享记忆），返回与当前问题最相关的记忆列表；结果会标明来自本会话或共享。")]
     public async Task<string> SearchMemoryAsync(
         [Description("检索关键词或问题")] string query,
-        [Description("返回条数，默认 5")] int topK = 5)
+        [Description("返回条数，默认 5。JSON 数字或字符串均可。")] JsonElement topK = default)
     {
+        if (!ToolScalarArgumentParser.TryReadInt32WithDefault(topK, 5, out var topKValue))
+            return "[无效] topK 无效：须为整数。";
         if (!_memory.IsAvailable)
             return "[记忆未启用] 未配置 Embedding 模型，无法检索记忆。";
         if (string.IsNullOrWhiteSpace(query))
@@ -62,7 +68,7 @@ public sealed class MemoryPlugin
         var sessionId = SessionContext.GetSessionId();
         try
         {
-            var sessionResults = await _memory.SearchAsync(query.Trim(), Math.Clamp(topK, 1, 20), sessionId).ConfigureAwait(false);
+            var sessionResults = await _memory.SearchAsync(query.Trim(), Math.Clamp(topKValue, 1, 20), sessionId).ConfigureAwait(false);
             var sharedResults = await _memory.SearchSharedAsync(query.Trim(), Math.Clamp(3, 1, 10)).ConfigureAwait(false);
             if (sessionResults.Count == 0 && sharedResults.Count == 0)
                 return "[无相关记忆] 未找到与当前查询相关的记忆。";

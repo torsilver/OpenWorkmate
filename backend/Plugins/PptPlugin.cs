@@ -1,12 +1,14 @@
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -87,8 +89,10 @@ public sealed class PptPlugin
     public string PptSlideRead(
         [Description("PPT 文件完整路径")] string filePath,
         [Description("幻灯片序号，从 1 开始，与播放顺序一致")] int slideIndex = 1,
-        [Description("为 true 时附加「形状列表」段落（默认 true）")] bool includeShapeDetails = true)
+        [Description("为 true 时附加「形状列表」段落（默认 true）。JSON 布尔或字符串均可。")] JsonElement includeShapeDetails = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeShapeDetails, true, out var includeShapeDetailsValue))
+            return "[错误] includeShapeDetails 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidatePptExtension(filePath, out var extErr)) return extErr;
         if (slideIndex < 1)
@@ -113,7 +117,7 @@ public sealed class PptPlugin
             var sb = new StringBuilder();
             sb.AppendLine($"[幻灯片 {slideIndex}]");
             sb.AppendLine(fullText);
-            if (includeShapeDetails)
+            if (includeShapeDetailsValue)
             {
                 sb.AppendLine();
                 sb.AppendLine("[形状列表（仅含可编辑文本框，编号供 shapeIndex 使用）]");

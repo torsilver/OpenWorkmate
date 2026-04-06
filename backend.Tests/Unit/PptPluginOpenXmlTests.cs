@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
@@ -11,6 +12,8 @@ namespace backend.Tests.Unit;
 /// <summary>PptPlugin OpenXml 链式操作（临时目录，测完删除）。</summary>
 public class PptPluginOpenXmlTests : IDisposable
 {
+    private static JsonElement JBool(bool v) => JsonSerializer.SerializeToElement(v);
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "ppt_plugin_tests_" + Guid.NewGuid().ToString("N"));
 
     public PptPluginOpenXmlTests()
@@ -38,11 +41,11 @@ public class PptPluginOpenXmlTests : IDisposable
         var path = Path.Combine(_dir, "chain.pptx");
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("共 1", p.PptSlidesList(path));
-        Assert.Contains("形状列表", p.PptSlideRead(path, 1, true));
+        Assert.Contains("形状列表", p.PptSlideRead(path, 1, JBool(true)));
         Assert.Contains("成功", p.PptSlideWrite(path, 1, "title", "封面"));
         Assert.Contains("成功", p.PptSlideInsert(path, 1, "第二页标题", "要点一\n要点二\n要点三"));
         Assert.Contains("共 2", p.PptSlidesList(path));
-        var slide2 = p.PptSlideRead(path, 2, false);
+        var slide2 = p.PptSlideRead(path, 2, JBool(false));
         Assert.Contains("第二页标题", slide2);
         Assert.Contains("要点一", slide2);
         Assert.Contains("成功", p.PptSlidesReorder(path, "2,1"));
@@ -60,7 +63,7 @@ public class PptPluginOpenXmlTests : IDisposable
         var p = new PptPlugin();
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("成功", p.PptSlideInsert(path, 0, "标题", "行一|行二|行三"));
-        var slide1 = p.PptSlideRead(path, 1, false);
+        var slide1 = p.PptSlideRead(path, 1, JBool(false));
         Assert.Contains("标题", slide1);
         Assert.Contains("行一", slide1);
         Assert.Contains("行二", slide1);
@@ -75,7 +78,7 @@ public class PptPluginOpenXmlTests : IDisposable
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("成功", p.PptSlideWrite(path, 1, "title", "封面"));
         Assert.Contains("成功", p.PptSlideInsert(path, 1, "第二页标题", "要点一"));
-        var slide1 = p.PptSlideRead(path, 1, false);
+        var slide1 = p.PptSlideRead(path, 1, JBool(false));
         Assert.Contains("封面", slide1);
         using (var doc = PresentationDocument.Open(path, false))
         {
@@ -93,7 +96,7 @@ public class PptPluginOpenXmlTests : IDisposable
             Assert.Contains("要点一", sp2.Slide!.OuterXml);
         }
 
-        var slide2ViaPluginRead = p.PptSlideRead(path, 2, false);
+        var slide2ViaPluginRead = p.PptSlideRead(path, 2, JBool(false));
         Assert.Contains("第二页标题", slide2ViaPluginRead);
         Assert.Contains("要点一", slide2ViaPluginRead);
     }
@@ -189,7 +192,7 @@ public class PptPluginOpenXmlTests : IDisposable
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("成功", p.PptSlideInsert(path, 1, "第二页标题", "要点A\n要点B"));
         Assert.Contains("成功", p.PptSlideWrite(path, 1, "title", "封面"));
-        var slide2 = p.PptSlideRead(path, 2, false);
+        var slide2 = p.PptSlideRead(path, 2, JBool(false));
         Assert.Contains("第二页标题", slide2);
         Assert.Contains("要点A", slide2);
         Assert.Contains("要点B", slide2);
@@ -204,7 +207,7 @@ public class PptPluginOpenXmlTests : IDisposable
         Assert.Contains("成功", p.PptDocumentCreate(path));
         Assert.Contains("成功", p.PptSlideInsert(path, 1, "第二页标题", "要点一"));
         Assert.Contains("成功", p.PptSlideWrite(path, 1, "title", "Cover"));
-        var slide2 = p.PptSlideRead(path, 2, false);
+        var slide2 = p.PptSlideRead(path, 2, JBool(false));
         Assert.Contains("第二页标题", slide2);
         Assert.Contains("要点一", slide2);
     }
@@ -232,7 +235,7 @@ public class PptPluginOpenXmlTests : IDisposable
             Assert.Contains("第二页标题", xml);
             Assert.Contains("要点一", xml);
         }
-        var slide2Read = p.PptSlideRead(path, 2, false);
+        var slide2Read = p.PptSlideRead(path, 2, JBool(false));
         Assert.Contains("第二页标题", slide2Read);
         Assert.Contains("要点一", slide2Read);
     }

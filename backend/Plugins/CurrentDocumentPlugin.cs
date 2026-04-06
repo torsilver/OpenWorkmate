@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -206,12 +207,14 @@ public sealed class CurrentDocumentPlugin
     public Task<string> CurrentWordSearchReplaceAsync(
         [Description("要查找的文本")] string searchText,
         [Description("替换成的文本")] string replaceText,
-        [Description("是否全部替换，默认 true")] bool replaceAll = true,
+        [Description("是否全部替换，默认 true。JSON 布尔或字符串均可。")] JsonElement replaceAll = default,
         CancellationToken cancellationToken = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(replaceAll, true, out var replaceAllValue))
+            return Task.FromResult("失败：replaceAll 无效，请使用 true/false 或字符串 \"true\"/\"false\"。");
         var sessionId = SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_word_search_replace sessionId={SessionId}", sessionId ?? "(null)");
-        return SendRpcAsync(sessionId!, "word_search_replace", new { searchText, replaceText, replaceAll }, cancellationToken);
+        return SendRpcAsync(sessionId!, "word_search_replace", new { searchText, replaceText, replaceAll = replaceAllValue }, cancellationToken);
     }
 
     [ToolFunction("current_ppt_slides_list")]
@@ -228,12 +231,14 @@ public sealed class CurrentDocumentPlugin
     [Description("按播放顺序读取当前演示文稿中指定幻灯片的文本。slideIndex 从 1 开始；includeShapeDetails 为 true 时附加形状编号列表。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。回答用户时必须引用并归纳本工具输出中的正文与要点，勿假设用户能看到工具原始返回。")]
     public Task<string> CurrentPptSlideReadAsync(
         [Description("幻灯片序号，从 1 开始")] int slideIndex = 1,
-        [Description("是否附加形状列表（默认 true）")] bool includeShapeDetails = true,
+        [Description("是否附加形状列表（默认 true）。JSON 布尔或字符串均可。")] JsonElement includeShapeDetails = default,
         CancellationToken cancellationToken = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeShapeDetails, true, out var includeShapeDetailsValue))
+            return Task.FromResult("失败：includeShapeDetails 无效，请使用 true/false 或字符串 \"true\"/\"false\"。");
         var sessionId = SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_ppt_slide_read sessionId={SessionId} slideIndex={SlideIndex}", sessionId ?? "(null)", slideIndex);
-        return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex, includeShapeDetails }, cancellationToken);
+        return SendRpcAsync(sessionId!, "ppt_slide_read", new { slideIndex, includeShapeDetails = includeShapeDetailsValue }, cancellationToken);
     }
 
     [ToolFunction("current_ppt_slide_write")]

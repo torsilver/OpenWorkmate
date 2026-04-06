@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
@@ -57,6 +58,14 @@ public static class ToolInvocationMiddleware
                     statusCtx, result, success: true, cancellationToken).ConfigureAwait(false);
 
                 return result;
+            }
+            catch (JsonException jsonEx)
+            {
+                var toolMsg =
+                    $"[参数绑定失败] 工具 {pluginName}.{funcName} 的 JSON 参数与期望类型不一致（例如布尔请用 JSON 的 true/false，勿写成带引号的字符串 \"true\"/\"false\"）。详情：{jsonEx.Message}";
+                await pipelineServices.ToolStatus.AfterInvocationAsync(
+                    statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
+                return toolMsg;
             }
             catch (Exception ex)
             {

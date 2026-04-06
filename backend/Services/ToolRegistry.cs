@@ -25,6 +25,10 @@ public sealed class ToolRegistry
     }
 
     /// <summary>通过反射扫描实例的 <c>[ToolFunction]</c> 方法，用 <see cref="AIFunctionFactory"/> 创建 <see cref="AITool"/>。</summary>
+    /// <remarks>
+    /// Microsoft.Extensions.AI 10.4.0 的 <c>AIFunctionFactoryOptions</c> 在公开 API 中未提供针对工具参数体的 <c>JsonSerializerOptions</c>（如字符串布尔宽松转换）；
+    /// 绑定期类型错误会以 <see cref="System.Text.Json.JsonException"/> 抛出，由中间件 <c>ToolInvocationMiddleware</c> 转为模型可读说明，并在各插件中对易错标量使用 <c>ToolScalarArgumentParser</c>。
+    /// </remarks>
     public void RegisterPluginFromObject(object instance, string pluginName)
     {
         var type = instance.GetType();

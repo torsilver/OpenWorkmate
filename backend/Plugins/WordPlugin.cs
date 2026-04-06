@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using System.Text.Json;
 using A = DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -8,6 +9,7 @@ using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using DocumentFormat.OpenXml.Wordprocessing;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -44,8 +46,10 @@ public sealed class WordPlugin
         [Description("Word 文件完整路径，支持环境变量与相对路径")] string filePath,
         [Description("起始段落号，从 1 开始，0 表示从头")] int startParagraph = 0,
         [Description("最多读取段落数，0 表示全部")] int maxParagraphs = 0,
-        [Description("是否同时输出表格内容")] bool includeTables = true)
+        [Description("是否同时输出表格内容。JSON 布尔或字符串均可。")] JsonElement includeTables = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(includeTables, true, out var includeTablesValue))
+            return "[错误] includeTables 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         try
@@ -67,7 +71,7 @@ public sealed class WordPlugin
                 if (!string.IsNullOrWhiteSpace(text))
                     sb.AppendLine($"[段落{i + 1}] {text}");
             }
-            if (includeTables)
+            if (includeTablesValue)
             {
                 var tables = body.Elements<Table>().ToList();
                 if (tables.Count > 0)
@@ -405,12 +409,22 @@ public sealed class WordPlugin
     public string WordTextFormat(
         [Description("Word 文件完整路径")] string filePath,
         [Description("要格式化的文字（包含该文字的 Run 会应用格式）")] string searchText,
-        [Description("是否加粗")] bool? bold = null,
-        [Description("是否斜体")] bool? italic = null,
+        [Description("是否加粗；省略表示不改。JSON 布尔或字符串均可。")] JsonElement bold = default,
+        [Description("是否斜体；省略表示不改。JSON 布尔或字符串均可。")] JsonElement italic = default,
         [Description("字号（磅）")] int fontSize = 0,
         [Description("字体名称")] string? fontName = null,
         [Description("颜色 6 位十六进制，如 FF0000")] string? colorHex = null)
     {
+        if (!ToolScalarArgumentParser.TryReadNullableBool(bold, out var boldParsed, out var boldSpec))
+            return "[错误] bold 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
+        if (!ToolScalarArgumentParser.TryReadNullableBool(italic, out var italicParsed, out var italicSpec))
+            return "[错误] italic 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
+        bool? boldVal = null;
+        if (boldSpec && boldParsed.HasValue)
+            boldVal = boldParsed.Value;
+        bool? italicVal = null;
+        if (italicSpec && italicParsed.HasValue)
+            italicVal = italicParsed.Value;
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         if (string.IsNullOrEmpty(searchText)) return "[错误] searchText 不能为空。";
@@ -423,8 +437,8 @@ public sealed class WordPlugin
             foreach (var run in runs)
             {
                 var rPr = run.Elements<RunProperties>().FirstOrDefault() ?? (RunProperties)run.InsertAt(new RunProperties(), 0);
-                if (bold.HasValue) { if (bold.Value) rPr.Bold = new Bold(); else rPr.Bold?.Remove(); }
-                if (italic.HasValue) { if (italic.Value) rPr.Italic = new Italic(); else rPr.Italic?.Remove(); }
+                if (boldVal.HasValue) { if (boldVal.Value) rPr.Bold = new Bold(); else rPr.Bold?.Remove(); }
+                if (italicVal.HasValue) { if (italicVal.Value) rPr.Italic = new Italic(); else rPr.Italic?.Remove(); }
                 if (fontSize > 0) rPr.FontSize = new FontSize { Val = (fontSize * 2).ToString() };
                 if (!string.IsNullOrWhiteSpace(fontName)) rPr.RunFonts = new RunFonts { Ascii = fontName!.Trim(), HighAnsi = fontName.Trim(), EastAsia = fontName.Trim() };
                 if (!string.IsNullOrWhiteSpace(colorHex) && colorHex!.Trim().Length >= 6)
@@ -559,8 +573,10 @@ public sealed class WordPlugin
     public string WordCommentsDelete(
         [Description("Word 文件完整路径")] string filePath,
         [Description("要删除的批注 Id，多个用逗号分隔")] string commentId = "",
-        [Description("是否删除全部批注")] bool deleteAll = false)
+        [Description("是否删除全部批注。JSON 布尔或字符串均可。")] JsonElement deleteAll = default)
     {
+        if (!ToolScalarArgumentParser.TryReadBoolWithDefault(deleteAll, false, out var deleteAllValue))
+            return "[错误] deleteAll 无效：请使用 true/false 或字符串 \"true\"/\"false\"。";
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         try
@@ -570,7 +586,7 @@ public sealed class WordPlugin
             var commentsPart = mainDoc.WordprocessingCommentsPart;
             if (commentsPart?.Comments == null) return "文档中无批注。";
             var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (deleteAll)
+            if (deleteAllValue)
                 toRemove.UnionWith(commentsPart.Comments.Elements<Comment>().Select(c => c.Id?.Value ?? "").Where(s => !string.IsNullOrEmpty(s)));
             else if (!string.IsNullOrWhiteSpace(commentId))
                 foreach (var id in commentId.Split(',', StringSplitOptions.TrimEntries))

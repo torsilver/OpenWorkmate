@@ -3025,7 +3025,6 @@ document.getElementById('scheduledTaskNewBtn').addEventListener('click', () => {
   document.getElementById('scheduledTaskScheduleType').value = 'cron';
   document.getElementById('scheduledTaskCron').value = '';
   document.getElementById('scheduledTaskIntervalMinutes').value = '';
-  document.getElementById('scheduledTaskEnabled').checked = true;
   document.getElementById('scheduledTaskDeleteAfterRun').checked = false;
   toggleScheduledTaskScheduleType();
   document.getElementById('scheduledTaskEditorTitle').textContent = '新建定时任务';
@@ -3053,7 +3052,6 @@ async function editScheduledTask(id) {
     document.getElementById('scheduledTaskScheduleType').value = data.meta?.scheduleType || 'cron';
     document.getElementById('scheduledTaskCron').value = data.meta?.cronExpression ?? '';
     document.getElementById('scheduledTaskIntervalMinutes').value = data.meta?.intervalMinutes ?? '';
-    document.getElementById('scheduledTaskEnabled').checked = scheduledTaskEnabledFromDto(data.meta);
     document.getElementById('scheduledTaskDeleteAfterRun').checked = !!data.meta?.deleteAfterRun;
     toggleScheduledTaskScheduleType();
     document.getElementById('scheduledTaskEditorTitle').textContent = '编辑定时任务';
@@ -3073,7 +3071,6 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
   const scheduleType = document.getElementById('scheduledTaskScheduleType').value;
   const cronExpression = document.getElementById('scheduledTaskCron').value.trim();
   const intervalMinutes = parseInt(document.getElementById('scheduledTaskIntervalMinutes').value, 10);
-  const enabled = document.getElementById('scheduledTaskEnabled').checked;
   const deleteAfterRun = document.getElementById('scheduledTaskDeleteAfterRun').checked;
   try {
     if (id) {
@@ -3084,7 +3081,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
           title, content, scheduleType,
           cronExpression: scheduleType === 'cron' ? cronExpression : null,
           intervalMinutes: scheduleType === 'interval' && !isNaN(intervalMinutes) ? intervalMinutes : null,
-          enabled, deleteAfterRun
+          deleteAfterRun
         })
       });
       if (!res.ok) throw new Error((await res.json().catch(function () { return {}; })).message || '更新失败');
