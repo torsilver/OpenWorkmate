@@ -1283,12 +1283,21 @@
       case "confirm_request":
         handleConfirmRequest(msg);
         break;
-      case "plan_created":
-      case "plan_updated": {
+      case "plan_created": {
         const planId = msg.planId || "";
         const title = msg.title || "新计划";
         const createdBy = (msg.createdBy || "").toLowerCase();
         if (planId && createdBy === OFFICE_CLIENT_TYPE) fetchPlanAndShow(planId, title, createdBy);
+        break;
+      }
+      case "plan_updated": {
+        const planId = msg.planId || "";
+        const title = msg.title || planId || "计划";
+        const createdBy = (msg.createdBy || "").toLowerCase();
+        if (planId && createdBy === OFFICE_CLIENT_TYPE) {
+          addSystemMessage("计划内容已更新，正在刷新任务窗格中的计划正文。");
+          fetchPlanAndShow(planId, title, createdBy);
+        }
         break;
       }
       case "cross_agent_task":

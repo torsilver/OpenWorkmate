@@ -241,6 +241,7 @@ function getCurrentPlanId() {
 function setCurrentPlan(planId, title) {
   planChecklistSteps = [];
   planChecklistStatus = {};
+  planChecklistLoadedPlanId = null;
   if (planId) {
     sessionStorage.setItem(STORAGE_PLAN_ID, planId);
     sessionStorage.setItem(STORAGE_PLAN_TITLE, title || planId);
@@ -306,6 +307,8 @@ function setPlanCurrentStepIndex(stepIndex) {
 // ───── Plan checklist (执行进度) ─────
 let planChecklistSteps = [];
 let planChecklistStatus = {};
+/** 上次拉取 checklist 对应的 planId；切换计划或 plan_updated 时需重拉 */
+let planChecklistLoadedPlanId = null;
 
 function parsePlanStepsFromContent(content) {
   if (!content || typeof content !== "string") return [];
@@ -326,7 +329,9 @@ function parsePlanStepsFromContent(content) {
 }
 
 async function ensurePlanChecklistLoaded(planId) {
-  if (planChecklistSteps.length > 0) return;
+  if (!planId) return;
+  if (planChecklistSteps.length > 0 && planChecklistLoadedPlanId === planId) return;
+  planChecklistLoadedPlanId = planId;
   try {
     await tasklyEnsureApiBase();
     const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
@@ -381,13 +386,29 @@ function updateChecklistStep(stepIndex, status) {
   if ($planChecklistSummary) $planChecklistSummary.textContent = `执行进度 (${done}/${total})`;
 }
 
-function appendPlanCreatedMessage(planId, title, isUpdated) {
+function appendPlanCreatedMessage(planId, title) {
   const div = document.createElement("div");
   div.className = "msg msg--system";
-  div.textContent = isUpdated
-    ? "计划已更新，已在新标签页打开。若需再改请在此说明；执行请在计划页点击「确认并开始执行」。"
-    : "计划已生成，已在新标签页打开。可在计划页审阅编辑；确认后点击「确认并开始执行」以在侧栏开始按步执行。";
+  div.textContent = "计划已生成，已在新标签页打开。可在计划页审阅编辑；确认后点击「确认并开始执行」以在侧栏开始按步执行。";
   $messages.appendChild(div);
+}
+
+function appendPlanUpdatedMessage(planId, title) {
+  const div = document.createElement("div");
+  div.className = "msg msg--system";
+  div.textContent = "计划内容已更新，已刷新已打开的计划页标签（如有）。若侧栏已绑定该计划，执行进度列表已同步。";
+  $messages.appendChild(div);
+}
+
+function reloadOpenPlanTabsForPlanId(planId) {
+  if (typeof chrome === "undefined" || !chrome.tabs || !planId) return;
+  const needle = "plans.html?id=" + encodeURIComponent(planId);
+  chrome.tabs.query({}, (tabs) => {
+    for (const t of tabs || []) {
+      const u = t.url || "";
+      if (u.includes(needle)) chrome.tabs.reload(t.id);
+    }
+  });
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1722,14 +1743,40 @@ function handleMessage(raw) {
       handleAskOptionsRequest(msg);
       break;
 
-    case "plan_created":
-    case "plan_updated": {
+    case "plan_created": {
       const planId = msg.planId || "";
       const title = msg.title || "新计划";
       if (planId) {
         setCurrentPlan(planId, title);
-        appendPlanCreatedMessage(planId, title, msg.type === "plan_updated");
+        appendPlanCreatedMessage(planId, title);
         chrome.tabs.create({ url: chrome.runtime.getURL("plans.html?id=" + encodeURIComponent(planId)) });
+        const welcome = $messages.querySelector(".welcome");
+        if (welcome) welcome.remove();
+        $messages.scrollTop = $messages.scrollHeight;
+      }
+      break;
+    }
+
+    case "plan_updated": {
+      const planId = msg.planId || "";
+      const title = msg.title || planId || "计划";
+      if (planId) {
+        if (getCurrentPlanId() === planId) {
+          sessionStorage.setItem(STORAGE_PLAN_TITLE, title);
+          if ($currentPlanLabel) {
+            $currentPlanLabel.textContent = title;
+            $currentPlanLabel.title = "点击查看计划: " + title;
+          }
+          if (typeof chrome !== "undefined" && chrome.storage?.local) {
+            chrome.storage.local.set({ copilot_plan_id: planId, copilot_plan_title: title });
+          }
+          planChecklistLoadedPlanId = null;
+          planChecklistSteps = [];
+          planChecklistStatus = {};
+          ensurePlanChecklistLoaded(planId);
+        }
+        appendPlanUpdatedMessage(planId, title);
+        reloadOpenPlanTabsForPlanId(planId);
         const welcome = $messages.querySelector(".welcome");
         if (welcome) welcome.remove();
         $messages.scrollTop = $messages.scrollHeight;

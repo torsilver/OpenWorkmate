@@ -17,12 +17,15 @@ public interface ISecurityPipeline
     Task<string?> EvaluateAsync(string pluginName, string functionName, IDictionary<string, object?> arguments, CancellationToken ct);
 }
 
-/// <summary>Context returned by <see cref="IToolStatusNotifier.BeforeInvocationAsync"/>.</summary>
+/// <summary>Context returned by <see cref="IToolStatusNotifier.BeforeInvocationAsync"/>。</summary>
 public sealed class ToolStatusContext
 {
     public string? SessionId { get; init; }
     public string PluginName { get; init; } = "";
     public string FunctionName { get; init; } = "";
+
+    /// <summary>工具参数快照（供 AfterInvocation 推送 plan_updated 等，避免依赖返回值解析）。</summary>
+    public IReadOnlyDictionary<string, object?>? Arguments { get; init; }
 }
 
 /// <summary>工具调用前后状态推送；由 <see cref="ToolStatusNotifier"/> 实现。</summary>

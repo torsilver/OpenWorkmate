@@ -203,9 +203,9 @@ public sealed partial class ChatService
         }
 
         IReadOnlyList<AITool>? selectedTools;
-        selectedTools = ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
+        selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
         if (planResult != null && selectedTools != null)
-            selectedTools = MergePlanTools(_runtime.ToolRegistry, selectedTools);
+            selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
         var pairsCount = selectedPairs?.Count ?? 0;
         var funcsCount = selectedTools?.Count ?? 0;
         var useAllTools = selectedTools == null || selectedTools.Count == 0;

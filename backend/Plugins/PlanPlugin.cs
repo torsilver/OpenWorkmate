@@ -13,13 +13,26 @@ public sealed class PlanPlugin
     private readonly IPlanStore _store;
     private readonly IChatRuntimeAccessor _runtime;
     private readonly SessionManager _sessionManager;
+    private readonly IToolSelector _toolSelector;
     private readonly ILogger<PlanPlugin> _logger;
 
-    public PlanPlugin(IPlanStore store, IChatRuntimeAccessor runtimeAccessor, SessionManager sessionManager, ILogger<PlanPlugin> logger)
+    private const string PlanAuthoringCapabilityRules =
+        "能力与约束（必须遵守）：\n"
+        + "- 每一步骤必须可以用「下方用户消息附录中的工具」单独或组合完成；步骤正文尽量写出拟使用的工具名（形如 Plugin.function）。\n"
+        + "- 禁止要求用户在 Word/Excel/PowerPoint/WPS 宿主内通过菜单、对话框手动完成核心业务（应由助手通过已列工具或可脚本工具完成）。\n"
+        + "- 禁止依赖附录未列出的外部手段（例如「用 Python + python-docx」自行处理文档）。若须命令行且附录中含 CLI.run_command，须写明由助手发起命令且用户可能需在侧栏确认（HITL）。";
+
+    public PlanPlugin(
+        IPlanStore store,
+        IChatRuntimeAccessor runtimeAccessor,
+        SessionManager sessionManager,
+        IToolSelector toolSelector,
+        ILogger<PlanPlugin> logger)
     {
         _store = store;
         _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
+        _toolSelector = toolSelector;
         _logger = logger;
     }
 
@@ -34,10 +47,25 @@ public sealed class PlanPlugin
         if (client == null)
             return "[Plan 插件] 未找到对话服务，无法生成计划。";
 
-        var systemPrompt = "你是一个实现计划撰写助手。根据用户目标，输出一份 Markdown 格式的实现计划。\n\n格式要求（必须遵守）：\n- 每步以「## 步骤 N」为标题，N 从 1 开始连续编号（例如：## 步骤 1、## 步骤 2）。\n- 步骤之间不要插入其他一级/二级标题；可选在开头写一段目标简述，然后从「## 步骤 1」开始。\n- 每步内容写在该标题下方，直到下一个「## 步骤 N」或文末。\n- 只输出计划正文，不要输出「好的」「以下是计划」等前缀。";
+        var sessionId = SessionContext.GetSessionId();
+        var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+
+        var selectionPrompt = BuildPlanToolSelectionUserPrompt(goal, context);
+        var toolDigest = await BuildToolDigestForPlanAuthoringAsync(selectionPrompt, sessionId, clientType, ct).ConfigureAwait(false);
+
+        var systemPrompt =
+            "你是一个实现计划撰写助手。根据用户目标，输出一份 Markdown 格式的实现计划。\n\n"
+            + "格式要求（必须遵守）：\n"
+            + "- 每步以「## 步骤 N」为标题，N 从 1 开始连续编号（例如：## 步骤 1、## 步骤 2）。\n"
+            + "- 步骤之间不要插入其他一级/二级标题；可选在开头写一段目标简述，然后从「## 步骤 1」开始。\n"
+            + "- 每步内容写在该标题下方，直到下一个「## 步骤 N」或文末。\n"
+            + "- 只输出计划正文，不要输出「好的」「以下是计划」等前缀。\n\n"
+            + PlanAuthoringCapabilityRules;
+
         var userContent = string.IsNullOrWhiteSpace(context)
             ? goal
             : $"目标：{goal}\n\n上下文：{context}";
+        userContent += "\n\n【与本轮任务对齐的可用工具（附录）】\n" + toolDigest;
 
         var messages = new List<ChatMessage>
         {
@@ -70,7 +98,6 @@ public sealed class PlanPlugin
 
         var planId = Guid.NewGuid().ToString("N")[..12];
         var title = ExtractFirstLine(content) ?? planId;
-        var sessionId = SessionContext.GetSessionId();
         var createdBy = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetClientType(sessionId) ?? "chrome") : "chrome";
         var createdByDisplayName = !string.IsNullOrEmpty(sessionId) ? (_sessionManager.GetDisplayName(sessionId) ?? "") : "";
         var meta = new PlanMeta
@@ -86,6 +113,56 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("create_plan: saved planId={PlanId} title={Title}", planId, meta.Title);
         return $"[计划已生成] planId={planId}，标题：{meta.Title}。请在计划页查看与编辑；确认后在计划页点击执行以开始按步任务。";
+    }
+
+    /// <summary>与主会话工具选择类似的 user 提示：goal 为主，附加上下文。</summary>
+    private static string BuildPlanToolSelectionUserPrompt(string goal, string? context)
+    {
+        var userPrompt = (goal ?? "").Trim();
+        if (userPrompt.Length > 2000)
+            userPrompt = userPrompt[..2000] + "...";
+        if (!string.IsNullOrWhiteSpace(context))
+        {
+            var c = context.Trim();
+            if (c.Length > 1500)
+                c = c[..1500] + "...";
+            userPrompt += "\n[上下文]\n" + c;
+        }
+        return userPrompt;
+    }
+
+    private async Task<string> BuildToolDigestForPlanAuthoringAsync(
+        string selectionUserPrompt,
+        string? sessionId,
+        string? clientType,
+        CancellationToken ct)
+    {
+        var registry = _runtime.ToolRegistry;
+        var outcome = await _toolSelector
+            .SelectFunctionsAsync(selectionUserPrompt, null, registry, ct, new ToolSelectionContext(null, clientType))
+            .ConfigureAwait(false);
+
+        IReadOnlyList<AITool> tools;
+        if (outcome.SelectedPairs is { Count: > 0 })
+        {
+            var resolved = SessionToolResolver.ResolveToolsByClientType(registry, outcome.SelectedPairs, clientType, sessionId);
+            tools = SessionToolResolver.MergePlanTools(registry, resolved ?? Array.Empty<AITool>());
+            _logger.LogInformation(
+                "create_plan: tool selection ok reason={Reason} pairs={Pairs} digestFrom=selected",
+                outcome.ReasonCode,
+                outcome.SelectedPairs.Count);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "create_plan: tool selection fallback reason={Reason}, using full allowed tools for digest",
+                outcome.ReasonCode);
+            var fallback = SessionToolResolver.ResolveToolsByClientType(registry, null, clientType, sessionId)
+                           ?? Array.Empty<AITool>();
+            tools = SessionToolResolver.MergePlanTools(registry, fallback);
+        }
+
+        return PlanAuthoringToolDigest.Build(tools, registry);
     }
 
     [ToolFunction("get_plan")]
@@ -112,7 +189,13 @@ public sealed class PlanPlugin
             return $"[未找到计划] planId={planId}";
         var meta = existing.Value.Meta;
         meta.UpdatedAt = DateTimeOffset.UtcNow;
-        await _store.SaveAsync(planId, content ?? "", meta, ct).ConfigureAwait(false);
+        var body = content ?? "";
+        var newTitle = ExtractFirstLine(body);
+        if (!string.IsNullOrEmpty(newTitle))
+        {
+            meta.Title = newTitle.Length > 80 ? newTitle[..80] + "..." : newTitle;
+        }
+        await _store.SaveAsync(planId, body, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("update_plan: planId={PlanId}", planId);
         return "[计划已更新]";
     }
@@ -170,7 +253,8 @@ public sealed class PlanPlugin
         firstLine = firstLine.Trim();
         if (firstLine.StartsWith("# ", StringComparison.Ordinal))
             firstLine = firstLine[2..].Trim();
+        if (firstLine.StartsWith("## ", StringComparison.Ordinal))
+            firstLine = firstLine[3..].Trim();
         return firstLine.Length > 0 ? firstLine.ToString() : null;
     }
-
 }

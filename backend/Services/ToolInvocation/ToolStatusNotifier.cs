@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Plan;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
 
@@ -13,17 +15,20 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
 {
     private readonly SessionManager _sessionManager;
     private readonly ConfigService _configService;
+    private readonly IPlanStore _planStore;
     private readonly ILogger<ToolStatusNotifier> _logger;
     private readonly AgentDebugStatsService _debugStats;
 
     public ToolStatusNotifier(
         SessionManager sessionManager,
         ConfigService configService,
+        IPlanStore planStore,
         ILogger<ToolStatusNotifier> logger,
         AgentDebugStatsService debugStats)
     {
         _sessionManager = sessionManager;
         _configService = configService;
+        _planStore = planStore;
         _logger = logger;
         _debugStats = debugStats;
     }
@@ -63,7 +68,17 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_start",
             new { plugin = pluginName, function = functionName, detail = SessionAuditLog.SanitizeForAudit(startDetail, 500) });
 
-        return new ToolStatusContext { SessionId = sessionId, PluginName = pluginName, FunctionName = functionName };
+        IReadOnlyDictionary<string, object?>? argSnap = null;
+        if (arguments is { Count: > 0 })
+            argSnap = new Dictionary<string, object?>(arguments, StringComparer.Ordinal);
+
+        return new ToolStatusContext
+        {
+            SessionId = sessionId,
+            PluginName = pluginName,
+            FunctionName = functionName,
+            Arguments = argSnap
+        };
     }
 
     public async Task AfterInvocationAsync(ToolStatusContext ctx, object? result, bool success, CancellationToken ct)
@@ -99,6 +114,13 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             && string.Equals(functionName, "create_plan", StringComparison.OrdinalIgnoreCase))
         {
             await TryEmitPlanCreatedAsync(sessionId, resultText);
+        }
+
+        if (isSuccess
+            && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(functionName, "update_plan", StringComparison.OrdinalIgnoreCase))
+        {
+            await TryEmitPlanUpdatedAsync(sessionId, ctx.Arguments, ct);
         }
     }
 
@@ -150,6 +172,50 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         {
             _logger.LogDebug(ex, "plan_created emit failed");
         }
+    }
+
+    private async Task TryEmitPlanUpdatedAsync(string sessionId, IReadOnlyDictionary<string, object?>? arguments, CancellationToken ct)
+    {
+        var planId = GetToolArgumentString(arguments, "planId", "PlanId");
+        if (string.IsNullOrEmpty(planId)) return;
+        try
+        {
+            string title = planId;
+            var loaded = await _planStore.GetAsync(planId, ct).ConfigureAwait(false);
+            if (loaded != null)
+            {
+                var t = loaded.Value.Meta.Title?.Trim();
+                if (!string.IsNullOrEmpty(t))
+                    title = t;
+            }
+            var createdBy = _sessionManager.GetClientType(sessionId);
+            var msg = new WsMessage
+            {
+                Type = "plan_updated",
+                PlanId = planId,
+                Title = title,
+                CreatedBy = createdBy
+            };
+            var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+            await _sessionManager.SendToAsync(sessionId, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "plan_updated emit failed");
+        }
+    }
+
+    private static string? GetToolArgumentString(IReadOnlyDictionary<string, object?>? args, params string[] keys)
+    {
+        if (args == null) return null;
+        foreach (var key in keys)
+        {
+            if (!args.TryGetValue(key, out var v) || v == null) continue;
+            var s = Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)?.Trim();
+            if (!string.IsNullOrEmpty(s))
+                return s;
+        }
+        return null;
     }
 
     private static string? GetRunningDetail(string functionName, IDictionary<string, object?> arguments)

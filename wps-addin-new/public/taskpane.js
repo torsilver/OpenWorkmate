@@ -773,12 +773,21 @@
         break;
       case "rpc_request": handleRpcRequest(msg); break;
       case "confirm_request": handleConfirmRequest(msg); break;
-      case "plan_created":
-      case "plan_updated": {
+      case "plan_created": {
         var planId = msg.planId || "";
         var title = msg.title || "新计划";
         var createdBy = (msg.createdBy || "").toLowerCase();
         if (planId && createdBy === CLIENT_TYPE) fetchPlanAndShow(planId, title, createdBy);
+        break;
+      }
+      case "plan_updated": {
+        var planIdU = msg.planId || "";
+        var titleU = msg.title || planIdU || "计划";
+        var createdByU = (msg.createdBy || "").toLowerCase();
+        if (planIdU && createdByU === CLIENT_TYPE) {
+          addSystemMessage("计划内容已更新，正在刷新任务窗格中的计划正文。");
+          fetchPlanAndShow(planIdU, titleU, createdByU);
+        }
         break;
       }
       case "cross_agent_task":
