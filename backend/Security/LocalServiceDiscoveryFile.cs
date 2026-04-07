@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting.Server;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Security;
 
@@ -33,12 +34,6 @@ public static class LocalServiceDiscoveryFile
         return !server.GetType().Name.Contains("TestServer", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public static void TryWrite(string baseUrl, int processId, int portScanStart, int portScanCount)
     {
         try
@@ -54,7 +49,7 @@ public static class LocalServiceDiscoveryFile
                 PortScanStart = portScanStart,
                 PortScanCount = portScanCount
             };
-            var json = JsonSerializer.Serialize(payload, JsonOptions);
+            var json = JsonSerializer.Serialize(payload, Utf8JsonFileOptions.Compact);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, json);
             File.Move(tmp, path, overwrite: true);

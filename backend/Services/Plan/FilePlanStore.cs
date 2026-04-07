@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Services.Plan;
 
@@ -8,12 +9,6 @@ public sealed class FilePlanStore : IPlanStore
 {
     private readonly string _directory;
     private readonly ILogger<FilePlanStore> _logger;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public FilePlanStore(string directory, ILogger<FilePlanStore> logger)
     {
         _directory = Path.GetFullPath(directory);
@@ -102,7 +97,7 @@ public sealed class FilePlanStore : IPlanStore
         try
         {
             var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<PlanMeta>(json, JsonOptions);
+            return JsonSerializer.Deserialize<PlanMeta>(json, Utf8JsonFileOptions.Compact);
         }
         catch
         {
@@ -113,7 +108,7 @@ public sealed class FilePlanStore : IPlanStore
     private async Task WriteMetaAsync(string planId, PlanMeta meta, CancellationToken ct)
     {
         var path = Path.Combine(_directory, planId + ".meta.json");
-        var json = JsonSerializer.Serialize(meta, JsonOptions);
+        var json = JsonSerializer.Serialize(meta, Utf8JsonFileOptions.Compact);
         await File.WriteAllTextAsync(path, json, ct).ConfigureAwait(false);
     }
 

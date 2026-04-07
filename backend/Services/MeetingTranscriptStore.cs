@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -44,7 +45,6 @@ public sealed class MeetingTranscriptSegmentsResult
 
 public sealed class MeetingTranscriptStore : IMeetingTranscriptStore
 {
-    private static readonly JsonSerializerOptions JsonLine = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.OrdinalIgnoreCase);
 
     private static string SanitizeSessionId(string? sessionId)
@@ -81,7 +81,7 @@ public sealed class MeetingTranscriptStore : IMeetingTranscriptStore
         if (sequence < 0)
             throw new ArgumentOutOfRangeException(nameof(sequence));
         text ??= "";
-        var line = JsonSerializer.Serialize(new MeetingTranscriptLine(sequence, text, DateTimeOffset.UtcNow.ToString("O")), JsonLine);
+        var line = JsonSerializer.Serialize(new MeetingTranscriptLine(sequence, text, DateTimeOffset.UtcNow.ToString("O")), Utf8JsonFileOptions.Compact);
         var path = GetPath(safe);
         var sem = LockFor(safe);
         await sem.WaitAsync(ct).ConfigureAwait(false);
@@ -110,7 +110,7 @@ public sealed class MeetingTranscriptStore : IMeetingTranscriptStore
             if (string.IsNullOrWhiteSpace(l)) continue;
             try
             {
-                var row = JsonSerializer.Deserialize<MeetingTranscriptLine>(l, JsonLine);
+                var row = JsonSerializer.Deserialize<MeetingTranscriptLine>(l, Utf8JsonFileOptions.Compact);
                 if (row != null)
                     list.Add(row);
             }

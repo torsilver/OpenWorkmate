@@ -127,7 +127,7 @@ public sealed class ScheduledTaskPlugin
         if (result == null)
             return $"[Not found] id={safeId}.";
         var (content, meta) = result.Value;
-        var metaJson = System.Text.Json.JsonSerializer.Serialize(meta, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase, WriteIndented = false });
+        var metaJson = System.Text.Json.JsonSerializer.Serialize(meta, Utf8JsonFileOptions.Compact);
         return $"--- meta ---\n{metaJson}\n--- content ---\n{content}";
     }
 

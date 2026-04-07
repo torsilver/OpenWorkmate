@@ -12,7 +12,6 @@ namespace OfficeCopilot.Server.Plugins;
 public sealed class AccurateDataPlugin
 {
     private readonly ConfigService _configService;
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false };
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _writeLocks = new(StringComparer.OrdinalIgnoreCase);
     private const int MaxContentChars = 100_000;
 
@@ -90,7 +89,7 @@ public sealed class AccurateDataPlugin
             await File.WriteAllTextAsync(path, content ?? "", cancellationToken).ConfigureAwait(false);
             var metaPath = Path.Combine(GetRootDirectory(), safeId + ".meta.json");
             var meta = new { updatedAt = DateTime.UtcNow.ToString("O") };
-            await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, JsonOptions), cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, Utf8JsonFileOptions.Compact), cancellationToken).ConfigureAwait(false);
             return $"[OK] Saved accurate data: id={safeId}, format={format}.";
         }
         finally

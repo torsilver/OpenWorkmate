@@ -32,6 +32,35 @@ public sealed class MeetingTranscriptStoreTests
     }
 
     [Fact]
+    public async Task Append_WritesChineseLiteralsInJsonl_NotUnicodeEscapes()
+    {
+        var sid = "unittest_cn_" + Guid.NewGuid().ToString("N");
+        var store = new MeetingTranscriptStore();
+        await store.AppendSegmentAsync(sid, 0, "中文实录", CancellationToken.None);
+        var path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+        try
+        {
+            var raw = await File.ReadAllTextAsync(path);
+            Assert.Contains("中文实录", raw, StringComparison.Ordinal);
+            Assert.DoesNotContain("\\u4e2d", raw, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
+    }
+
+    [Fact]
     public async Task ListSegmentsAfter_ReturnsOnlyNewSequences()
     {
         var sid = "unittest_seg_" + Guid.NewGuid().ToString("N");

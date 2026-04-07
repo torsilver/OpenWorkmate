@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Services.ScheduledTask;
 
@@ -8,12 +9,6 @@ public sealed class FileScheduledTaskStore : IScheduledTaskStore
 {
     private readonly string _directory;
     private readonly ILogger<FileScheduledTaskStore> _logger;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public FileScheduledTaskStore(string directory, ILogger<FileScheduledTaskStore> logger)
     {
         _directory = Path.GetFullPath(directory);
@@ -101,7 +96,7 @@ public sealed class FileScheduledTaskStore : IScheduledTaskStore
         try
         {
             var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<ScheduledTaskMeta>(json, JsonOptions);
+            return JsonSerializer.Deserialize<ScheduledTaskMeta>(json, Utf8JsonFileOptions.Compact);
         }
         catch
         {
@@ -112,7 +107,7 @@ public sealed class FileScheduledTaskStore : IScheduledTaskStore
     private async Task WriteMetaAsync(string taskId, ScheduledTaskMeta meta, CancellationToken ct)
     {
         var path = Path.Combine(_directory, taskId + ".meta.json");
-        var json = JsonSerializer.Serialize(meta, JsonOptions);
+        var json = JsonSerializer.Serialize(meta, Utf8JsonFileOptions.Compact);
         await File.WriteAllTextAsync(path, json, ct).ConfigureAwait(false);
     }
 

@@ -8,12 +8,6 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public static class SessionAuditLog
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public static void TryAppend(ContextWindowConfig? ctx, string sessionId, string eventType, object payload)
     {
         if (ctx is not { SessionAuditEnabled: true })
@@ -33,7 +27,7 @@ public static class SessionAuditLog
                 sessionId,
                 eventType,
                 payload
-            }, JsonOptions);
+            }, Utf8JsonFileOptions.Compact);
             lock (typeof(SessionAuditLog))
             {
                 File.AppendAllText(path, line + Environment.NewLine);

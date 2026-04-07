@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
+using OfficeCopilot.Server;
 using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server.Services;
@@ -21,12 +22,6 @@ public sealed class AgentDebugStatsService : IDisposable
 {
     public const int PersistedFormatVersion = 1;
     private const int HistogramBucketCount = 5;
-    private static readonly JsonSerializerOptions JsonFileOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
-    };
-
     private readonly object _gate = new();
     private readonly object _persistScheduleLock = new();
     private readonly DateTimeOffset _startedUtc = DateTimeOffset.UtcNow;
@@ -447,7 +442,7 @@ public sealed class AgentDebugStatsService : IDisposable
             var dir = Path.GetDirectoryName(_persistencePath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
-            var json = JsonSerializer.Serialize(model, JsonFileOptions);
+            var json = JsonSerializer.Serialize(model, Utf8JsonFileOptions.Indented);
             var tmp = _persistencePath + ".tmp";
             File.WriteAllText(tmp, json);
             File.Move(tmp, _persistencePath, overwrite: true);
@@ -465,7 +460,7 @@ public sealed class AgentDebugStatsService : IDisposable
         try
         {
             var json = File.ReadAllText(_persistencePath);
-            var model = JsonSerializer.Deserialize<AgentDebugStatsPersistedModel>(json, JsonFileOptions);
+            var model = JsonSerializer.Deserialize<AgentDebugStatsPersistedModel>(json, Utf8JsonFileOptions.Indented);
             if (model == null || model.Version != PersistedFormatVersion)
             {
                 _logger.LogWarning("AgentDebugStats: persistence file version mismatch or empty, starting fresh. Path={Path}", _persistencePath);

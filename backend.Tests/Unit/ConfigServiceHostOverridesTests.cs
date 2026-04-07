@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -29,8 +30,11 @@ public class ConfigServiceHostOverridesTests
                 PlansDirectory = "",
                 ScheduledTasksDirectory = scheduledDir,
             };
-            var options = ConfigService.AppConfigDeserializeOptions;
-            File.WriteAllText(userConfigPath, JsonSerializer.Serialize(cfg, ConfigService.AppConfigDeserializeOptions));
+            var writeOpts = new JsonSerializerOptions(ConfigService.AppConfigDeserializeOptions)
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+            File.WriteAllText(userConfigPath, JsonSerializer.Serialize(cfg, writeOpts));
 
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?> { ["OfficeCopilot:UserConfigPath"] = userConfigPath })

@@ -1,0 +1,37 @@
+---
+description: C# 将 JSON 写入本机文件时使用 UTF-8 字面量，避免 \uXXXX 转义
+globs: backend/**/*.cs
+alwaysApply: false
+---
+
+# JSON 落盘与 UTF-8 可读性
+
+## 问题
+
+`System.Text.Json` 默认 `JavaScriptEncoder` 会把中文等字符序列化为 `\uXXXX`。文件仍是合法 JSON、反序列化正常，但**人工打开 `.json` / `.jsonl` 难读**，且与「配置里已是明文中文」的预期不一致。
+
+## 要求
+
+凡 **`JsonSerializer.Serialize` + `File.Write*` / `File.Append*` / 先写临时文件再 `Move` 等落盘路径**（含 JSONL 逐行），应使用带 **`Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping`** 的 `JsonSerializerOptions`。
+
+- 优先复用项目内 **`Utf8JsonFileOptions.Compact`**（单行/元数据）或 **`Utf8JsonFileOptions.Indented`**（可读性优先的统计/调试文件）。
+- **`AppConfig` 等需 `JsonCtx` 源生成的类型**：在 options 上同时设置 `TypeInfoResolver = JsonCtx.Default` 与上述 `Encoder`（见 `ConfigService` 保存逻辑）。
+
+## 不必改的情况
+
+- **HTTP 请求体、WebSocket 文本帧**：UTF-8 传输默认编码即可；若前端/日志需可读中文，可同样使用 relaxed encoder，但不是「落盘可读性」硬性要求。
+- **仅 `JsonSerializer.Deserialize` 读文件**：解码不受 `Encoder` 影响。
+
+## 反例
+
+```csharp
+// BAD：落盘默认转义中文
+File.WriteAllText(path, JsonSerializer.Serialize(obj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+```
+
+## 正例
+
+```csharp
+// GOOD
+File.WriteAllText(path, JsonSerializer.Serialize(obj, Utf8JsonFileOptions.Compact));
+```
