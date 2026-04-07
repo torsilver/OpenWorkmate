@@ -1881,19 +1881,12 @@ async function saveConfig() {
     var perEnd = collectCliSecurityPayload();
     const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
     var aiModelsToSave = (aiModelsCache && aiModelsCache.length) ? aiModelsCache : (fullConfig.aiModels || fullConfig.AiModels || []);
-    var activeEntry = aiModelsToSave.find(function (m) { return (m.id || m.Id) === activeId; });
+    var alwaysIncludePluginsToSave = (fullConfig && (fullConfig.alwaysIncludePlugins || fullConfig.AlwaysIncludePlugins)) || [];
+    if (!Array.isArray(alwaysIncludePluginsToSave)) alwaysIncludePluginsToSave = [];
     var legacyAi = fullConfig && (fullConfig.ai || fullConfig.AI);
-    if (activeEntry && legacyAi) {
-      legacyAi = {
-        provider: activeEntry.provider || activeEntry.Provider || 'OpenAI',
-        endpoint: activeEntry.endpoint || activeEntry.Endpoint || '',
-        apiKey: activeEntry.apiKey || activeEntry.ApiKey || '',
-        modelId: activeEntry.modelId || activeEntry.ModelId || '',
-        systemPrompt: (activeEntry.systemPrompt || activeEntry.SystemPrompt) || (legacyAi.systemPrompt || legacyAi.SystemPrompt || ''),
-        alwaysIncludePlugins: legacyAi.alwaysIncludePlugins || legacyAi.AlwaysIncludePlugins || []
-      };
+    if (alwaysIncludePluginsToSave.length === 0 && legacyAi && (legacyAi.alwaysIncludePlugins || legacyAi.AlwaysIncludePlugins)) {
+      alwaysIncludePluginsToSave = legacyAi.alwaysIncludePlugins || legacyAi.AlwaysIncludePlugins || [];
     }
-    var aiPayload = legacyAi || fullConfig.ai || fullConfig.AI || {};
     var embeddingModelsToSave = getEmbeddingModels();
     var activeEmbeddingModelId = (fullConfig && (fullConfig.activeEmbeddingModelId || fullConfig.ActiveEmbeddingModelId)) || '';
     var ragTypeEl = document.getElementById('ragStorageType');
@@ -1921,7 +1914,7 @@ async function saveConfig() {
     var uiThemeId = (uiThemeEl && uiThemeEl.value) ? uiThemeEl.value : ((fullConfig && (fullConfig.uiThemeId ?? fullConfig.UiThemeId)) || 'dark');
     if (typeof TasklyTheme !== 'undefined') uiThemeId = TasklyTheme.normalize(uiThemeId);
     const payload = {
-      ai: aiPayload,
+      alwaysIncludePlugins: alwaysIncludePluginsToSave,
       aiModels: aiModelsToSave,
       activeModelId: activeId,
       skillEnv: collectSkillEnv(),
@@ -1957,7 +1950,8 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { ai: payload.ai, aiModels: payload.aiModels, activeModelId: payload.activeModelId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
       el.style.opacity = '1';

@@ -235,8 +235,11 @@ public sealed partial class ChatService
 
         turn.SelectedTools = selectedTools is { Count: > 0 } ? selectedTools : null;
 
+        var activeModel = GetActiveModelEntry();
+        turn.EnableSearchSuppressionSuffix = activeModel?.EnableSearch == true ? EnableSearchSuppressionInstruction : null;
+
         turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
-        turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
+        turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
     }
 
     private static string? BuildVectorToolHintForStage1(

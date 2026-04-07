@@ -19,7 +19,12 @@ public class ConfigServiceHostOverridesTests
         {
             var cfg = new AppConfig
             {
-                AI = new AiConfig(),
+                AiModels =
+                [
+                    new AiModelEntry { Id = "default", Enabled = true, Provider = "OpenAI", ModelId = "gpt-4o-mini" }
+                ],
+                ActiveModelId = "default",
+                AlwaysIncludePlugins = new List<string>(),
                 RagStorageType = "Memory",
                 PlansDirectory = "",
                 ScheduledTasksDirectory = scheduledDir,

@@ -30,4 +30,7 @@ public sealed class StreamChatTurnContext
 
     /// <summary>本轮 ToolSelection 解析后的工具列表；全量工具时为 null，工具接地重试时用于 RequireAny 或回退为客户端允许列表。</summary>
     public IReadOnlyList<AITool>? SelectedTools { get; set; }
+
+    /// <summary>当前活动模型开启百炼 <c>enable_search</c> 时，由主会话 <c>BuildHistoryForStreamingTurn</c> 拼入 system 的短提示（抑制「开浏览器页再搜」）；未开启时为 null。</summary>
+    public string? EnableSearchSuppressionSuffix { get; set; }
 }

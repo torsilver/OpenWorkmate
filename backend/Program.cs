@@ -15,6 +15,7 @@ using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Security;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -245,7 +246,34 @@ builder.Services.AddSingleton<UserOptionsManager>();
             }
             await toolIndex.SyncUserToolIndexAsync(runtimeAccessor.ToolRegistry);
         }
-        Log.Information("Tool index built successfully (builtin + user tools). DB: {Path}", Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db"));
+        var builtDbPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db");
+        Log.Information("Tool index built successfully (builtin + user tools). DB: {Path}", builtDbPath);
+
+        // 同步到默认运行时路径，便于 dotnet run 测试时与 Sqlite 默认 rag.db 一致（见 IVectorStore 注册）
+        if (File.Exists(builtDbPath))
+        {
+            try
+            {
+                SqliteConnection.ClearAllPools();
+                var appDataDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "OfficeCopilot");
+                Directory.CreateDirectory(appDataDir);
+                var destPath = Path.Combine(appDataDir, "rag.db");
+                File.Copy(builtDbPath, destPath, overwrite: true);
+                Log.Information("Copied tool index DB to default runtime location: {Dest}", destPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex,
+                    "Built tool index but failed to copy rag.db to LocalAppData/OfficeCopilot; dotnet run may still use an older DB there.");
+            }
+        }
+        else
+        {
+            Log.Warning("Data/rag.db missing after build; skipped copy to LocalAppData.");
+        }
+
         Environment.Exit(0);
     }
 

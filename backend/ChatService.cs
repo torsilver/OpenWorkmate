@@ -91,54 +91,25 @@ public sealed partial class ChatService : IDisposable
         return string.IsNullOrEmpty(result) ? "Skill" : result;
     }
 
-    /// <summary>获取要注册的模型列表：AiModels 中 Enabled 的项，或从 AI 迁移出的一条默认。</summary>
+    /// <summary>获取要注册的模型列表：仅 <see cref="AppConfig.AiModels"/> 中 Enabled 且含 Id 的项（旧 <c>ai</c> 已在加载/保存时迁入此列表）。</summary>
     private IReadOnlyList<AiModelEntry> GetModelEntriesToRegister()
     {
         var config = _configService.Current;
-        if (config.AiModels != null && config.AiModels.Count > 0)
-        {
-            return config.AiModels.Where(e => e.Enabled && !string.IsNullOrWhiteSpace(e.Id)).ToList();
-        }
-        var ai = config.AI;
-        return new List<AiModelEntry>
-        {
-            new AiModelEntry
-            {
-                Id = "default",
-                DisplayName = "默认模型",
-                Provider = ai?.Provider ?? "OpenAI",
-                Endpoint = ai?.Endpoint ?? "",
-                ApiKey = ai?.ApiKey ?? "",
-                ModelId = ai?.ModelId ?? "gpt-4o-mini",
-                SystemPrompt = ai?.SystemPrompt ?? "",
-                Enabled = true
-            }
-        };
+        if (config.AiModels == null || config.AiModels.Count == 0)
+            return Array.Empty<AiModelEntry>();
+        return config.AiModels.Where(e => e.Enabled && !string.IsNullOrWhiteSpace(e.Id)).ToList();
     }
 
-    /// <summary>获取当前应使用的模型配置（用于 system prompt、日志）。</summary>
+    /// <summary>获取当前应使用的模型配置（用于 system prompt、日志）；无模型条目时返回 null。</summary>
     private AiModelEntry? GetActiveModelEntry()
     {
         var config = _configService.Current;
+        if (config.AiModels == null || config.AiModels.Count == 0)
+            return null;
         var activeId = (config.ActiveModelId ?? "").Trim();
-        if (config.AiModels != null && config.AiModels.Count > 0)
-        {
-            var entry = config.AiModels.FirstOrDefault(e => string.Equals(e.Id, activeId, StringComparison.OrdinalIgnoreCase));
-            if (entry != null) return entry;
-            return config.AiModels.FirstOrDefault(e => e.Enabled) ?? config.AiModels.FirstOrDefault();
-        }
-        var ai = config.AI;
-        return new AiModelEntry
-        {
-            Id = "default",
-            DisplayName = "默认模型",
-            Provider = ai?.Provider ?? "OpenAI",
-            Endpoint = ai?.Endpoint ?? "",
-            ApiKey = ai?.ApiKey ?? "",
-            ModelId = ai?.ModelId ?? "gpt-4o-mini",
-            SystemPrompt = ai?.SystemPrompt ?? "",
-            Enabled = true
-        };
+        var entry = config.AiModels.FirstOrDefault(e => string.Equals(e.Id, activeId, StringComparison.OrdinalIgnoreCase));
+        if (entry != null) return entry;
+        return config.AiModels.FirstOrDefault(e => e.Enabled) ?? config.AiModels.FirstOrDefault();
     }
 
     /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）；可由 Program 在 --build-tool-index 模式下调用。</summary>
@@ -472,7 +443,7 @@ public sealed partial class ChatService : IDisposable
         var prompt = entry?.SystemPrompt?.Trim();
         var basePrompt = !string.IsNullOrEmpty(prompt)
             ? prompt
-            : (_configService.Current.AI?.SystemPrompt ?? "").Trim();
+            : AiEmbeddedDefaults.DefaultSystemPrompt.Trim();
         var guidance = BuiltinTaskPluginSystemGuidance.Trim();
         if (string.IsNullOrEmpty(basePrompt))
             return guidance;
@@ -721,7 +692,7 @@ public sealed partial class ChatService : IDisposable
 
                         if (streamOutcome.ContextLengthRetryRequested)
                         {
-                            turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix);
+                            turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
                             continue;
                         }
 
@@ -1243,9 +1214,21 @@ public sealed partial class ChatService : IDisposable
         + "禁止仅用「已读取」「已完成」等占位描述而不给出实质内容。";
 
     /// <summary>
+    /// 仅当当前模型在设置中开启百炼 <c>enable_search</c> 时注入：抑制为「上网查资讯」而反复 <c>run_command</c> 开浏览器、<c>window.open</c> 搜索页、再用 <c>get_visible_text</c> 抠 SERP 的笨重路径。
+    /// </summary>
+    private const string EnableSearchSuppressionInstruction =
+        "[联网检索] 当前对话模型已在设置中开启百炼「联网搜索」（enable_search）。"
+        + "用户只要网络资讯、新闻、实时事实或「去网上查/搜一下」类需求时，优先直接作答，由服务端检索能力提供时效信息；"
+        + "不要轻易使用 run_command 打开默认浏览器、run_custom_page_script（如 window.open 搜索页）或依赖 get_visible_text 抓取搜索结果页来替代检索。"
+        + "例外：用户明确要求操作其正在浏览的**当前网页**（高亮、读可见内容、截图等）或内置检索明显不足以完成该任务时，再用 Browser 等工具。";
+
+    /// <summary>
     /// 构建本轮流式请求用的消息列表：可选追加 client 身份后缀；再追加意图/事实约束与工具结果复述约束。
     /// </summary>
-    private static List<ChatMessage> BuildHistoryForStreamingTurn(List<ChatMessage> stateHistory, string? identitySuffix)
+    private static List<ChatMessage> BuildHistoryForStreamingTurn(
+        List<ChatMessage> stateHistory,
+        string? identitySuffix,
+        string? enableSearchSuppressionSuffix = null)
     {
         var historyToUse = stateHistory;
         if (!string.IsNullOrEmpty(identitySuffix) && stateHistory.Count > 0 && stateHistory[0].Role == ChatRole.System)
@@ -1260,7 +1243,10 @@ public sealed partial class ChatService : IDisposable
         if (historyToUse.Count > 0 && historyToUse[0].Role == ChatRole.System)
         {
             var sys = historyToUse[0].Text ?? "";
-            var augmented = sys + "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolResultEchoSystemInstruction;
+            var augmented = sys;
+            if (!string.IsNullOrEmpty(enableSearchSuppressionSuffix))
+                augmented += "\n\n" + enableSearchSuppressionSuffix;
+            augmented += "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolResultEchoSystemInstruction;
             var withEcho = new List<ChatMessage>(historyToUse.Count) { new(ChatRole.System, augmented) };
             for (var i = 1; i < historyToUse.Count; i++)
                 withEcho.Add(historyToUse[i]);

@@ -191,8 +191,8 @@ public sealed class ToolSelectionService : IToolSelector
         if (availablePluginNames == null || availablePluginNames.Count == 0)
             return Array.Empty<string>();
 
-        var ai = _configService.Current.AI;
-        return await SelectByLlmAsync(userMessage, recentHistory, availablePluginNames, ai, ct).ConfigureAwait(false);
+        var always = _configService.Current.AlwaysIncludePlugins;
+        return await SelectByLlmAsync(userMessage, recentHistory, availablePluginNames, always, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -210,7 +210,7 @@ public sealed class ToolSelectionService : IToolSelector
             return new ToolSelectionOutcome(null, "tool_registry_null", null, 0, 0);
         }
 
-        var ai = _configService.Current.AI;
+        var alwaysIncludePlugins = _configService.Current.AlwaysIncludePlugins;
         var allKernelFunctions = toolRegistry.GetAllFunctionPairs().ToList();
         if (allKernelFunctions.Count == 0)
         {
@@ -262,7 +262,7 @@ public sealed class ToolSelectionService : IToolSelector
         _logger.LogDebug("ToolSelection two-stage stage1 selected {SubCount} subcategories, {FuncCount} candidate functions (stage2: use these as tool set, no second LLM).", selectedSubcategoryIds.Count, candidateFunctions.Count);
 
         // 二阶段：不再单独调 LLM 选函数，直接使用选中子类下的全部函数作为本轮工具集，由主模型在对话轮中按需调用
-        var merged = MergeFunctionsWithAlwaysInclude(candidateFunctions, ai, allKernelFunctions);
+        var merged = MergeFunctionsWithAlwaysInclude(candidateFunctions, alwaysIncludePlugins, allKernelFunctions);
         _logger.LogInformation("ToolSelection two-stage: result mergedFunctionCount={Count}.", merged.Count);
         _logger.LogDebug("ToolSelection two-stage result: {Count} functions.", merged.Count);
         return new ToolSelectionOutcome(merged, "ok_two_stage", selectedSubcategoryIds, candidateFunctions.Count, merged.Count);
@@ -502,11 +502,16 @@ public sealed class ToolSelectionService : IToolSelector
     }
 
     /// <summary>二阶段选中的函数与 AlwaysIncludePlugins 对应插件的全部函数合并。</summary>
-    private static List<(string Plugin, string Function)> MergeFunctionsWithAlwaysInclude(List<(string Plugin, string Function)> selected, AiConfig ai, List<(string Plugin, string Function)> allKernelFunctions)
+    private static List<(string Plugin, string Function)> MergeFunctionsWithAlwaysInclude(
+        List<(string Plugin, string Function)> selected,
+        IReadOnlyList<string>? alwaysIncludePlugins,
+        List<(string Plugin, string Function)> allKernelFunctions)
     {
         var result = new HashSet<(string, string)>(selected, new PluginFunctionComparer());
-        var alwaysPlugins = ai.AlwaysIncludePlugins ?? new List<string>();
-        var alwaysSet = new HashSet<string>(alwaysPlugins.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
+        var alwaysPlugins = alwaysIncludePlugins ?? Array.Empty<string>();
+        var alwaysSet = new HashSet<string>(
+            alwaysPlugins.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
+            StringComparer.OrdinalIgnoreCase);
         foreach (var (plugin, func) in allKernelFunctions)
         {
             if (alwaysSet.Contains(plugin))
@@ -547,7 +552,7 @@ public sealed class ToolSelectionService : IToolSelector
         string userMessage,
         IReadOnlyList<ChatMessage>? recentHistory,
         IReadOnlyList<string> availablePluginNames,
-        AiConfig ai,
+        IReadOnlyList<string>? alwaysIncludePlugins,
         CancellationToken ct)
     {
         if (!_runtime.IsReady)
@@ -609,7 +614,7 @@ public sealed class ToolSelectionService : IToolSelector
             var parsed = ParsePluginNamesFromResponse(raw, availableSet);
             if (parsed.Count > 0)
             {
-                var merged = MergeWithAlwaysInclude(parsed, ai);
+                var merged = MergeWithAlwaysInclude(parsed, alwaysIncludePlugins);
                 _logger.LogDebug("ToolSelection LLM selected {Count} plugins: {Plugins}", merged.Count, string.Join(", ", merged));
                 return merged;
             }
@@ -657,10 +662,10 @@ public sealed class ToolSelectionService : IToolSelector
         return result;
     }
 
-    private static List<string> MergeWithAlwaysInclude(List<string> selected, AiConfig ai)
+    private static List<string> MergeWithAlwaysInclude(List<string> selected, IReadOnlyList<string>? alwaysIncludePlugins)
     {
         var set = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
-        foreach (var name in ai.AlwaysIncludePlugins ?? new List<string>())
+        foreach (var name in alwaysIncludePlugins ?? Array.Empty<string>())
         {
             if (!string.IsNullOrWhiteSpace(name))
                 set.Add(name.Trim());

@@ -98,9 +98,11 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var json = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        // API 契约：前端 camelCase，如 endpoint、modelId
-        Assert.True(root.TryGetProperty("ai", out var ai));
-        Assert.True(ai.TryGetProperty("endpoint", out _) || ai.TryGetProperty("provider", out _));
+        // API 契约：前端 camelCase；对话模型以 aiModels 列表为准（不再依赖顶层 ai）
+        Assert.True(root.TryGetProperty("aiModels", out var aiModels));
+        Assert.True(aiModels.GetArrayLength() >= 1);
+        var first = aiModels[0];
+        Assert.True(first.TryGetProperty("endpoint", out _) || first.TryGetProperty("provider", out _) || first.TryGetProperty("modelId", out _));
     }
 
     [Fact]

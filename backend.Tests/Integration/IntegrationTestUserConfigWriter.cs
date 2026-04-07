@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -12,7 +13,20 @@ internal static class IntegrationTestUserConfigWriter
     {
         var cfg = new AppConfig
         {
-            AI = new AiConfig(),
+            AiModels =
+            [
+                new AiModelEntry
+                {
+                    Id = "default",
+                    DisplayName = "默认模型",
+                    Enabled = true,
+                    Provider = "OpenAI",
+                    Endpoint = "https://api.openai.com/v1",
+                    ModelId = "gpt-4o-mini"
+                }
+            ],
+            ActiveModelId = "default",
+            AlwaysIncludePlugins = new List<string>(),
             RagStorageType = "Memory",
             PlansDirectory = "",
             ScheduledTasksDirectory = scheduledTasksDir,

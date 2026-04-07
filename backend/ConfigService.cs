@@ -13,8 +13,14 @@ public class AiConfig
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
     public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 可用 | 显式分段，也可用空行或换行分段（服务端会拆成多个 Word 段落）；行首 Markdown：以 # / ## / ### 开头为标题，以 - 或 * 开头为列表项，其余为正文（自动首行缩进与排版）。创建 PPT 或向幻灯片写入正文时，bodyText/text 可用 | 显式分段，也可用空行或换行分段（与 Word 一致，服务端会拆成多行）；以 - 或 * 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n本机文件与用户身份：工具运行在「当前登录 Windows 用户」的环境中，凡写入或引用用户个人目录、桌面、下载、文档等，均应对应该用户本人。不要臆造 C:\\Users\\某用户名\\…；不要用 C:\\Users\\Public、%PUBLIC% 等公共/共享配置目录代替当前用户的私人目录。需要绝对路径时优先用 %USERPROFILE% 及其子路径（如 Desktop、Downloads）。Word/Excel/PPT 等路径参数若未要求完整盘符路径，优先只传文件名或相对子路径（服务端按约定解析到当前用户下，多为 Downloads）。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。\n工具接地：凡涉及本机 Excel/Word/PPT 或磁盘文件的实际变更（如合并/取消合并单元格、写入区域、保存文件、删除内容等），你必须先发出 function call 并由工具执行完成；仅在看到工具返回内容后，才能向用户确认「已成功」或说明失败原因。推理/思考过程不能代替工具调用，也不得仅凭意图描述冒充已执行。\n文件状态接地：对话里更早的助手摘要或较早轮次的工具输出**可能已过时**，不能当作磁盘上文件的当前真相（模型无法可靠区分「历史叙述」与「此刻文件」）。凡用户询问、核对或点名读取某 Word/Excel/PPT 路径下的实际内容（正文、表格、幻灯片、形状、列表等），你必须**当场再次调用**对应只读工具，并以**本轮工具返回**为唯一依据作答；禁止仅凭对话记忆复述成「已读过」或推断当前文件状态。若本轮尚未调用成功或未收到返回，应调用工具或如实说明，不得用历史内容凑答案。";
-    /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型。</summary>
+    /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型（仅旧版 JSON 的 <c>ai</c> 对象内使用；运行时应使用 <see cref="AppConfig.AlwaysIncludePlugins"/>）。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
+}
+
+/// <summary>与 <see cref="AiConfig"/> 默认构造一致的嵌入式主 system 文案，供无 <see cref="AiModelEntry.SystemPrompt"/> 时回退。</summary>
+public static class AiEmbeddedDefaults
+{
+    public static readonly string DefaultSystemPrompt = new AiConfig().SystemPrompt;
 }
 
 /// <summary>多模型列表中的单条：支持 OpenAI / Azure / Ollama / Anthropic。</summary>
@@ -287,7 +293,13 @@ public class SemanticKernelFeaturesConfig
 
 public class AppConfig
 {
-    public AiConfig AI { get; set; } = new();
+    /// <summary>始终包含的插件名（如 CLI）；与 <c>aiModels</c> 并列存于 user-config.json 顶层。</summary>
+    [JsonPropertyName("alwaysIncludePlugins")]
+    public List<string> AlwaysIncludePlugins { get; set; } = new();
+
+    /// <summary>旧版单条 <c>ai</c>；读入后由 <see cref="MigrateLegacyAiIfNeeded"/> 合并到 <see cref="AiModels"/> / <see cref="AlwaysIncludePlugins"/>，保存时省略。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AiConfig? AI { get; set; }
     /// <summary>MAF 编排实验开关（JSON 键 <c>semanticKernel</c> 为历史名）；未配置时均为 false。</summary>
     public SemanticKernelFeaturesConfig? SemanticKernel { get; set; }
     /// <summary>会话配置（历史轮数、超时等）；未配置时使用默认值。</summary>
@@ -298,7 +310,7 @@ public class AppConfig
     public List<ContextOptimizationPreset>? ContextOptimizationPresets { get; set; }
     /// <summary>当前生效的预设 Id；非空且存在于 Presets 时，加载后用该预设覆盖 Session/ContextWindow。</summary>
     public string? ActiveContextPresetId { get; set; }
-    /// <summary>多套 AI 模型列表；为空时使用 AI 单条配置。</summary>
+    /// <summary>多套 AI 模型列表；运行时的唯一来源（旧 <c>ai</c> 仅在加载时迁移进此列表）。</summary>
     public List<AiModelEntry> AiModels { get; set; } = new();
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
     public string ActiveModelId { get; set; } = "";
@@ -662,7 +674,7 @@ public sealed class ConfigService
         {
             var json = File.ReadAllText(_configPath);
             var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigDeserializeOptions);
-            if (config == null || config.AI == null)
+            if (config == null)
             {
                 _logger.LogWarning("User config at {Path} was empty or invalid, using defaults.", _configPath);
                 return CreateDefaultAppConfig();
@@ -683,6 +695,7 @@ public sealed class ConfigService
         PatchEmbeddingEndpointsFromRawJson(json, config);
         _logger.LogInformation("Loaded user config from {Path}", _configPath);
         config.SkillEnv ??= new Dictionary<string, string>();
+        config.AlwaysIncludePlugins ??= new List<string>();
         MigrateCliRunModeFromLegacyJson(json, config);
         config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
         config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
@@ -718,6 +731,8 @@ public sealed class ConfigService
             ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets()),
             ActiveContextPresetId = "internal-64k",
             SkillEnv = new Dictionary<string, string>(),
+            AlwaysIncludePlugins = new List<string>(),
+            AI = new AiConfig(),
             AiModels = new List<AiModelEntry>(),
             EmbeddingModels = new List<EmbeddingModelEntry>(),
             OcrModels = new List<OcrModelEntry>(),
@@ -1006,27 +1021,42 @@ public sealed class ConfigService
         };
     }
 
-    /// <summary>若 AiModels 为空且 AI 有配置，则迁移为一条默认模型并设 ActiveModelId。</summary>
+    /// <summary>将旧版顶层 <c>ai</c> 合并进 <see cref="AppConfig.AiModels"/> / <see cref="AppConfig.AlwaysIncludePlugins"/>，然后清空 <see cref="AppConfig.AI"/>（保存时不再写出）。</summary>
     private void MigrateLegacyAiIfNeeded(AppConfig config)
     {
-        if (config.AiModels == null || config.AiModels.Count > 0) return;
-        var ai = config.AI;
-        if (ai == null) return;
-        var provider = (ai.Provider ?? "").Trim();
+        config.AiModels ??= new List<AiModelEntry>();
+        config.AlwaysIncludePlugins ??= new List<string>();
+
+        var legacy = config.AI;
+        if (legacy?.AlwaysIncludePlugins is { Count: > 0 } legPlugins && config.AlwaysIncludePlugins.Count == 0)
+            config.AlwaysIncludePlugins = new List<string>(legPlugins);
+
+        if (config.AiModels.Count > 0)
+        {
+            config.AI = null;
+            return;
+        }
+
+        if (legacy == null) return;
+
+        var provider = (legacy.Provider ?? "").Trim();
         if (string.IsNullOrEmpty(provider)) provider = "OpenAI";
         var entry = new AiModelEntry
         {
             Id = "default",
             DisplayName = "默认模型",
             Provider = provider,
-            Endpoint = ai.Endpoint ?? "",
-            ApiKey = ai.ApiKey ?? "",
-            ModelId = ai.ModelId ?? "gpt-4o-mini",
-            SystemPrompt = ai.SystemPrompt ?? "",
+            Endpoint = legacy.Endpoint ?? "",
+            ApiKey = legacy.ApiKey ?? "",
+            ModelId = legacy.ModelId ?? "gpt-4o-mini",
+            SystemPrompt = legacy.SystemPrompt ?? "",
             Enabled = true
         };
         config.AiModels = new List<AiModelEntry> { entry };
         config.ActiveModelId = "default";
+        if (config.AlwaysIncludePlugins.Count == 0 && legacy.AlwaysIncludePlugins is { Count: > 0 } lp)
+            config.AlwaysIncludePlugins = new List<string>(lp);
+        config.AI = null;
         _logger.LogInformation("Migrated legacy AI config to AiModels (Id=default).");
     }
 
@@ -1078,6 +1108,16 @@ public sealed class ConfigService
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
+                if (newConfig.AiModels == null)
+                    newConfig.AiModels = _currentConfig.AiModels != null
+                        ? new List<AiModelEntry>(_currentConfig.AiModels)
+                        : new List<AiModelEntry>();
+                if (string.IsNullOrWhiteSpace(newConfig.ActiveModelId))
+                    newConfig.ActiveModelId = _currentConfig.ActiveModelId ?? "";
+                if (newConfig.AlwaysIncludePlugins == null)
+                    newConfig.AlwaysIncludePlugins = _currentConfig.AlwaysIncludePlugins ?? new List<string>();
+                MigrateLegacyAiIfNeeded(newConfig);
+                newConfig.AI = null;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();
                 if (!string.IsNullOrEmpty(activeEmbId) && (newConfig.EmbeddingModels == null || newConfig.EmbeddingModels.All(e => (e.Id ?? "").Trim() != activeEmbId)))
                 {
