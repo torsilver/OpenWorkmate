@@ -661,6 +661,7 @@ public sealed partial class ChatService : IDisposable
                                            attempt,
                                            requireToolInvocation: false,
                                            contextProviders: contextProviders,
+                                           toolsForAgent: turn.ToolsForAgentRound,
                                            ct).ConfigureAwait(false))
                         {
                             if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
@@ -684,9 +685,8 @@ public sealed partial class ChatService : IDisposable
                     var visibleAssistantFirstPass = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()).Trim();
                     var firstPassHadVisibleAssistantText = visibleAssistantFirstPass.Length > 0;
                     var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
-                    IReadOnlyList<AITool> toolsForRequired = turn.SelectedTools is { Count: > 0 }
-                        ? turn.SelectedTools
-                        : _runtime.GetAllowedTools(clientTypeForTools, sessionId);
+                    IReadOnlyList<AITool> toolsForRequired = turn.ToolsForAgentRound
+                        ?? _runtime.GetAllowedTools(clientTypeForTools, sessionId);
                     var needToolGroundingRetry = firstPassTools == 0
                         && MutationIntentHeuristic.LikelyRequiresLocalMutationTool(userMessage)
                         && toolsForRequired is { Count: > 0 };
@@ -735,6 +735,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: true,
+                                               toolsForAgent: turn.ToolsForAgentRound,
                                                ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
@@ -777,6 +778,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: false,
+                                               toolsForAgent: turn.ToolsForAgentRound,
                                                ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
@@ -837,6 +839,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: true,
+                                               toolsForAgent: turn.ToolsForAgentRound,
                                                ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
@@ -879,6 +882,7 @@ public sealed partial class ChatService : IDisposable
                                                streamOutcome,
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: false,
+                                               toolsForAgent: turn.ToolsForAgentRound,
                                                ct: ct).ConfigureAwait(false))
                             {
                                 if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))

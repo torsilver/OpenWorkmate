@@ -41,6 +41,8 @@ public class AgentDebugStatsServiceTests
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
             Assert.Equal(0, snap.ToolSelection.TwoStageInvocationsCount);
+            Assert.Equal(0, snap.ToolSelection.ToolNeedGateLlmInvocationCount);
+            Assert.Equal(0, snap.ToolSelection.ToolNeedGateChatOnlyCount);
             Assert.Empty(snap.ToolInvocations);
             Assert.Null(snap.StatsAccumulatedSinceUtc);
             Assert.False(File.Exists(path));
@@ -142,6 +144,50 @@ public class AgentDebugStatsServiceTests
             var s = CreateService(path);
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
+        }
+        finally
+        {
+            TryDeleteFile(path);
+        }
+    }
+
+    [Fact]
+    public void Persistence_Version2File_StartsFresh()
+    {
+        var path = NewTempPersistencePath();
+        try
+        {
+            File.WriteAllText(path, """{"version":2,"toolSelectionTotal":3,"twoStageInvocationsCount":1,"toolInvocations":[]}""");
+            var s = CreateService(path);
+            Assert.Equal(0, s.GetSnapshot().ToolSelection.TotalNonPlanSelections);
+        }
+        finally
+        {
+            TryDeleteFile(path);
+        }
+    }
+
+    [Fact]
+    public void ToolNeedGateStats_RoundTrip()
+    {
+        var path = NewTempPersistencePath();
+        try
+        {
+            {
+                var s = CreateService(path);
+                s.RecordToolNeedGateLlmInvocation();
+                s.RecordToolNeedGateLlmInvocation();
+                s.RecordToolNeedGateChatOnly();
+                s.FlushPersistenceForTests();
+            }
+            {
+                var s2 = CreateService(path);
+                var ts = s2.GetSnapshot().ToolSelection;
+                Assert.Equal(2, ts.ToolNeedGateLlmInvocationCount);
+                Assert.Equal(1, ts.ToolNeedGateChatOnlyCount);
+                Assert.NotNull(ts.ToolNeedGateChatOnlyRateAmongGateLlm);
+                Assert.Equal(0.5, ts.ToolNeedGateChatOnlyRateAmongGateLlm!.Value, 3);
+            }
         }
         finally
         {

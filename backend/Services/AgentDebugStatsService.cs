@@ -11,7 +11,7 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public sealed class AgentDebugStatsService : IDisposable
 {
-    public const int PersistedFormatVersion = 2;
+    public const int PersistedFormatVersion = 3;
     private readonly object _gate = new();
     private readonly object _persistScheduleLock = new();
     private readonly DateTimeOffset _startedUtc = DateTimeOffset.UtcNow;
@@ -24,6 +24,8 @@ public sealed class AgentDebugStatsService : IDisposable
     private long _toolSelectionTotal;
     private long _toolSelectionException;
     private long _twoStageUsed;
+    private long _toolNeedGateLlmInvocations;
+    private long _toolNeedGateChatOnlyCount;
     private readonly Dictionary<string, (long Success, long Fail)> _toolInvocations = new(StringComparer.Ordinal);
 
     /// <summary>生产环境：默认路径为 %LocalAppData%\OfficeCopilot\agent-debug-stats.json。</summary>
@@ -86,6 +88,18 @@ public sealed class AgentDebugStatsService : IDisposable
         SchedulePersist();
     }
 
+    public void RecordToolNeedGateLlmInvocation()
+    {
+        lock (_gate) { _toolNeedGateLlmInvocations++; }
+        SchedulePersist();
+    }
+
+    public void RecordToolNeedGateChatOnly()
+    {
+        lock (_gate) { _toolNeedGateChatOnlyCount++; }
+        SchedulePersist();
+    }
+
     /// <summary>与 <see cref="ToolStatusFilter"/> 下发给前端的 success 一致（含返回串判失败）。</summary>
     public void RecordToolInvocation(string pluginName, string functionName, bool success)
     {
@@ -110,6 +124,8 @@ public sealed class AgentDebugStatsService : IDisposable
             _toolSelectionTotal = 0;
             _toolSelectionException = 0;
             _twoStageUsed = 0;
+            _toolNeedGateLlmInvocations = 0;
+            _toolNeedGateChatOnlyCount = 0;
             _toolInvocations.Clear();
             _accumulatedSinceUtc = null;
         }
@@ -127,6 +143,7 @@ public sealed class AgentDebugStatsService : IDisposable
         lock (_gate)
         {
             var total = _toolSelectionTotal;
+            var gateLlm = _toolNeedGateLlmInvocations;
             var list = _toolInvocations
                 .Select(kv => ToolInvocationDebugStatDto.From(kv.Key, kv.Value.Success, kv.Value.Fail))
                 .OrderByDescending(x => x.TotalCalls)
@@ -142,7 +159,10 @@ public sealed class AgentDebugStatsService : IDisposable
                     TotalNonPlanSelections = total,
                     SelectionExceptionFallbackCount = _toolSelectionException,
                     TwoStageInvocationsCount = _twoStageUsed,
-                    TwoStageRateAmongSelections = total > 0 ? (double)_twoStageUsed / total : null
+                    TwoStageRateAmongSelections = total > 0 ? (double)_twoStageUsed / total : null,
+                    ToolNeedGateLlmInvocationCount = gateLlm,
+                    ToolNeedGateChatOnlyCount = _toolNeedGateChatOnlyCount,
+                    ToolNeedGateChatOnlyRateAmongGateLlm = gateLlm > 0 ? (double)_toolNeedGateChatOnlyCount / gateLlm : null
                 },
                 ToolInvocations = list
             };
@@ -212,7 +232,8 @@ public sealed class AgentDebugStatsService : IDisposable
     {
         if (_toolInvocations.Count > 0)
             return true;
-        if (_toolSelectionTotal != 0 || _toolSelectionException != 0 || _twoStageUsed != 0)
+        if (_toolSelectionTotal != 0 || _toolSelectionException != 0 || _twoStageUsed != 0
+            || _toolNeedGateLlmInvocations != 0 || _toolNeedGateChatOnlyCount != 0)
             return true;
         return false;
     }
@@ -225,6 +246,8 @@ public sealed class AgentDebugStatsService : IDisposable
             ToolSelectionTotal = _toolSelectionTotal,
             SelectionExceptionFallbackCount = _toolSelectionException,
             TwoStageInvocationsCount = _twoStageUsed,
+            ToolNeedGateLlmInvocations = _toolNeedGateLlmInvocations,
+            ToolNeedGateChatOnlyCount = _toolNeedGateChatOnlyCount,
             ToolInvocations = _toolInvocations
                 .Select(kv => new PersistedToolInvocationEntry { ToolId = kv.Key, SuccessCount = kv.Value.Success, FailCount = kv.Value.Fail })
                 .ToList()
@@ -293,6 +316,8 @@ public sealed class AgentDebugStatsService : IDisposable
             _toolSelectionTotal = m.ToolSelectionTotal;
             _toolSelectionException = m.SelectionExceptionFallbackCount;
             _twoStageUsed = m.TwoStageInvocationsCount;
+            _toolNeedGateLlmInvocations = m.ToolNeedGateLlmInvocations;
+            _toolNeedGateChatOnlyCount = m.ToolNeedGateChatOnlyCount;
             _toolInvocations.Clear();
             foreach (var e in m.ToolInvocations ?? Enumerable.Empty<PersistedToolInvocationEntry>())
             {
@@ -310,6 +335,8 @@ internal sealed class AgentDebugStatsPersistedModel
     public long ToolSelectionTotal { get; set; }
     public long SelectionExceptionFallbackCount { get; set; }
     public long TwoStageInvocationsCount { get; set; }
+    public long ToolNeedGateLlmInvocations { get; set; }
+    public long ToolNeedGateChatOnlyCount { get; set; }
     public List<PersistedToolInvocationEntry> ToolInvocations { get; set; } = new();
 }
 
@@ -336,6 +363,10 @@ public sealed class ToolSelectionDebugStatsDto
     public long TwoStageInvocationsCount { get; init; }
     /// <summary>两阶段调用次数 / 非计划工具选择总次数；分母为 0 时为 null。</summary>
     public double? TwoStageRateAmongSelections { get; init; }
+    public long ToolNeedGateLlmInvocationCount { get; init; }
+    public long ToolNeedGateChatOnlyCount { get; init; }
+    /// <summary>门控判定闲聊（不绑工具）次数 / 门控实际调用 LLM 次数。</summary>
+    public double? ToolNeedGateChatOnlyRateAmongGateLlm { get; init; }
 }
 
 public sealed class ToolInvocationDebugStatDto

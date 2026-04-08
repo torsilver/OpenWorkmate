@@ -29,6 +29,7 @@ public static class MafMainSessionStreamRunner
         int contextAttemptIndex,
         bool requireToolInvocation = false,
         MessageAIContextProvider[]? contextProviders = null,
+        IReadOnlyList<AITool>? toolsForAgent = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
@@ -37,7 +38,9 @@ public static class MafMainSessionStreamRunner
         activity?.SetTag("clientType", clientType ?? "");
         activity?.SetTag("requireToolInvocation", requireToolInvocation);
 
-        var tools = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+        var tools = toolsForAgent != null
+            ? new List<AITool>(toolsForAgent)
+            : new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
 
         var chatOpts = MafChatOptionsMapper.ToChatOptions(settings, tools, requireToolInvocation);
         var agentOpts = new ChatClientAgentOptions

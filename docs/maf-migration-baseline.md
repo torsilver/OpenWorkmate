@@ -22,6 +22,7 @@
 | 插件注册 | `[ToolFunction]` 自定义属性 + `ToolRegistry.RegisterPluginFromObject`（`AIFunctionFactory`）。 |
 | 工具选择 | `ToolSelectionService` 从 `ToolRegistry` 枚举 `(PluginName, FunctionName)` 对。 |
 | 工具预筛选 | **已移除** — 主会话不再维护工具向量索引；仅 `ToolSelectionService` 两阶段 LLM 子类选择。记忆/RAG 仍用 `IVectorStore`。 |
+| 主会话工具面 | `ContextWindow.enableToolNeedGate` **默认 true**：先 `EvaluateToolNeedGateAsync`，再两阶段；设为 `false` 可关闭门控。`ToolsForAgentRound` 传入 `MafMainSessionStreamRunner`（空列表 = 闲聊无工具）。 |
 | MCP | `McpKernelPlugin.BuildMcpAIToolsAsync()` 产出 `IReadOnlyList<AITool>`，注册到 `ToolRegistry`。 |
 | UserSkill (Prompt) | `AIFunctionFactory.Create` 包装为 `AIFunction`，通过 `IChatClient` 执行。 |
 | 横切（安全/会话/tool 状态） | **MAF Function Calling Middleware** (`ToolInvocationMiddleware.Create`) → `SecurityPipeline`（HITL/白名单）→ SessionContext 注入 → `ToolStatusNotifier`（前端推送/审计）。通过 `agent.AsBuilder().Use(middleware).Build()` 注册到每个 `ChatClientAgent`，无需手动包装工具。 |

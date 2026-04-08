@@ -111,12 +111,51 @@ public sealed partial class ChatService
 
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
-        await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
+        var gateEnabled = ctxConfig.EnableToolNeedGate;
+        await NotifyAgentStatusAsync(
+            sessionManagerForStatus,
+            sessionId,
+            gateEnabled ? "正在判断本轮是否需要工具…" : "正在筛选可用工具…",
+            ct).ConfigureAwait(false);
         _agentDebugStats.IncrementToolSelectionTotal();
+
+        var recentHistory = state.History.Count > 1 ? state.History : null;
         try
         {
-            var recentHistory = state.History.Count > 1 ? state.History : null;
-            _logger.LogInformation("[{SessionId}] ToolSelection: entry clientType={ClientType} (two-stage LLM only).",
+            ToolNeedGateResult gate;
+            if (planResult != null)
+                gate = new ToolNeedGateResult(true, "已加载计划，跳过工具需求门控。", false);
+            else
+                gate = await _toolSelector.EvaluateToolNeedGateAsync(userMessage, recentHistory, ct).ConfigureAwait(false);
+            if (gate.InvokedLlm)
+            {
+                _agentDebugStats.RecordToolNeedGateLlmInvocation();
+                if (!gate.BindTools)
+                    _agentDebugStats.RecordToolNeedGateChatOnly();
+            }
+
+            // 门控关闭时不推 trace，避免时间线出现「已关闭」误导；有计划跳过门控或实际跑了门控 LLM 时再记录
+            if (planResult != null || gateEnabled || gate.InvokedLlm)
+            {
+                await NotifyAgentTraceAsync(
+                    sessionManagerForStatus,
+                    sessionId,
+                    "toolSelection",
+                    "工具需求门控",
+                    AgentTraceFormatter.TruncateDetail(gate.TraceDetail),
+                    ct).ConfigureAwait(false);
+            }
+
+            if (!gate.BindTools)
+            {
+                _logger.LogInformation("[{SessionId}] ToolSelection: gate chose chat-only (no tools bound).", sessionId);
+                FinalizeToolingPhaseTurn(turn, state, clientType, Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false);
+                return;
+            }
+
+            if (gateEnabled)
+                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
+            _logger.LogInformation("[{SessionId}] ToolSelection: gate passed, two-stage clientType={ClientType}.",
                 sessionId, clientType ?? "(null)");
             _agentDebugStats.RecordTwoStageUsed();
             var twoStage = await _toolSelector.SelectFunctionsAsync(
@@ -130,6 +169,16 @@ public sealed partial class ChatService
                 sessionId, selectedPairs?.Count ?? -1);
             var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
             await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
+
+            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
+            if (planResult != null && selectedTools != null)
+                selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
+            var restrictedSubset = selectedPairs is { Count: > 0 };
+            var funcsCount = selectedTools?.Count ?? 0;
+            _logger.LogInformation("[{SessionId}] ToolSelection: resolved functionCount={FuncCount} restrictedSubset={Restricted}.",
+                sessionId, funcsCount, restrictedSubset);
+
+            FinalizeToolingPhaseTurn(turn, state, clientType, selectedTools!, selectedPairs, restrictedSubset);
         }
         catch (Exception ex)
         {
@@ -139,40 +188,43 @@ public sealed partial class ChatService
             await NotifyAgentTraceAsync(
                 sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
                 ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
-        }
 
-        IReadOnlyList<AITool>? selectedTools;
-        selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
-        if (planResult != null && selectedTools != null)
-            selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
+            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId);
+            if (planResult != null && selectedTools != null)
+                selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
+            FinalizeToolingPhaseTurn(turn, state, clientType, selectedTools!, selectedPairs: null, restrictedSubset: false);
+        }
+    }
+
+    private void FinalizeToolingPhaseTurn(
+        StreamChatTurnContext turn,
+        SessionState state,
+        string? clientType,
+        IReadOnlyList<AITool> toolsForAgent,
+        IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
+        bool restrictedSubset)
+    {
+        var sessionId = turn.SessionId;
+        var ctxConfig = turn.CtxConfig;
         var pairsCount = selectedPairs?.Count ?? 0;
-        var funcsCount = selectedTools?.Count ?? 0;
-        var useAllTools = selectedTools == null || selectedTools.Count == 0;
-        _logger.LogInformation("[{SessionId}] ToolSelection: ResolveFunctionsByClientType clientType={ClientType} selectedPairsCount={PairsCount} resolvedFunctionCount={FuncCount} useAllTools={UseAll}.",
-            sessionId, clientType ?? "(null)", pairsCount, funcsCount, useAllTools);
+        var funcsCount = toolsForAgent.Count;
+        _logger.LogInformation("[{SessionId}] ToolSelection: finalize pairsCount={PairsCount} toolsForAgentCount={FuncCount} restricted={Restricted}.",
+            sessionId, pairsCount, funcsCount, restrictedSubset);
 
         var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
-        if (selectedTools is { Count: > 0 })
+        turn.ExecSettings = new ChatOptions { MaxOutputTokens = maxOutputTokens };
+        if (funcsCount > 0)
         {
-            turn.ExecSettings = new ChatOptions
-            {
-                MaxOutputTokens = maxOutputTokens,
-            };
-            _logger.LogInformation("[{SessionId}] ToolSelection: final restricted to {FunctionCount} functions clientType={ClientType}.",
-                sessionId, selectedTools.Count, clientType ?? "(null)");
-            _logger.LogDebug("[{SessionId}] Tool selection: clientType={ClientType} {FunctionCount} functions",
-                sessionId, clientType ?? "(null)", selectedTools.Count);
+            if (restrictedSubset)
+                _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to {FunctionCount} functions (subset).", sessionId, funcsCount);
+            else
+                _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to {FunctionCount} functions (full allow-list).", sessionId, funcsCount);
         }
         else
-        {
-            turn.ExecSettings = new ChatOptions
-            {
-                MaxOutputTokens = maxOutputTokens,
-            };
-            _logger.LogInformation("[{SessionId}] ToolSelection: final no restriction (all tools).", sessionId);
-        }
+            _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to zero tools (chat-only).", sessionId);
 
-        turn.SelectedTools = selectedTools is { Count: > 0 } ? selectedTools : null;
+        turn.ToolsForAgentRound = toolsForAgent;
+        turn.SelectedTools = funcsCount > 0 ? toolsForAgent : null;
 
         var activeModel = GetActiveModelEntry();
         turn.EnableSearchSuppressionSuffix = activeModel?.EnableSearch == true ? EnableSearchSuppressionInstruction : null;

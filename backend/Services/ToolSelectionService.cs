@@ -669,4 +669,73 @@ public sealed class ToolSelectionService : IToolSelector
         }
         return set.ToList();
     }
+
+    /// <inheritdoc />
+    public async Task<ToolNeedGateResult> EvaluateToolNeedGateAsync(
+        string userMessage,
+        IReadOnlyList<ChatMessage>? recentHistory,
+        CancellationToken ct = default)
+    {
+        var cw = _configService.Current.ContextWindow ?? new ContextWindowConfig();
+        if (!cw.EnableToolNeedGate)
+            return new ToolNeedGateResult(true, "工具需求门控已关闭（enableToolNeedGate=false），按原逻辑绑定工具。", false);
+
+        var client = _runtime.GetChatClient();
+        if (client == null)
+            return new ToolNeedGateResult(true, "无主会话模型客户端，保守绑定工具。", false);
+
+        var maxChars = Math.Clamp(cw.ToolNeedGateMaxPromptChars, 400, 8000);
+        var built = BuildUserPromptWithHistory(userMessage, recentHistory);
+        if (built.Length > maxChars)
+            built = built.AsSpan(0, maxChars).ToString() + "...";
+
+        const string systemPrompt =
+            "你是路由助手。判断用户本轮对话是否可能需要本机/应用工具（例如：读写文件、Excel/Word/PPT、浏览器截图或页面脚本、终端命令、长期记忆、准确数据块、计划、会议转写、OCR/语音、跨端任务等）。\n"
+            + "纯闲聊、问候、抽象问答、不需要操作本机或调用上述能力 → 只输出一行：NO\n"
+            + "只要存在任何可能需要上述任一能力 → 只输出一行：YES\n"
+            + "不要解释。也可输出 JSON：{\"needTools\":true} 或 {\"needTools\":false}。";
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, built)
+        };
+
+        try
+        {
+            var options = new ChatOptions { MaxOutputTokens = 64, Temperature = 0f };
+            var responseText = new System.Text.StringBuilder();
+            using (DashScopeCallKindContext.EnterBackground())
+            {
+                await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct).ConfigureAwait(false))
+                {
+                    if (update.Text is { Length: > 0 } content)
+                        responseText.Append(content);
+                }
+            }
+
+            var raw = responseText.ToString().Trim();
+            var (bindTools, explicitParse) = ToolNeedGateParser.Parse(raw);
+            var preview = ToolNeedGateFormatPreview(raw, 160);
+            var detail = bindTools
+                ? explicitParse
+                    ? $"需要工具（模型：{preview}）"
+                    : $"需要工具（未明确解析为 NO，保守；模型：{preview}）"
+                : $"判定为闲聊，本轮不绑定工具（模型：{preview}）";
+            _logger.LogInformation("ToolNeedGate: bindTools={Bind} explicitParse={Explicit} rawLen={Len}", bindTools, explicitParse, raw.Length);
+            return new ToolNeedGateResult(bindTools, detail, true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ToolNeedGate failed, bind tools by default.");
+            return new ToolNeedGateResult(true, "门控调用异常，保守绑定工具：" + ErrorMessageHelper.GetFriendlyMessage(ex), true);
+        }
+    }
+
+    private static string ToolNeedGateFormatPreview(string raw, int maxChars)
+    {
+        var s = (raw ?? "").Replace("\r\n", " ", StringComparison.Ordinal).Replace('\n', ' ').Trim();
+        if (s.Length <= maxChars) return s;
+        return s.AsSpan(0, maxChars).ToString() + "…";
+    }
 }

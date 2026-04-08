@@ -142,6 +142,12 @@ public class ContextWindowConfig
     /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
     public int TruncateToolArgsMaxChars { get; set; } = 2000;
 
+    /// <summary>为 true 时主会话工具阶段先经一轮 LLM 判断是否需要绑定工具；为 false 时跳过门控、始终走两阶段（默认开启）。</summary>
+    public bool EnableToolNeedGate { get; set; } = true;
+
+    /// <summary>工具需求门控：拼入模型前的用户侧提示最大字符数（含 [上一条] 等），超出截断。</summary>
+    public int ToolNeedGateMaxPromptChars { get; set; } = 1500;
+
     /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
     public bool PassThroughContext { get; set; }
 
@@ -648,6 +654,9 @@ public sealed class ConfigService
         config.OcrModels ??= new List<OcrModelEntry>();
         config.Session ??= new SessionConfig();
         config.ContextWindow ??= new ContextWindowConfig();
+        // 旧配置文件无 enableToolNeedGate 字段时 Json 会得到 false；产品默认应开启门控
+        if (!json.Contains("\"enableToolNeedGate\"", StringComparison.OrdinalIgnoreCase))
+            config.ContextWindow.EnableToolNeedGate = true;
         if (config.ContextOptimizationPresets == null || config.ContextOptimizationPresets.Count == 0)
             config.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
         else
@@ -945,7 +954,9 @@ public sealed class ConfigService
             ConversationHistoryDirectory = preset.ContextWindow.ConversationHistoryDirectory,
             TruncateToolArgsThresholdRatio = preset.ContextWindow.TruncateToolArgsThresholdRatio,
             TruncateToolArgsKeepMessages = preset.ContextWindow.TruncateToolArgsKeepMessages,
-            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars
+            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars,
+            EnableToolNeedGate = preset.ContextWindow.EnableToolNeedGate,
+            ToolNeedGateMaxPromptChars = preset.ContextWindow.ToolNeedGateMaxPromptChars
         };
     }
 
