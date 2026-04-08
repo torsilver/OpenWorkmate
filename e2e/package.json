@@ -1,0 +1,14 @@
+{
+  "name": "office-copilot-e2e",
+  "private": true,
+  "description": "Playwright E2E for chrome-extension (Chromium + load-extension)",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0"
+  }
+}

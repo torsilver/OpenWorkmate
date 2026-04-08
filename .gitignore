@@ -24,6 +24,11 @@ release/backend/appsettings.json
 # 内置工具索引构建用 embedding 配置（含 apiKey），勿提交
 backend/tool-index-build.json
 
+# ---- Playwright E2E ----
+e2e/playwright-report/
+e2e/test-results/
+e2e/blob-report/
+
 # ---- Node / 前端（若有） ----
 node_modules/
 npm-debug.log*
