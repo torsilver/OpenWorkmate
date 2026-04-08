@@ -58,10 +58,6 @@
     th { color: var(--muted); font-weight: 500; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .empty { color: var(--muted); padding: 12px 0; }
-    .subblock { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
-    .subblock h3 { font-size: 0.8125rem; font-weight: 600; margin: 0 0 8px; color: var(--muted); }
-    .config-line { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; }
-    .config-line code { color: var(--accent); font-size: 11px; }
     #err {
       display: none;
       padding: 12px;
@@ -78,7 +74,7 @@
 <body>
   <div class="wrap">
     <h1>调试统计</h1>
-    <p class="sub">本页展示工具向量选择汇总与各工具调用成功/失败次数。数据默认持久化到本机用户目录下的 <code>OfficeCopilot/agent-debug-stats.json</code>，<strong>重启服务后仍累计</strong>；仅点击「清空计数」会归零并删除该文件。默认连接 <code>http://localhost:8765</code>。直方图按每次向量检索的<strong>最高分（余弦相似度）</strong>落入的区间累计，用于观察与 <code>ToolSearchMinScore</code> 阈值的关系。</p>
+    <p class="sub">本页展示<strong>两阶段工具选择</strong>汇总与各工具调用成功/失败次数。数据默认持久化到本机 <code>OfficeCopilot/agent-debug-stats.json</code>，重启服务后仍累计；仅「清空计数」会归零并删除该文件。默认连接本机后台端口（由扩展解析）。</p>
     <div id="err" role="alert"></div>
     <div class="toolbar">
       <button type="button" id="btn-refresh">刷新</button>
@@ -87,22 +83,8 @@
       <span class="meta" id="last-updated"></span>
     </div>
     <section>
-      <h2>工具向量选择</h2>
-      <div id="tool-search-config" class="config-line"></div>
+      <h2>工具选择（两阶段 LLM）</h2>
       <dl class="stats" id="tool-selection-dl"></dl>
-      <div class="subblock">
-        <h3>最高分分布（每次检索 1 票）</h3>
-        <div id="histogram-wrap"></div>
-      </div>
-      <div class="subblock">
-        <h3>按客户端（clientType）向量检索次数 / 平均最高分</h3>
-        <div id="client-type-wrap"></div>
-      </div>
-      <div class="subblock">
-        <h3>向量后再两阶段：仍为全量工具</h3>
-        <p class="sub">在<strong>已执行向量检索</strong>但未走向量优先路径时，会再调用两阶段（主模型选子类）。以下统计这种「两轮」收窄后，两阶段仍退回<strong>全量工具</strong>的次数与占比。未配置 Embedding 或存储非持久化时不会进入此路径（仅两阶段、无前置向量）。</p>
-        <dl class="stats" id="two-round-dl"></dl>
-      </div>
     </section>
     <section>
       <h2>各工具调用</h2>

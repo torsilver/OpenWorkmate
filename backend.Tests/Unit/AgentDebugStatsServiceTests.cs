@@ -7,15 +7,6 @@ namespace backend.Tests.Unit;
 
 public class AgentDebugStatsServiceTests
 {
-    private static VectorSearchTelemetry T(
-        string? clientType = "chrome",
-        double max = 0.5,
-        double? second = null,
-        int hits = 1,
-        bool goodEnough = false,
-        bool vectorFirst = false) =>
-        new(clientType, max, second, hits, goodEnough, vectorFirst);
-
     private static string NewTempPersistencePath() =>
         Path.Combine(Path.GetTempPath(), $"agent-debug-stats-{Guid.NewGuid():N}.json");
 
@@ -43,16 +34,14 @@ public class AgentDebugStatsServiceTests
         {
             var s = CreateService(path);
             s.IncrementToolSelectionTotal();
-            s.RecordVectorSearchCompleted(T(goodEnough: true, vectorFirst: true));
+            s.RecordTwoStageUsed();
             s.RecordToolInvocation("Word", "read", success: true);
             s.RecordToolInvocation("Word", "read", success: false);
             s.Reset();
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
-            Assert.Equal(0, snap.ToolSelection.VectorSearchRunCount);
+            Assert.Equal(0, snap.ToolSelection.TwoStageInvocationsCount);
             Assert.Empty(snap.ToolInvocations);
-            Assert.Equal(5, snap.ToolSelection.MaxScoreHistogram.Count);
-            Assert.All(snap.ToolSelection.MaxScoreHistogram, b => Assert.Equal(0, b.Count));
             Assert.Null(snap.StatsAccumulatedSinceUtc);
             Assert.False(File.Exists(path));
         }
@@ -87,7 +76,7 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
-    public void VectorRates_DerivedFromTotals()
+    public void TwoStageRate_DerivedFromTotals()
     {
         var path = NewTempPersistencePath();
         try
@@ -95,74 +84,12 @@ public class AgentDebugStatsServiceTests
             var s = CreateService(path);
             s.IncrementToolSelectionTotal();
             s.IncrementToolSelectionTotal();
-            s.RecordVectorSearchCompleted(T(goodEnough: true, vectorFirst: true));
-            s.RecordVectorSearchCompleted(T(goodEnough: false, vectorFirst: false));
+            s.RecordTwoStageUsed();
             var ts = s.GetSnapshot().ToolSelection;
             Assert.Equal(2, ts.TotalNonPlanSelections);
-            Assert.Equal(2, ts.VectorSearchRunCount);
-            Assert.Equal(1, ts.VectorFirstPathChosenCount);
-            Assert.Equal(1, ts.VectorGoodEnoughFalseCount);
-            Assert.NotNull(ts.VectorFirstPathRateAmongVectorSearches);
-            Assert.Equal(0.5, ts.VectorFirstPathRateAmongVectorSearches!.Value, 3);
-            Assert.NotNull(ts.VectorFirstPathRateAmongSelections);
-            Assert.Equal(0.5, ts.VectorFirstPathRateAmongSelections!.Value, 3);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Theory]
-    [InlineData(0.0, 0)]
-    [InlineData(0.49, 0)]
-    [InlineData(0.5, 1)]
-    [InlineData(0.65, 2)]
-    [InlineData(0.75, 3)]
-    [InlineData(0.9, 4)]
-    public void MaxScoreToHistogramBucket_MatchesRanges(double maxScore, int expectedBucket) =>
-        Assert.Equal(expectedBucket, AgentDebugStatsService.MaxScoreToHistogramBucket(maxScore));
-
-    [Fact]
-    public void RecordVectorSearchCompleted_AccumulatesHistogramAndAverages()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            var s = CreateService(path);
-            s.RecordVectorSearchCompleted(T(max: 0.45, second: 0.1, hits: 2, goodEnough: false)); // bucket 0
-            s.RecordVectorSearchCompleted(T(max: 0.72, second: 0.5, hits: 3, goodEnough: true)); // bucket 3, margin 0.22
-            s.RecordVectorSearchCompleted(T("wps", max: 0.82, second: 0.8, hits: 2, goodEnough: true)); // bucket 4, margin 0.02
-
-            var ts = s.GetSnapshot().ToolSelection;
-            Assert.Equal(3, ts.VectorSearchRunCount);
-            var hist = ts.MaxScoreHistogram;
-            Assert.Equal(5, hist.Count);
-            Assert.Equal(1, hist[0].Count);
-            Assert.Equal(0, hist[1].Count);
-            Assert.Equal(0, hist[2].Count);
-            Assert.Equal(1, hist[3].Count);
-            Assert.Equal(1, hist[4].Count);
-
-            var expectedAvgMax = (0.45 + 0.72 + 0.82) / 3.0;
-            Assert.NotNull(ts.AverageMaxScoreAmongVectorSearches);
-            Assert.True(Math.Abs(ts.AverageMaxScoreAmongVectorSearches!.Value - expectedAvgMax) < 1e-9);
-
-            Assert.NotNull(ts.AverageDistinctHitCountAmongVectorSearches);
-            Assert.True(Math.Abs(ts.AverageDistinctHitCountAmongVectorSearches!.Value - (2 + 3 + 2) / 3.0) < 1e-9);
-
-            Assert.Equal(3, ts.Top1MinusTop2SampleCount);
-            var expectedMargin = ((0.45 - 0.1) + (0.72 - 0.5) + (0.82 - 0.8)) / 3.0;
-            Assert.NotNull(ts.AverageTop1MinusTop2AmongVectorSearches);
-            Assert.True(Math.Abs(ts.AverageTop1MinusTop2AmongVectorSearches!.Value - expectedMargin) < 1e-9);
-
-            Assert.Equal(2, ts.VectorSearchByClientType.Count);
-            var chrome = ts.VectorSearchByClientType.First(x => x.ClientType == "chrome");
-            Assert.Equal(2, chrome.VectorSearchRunCount);
-            Assert.True(Math.Abs(chrome.AverageMaxScore!.Value - (0.45 + 0.72) / 2.0) < 1e-9);
-            var wps = ts.VectorSearchByClientType.First(x => x.ClientType == "wps");
-            Assert.Equal(1, wps.VectorSearchRunCount);
-            Assert.True(Math.Abs(wps.AverageMaxScore!.Value - 0.82) < 1e-9);
+            Assert.Equal(1, ts.TwoStageInvocationsCount);
+            Assert.NotNull(ts.TwoStageRateAmongSelections);
+            Assert.Equal(0.5, ts.TwoStageRateAmongSelections!.Value, 3);
         }
         finally
         {
@@ -171,64 +98,7 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
-    public void RecordVectorSearchCompleted_SingleHit_DoesNotCountMargin()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            var s = CreateService(path);
-            s.RecordVectorSearchCompleted(T(max: 0.8, second: null, hits: 1, goodEnough: true));
-            var ts = s.GetSnapshot().ToolSelection;
-            Assert.Equal(0, ts.Top1MinusTop2SampleCount);
-            Assert.Null(ts.AverageTop1MinusTop2AmongVectorSearches);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Fact]
-    public void GoodEnoughTrueWithZeroHits_IncrementsAnomalyCounter()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            var s = CreateService(path);
-            s.RecordVectorSearchCompleted(T(max: 0, second: null, hits: 0, goodEnough: true, vectorFirst: false));
-            var ts = s.GetSnapshot().ToolSelection;
-            Assert.Equal(1, ts.VectorGoodEnoughTrueButEmptyResultsCount);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Fact]
-    public void RecordVectorThenTwoStageOutcome_AccumulatesAndRate()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            var s = CreateService(path);
-            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: true);
-            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: false);
-            s.RecordVectorThenTwoStageOutcome(endedWithFullTools: true);
-            var ts = s.GetSnapshot().ToolSelection;
-            Assert.Equal(3, ts.VectorThenTwoStageCount);
-            Assert.Equal(2, ts.VectorThenTwoStageFullToolsCount);
-            Assert.NotNull(ts.VectorThenTwoStageFullToolsRate);
-            Assert.True(Math.Abs(ts.VectorThenTwoStageFullToolsRate!.Value - 2.0 / 3.0) < 1e-9);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Fact]
-    public void Persistence_RoundTrip_RestoresVectorAndToolInvocations()
+    public void Persistence_RoundTrip_RestoresTwoStageAndToolInvocations()
     {
         var path = NewTempPersistencePath();
         try
@@ -236,10 +106,9 @@ public class AgentDebugStatsServiceTests
             {
                 var s = CreateService(path);
                 s.IncrementToolSelectionTotal();
+                s.RecordTwoStageUsed();
                 s.RecordToolInvocation("CLI", "run_command", true);
                 s.RecordToolInvocation("CLI", "run_command", false);
-                s.RecordVectorSearchCompleted(T(max: 0.71, second: 0.5, hits: 2, goodEnough: true, vectorFirst: true));
-                s.RecordVectorThenTwoStageOutcome(endedWithFullTools: false);
                 s.FlushPersistenceForTests();
                 Assert.NotNull(s.GetSnapshot().StatsAccumulatedSinceUtc);
             }
@@ -249,17 +118,30 @@ public class AgentDebugStatsServiceTests
                 var snap = s2.GetSnapshot();
                 Assert.NotNull(snap.StatsAccumulatedSinceUtc);
                 Assert.Equal(1, snap.ToolSelection.TotalNonPlanSelections);
-                Assert.Equal(1, snap.ToolSelection.VectorSearchRunCount);
-                Assert.Equal(1, snap.ToolSelection.VectorThenTwoStageCount);
-                Assert.Equal(0, snap.ToolSelection.VectorThenTwoStageFullToolsCount);
+                Assert.Equal(1, snap.ToolSelection.TwoStageInvocationsCount);
                 var row = Assert.Single(snap.ToolInvocations);
                 Assert.Equal("CLI.run_command", row.ToolId);
                 Assert.Equal(1, row.SuccessCount);
                 Assert.Equal(1, row.FailCount);
                 Assert.Equal(2, row.TotalCalls);
-                var hist = snap.ToolSelection.MaxScoreHistogram;
-                Assert.Equal(1, hist[3].Count);
             }
+        }
+        finally
+        {
+            TryDeleteFile(path);
+        }
+    }
+
+    [Fact]
+    public void Persistence_Version1File_StartsFresh()
+    {
+        var path = NewTempPersistencePath();
+        try
+        {
+            File.WriteAllText(path, """{"version":1,"toolSelectionTotal":99,"toolInvocations":[]}""");
+            var s = CreateService(path);
+            var snap = s.GetSnapshot();
+            Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
         }
         finally
         {

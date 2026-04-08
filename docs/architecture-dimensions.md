@@ -121,14 +121,13 @@ flowchart LR
   CS --> SKL["SkillService"]
   CS --> MCP["McpClientManager"]
   CS --> TS["IToolSelector / ToolSelectionService"]
-  CS --> TI["IToolIndexService"]
   CS --> VS["IVectorStore"]
   CS --> CRA["IChatRuntimeAccessor<br/>ToolRegistry + 模型 IChatClient"]
   CS --> EP["EmbeddingProvider"]
   CS --> PS["IPlanStore"]
 ```
 
-配置或技能变更时会触发 **`RebuildRuntimeAsync`**（与 MCP、内置/用户工具索引同步相关逻辑在 `ChatService` 内）。
+配置或技能变更时会触发 **`RebuildRuntimeAsync`**（重建 `ToolRegistry`、模型客户端与 MCP 绑定等，见 `ChatService`）。
 
 ---
 

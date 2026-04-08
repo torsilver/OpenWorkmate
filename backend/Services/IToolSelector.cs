@@ -10,10 +10,8 @@ public sealed record ToolSelectionOutcome(
     int CandidateFunctionCount,
     int MergedFunctionCount);
 
-/// <summary>两阶段工具选择的可选上下文（向量仅作 stage1 提示，不单独决定工具集）。</summary>
-public sealed record ToolSelectionContext(
-    string? VectorToolHint = null,
-    string? ClientType = null);
+/// <summary>两阶段工具选择的可选上下文（如按客户端隐藏 CurrentDocument 子类等）。</summary>
+public sealed record ToolSelectionContext(string? ClientType = null);
 
 /// <summary>
 /// 根据用户消息与可选历史，选出本轮应参与的工具（插件名或具体函数），用于按需只传部分工具 schema 给模型。

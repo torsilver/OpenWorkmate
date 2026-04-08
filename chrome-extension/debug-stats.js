@@ -11,13 +11,8 @@
   const $btnRefresh = document.getElementById("btn-refresh");
   const $btnReset = document.getElementById("btn-reset");
   const $chkAuto = document.getElementById("chk-auto");
-  const $cfg = document.getElementById("tool-search-config");
-  const $histWrap = document.getElementById("histogram-wrap");
-  const $clientWrap = document.getElementById("client-type-wrap");
-  const $twoRoundDl = document.getElementById("two-round-dl");
 
   let autoTimer = null;
-  /** 与侧栏/选项页一致：成功则缓存 fulfilled；reject 时清空，避免后台晚启动后永远命中旧失败 */
   let tasklyDebugStatsApiReady = null;
 
   function tasklyEnsureDebugStatsApiBase() {
@@ -60,11 +55,6 @@
     return (x * 100).toFixed(1) + "%";
   }
 
-  function fmtFixed(x, digits) {
-    if (x == null || Number.isNaN(x)) return "—";
-    return Number(x).toFixed(digits);
-  }
-
   function row(dt, dd) {
     const dEl = document.createElement("dt");
     dEl.textContent = dt;
@@ -81,95 +71,9 @@
     return [dEl, ddEl];
   }
 
-  function renderToolSearchConfig(cfg) {
-    if (!$cfg) return;
-    if (!cfg || typeof cfg !== "object") {
-      $cfg.textContent = "";
-      return;
-    }
-    $cfg.innerHTML =
-      "当前 <code>ContextWindow</code> 工具检索配置：<code>toolSearchTopK</code>=" +
-      escapeHtml(String(cfg.toolSearchTopK ?? "—")) +
-      "，<code>toolSearchMinScore</code>=" +
-      escapeHtml(String(cfg.toolSearchMinScore ?? "—")) +
-      "，<code>toolSearchMinCount</code>=" +
-      escapeHtml(String(cfg.toolSearchMinCount ?? "—")) +
-      "（与下方直方图、GoodEnough 统计对照用）。";
-  }
-
-  function renderHistogram(buckets, vecRuns) {
-    if (!$histWrap) return;
-    if (!Array.isArray(buckets) || buckets.length === 0) {
-      $histWrap.innerHTML = "<p class=\"empty\">尚无向量检索记录。</p>";
-      return;
-    }
-    const total = typeof vecRuns === "number" && vecRuns > 0 ? vecRuns : buckets.reduce((s, b) => s + (b.count || 0), 0);
-    const table = document.createElement("table");
-    table.innerHTML = "<thead><tr><th>分数区间</th><th class=\"num\">次数</th><th class=\"num\">占检索次数</th></tr></thead><tbody></tbody>";
-    const tbody = table.querySelector("tbody");
-    for (const b of buckets) {
-      const c = b.count ?? 0;
-      const p = total > 0 ? pct(c / total) : "—";
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        "<td>" + escapeHtml(b.label || "") + "</td>" +
-        "<td class=\"num\">" + c + "</td>" +
-        "<td class=\"num\">" + p + "</td>";
-      tbody.appendChild(tr);
-    }
-    $histWrap.innerHTML = "";
-    $histWrap.appendChild(table);
-  }
-
-  function renderClientTypes(rows) {
-    if (!$clientWrap) return;
-    if (!Array.isArray(rows) || rows.length === 0) {
-      $clientWrap.innerHTML = "<p class=\"empty\">尚无按客户端分类的向量检索记录。</p>";
-      return;
-    }
-    const table = document.createElement("table");
-    table.innerHTML = "<thead><tr><th>clientType</th><th class=\"num\">向量检索次数</th><th class=\"num\">平均最高分</th></tr></thead><tbody></tbody>";
-    const tbody = table.querySelector("tbody");
-    for (const r of rows) {
-      const tr = document.createElement("tr");
-      const avg = r.averageMaxScore != null ? fmtFixed(r.averageMaxScore, 4) : "—";
-      tr.innerHTML =
-        "<td>" + escapeHtml(r.clientType || "") + "</td>" +
-        "<td class=\"num\">" + (r.vectorSearchRunCount ?? 0) + "</td>" +
-        "<td class=\"num\">" + avg + "</td>";
-      tbody.appendChild(tr);
-    }
-    $clientWrap.innerHTML = "";
-    $clientWrap.appendChild(table);
-  }
-
-  function renderTwoRoundVectorThenStage(ts) {
-    if (!$twoRoundDl) return;
-    $twoRoundDl.innerHTML = "";
-    const attempts = ts.vectorThenTwoStageCount ?? 0;
-    const fullTools = ts.vectorThenTwoStageFullToolsCount ?? 0;
-    const narrowed = Math.max(0, attempts - fullTools);
-    const rate = ts.vectorThenTwoStageFullToolsRate;
-    const entries = [
-      ["向量后再两阶段（样本数）", String(attempts)],
-      ["其中两阶段后仍为全量工具", String(fullTools)],
-      ["其中两阶段后已收窄（有 SelectedPairs）", String(narrowed)],
-      ["全量工具占比（全量 / 上述样本）", pct(rate)]
-    ];
-    for (const [dt, dd] of entries) {
-      const [dEl, ddEl] = row(dt, dd);
-      $twoRoundDl.appendChild(dEl);
-      $twoRoundDl.appendChild(ddEl);
-    }
-  }
-
   function render(data) {
     showErr("");
     const ts = data.toolSelection || {};
-    renderToolSearchConfig(data.toolSearchConfig);
-    renderHistogram(ts.maxScoreHistogram, ts.vectorSearchRunCount);
-    renderClientTypes(ts.vectorSearchByClientType);
-    renderTwoRoundVectorThenStage(ts);
 
     if ($dl) {
       $dl.innerHTML = "";
@@ -178,25 +82,7 @@
         ["累计统计起始时间 (UTC)", data.statsAccumulatedSinceUtc ? String(data.statsAccumulatedSinceUtc) : "—"],
         ["非计划模式工具选择总次数", String(ts.totalNonPlanSelections ?? 0)],
         ["选择阶段异常回退全量工具", String(ts.selectionExceptionFallbackCount ?? 0)],
-        ["向量检索跳过（未配置 Embedding）", String(ts.vectorSkippedNoEmbeddingCount ?? 0)],
-        ["向量检索跳过（存储非持久化）", String(ts.vectorSkippedNonPersistentStoreCount ?? 0)],
-        ["实际执行向量检索次数", String(ts.vectorSearchRunCount ?? 0)],
-        ["其中 GoodEnough==true 次数", String(ts.vectorGoodEnoughTrueCount ?? 0)],
-        ["其中 GoodEnough==false 次数", String(ts.vectorGoodEnoughFalseCount ?? 0)],
-        ["GoodEnough==true 但命中数为 0（异常边界）", String(ts.vectorGoodEnoughTrueButEmptyResultsCount ?? 0)],
-        ["采用向量优先路径次数", String(ts.vectorFirstPathChosenCount ?? 0)],
-        ["向量检索后仍走两阶段次数", String(ts.vectorSearchButTwoStageCount ?? 0)],
         ["两阶段选择调用次数", String(ts.twoStageInvocationsCount ?? 0)],
-        ["向量检索：平均最高分 (maxScore)", fmtFixed(ts.averageMaxScoreAmongVectorSearches, 4)],
-        ["向量检索：平均去重命中数", fmtFixed(ts.averageDistinctHitCountAmongVectorSearches, 2)],
-        ["向量检索：平均 Top1−Top2（样本数）", (() => {
-          const avg = fmtFixed(ts.averageTop1MinusTop2AmongVectorSearches, 4);
-          const n = ts.top1MinusTop2SampleCount ?? 0;
-          return avg + "（n=" + n + "）";
-        })()],
-        ["GoodEnough==false / 向量检索次数", pct(ts.vectorGoodEnoughFalseRateAmongVectorSearches)],
-        ["向量优先 / 向量检索次数", pct(ts.vectorFirstPathRateAmongVectorSearches)],
-        ["向量优先 / 非计划选择总次数", pct(ts.vectorFirstPathRateAmongSelections)],
         ["两阶段 / 非计划选择总次数", pct(ts.twoStageRateAmongSelections)]
       ];
       for (const [dt, dd] of entries) {
@@ -283,7 +169,6 @@
       .catch(function () {});
   }
 
-  /** 重新解析本机端口、引导 token 后拉取统计（用于首次打开与「刷新」） */
   function resolveBootstrapAndLoad() {
     return tasklyEnsureDebugStatsApiBase()
       .then(function () {
@@ -312,7 +197,7 @@
   }
 
   async function reset() {
-    if (!confirm("确定清空所有调试计数？将删除本机持久化文件，工具调用与向量选择统计一并归零。")) return;
+    if (!confirm("确定清空所有调试计数？将删除本机持久化文件。")) return;
     try {
       await tasklyEnsureDebugStatsApiBase();
       await ensureLocalServiceTokenFromBootstrap(API_BASE);

@@ -142,13 +142,6 @@ public class ContextWindowConfig
     /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
     public int TruncateToolArgsMaxChars { get; set; } = 2000;
 
-    /// <summary>工具向量检索：返回最多 topK 个结果。</summary>
-    public int ToolSearchTopK { get; set; } = 20;
-    /// <summary>工具向量检索：最高分 >= 此值时认为结果可用。</summary>
-    public double ToolSearchMinScore { get; set; } = 0.7;
-    /// <summary>工具向量检索：至少命中此数量才算 goodEnough。</summary>
-    public int ToolSearchMinCount { get; set; } = 1;
-
     /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
     public bool PassThroughContext { get; set; }
 
@@ -513,56 +506,6 @@ public sealed class ConfigService
         }
     }
 
-    /// <summary>从磁盘重新加载 user-config.json，不写盘。用于 --build-tool-index 阶段 2 恢复真实 MCP/模型配置。</summary>
-    public void ReloadConfigFromDisk()
-    {
-        lock (_lock)
-        {
-            _currentConfig = LoadConfigFromDisk();
-        }
-    }
-
-    /// <summary>在内存中临时将当前选中的 Embedding 切换为 tool-index-build.json 中的凭证（不写盘），供预构建阶段 2 调用 Embedding API。</summary>
-    public void ApplyToolIndexBuildEmbeddingCredentials(string endpoint, string apiKey, string modelId)
-    {
-        const string embId = "tool-index-build";
-        lock (_lock)
-        {
-            _currentConfig.EmbeddingModels ??= new List<EmbeddingModelEntry>();
-            _currentConfig.EmbeddingModels.RemoveAll(e => string.Equals((e.Id ?? "").Trim(), embId, StringComparison.OrdinalIgnoreCase));
-            _currentConfig.EmbeddingModels.Add(new EmbeddingModelEntry
-            {
-                Id = embId,
-                DisplayName = "Tool index build",
-                Source = "Remote",
-                Endpoint = endpoint.Trim(),
-                ApiKey = apiKey.Trim(),
-                ModelId = modelId.Trim()
-            });
-            _currentConfig.ActiveEmbeddingModelId = embId;
-        }
-    }
-
-    /// <summary>仅用于 --build-tool-index 模式：将当前配置替换为最小配置（仅 Embedding + 一条占位 AI 模型，无 MCP），以便只构建内置插件 Kernel 并写工具索引。</summary>
-    public void SetMinimalConfigForToolIndexBuild(string endpoint, string apiKey, string modelId)
-    {
-        var embId = "tool-index-build";
-        lock (_lock)
-        {
-            _currentConfig = new AppConfig
-            {
-                EmbeddingModels = new List<EmbeddingModelEntry>
-                {
-                    new() { Id = embId, DisplayName = "Tool index build", Source = "Remote", Endpoint = endpoint, ApiKey = apiKey, ModelId = modelId }
-                },
-                ActiveEmbeddingModelId = embId,
-                McpServers = new List<McpServerConfig>(),
-                AiModels = new List<AiModelEntry> { new() { Id = "default", Enabled = true, Endpoint = endpoint, ApiKey = apiKey, ModelId = modelId } },
-                ActiveModelId = "default"
-            };
-        }
-    }
-
     /// <summary>获取指定端的 CLI/脚本运行模式（全局 <see cref="AppConfig.CliRunMode"/>）。后台端无 HITL 时 AskEverytime 按 UseAllowList 处理。</summary>
     public string GetCliRunModeForEnd(string endKey)
     {
@@ -874,10 +817,7 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000,
-                    ToolSearchTopK = 20,
-                    ToolSearchMinScore = 0.7,
-                    ToolSearchMinCount = 1
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 80, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             },
@@ -905,10 +845,7 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000,
-                    ToolSearchTopK = 20,
-                    ToolSearchMinScore = 0.7,
-                    ToolSearchMinCount = 1
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 150, MinTurnsToKeep = 12, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             },
@@ -937,10 +874,7 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000,
-                    ToolSearchTopK = 20,
-                    ToolSearchMinScore = 0.7,
-                    ToolSearchMinCount = 1
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 200, MinTurnsToKeep = 14, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             },
@@ -969,10 +903,7 @@ public sealed class ConfigService
                     ConversationHistoryDirectory = null,
                     TruncateToolArgsThresholdRatio = 0,
                     TruncateToolArgsKeepMessages = 10,
-                    TruncateToolArgsMaxChars = 2000,
-                    ToolSearchTopK = 20,
-                    ToolSearchMinScore = 0.7,
-                    ToolSearchMinCount = 1
+                    TruncateToolArgsMaxChars = 2000
                 },
                 Session = new SessionConfig { MaxHistoryTurns = 5000, MinTurnsToKeep = 8, TimeoutMinutes = 30, CleanupIntervalMinutes = 5 }
             }
@@ -1014,10 +945,7 @@ public sealed class ConfigService
             ConversationHistoryDirectory = preset.ContextWindow.ConversationHistoryDirectory,
             TruncateToolArgsThresholdRatio = preset.ContextWindow.TruncateToolArgsThresholdRatio,
             TruncateToolArgsKeepMessages = preset.ContextWindow.TruncateToolArgsKeepMessages,
-            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars,
-            ToolSearchTopK = preset.ContextWindow.ToolSearchTopK,
-            ToolSearchMinScore = preset.ContextWindow.ToolSearchMinScore,
-            ToolSearchMinCount = preset.ContextWindow.ToolSearchMinCount
+            TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars
         };
     }
 

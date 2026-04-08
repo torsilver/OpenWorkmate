@@ -75,42 +75,6 @@ public static class AgentTraceFormatter
         return (title, sb.ToString().TrimEnd());
     }
 
-    public static string BuildToolVectorSkipDetail(bool embeddingConfigured, bool storePersistent)
-    {
-        if (!embeddingConfigured)
-            return "未执行向量工具检索：Embedding 未配置。";
-        if (!storePersistent)
-            return "未执行向量工具检索：向量存储非持久化（in-memory），按设计走两阶段子类筛选。";
-        return "未执行向量工具检索。";
-    }
-
-    public static string BuildToolVectorSearchDetail(
-        string? clientType,
-        ToolSearchResult result,
-        int topK,
-        double minScore,
-        int minCount,
-        string decisionNote)
-    {
-        var sb = new StringBuilder();
-        var ctLabel = string.IsNullOrWhiteSpace(clientType) ? "chrome(默认)" : clientType.Trim();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"clientType={ctLabel}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"参数：topK={topK}  minScore={minScore:F4}  minCount={minCount}");
-        var maxScore = result.ScoredHits.Count > 0 ? result.ScoredHits[0].Score : 0.0;
-        sb.AppendLine(CultureInfo.InvariantCulture, $"goodEnough={result.GoodEnough}  去重命中数={result.ScoredHits.Count}  maxScore={maxScore:F4}");
-        if (result.ScoredHits.Count > 0)
-        {
-            sb.AppendLine("命中（分数降序）：");
-            foreach (var h in result.ScoredHits)
-                sb.AppendLine(CultureInfo.InvariantCulture, $"  {h.PluginName}.{h.FunctionName}  {h.Score:F4}");
-        }
-        else
-            sb.AppendLine("无有效工具命中（解析 id 后为空）。");
-        if (!string.IsNullOrWhiteSpace(decisionNote))
-            sb.AppendLine(decisionNote.Trim());
-        return sb.ToString().TrimEnd();
-    }
-
     private static string MapTwoStageReason(string reasonCode) => reasonCode switch
     {
         "kernel_null" => "Kernel 为空，使用全量工具。",

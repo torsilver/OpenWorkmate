@@ -31,8 +31,6 @@ public sealed partial class ChatService : IDisposable
     private readonly SkillService _skillService;
     private readonly McpClientManager _mcpManager;
     private readonly IToolSelector _toolSelector;
-    private readonly IToolIndexService _toolIndex;
-    private readonly IVectorStore _vectorStore;
     private readonly IServiceProvider _serviceProvider;
     private readonly IChatRuntimeAccessor _runtime;
     private readonly EmbeddingProvider _embeddingProvider;
@@ -40,7 +38,7 @@ public sealed partial class ChatService : IDisposable
     private readonly AgentDebugStatsService _agentDebugStats;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IToolIndexService toolIndex, IVectorStore vectorStore, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -48,8 +46,6 @@ public sealed partial class ChatService : IDisposable
         _skillService = skillService;
         _mcpManager = mcpManager;
         _toolSelector = toolSelector;
-        _toolIndex = toolIndex;
-        _vectorStore = vectorStore;
         _serviceProvider = serviceProvider;
         _runtime = runtimeAccessor;
         _embeddingProvider = embeddingProvider;
@@ -59,8 +55,8 @@ public sealed partial class ChatService : IDisposable
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
 
-        _configService.OnConfigChanged += () => _ = RebuildRuntimeAsync(skipUserToolIndexSync: false);
-        _skillService.OnSkillsChanged += () => _ = RebuildRuntimeAsync(skipUserToolIndexSync: false);
+        _configService.OnConfigChanged += () => _ = RebuildRuntimeAsync();
+        _skillService.OnSkillsChanged += () => _ = RebuildRuntimeAsync();
 
         _cleanupTimer = new System.Threading.Timer(CleanupExpiredSessions, null,
             TimeSpan.FromMinutes(cleanupInterval),
@@ -112,9 +108,8 @@ public sealed partial class ChatService : IDisposable
         return config.AiModels.FirstOrDefault(e => e.Enabled) ?? config.AiModels.FirstOrDefault();
     }
 
-    /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）；可由 Program 在 --build-tool-index 模式下调用。</summary>
-    /// <param name="skipUserToolIndexSync">为 true 时不调度用户工具向量增量同步（用于进程首次启动与预构建中间步骤）。</param>
-    public async Task RebuildRuntimeAsync(bool skipUserToolIndexSync = false)
+    /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）。</summary>
+    public async Task RebuildRuntimeAsync()
     {
         var config = _configService.Current;
         var entries = GetModelEntriesToRegister();
@@ -372,9 +367,6 @@ public sealed partial class ChatService : IDisposable
 
         _logger.LogInformation("Runtime rebuilt. ActiveModel: {ActiveId}, Plugins: {PluginCount}, UserSkills: {SkillCount}, MCPs: {McpCount}, ToolRegistry: {ToolCount}",
             _activeModelId, pluginInstances.Count, skillCount, mcpCount, toolRegistry.GetAllTools().Count);
-
-        if (!skipUserToolIndexSync)
-            _ = SyncUserToolIndexInBackgroundAsync(toolRegistry);
     }
 
     /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
@@ -409,20 +401,6 @@ public sealed partial class ChatService : IDisposable
         var openAiClient = new OpenAI.OpenAIClient(credential, options);
         return openAiClient.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(null);
     }
-
-    /// <summary>后台增量同步用户工具索引（配置/技能变更后）；不阻塞请求。</summary>
-    private async Task SyncUserToolIndexInBackgroundAsync(ToolRegistry toolRegistry)
-    {
-        try
-        {
-            await _toolIndex.SyncUserToolIndexAsync(toolRegistry).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "User tool index sync failed.");
-        }
-    }
-
 
     /// <summary>追加到主对话 system：Memory / AccurateData / Plan / UserOptions 分工与双触发（用户可点名 + 模型可按需启用）。宜保持精炼；完整默认 system 见 ConfigService 与 docs/提示词清单.md（Harness：避免与 AiConfig 长文重复堆叠）。</summary>
     private const string BuiltinTaskPluginSystemGuidance = """
@@ -1315,21 +1293,6 @@ public sealed partial class ChatService : IDisposable
             || string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>向量检索用：截断并拼接最近一条历史，与两轮选择一致。</summary>
-    private static string BuildToolSelectionUserPrompt(string userMessage, IReadOnlyList<ChatMessage>? recentHistory)
-    {
-        var userPrompt = (userMessage ?? "").Trim();
-        if (userPrompt.Length > 1000)
-            userPrompt = userPrompt[..1000] + "...";
-        if (recentHistory != null && recentHistory.Count > 0)
-        {
-            var lastContent = recentHistory[^1].Text ?? "";
-            if (lastContent.Length > 0 && lastContent.Length < 500)
-                userPrompt = userPrompt + "\n[上一条] " + lastContent;
-        }
-        return userPrompt;
     }
 
     /// <summary>向当前会话 WebSocket 推送一行「正在干什么」，供前端活动条展示。</summary>

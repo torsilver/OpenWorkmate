@@ -139,7 +139,7 @@ public sealed class PlanPlugin
     {
         var registry = _runtime.ToolRegistry;
         var outcome = await _toolSelector
-            .SelectFunctionsAsync(selectionUserPrompt, null, registry, ct, new ToolSelectionContext(null, clientType))
+            .SelectFunctionsAsync(selectionUserPrompt, null, registry, ct, new ToolSelectionContext(clientType))
             .ConfigureAwait(false);
 
         IReadOnlyList<AITool> tools;

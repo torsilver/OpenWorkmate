@@ -14,7 +14,7 @@
 
 ### 与代码核对（主会话 `ToolRegistry`）
 
-- **内置插件共 21 个插件名**（下表第一节逐项列出；`ToolIndexService.BuiltinPluginNames` 与之一致）。
+- **内置插件共 21 个插件名**（下表第一节逐项列出）。
 - **另有两类动态插件**：用户 Prompt 技能 `UserSkill_*`；配置中的外接 MCP `MCP_{McpServers.Name}`（不含内置的 `MCP_STT` / `MCP_OCR`）。
 - **未发现**其它向主会话注册工具的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂一套插件列表。
 
@@ -88,7 +88,6 @@
 
 - 来自 `AppConfig.McpServers` 中 **已启用** 的条目：`McpKernelPlugin` 动态挂载，插件名为 `MCP_` + 该条目的 **Name**。
 - **内置的 `MCP_STT`、`MCP_OCR` 不走此链路**，二者为 C# 内置插件。
-- 工具向量索引里，除上述两个内置外，其它 `MCP_*` 按「用户/外部」类参与索引（见 `ToolIndexService`）。
 
 ---
 
@@ -115,5 +114,4 @@
 | 工具注册 / 运行时重建 | `backend/ChatService.cs`（`RebuildRuntimeAsync`） |
 | 端侧过滤 | `backend/Services/ClientTypeToolFilter.cs` |
 | 选工具描述 | `backend/Services/ToolSelectionService.cs` |
-| 内置插件名集合（向量索引） | `backend/Services/ToolIndexService.cs` → `BuiltinPluginNames` |
 | 技能撰写 | `backend/Plugins/SkillAuthorPlugin.cs` |

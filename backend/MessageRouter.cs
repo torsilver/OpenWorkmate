@@ -368,10 +368,5 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(ToolSelectionDebugStatsDto))]
 [JsonSerializable(typeof(ToolInvocationDebugStatDto))]
 [JsonSerializable(typeof(List<ToolInvocationDebugStatDto>))]
-[JsonSerializable(typeof(ToolSearchConfigSnapshotDto))]
-[JsonSerializable(typeof(VectorScoreHistogramBucketDto))]
-[JsonSerializable(typeof(List<VectorScoreHistogramBucketDto>))]
-[JsonSerializable(typeof(VectorSearchClientTypeStatDto))]
-[JsonSerializable(typeof(List<VectorSearchClientTypeStatDto>))]
 [JsonSerializable(typeof(DebugStatsResetResponse))]
 internal partial class JsonCtx : JsonSerializerContext;

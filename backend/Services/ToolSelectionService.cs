@@ -233,8 +233,6 @@ public sealed class ToolSelectionService : IToolSelector
         }
 
         var userPrompt = BuildUserPromptWithHistory(userMessage, recentHistory);
-        if (!string.IsNullOrWhiteSpace(context?.VectorToolHint))
-            userPrompt = userPrompt + "\n\n" + context.VectorToolHint.Trim();
 
         // 一阶段：选子类
         var selectedSubcategoryIds = await SelectSubcategoriesWithMainModelAsync(subcategories, userPrompt, ct).ConfigureAwait(false);
@@ -402,7 +400,6 @@ public sealed class ToolSelectionService : IToolSelector
             "尽量只输出会用到的子类，不要输出「全部」；只有完全无法判断时才输出：全部。",
             "可多项子类；宁多勿漏（主对话会再按需调用），不要只选单一 File 而漏掉用户实际需要的 Excel/Word/CLI 等。",
             "若用户话很短（如「再来一次」「同样操作」）或正文未重复文件名，必须结合 [上一条] 与上文中的具体任务（Excel/Word/路径/合并/下载等）选齐相关子类。",
-            "若用户消息或参考段落中出现「向量索引参考」，那只是语义提示，仍须结合对话与历史做判断。",
             "决策要点（用户可点名某子类；你也应在符合条件时主动选）：",
             "- Memory：用户说「记住/以后都按…」等→必选 Memory。未明说但需延续其习惯、偏好、长期关键事实→也选 Memory。",
             "- AccurateData：用户说「存成准确数据/按 id 取回」等→必选 AccurateData。多步任务中有大块结构化中间结果需精确读写、减轻上下文→也选 AccurateData。",

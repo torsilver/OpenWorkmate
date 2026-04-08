@@ -43,12 +43,8 @@ public sealed class SkillService
     private readonly string _skillsDir;
     private readonly ILogger<SkillService> _logger;
     private readonly object _lock = new();
-    private bool _returnEmptyForToolIndexBuild;
 
     public event Action? OnSkillsChanged;
-
-    /// <summary>仅用于 --build-tool-index 模式：为 true 时 GetAllSkills() 返回空列表，使 Kernel 只含内置插件。</summary>
-    public void SetReturnEmptySkillsForToolIndexBuild(bool value) => _returnEmptyForToolIndexBuild = value;
 
     public SkillService(ILogger<SkillService> logger)
     {
@@ -62,8 +58,6 @@ public sealed class SkillService
 
     public List<SkillDefinition> GetAllSkills()
     {
-        if (_returnEmptyForToolIndexBuild)
-            return new List<SkillDefinition>();
         lock (_lock)
         {
             var byId = new Dictionary<string, SkillDefinition>(StringComparer.OrdinalIgnoreCase);

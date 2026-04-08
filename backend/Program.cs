@@ -15,7 +15,6 @@ using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Security;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -28,17 +27,17 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    var buildToolIndex = args.Any(a => string.Equals(a, "--build-tool-index", StringComparison.OrdinalIgnoreCase));
     var allowSecondInstance =
         args.Any(a => string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase));
-    var useTray = !buildToolIndex && args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
+    var useTray = args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
     var hostArgs = args.Where(a =>
             !string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(a, "--build-tool-index", StringComparison.OrdinalIgnoreCase))
         .ToArray();
 
 #if WINDOWS
-    if (OperatingSystem.IsWindows() && !buildToolIndex && !allowSecondInstance)
+    if (OperatingSystem.IsWindows() && !allowSecondInstance)
     {
         if (!OfficeCopilotSingleInstance.TryAcquire())
         {
@@ -78,13 +77,6 @@ try
     builder.Services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<EmbeddingProvider>());
     builder.Services.AddSingleton<IVectorStore>(sp =>
     {
-        if (buildToolIndex)
-        {
-            var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "Data");
-            Directory.CreateDirectory(dataDir);
-            var dbPath = Path.Combine(dataDir, "rag.db");
-            return new SqliteVectorStore("Data Source=" + dbPath);
-        }
         var config = sp.GetRequiredService<ConfigService>().Current;
         var t = (config.RagStorageType ?? "").Trim();
         var path = (config.RagStoragePath ?? "").Trim();
@@ -101,7 +93,6 @@ try
     });
     builder.Services.AddSingleton<IMemoryStoreService, MemoryStoreService>();
     builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
-    builder.Services.AddSingleton<IToolIndexService, ToolIndexService>();
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
@@ -185,96 +176,6 @@ builder.Services.AddSingleton<UserOptionsManager>();
             if (Uri.TryCreate(first, UriKind.Absolute, out var abs0))
                 LocalServiceListenOptions.ListenBaseUrl = abs0.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         }
-    }
-
-    if (buildToolIndex)
-    {
-        var configPath = Path.Combine(Directory.GetCurrentDirectory(), "tool-index-build.json");
-        if (!File.Exists(configPath))
-            configPath = Path.Combine(AppContext.BaseDirectory, "tool-index-build.json");
-        if (!File.Exists(configPath))
-        {
-            Log.Error("tool-index-build.json not found in current directory or app base. Create it with endpoint, apiKey, modelId (all required).");
-            Environment.Exit(1);
-        }
-        string endpoint = "", apiKey = "", modelId = "";
-        try
-        {
-            var json = await File.ReadAllTextAsync(configPath);
-            var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            endpoint = root.TryGetProperty("endpoint", out var ep) ? ep.GetString() ?? "" : "";
-            apiKey = root.TryGetProperty("apiKey", out var ak) ? ak.GetString() ?? "" : "";
-            modelId = root.TryGetProperty("modelId", out var mi) ? mi.GetString() ?? "" : "";
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to read tool-index-build.json");
-            Environment.Exit(1);
-        }
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(modelId))
-        {
-            Log.Error("tool-index-build.json must contain endpoint, apiKey, modelId (all required).");
-            Environment.Exit(1);
-        }
-        var configService = app.Services.GetRequiredService<ConfigService>();
-        var skillService = app.Services.GetRequiredService<SkillService>();
-        configService.SetMinimalConfigForToolIndexBuild(endpoint.Trim(), apiKey.Trim(), modelId.Trim());
-        skillService.SetReturnEmptySkillsForToolIndexBuild(true);
-        using (var scope = app.Services.CreateScope())
-        {
-            var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
-            await chat.RebuildRuntimeAsync(skipUserToolIndexSync: true);
-            var runtimeAccessor = scope.ServiceProvider.GetRequiredService<IChatRuntimeAccessor>();
-            if (!runtimeAccessor.IsReady)
-            {
-                Log.Error("Runtime not ready after RebuildRuntimeAsync.");
-                Environment.Exit(1);
-            }
-            var toolIndex = scope.ServiceProvider.GetRequiredService<IToolIndexService>();
-            await toolIndex.BuildIndexAsync(runtimeAccessor.ToolRegistry, ToolIndexBuildMode.BuiltinOnly);
-
-            // 阶段 2：真实用户配置 + Skills + 可连接的 MCP，用户工具索引（与运行时增量逻辑一致）
-            skillService.SetReturnEmptySkillsForToolIndexBuild(false);
-            configService.ReloadConfigFromDisk();
-            configService.ApplyToolIndexBuildEmbeddingCredentials(endpoint.Trim(), apiKey.Trim(), modelId.Trim());
-            await chat.RebuildRuntimeAsync(skipUserToolIndexSync: true);
-            if (!runtimeAccessor.IsReady)
-            {
-                Log.Error("Runtime not ready after phase-2 RebuildRuntimeAsync.");
-                Environment.Exit(1);
-            }
-            await toolIndex.SyncUserToolIndexAsync(runtimeAccessor.ToolRegistry);
-        }
-        var builtDbPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "rag.db");
-        Log.Information("Tool index built successfully (builtin + user tools). DB: {Path}", builtDbPath);
-
-        // 同步到默认运行时路径，便于 dotnet run 测试时与 Sqlite 默认 rag.db 一致（见 IVectorStore 注册）
-        if (File.Exists(builtDbPath))
-        {
-            try
-            {
-                SqliteConnection.ClearAllPools();
-                var appDataDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "OfficeCopilot");
-                Directory.CreateDirectory(appDataDir);
-                var destPath = Path.Combine(appDataDir, "rag.db");
-                File.Copy(builtDbPath, destPath, overwrite: true);
-                Log.Information("Copied tool index DB to default runtime location: {Dest}", destPath);
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex,
-                    "Built tool index but failed to copy rag.db to LocalAppData/OfficeCopilot; dotnet run may still use an older DB there.");
-            }
-        }
-        else
-        {
-            Log.Warning("Data/rag.db missing after build; skipped copy to LocalAppData.");
-        }
-
-        Environment.Exit(0);
     }
 
 app.UseWebSockets(new WebSocketOptions
@@ -405,26 +306,12 @@ app.Map("/api/stt-stream", async (HttpContext context, SttInferenceStreamWebSock
 
 app.MapGet("/health", () => Results.Ok(new { status = "running", time = DateTime.Now }));
 
-app.MapGet("/api/debug/agent-stats", (HttpContext ctx, AgentDebugStatsService agentDebugStats, ConfigService config) =>
+app.MapGet("/api/debug/agent-stats", (HttpContext ctx, AgentDebugStatsService agentDebugStats) =>
 {
     if (!DebugLogHelper.IsDebugLogLoopback(ctx))
         return Results.Json(new { ok = false, message = "仅允许本机 loopback 访问该调试接口。" }, statusCode: 403);
     var snap = agentDebugStats.GetSnapshot();
-    var cw = config.Current.ContextWindow ?? new ContextWindowConfig();
-    var withConfig = new AgentDebugStatsResponse
-    {
-        ServerStartedUtc = snap.ServerStartedUtc,
-        StatsAccumulatedSinceUtc = snap.StatsAccumulatedSinceUtc,
-        ToolSelection = snap.ToolSelection,
-        ToolInvocations = snap.ToolInvocations,
-        ToolSearchConfig = new ToolSearchConfigSnapshotDto
-        {
-            ToolSearchTopK = cw.ToolSearchTopK,
-            ToolSearchMinScore = cw.ToolSearchMinScore,
-            ToolSearchMinCount = cw.ToolSearchMinCount
-        }
-    };
-    return Results.Json(withConfig, JsonCtx.Default.AgentDebugStatsResponse);
+    return Results.Json(snap, JsonCtx.Default.AgentDebugStatsResponse);
 });
 app.MapPost("/api/debug/agent-stats/reset", (HttpContext ctx, AgentDebugStatsService agentDebugStats) =>
 {

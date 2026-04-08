@@ -617,15 +617,10 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(root.TryGetProperty("serverStartedUtc", out _));
         Assert.True(root.TryGetProperty("toolSelection", out var ts));
         Assert.True(ts.TryGetProperty("totalNonPlanSelections", out _));
-        Assert.True(ts.TryGetProperty("vectorThenTwoStageCount", out _));
-        Assert.True(ts.TryGetProperty("vectorThenTwoStageFullToolsCount", out _));
-        Assert.True(ts.TryGetProperty("vectorThenTwoStageFullToolsRate", out _));
+        Assert.True(ts.TryGetProperty("twoStageInvocationsCount", out _));
+        Assert.True(ts.TryGetProperty("twoStageRateAmongSelections", out _));
         Assert.True(root.TryGetProperty("toolInvocations", out var inv));
         Assert.Equal(JsonValueKind.Array, inv.ValueKind);
-        Assert.True(root.TryGetProperty("toolSearchConfig", out var tsc));
-        Assert.True(tsc.TryGetProperty("toolSearchTopK", out _));
-        Assert.True(tsc.TryGetProperty("toolSearchMinScore", out _));
-        Assert.True(tsc.TryGetProperty("toolSearchMinCount", out _));
         Assert.True(root.TryGetProperty("statsAccumulatedSinceUtc", out _));
     }
 
@@ -641,7 +636,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         get.EnsureSuccessStatusCode();
         var ts = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement.GetProperty("toolSelection");
         Assert.Equal(0, ts.GetProperty("totalNonPlanSelections").GetInt64());
-        Assert.Equal(0, ts.GetProperty("vectorSearchRunCount").GetInt64());
+        Assert.Equal(0, ts.GetProperty("twoStageInvocationsCount").GetInt64());
     }
 
     [Fact]

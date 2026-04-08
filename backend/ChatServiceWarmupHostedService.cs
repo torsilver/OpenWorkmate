@@ -15,7 +15,7 @@ public sealed class ChatServiceWarmupHostedService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _chat.RebuildRuntimeAsync(skipUserToolIndexSync: true).ConfigureAwait(false);
+        await _chat.RebuildRuntimeAsync().ConfigureAwait(false);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
