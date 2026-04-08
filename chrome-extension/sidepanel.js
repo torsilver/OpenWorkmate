@@ -1078,6 +1078,17 @@ let currentSubtaskToolsEl = null;
 let currentSubtaskToolBlocks = [];
 let currentSubtaskToolEndIndex = 0;
 
+/** 工具开始时折叠除「推理」外的阶段，避免误清空 openThinkSeg 导致长时间无可见动态 */
+function collapsePhasesForToolStart() {
+  collapseSeg(openPrepSeg);
+  openPrepSeg = null;
+  collapseSeg(openDigestSeg);
+  openDigestSeg = null;
+  collapseSeg(openIntentSeg);
+  openIntentSeg = null;
+  closeOpenAnswerSegment();
+}
+
 function ensureTimeline() {
   if (!currentRoundWrapper) return;
   if (timelineRoot) return;
@@ -1142,7 +1153,14 @@ function timelineTail(s, max) {
   return "…" + t.slice(t.length - max);
 }
 
-function newTimelineSeg(kind, titleLabel) {
+/** 主时间线里第一个「执行中」的工具块；新建推理段应插在它前面，否则会跑到工具块下方，看起来像「意图→工具」之间没有推理 */
+function getTimelineInsertBeforeForLiveThink() {
+  if (!timelineRoot) return null;
+  return timelineRoot.querySelector(":scope > .tool-call-block.tool-call--running");
+}
+
+/** @param {Node | null | undefined} insertBeforeNode 若为 timelineRoot 的直接子节点，则插在它之前；否则追加到末尾 */
+function newTimelineSeg(kind, titleLabel, insertBeforeNode) {
   ensureTimeline();
   const d = document.createElement("details");
   d.className = "timeline-seg timeline-seg--" + kind;
@@ -1161,7 +1179,11 @@ function newTimelineSeg(kind, titleLabel) {
   pre.className = "timeline-seg__body";
   d.appendChild(sum);
   d.appendChild(pre);
-  timelineRoot.appendChild(d);
+  if (insertBeforeNode && insertBeforeNode.parentNode === timelineRoot) {
+    timelineRoot.insertBefore(d, insertBeforeNode);
+  } else {
+    timelineRoot.appendChild(d);
+  }
   return { details: d, pre, tail };
 }
 
@@ -1170,6 +1192,7 @@ function collapseSeg(ref) {
 }
 
 function collapseAllOpenPhases() {
+  flushReasoningPendingSync();
   collapseSeg(openPrepSeg);
   openPrepSeg = null;
   collapseSeg(openThinkSeg);
@@ -1261,6 +1284,7 @@ function startToolElapsedTimer(block) {
   if (!block) return;
   const sum = block.querySelector("summary");
   if (!sum) return;
+  const out = block.querySelector(".tool-call-output");
   const span = document.createElement("span");
   span.className = "tool-elapsed";
   sum.appendChild(span);
@@ -1268,6 +1292,7 @@ function startToolElapsedTimer(block) {
   const id = setInterval(function () {
     const s = Math.floor((Date.now() - t0) / 1000);
     span.textContent = " · 已执行 " + s + "s";
+    if (out) out.textContent = "执行中，请稍候… 已耗时 " + s + "s";
   }, 1000);
   toolBlockElapsedTimers.set(block, id);
 }
@@ -1311,18 +1336,65 @@ function appendAgentTrace(msg) {
   appendAgentStatusLine(block);
 }
 
-function appendReasoningChunk(text) {
-  const t = text != null ? String(text) : "";
-  if (!t) return;
-  if (!currentRoundWrapper) beginStream();
-  if (!openThinkSeg) openThinkSeg = newTimelineSeg("think", "推理");
-  openThinkSeg.pre.textContent += t;
+/** 推理流与正文流同理：合并到 rAF，避免每条 reasoning_chunk 都触发布局 + scroll 造成卡顿 */
+let _reasoningPendingText = "";
+let _reasoningFlushPending = false;
+let _reasoningRafId = null;
+
+function cancelReasoningRaf() {
+  if (_reasoningRafId != null) {
+    cancelAnimationFrame(_reasoningRafId);
+    _reasoningRafId = null;
+  }
+  _reasoningFlushPending = false;
+}
+
+function flushReasoningPendingToDom() {
+  _reasoningFlushPending = false;
+  _reasoningRafId = null;
+  const buf = _reasoningPendingText;
+  _reasoningPendingText = "";
+  if (!buf || !openThinkSeg) return;
+  openThinkSeg.pre.textContent += buf;
   openThinkSeg.tail.textContent = timelineTail(openThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
   openThinkSeg.details.title = openThinkSeg.pre.textContent;
   if ($messages) $messages.scrollTop = $messages.scrollHeight;
 }
 
+function scheduleReasoningFlush() {
+  if (_reasoningFlushPending) return;
+  _reasoningFlushPending = true;
+  _reasoningRafId = requestAnimationFrame(flushReasoningPendingToDom);
+}
+
+/** 折叠/切正文前必须把缓冲写入节点，避免丢字 */
+function flushReasoningPendingSync() {
+  cancelReasoningRaf();
+  if (_reasoningPendingText && openThinkSeg) {
+    openThinkSeg.pre.textContent += _reasoningPendingText;
+    _reasoningPendingText = "";
+    openThinkSeg.tail.textContent = timelineTail(openThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+    openThinkSeg.details.title = openThinkSeg.pre.textContent;
+  } else {
+    _reasoningPendingText = "";
+  }
+}
+
+function appendReasoningChunk(text) {
+  const t = text != null ? String(text) : "";
+  if (!t) return;
+  if (!currentRoundWrapper) beginStream();
+  if (!openThinkSeg) {
+    ensureTimeline();
+    openThinkSeg = newTimelineSeg("think", "推理", getTimelineInsertBeforeForLiveThink());
+  }
+  _reasoningPendingText += t;
+  scheduleReasoningFlush();
+}
+
 function beginStream() {
+  cancelReasoningRaf();
+  _reasoningPendingText = "";
   removeThinkingIndicator();
   clearSubtaskToolDraft();
   const welcome = $messages.querySelector(".welcome");
@@ -1351,12 +1423,12 @@ function updateExecutionLogCount() {
 
 function appendStreamWarning(text) {
   if (!currentRoundWrapper) beginStream();
-  const wrap = currentRoundWrapper;
-  if (!wrap) return;
-  const notice = document.createElement("div");
-  notice.className = "msg msg--stream-warning";
-  notice.textContent = (text && String(text).trim()) || "服务端返回了警告";
-  wrap.appendChild(notice);
+  ensureTimeline();
+  const line = (text && String(text).trim()) || "服务端返回了警告";
+  const seg = newTimelineSeg("stream-warning", "服务端提示");
+  seg.pre.textContent = line;
+  seg.tail.textContent = timelineTail(line, TIMELINE_TAIL_MAX);
+  seg.details.title = line;
   if ($messages) $messages.scrollTop = $messages.scrollHeight;
 }
 
@@ -1381,6 +1453,7 @@ function applyMarkedToElement(el, rawMarkdown) {
 
 function appendStreamChunk(text) {
   if (!currentRoundWrapper) beginStream();
+  flushReasoningPendingSync();
   collapseSeg(openThinkSeg);
   openThinkSeg = null;
   collapseSeg(openDigestSeg);
@@ -1407,6 +1480,19 @@ function appendStreamChunk(text) {
 }
 
 function finalizeStream() {
+  stopHitlWaitTimer();
+  if (pendingConfirmId) {
+    pendingConfirmId = null;
+    if ($hitlHumanSummary) {
+      $hitlHumanSummary.textContent = "";
+      $hitlHumanSummary.style.display = "none";
+    }
+    if ($hitlRawLabel) $hitlRawLabel.style.display = "none";
+    if ($hitlOverlay) {
+      $hitlOverlay.style.display = "none";
+      $hitlOverlay.setAttribute("aria-hidden", "true");
+    }
+  }
   const wrap = currentRoundWrapper;
   clearToolDraftTimeline();
   clearSubtaskToolDraft();
@@ -1470,6 +1556,11 @@ function finalizeStream() {
 }
 
 // ───── Message handling ─────
+// 主会话「一问一答」中，助手侧一轮 = msg--round：内含 msg--agent-timeline（时间线）与流式块。
+// 已进时间线的 WS：stream_start→空壳；reasoning_chunk→推理；tool_call_delta→工具参数草稿；agent_status/agent_trace→准备/状态；
+// agent_phase→计划·意图 / 处理工具结果；stream_chunk→助手回复；stream_warning→服务端提示；subtask_* / tool_invocation_*→子任务与工具块。
+// 未进时间线（刻意分栏）：用户气泡 msg--user；echo/text/error→msg--bot；plan_* / cross_agent→msg--system；confirm_request / ask_options→遮罩；
+// rpc_request→后台执行；pong / ui_theme_changed 非对话内容。
 
 function handleMessage(raw) {
   let msg;
@@ -1635,7 +1726,7 @@ function handleMessage(raw) {
       }
       const label = msg.summary || `正在执行: ${msg.plugin || ""}.${msg.function || ""}`;
       const isSubtask = msg.isSubtask === true;
-      collapseAllOpenPhases();
+      collapsePhasesForToolStart();
       ensureTimeline();
       const parentBody = isSubtask ? currentSubtaskToolsEl : timelineRoot;
       if (!parentBody) break;
@@ -1899,19 +1990,54 @@ function sendRpcResponse(id, result, error) {
 // ───── HITL（危险操作人机确认）─────
 // 规范源在本文件：Office / WPS 任务窗应对齐此处协议与 DOM 行为；勿以 WPS（含 Vue / public）为参考改 Chrome。
 let pendingConfirmId = null;
+let hitlWaitIntervalId = null;
 const $hitlOverlay = document.getElementById("hitl-overlay");
 const $hitlHumanSummary = document.getElementById("hitl-human-summary");
 const $hitlRawLabel = document.getElementById("hitl-raw-label");
 const $hitlAction = document.getElementById("hitl-action");
+const $hitlWaitStatus = document.getElementById("hitl-wait-status");
 const $hitlAllowBtn = document.getElementById("hitl-allow-btn");
 const $hitlAddToListBtn = document.getElementById("hitl-add-to-list-btn");
 const $hitlDenyBtn = document.getElementById("hitl-deny-btn");
+
+function stopHitlWaitTimer() {
+  if (hitlWaitIntervalId != null) {
+    clearInterval(hitlWaitIntervalId);
+    hitlWaitIntervalId = null;
+  }
+  if ($hitlWaitStatus) $hitlWaitStatus.textContent = "";
+}
+
+function startHitlWaitTimer(timeoutSec) {
+  stopHitlWaitTimer();
+  const limit = typeof timeoutSec === "number" && timeoutSec > 0 ? Math.floor(timeoutSec) : 60;
+  const t0 = Date.now();
+  const tick = function () {
+    if (!$hitlWaitStatus) return;
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $hitlWaitStatus.textContent =
+      "等待确认 · 已 " +
+      s +
+      "s · 请在约 " +
+      limit +
+      " 秒内点击「允许」或「拒绝」（超时将视为拒绝并结束本轮）";
+  };
+  tick();
+  hitlWaitIntervalId = setInterval(tick, 1000);
+}
 
 function handleConfirmRequest(msg) {
   const requestId = msg.id || msg.requestId;
   const action = msg.content || msg.action || "未知操作";
   const humanSummary = (msg.humanSummary && String(msg.humanSummary).trim()) || "";
   const hitlKind = msg.hitlKind;
+  const timeoutRaw = msg.hitlTimeoutSeconds != null ? msg.hitlTimeoutSeconds : msg.HitlTimeoutSeconds;
+  const hitlTimeoutSec =
+    typeof timeoutRaw === "number"
+      ? timeoutRaw
+      : typeof timeoutRaw === "string" && /^\d+$/.test(timeoutRaw.trim())
+        ? parseInt(timeoutRaw.trim(), 10)
+        : 60;
   if (!requestId) {
     debugLog("HITL", "confirm_request missing id", "err");
     return;
@@ -1934,6 +2060,7 @@ function handleConfirmRequest(msg) {
     $hitlOverlay.style.display = "flex";
     $hitlOverlay.setAttribute("aria-hidden", "false");
   }
+  startHitlWaitTimer(hitlTimeoutSec);
   debugLog("HITL", "confirm_request id=" + requestId + " action=" + action.slice(0, 50), "recv");
 }
 
@@ -1945,6 +2072,7 @@ function sendConfirmResponse(id, allowed, addToAllowList) {
     debugLog("WS Send", "type=confirm_response id=" + id + " allowed=" + allowed + " addToAllowList=" + !!addToAllowList, "send");
   }
   pendingConfirmId = null;
+  stopHitlWaitTimer();
   // 关闭时清空 HITL 文案：与 handleConfirmRequest 成对；其它端应对齐本函数（见 .cursor/rules/multi-client-chrome-canonical.mdc）
   if ($hitlHumanSummary) {
     $hitlHumanSummary.textContent = "";

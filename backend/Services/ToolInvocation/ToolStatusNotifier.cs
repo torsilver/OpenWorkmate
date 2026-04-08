@@ -55,15 +55,18 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         var startDetail = GetRunningDetail(functionName, arguments);
         var planStepIndex = GetPlanStepIndex(pluginName, functionName, arguments);
 
-        await SendAgentPhaseAsync(sessionId, "intent", $"{pluginName}.{functionName}");
+        await SendAgentPhaseAsync(sessionId, "intent", $"{pluginName}.{functionName}", ct).ConfigureAwait(false);
 
         var slowSummarySuffix = GetSlowIoSummarySuffix(pluginName, functionName);
         var slowAgentStatus = GetSlowIoAgentStatusLine(pluginName, functionName);
         var agentStatusJson = WsMessageJson.SerializeAgentStatus(slowAgentStatus);
         if (!string.IsNullOrEmpty(agentStatusJson))
-            await _sessionManager.SendToAsync(sessionId, agentStatusJson);
+            await _sessionManager.SendToAsync(sessionId, agentStatusJson, ct).ConfigureAwait(false);
 
-        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix);
+        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix, ct).ConfigureAwait(false);
+        _logger.LogDebug(
+            "[ToolStatus] session={SessionId} pushed tool_invocation_start {Plugin}.{Function}",
+            sessionId, pluginName, functionName);
         var ctxWin = _configService.Current.ContextWindow ?? new ContextWindowConfig();
         SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_start",
             new { plugin = pluginName, function = functionName, detail = SessionAuditLog.SanitizeForAudit(startDetail, 500) });
@@ -101,13 +104,13 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             && string.Equals(functionName, "execute_plan_step", StringComparison.OrdinalIgnoreCase))
             ? null : (int?)null; // plan step index not available post-invocation without args; kept null
 
-        await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, isSuccess, content, null, null, null);
+        await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, isSuccess, content, null, null, null, ct).ConfigureAwait(false);
         var ctxWin = _configService.Current.ContextWindow ?? new ContextWindowConfig();
         SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_end",
             new { plugin = pluginName, function = functionName, success = isSuccess, resultPreview = SessionAuditLog.SanitizeForAudit(content, 500) });
         await SendAgentPhaseAsync(sessionId, "digest", isSuccess
             ? "已收到工具输出，继续处理…"
-            : "工具返回异常，将据此调整后续步骤。");
+            : "工具返回异常，将据此调整后续步骤。", ct).ConfigureAwait(false);
 
         if (isSuccess
             && string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase)
@@ -166,7 +169,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
                 CreatedBy = createdBy
             };
             var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-            await _sessionManager.SendToAsync(sessionId, json);
+            await _sessionManager.SendToAsync(sessionId, json, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -197,7 +200,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
                 CreatedBy = createdBy
             };
             var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-            await _sessionManager.SendToAsync(sessionId, json);
+            await _sessionManager.SendToAsync(sessionId, json, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -300,7 +303,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
     private async Task SendToolStatusAsync(
         string sessionId, string type, string plugin, string function,
         bool? success, string? content,
-        string? startDetail = null, int? planStepIndex = null, string? slowIoSummarySuffix = null)
+        string? startDetail = null, int? planStepIndex = null, string? slowIoSummarySuffix = null,
+        CancellationToken cancellationToken = default)
     {
         var summary = type == "tool_invocation_start"
             ? (string.IsNullOrEmpty(startDetail) ? $"正在执行: {plugin}.{function}" : $"正在执行: {plugin}.{function} — {startDetail}")
@@ -319,10 +323,10 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             IsSubtask = SubtaskContext.GetIsActive() ? true : null
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-        await _sessionManager.SendToAsync(sessionId, json);
+        await _sessionManager.SendToAsync(sessionId, json, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task SendAgentPhaseAsync(string sessionId, string phase, string content)
+    private async Task SendAgentPhaseAsync(string sessionId, string phase, string content, CancellationToken cancellationToken = default)
     {
         var msg = new WsMessage
         {
@@ -331,6 +335,6 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             Content = content ?? ""
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-        await _sessionManager.SendToAsync(sessionId, json);
+        await _sessionManager.SendToAsync(sessionId, json, cancellationToken).ConfigureAwait(false);
     }
 }

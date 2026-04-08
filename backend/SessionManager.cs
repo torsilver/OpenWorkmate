@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server;
@@ -13,13 +14,33 @@ public sealed class SessionManager
 
     public SessionManager(ILogger<SessionManager> logger) => _logger = logger;
 
-    public void Add(string sessionId, WebSocket ws, string? clientType = null) =>
-        _connections[sessionId] = new SessionEntry(ws, clientType, null);
+    /// <summary>Registers or replaces a session. If the same <paramref name="sessionId"/> reconnects, the previous entry's send lock is disposed.</summary>
+    public void Add(string sessionId, WebSocket ws, string? clientType = null)
+    {
+        if (_connections.TryRemove(sessionId, out var old))
+        {
+            try { old.SendLock.Dispose(); }
+            catch (ObjectDisposedException) { /* ignore */ }
+        }
 
-    public void Remove(string sessionId) => _connections.TryRemove(sessionId, out _);
+        _connections[sessionId] = new SessionEntry(ws, clientType, null, new SemaphoreSlim(1, 1));
+    }
+
+    public void Remove(string sessionId)
+    {
+        if (_connections.TryRemove(sessionId, out var entry))
+        {
+            try { entry.SendLock.Dispose(); }
+            catch (ObjectDisposedException) { /* ignore */ }
+        }
+    }
 
     public WebSocket? Get(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.WebSocket : null;
+
+    /// <summary>True if the session exists and its socket is <see cref="WebSocketState.Open"/>.</summary>
+    public bool IsSessionWebSocketOpen(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry) && entry.WebSocket.State == WebSocketState.Open;
 
     /// <summary>Gets the client type for the session, if any (e.g. chrome, office-word, office-excel, office-powerpoint, wps).</summary>
     public string? GetClientType(string sessionId) =>
@@ -51,26 +72,36 @@ public sealed class SessionManager
             .ToList();
     }
 
-    public async Task SendToAsync(string sessionId, string message)
+    /// <summary>Serializes and sends a frame on the session's socket. All sends for that session are serialized (no concurrent <c>SendAsync</c>).</summary>
+    public Task SendWsMessageAsync(string sessionId, WsMessage msg, CancellationToken cancellationToken = default)
     {
-        if (_connections.TryGetValue(sessionId, out var entry) && entry.WebSocket.State == WebSocketState.Open)
-        {
-            var bytes = Encoding.UTF8.GetBytes(message);
-            await entry.WebSocket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
-        }
+        if (!_connections.TryGetValue(sessionId, out var entry))
+            return Task.CompletedTask;
+        var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
+        return SendUtf8JsonLockedAsync(entry, json, sessionId, msg.Type ?? "?", cancellationToken);
     }
 
-    /// <summary>向当前所有已打开的连接广播 UTF-8 JSON 文本；单连接失败不影响其它连接。</summary>
+    /// <summary>Sends pre-serialized UTF-8 JSON text. Serialized with other sends on the same session.</summary>
+    public Task SendToAsync(string sessionId, string message, CancellationToken cancellationToken = default)
+    {
+        if (!_connections.TryGetValue(sessionId, out var entry))
+            return Task.CompletedTask;
+        return SendUtf8JsonLockedAsync(entry, message, sessionId, "SendToAsync", cancellationToken);
+    }
+
+    /// <summary>向当前所有已打开的连接广播 UTF-8 JSON 文本；单连接失败不影响其它连接。每个会话内与其它出站消息共用发送锁。</summary>
     public async Task BroadcastToAllOpenAsync(string utf8Json, CancellationToken cancellationToken = default)
     {
-        var bytes = Encoding.UTF8.GetBytes(utf8Json);
         foreach (var kv in _connections)
         {
-            var ws = kv.Value.WebSocket;
-            if (ws.State != WebSocketState.Open) continue;
+            if (kv.Value.WebSocket.State != WebSocketState.Open) continue;
             try
             {
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                await SendUtf8JsonLockedAsync(kv.Value, utf8Json, kv.Key, "broadcast", cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -79,5 +110,35 @@ public sealed class SessionManager
         }
     }
 
-    private sealed record SessionEntry(WebSocket WebSocket, string? ClientType, string? DisplayName);
+    private async Task SendUtf8JsonLockedAsync(SessionEntry entry, string utf8Json, string sessionId, string traceKind, CancellationToken cancellationToken)
+    {
+        if (entry.WebSocket.State != WebSocketState.Open) return;
+        var bytes = Encoding.UTF8.GetBytes(utf8Json);
+        await SendBytesLockedAsync(entry, bytes, sessionId, traceKind, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendBytesLockedAsync(SessionEntry entry, byte[] bytes, string sessionId, string traceKind, CancellationToken cancellationToken)
+    {
+        await entry.SendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (entry.WebSocket.State != WebSocketState.Open) return;
+            await entry.WebSocket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "WebSocket send failed session={SessionId} kind={Kind}", sessionId, traceKind);
+        }
+        finally
+        {
+            try { entry.SendLock.Release(); }
+            catch (ObjectDisposedException) { /* connection torn down */ }
+        }
+    }
+
+    private sealed record SessionEntry(WebSocket WebSocket, string? ClientType, string? DisplayName, SemaphoreSlim SendLock);
 }

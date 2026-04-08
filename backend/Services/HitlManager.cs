@@ -54,7 +54,8 @@ public sealed class HitlManager
         {
             ["type"] = "confirm_request",
             ["id"] = requestId,
-            ["content"] = action
+            ["content"] = action,
+            ["hitlTimeoutSeconds"] = (int)DefaultTimeout.TotalSeconds
         };
         if (!string.IsNullOrEmpty(hitlKind))
             msg["hitlKind"] = hitlKind;

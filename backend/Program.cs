@@ -1255,7 +1255,7 @@ static async Task HandleSessionAsync(
 
         if (incoming is null)
         {
-            await SendJsonAsync(ws, new WsMessage { Type = "error", Content = "Empty message." });
+            await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "error", Content = "Empty message." });
             continue;
         }
 
@@ -1264,7 +1264,7 @@ static async Task HandleSessionAsync(
         var hasAttachments = incoming.Attachments is { Count: > 0 };
         if (needsContent && string.IsNullOrWhiteSpace(incoming.Content) && !hasAttachments)
         {
-            await SendJsonAsync(ws, new WsMessage { Type = "error", Content = "Empty message." });
+            await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "error", Content = "Empty message." });
             continue;
         }
 
@@ -1278,7 +1278,7 @@ static async Task HandleSessionAsync(
                 }
                 break;
             case "ping":
-                await SendJsonAsync(ws, new WsMessage { Type = "pong", Content = "pong" });
+                await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "pong", Content = "pong" });
                 break;
             case "rpc_response":
                 if (incoming.Id != null)
@@ -1308,14 +1308,14 @@ static async Task HandleSessionAsync(
                 break;
             default:
                 // 不 await，避免阻塞消息循环；否则工具发 rpc_request 后无法在同一连接上收到 rpc_response，导致超时
-                _ = HandleChatStreamAsync(ws, sessionId, incoming, chatService, streamCancelService, attachmentCache, logger);
+                _ = HandleChatStreamAsync(sessionId, incoming, sessions, chatService, streamCancelService, attachmentCache, logger);
                 break;
         }
     }
 }
 
 static async Task HandleChatStreamAsync(
-    WebSocket ws, string sessionId, WsMessage incoming,
+    string sessionId, WsMessage incoming, SessionManager sessions,
     ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
@@ -1331,7 +1331,7 @@ static async Task HandleChatStreamAsync(
 
     async Task SendChatStreamWsAsync(string frameType, string content)
     {
-        await SendJsonAsync(ws, new WsMessage { Type = frameType, Content = content });
+        await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = frameType, Content = content });
         if (frameType == "reasoning_chunk")
         {
             wsReasoningChunkFrames++;
@@ -1344,7 +1344,7 @@ static async Task HandleChatStreamAsync(
     }
 
     logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
-    await SendJsonAsync(ws, new WsMessage { Type = "stream_start", SessionId = sessionId });
+    await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "stream_start", SessionId = sessionId });
 
     var ct = streamCancelService.CreateForSession(sessionId);
     SessionContext.SetSessionId(sessionId);
@@ -1379,7 +1379,7 @@ static async Task HandleChatStreamAsync(
         {
             if (item.IsWarning)
             {
-                await SendJsonAsync(ws, new WsMessage { Type = "stream_warning", Content = item.Content });
+                await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "stream_warning", Content = item.Content });
                 continue;
             }
 
@@ -1392,7 +1392,7 @@ static async Task HandleChatStreamAsync(
 
             if (item.Kind == StreamSegmentKind.ToolCallDelta && item.ToolDelta is { } td)
             {
-                await SendJsonAsync(ws, new WsMessage
+                await sessions.SendWsMessageAsync(sessionId, new WsMessage
                 {
                     Type = "tool_call_delta",
                     ToolCallId = td.CallId,
@@ -1428,11 +1428,11 @@ static async Task HandleChatStreamAsync(
         logger.LogError(ex, "[{SessionId}] Chat stream error (history messages: {HistoryCount})", sessionId, historyCount);
         logger.LogError("[AI-RESPONSE-ERROR] 对方返回/异常全文 FullDetail={Detail}", ex.ToString());
         var friendlyMessage = ErrorMessageHelper.GetFriendlyMessage(ex);
-        if (ws.State != WebSocketState.Open)
+        if (!sessions.IsSessionWebSocketOpen(sessionId))
             logger.LogWarning("[{SessionId}] Skip sending error: WebSocket not open", sessionId);
         else
         {
-            await SendJsonAsync(ws, new WsMessage
+            await sessions.SendWsMessageAsync(sessionId, new WsMessage
             {
                 Type = "error",
                 Content = friendlyMessage
@@ -1451,10 +1451,10 @@ static async Task HandleChatStreamAsync(
     logger.LogInformation(
         "[{SessionId}] Chat stream end {Suffix} (WS frames: reasoningChunk={Reasoning}, streamChunk={Stream})",
         sessionId, streamEndedByError ? "(after error)" : "(completed)", wsReasoningChunkFrames, wsStreamChunkFrames);
-    if (ws.State != WebSocketState.Open)
+    if (!sessions.IsSessionWebSocketOpen(sessionId))
         logger.LogWarning("[{SessionId}] Skip sending stream_end: WebSocket not open", sessionId);
     else
-        await SendJsonAsync(ws, new WsMessage { Type = "stream_end" });
+        await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "stream_end" });
 }
 
 static string GetMessageType(string raw)
@@ -1465,14 +1465,6 @@ static string GetMessageType(string raw)
         return doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() ?? "?" : "?";
     }
     catch { return "?"; }
-}
-
-static async Task SendJsonAsync(WebSocket ws, WsMessage msg)
-{
-    if (ws.State != WebSocketState.Open) return;
-    var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
-    var bytes = Encoding.UTF8.GetBytes(json);
-    await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
 }
 
 static async Task BroadcastUiThemeToAllSessionsAsync(SessionManager sessions, Microsoft.Extensions.Logging.ILogger logger, string json)
