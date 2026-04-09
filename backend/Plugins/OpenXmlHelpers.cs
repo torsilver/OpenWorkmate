@@ -165,4 +165,32 @@ public static class OpenXmlHelpers
             return true;
         errorMessage = "[错误] 仅支持 .pptx 或 .pptm 文件。"; return false;
     }
+
+    /// <summary>仅允许 .txt / .md / .markdown / .json / .csv（供 <see cref="FilePlugin"/> 文本读写）。</summary>
+    public static bool ValidateTextFileExtension(string? filePath, [NotNullWhen(false)] out string? errorMessage)
+    {
+        errorMessage = null;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            errorMessage = "[错误] 文件路径为空。";
+            return false;
+        }
+
+        var ext = Path.GetExtension(filePath.Trim());
+        if (string.IsNullOrEmpty(ext))
+        {
+            errorMessage = "[错误] 文件无扩展名，需要 .txt、.md、.json、.csv 等允许的文本类扩展名。";
+            return false;
+        }
+
+        if (ext.Equals(".txt", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".csv", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        errorMessage = "[错误] 不支持的扩展名（仅允许 .txt、.md、.markdown、.json、.csv）。";
+        return false;
+    }
 }

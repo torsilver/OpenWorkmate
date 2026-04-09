@@ -38,4 +38,20 @@ public class ToolCapabilityRegistryTests
         Assert.True(c.Destructive);
         Assert.False(c.AllowParallelSameTurn);
     }
+
+    [Fact]
+    public void Get_Heuristic_FileTextFileRead()
+    {
+        var c = ToolCapabilityRegistry.Get("File", "text_file_read");
+        Assert.True(c.ReadOnly);
+        Assert.True(c.AllowParallelSameTurn);
+    }
+
+    [Fact]
+    public void Get_Heuristic_FileTextFileWrite()
+    {
+        var c = ToolCapabilityRegistry.Get("File", "text_file_write");
+        Assert.True(c.Destructive);
+        Assert.False(c.AllowParallelSameTurn);
+    }
 }

@@ -63,7 +63,7 @@
 | **Word** | 读写 Word 文件 | |
 | **Ppt** | 读写 PPT 文件 | |
 | **Browser** | 网页截图、高亮、页面脚本等 | 依赖会话与 Chrome 侧能力 |
-| **File** | 附件路径、文件大小、保存截图到下载等 | |
+| **File** | 附件路径、文件大小、截图落盘；**文本类** `.txt` / `.md` / `.json` / `.csv` 读写（`text_file_read` / `text_file_write`） | 见下 **§1.2.1**；**Office/WPS 任务窗格会话不暴露本插件** |
 | **System** | 当前日期与时间 | |
 | **MCP_STT** | 内置语音转文字（百炼实时 ASR） | 名称含 `MCP_` 但**不是**外接 MCP；需配置实时 ASR |
 | **MCP_OCR** | 内置图片 OCR | 同上，**不是**外接 MCP；需配置 OCR |
@@ -81,6 +81,18 @@
 | **MeetingTranscript** | 按 Chrome 会议监听 `sessionId` 分块读取落盘转写 | |
 | **ScheduledTask** | 定时任务的创建/查询/执行等 | 工具 5 个：`scheduled_task_create` / `list` / `read` / `update` / `delete`；会话 id 以 `scheduled:` 开头时**禁止**创建/更新/删除（防套娃），见 `ClientTypeToolFilter` |
 
+### 1.2.1 常见办公扩展名与插件（本机路径型）
+
+| 扩展名（示例） | 主要插件与能力 |
+|----------------|----------------|
+| `.docx` / `.docm` | **Word**：Open XML 读写 |
+| `.xlsx` / `.xlsm` | **Excel**：Open XML 读写（**不**接受把 `.csv` 当工作簿扩展名；CSV 内容请用 **File** 文本读写或先另存为 xlsx） |
+| `.pptx` / `.pptm` | **Ppt**：Open XML 读写 |
+| `.pdf` | **Pdf**：`get_pdf_text`、`get_pdf_info`、`pdf_document_create`、`pdf_merge` |
+| `.txt` / `.md` / `.markdown` / `.json` / `.csv` | **File**：`text_file_read`、`text_file_write`（按**纯文本**读写；不解析 CSV 为表格） |
+
+**端侧说明**：`ClientTypeToolFilter` 对 **`office-word` / `office-excel` / `office-powerpoint` / `wps`** 仅暴露 **CurrentDocument** 与「通用」插件（Memory、Context、MCP_* 等），**不暴露 File**（也不暴露 Word/Excel/Ppt 路径插件）。因此 **`text_file_read` / `text_file_write` 主要在 Chrome 等会暴露 File 的客户端可用**；在 Office/WPS 任务窗格中处理**当前打开的文档**请用 **CurrentDocument**。
+
 ### 1.3 各内置插件 `ToolFunction` 数量（与源码一致）
 
 下列为 `backend/Plugins` 中各插件类上 **`[ToolFunction]`** 个数（用于与 `docs/Chrome端手工测试计划.md` §六 交叉核对；Office 三件套逐工具手工测以 Chrome 文档 §3.8–§3.10 为准）。
@@ -92,7 +104,7 @@
 | Word | 23 | `word_document_create` … |
 | Ppt | 14 | `ppt_document_create` … |
 | Browser | 5 | `highlight_webpage_text`, `run_page_script`, `capture_full_page` … |
-| File | 3 | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads` |
+| File | 5 | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`, `text_file_read`, `text_file_write` |
 | System | 1 | `get_current_time` |
 | MCP_STT | 1 | `transcribe_audio` |
 | MCP_OCR | 1 | `ocr_image` |

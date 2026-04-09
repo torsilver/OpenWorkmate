@@ -142,4 +142,26 @@ public class OpenXmlHelpersTests
         else if (expectedErrorContains != null)
             Assert.Contains(expectedErrorContains, errorMessage ?? "");
     }
+
+    [Theory]
+    [InlineData("a.txt", true, null)]
+    [InlineData("b.MD", true, null)]
+    [InlineData("c.markdown", true, null)]
+    [InlineData("d.json", true, null)]
+    [InlineData("e.csv", true, null)]
+    [InlineData("C:\\x\\data.JSON", true, null)]
+    [InlineData("f.exe", false, "[错误] 不支持")]
+    [InlineData("g.pdf", false, "[错误] 不支持")]
+    [InlineData("", false, "[错误] 文件路径为空")]
+    [InlineData("   ", false, "[错误] 文件路径为空")]
+    [InlineData("noext", false, "[错误] 文件无扩展名")]
+    public void ValidateTextFileExtension_ReturnsExpected(string filePath, bool expectedValid, string? expectedErrorContains)
+    {
+        var valid = OpenXmlHelpers.ValidateTextFileExtension(filePath, out var errorMessage);
+        Assert.Equal(expectedValid, valid);
+        if (expectedValid)
+            Assert.Null(errorMessage);
+        else
+            Assert.Contains(expectedErrorContains!, errorMessage ?? "");
+    }
 }

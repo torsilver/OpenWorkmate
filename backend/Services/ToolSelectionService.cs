@@ -34,7 +34,8 @@ public sealed class ToolSelectionService : IToolSelector
         ["Word"] = "读写 Word 文档",
         ["Ppt"] = "读写 PPT 演示文稿",
         ["Browser"] = "网页截图、读页脚本、DOM 操作、多标签、高亮笔记",
-        ["File"] = "附件路径、文件大小、保存截图到下载",
+        ["File"] = "附件路径、文件大小、截图保存；纯文本类 .txt/.md/.json/.csv 的读写（text_file_read / text_file_write）",
+        ["Pdf"] = "PDF：读文本与文档元信息、新建空白 PDF、多文件合并",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["CurrentDocument"] = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：插入/读正文、选区、表格、查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本",
         ["Context"] = "对话上下文管理：主动压缩对话以释放上下文",
@@ -64,7 +65,8 @@ public sealed class ToolSelectionService : IToolSelector
         ["Browser-页面操作"] = "滚动、等待元素、点击、填表、下拉框、勾选、悬停/聚焦、合成按键（run_page_script，页内 DOM）",
         ["Browser-标签页"] = "列出/激活/刷新/前进后退/关闭/新建标签（run_page_script 的 tab_* scriptId）",
         ["Browser-高亮与笔记"] = "高亮、浮动笔记",
-        ["File"] = "附件路径解析、文件大小查询、截图保存到下载",
+        ["File"] = "附件路径解析、文件大小、截图保存；文本文件读写（.txt/.md/.json/.csv）",
+        ["PDF"] = "PDF：提取文本、文档信息、新建 PDF、合并多个 PDF",
         ["CLI"] = "执行 CMD 命令",
         ["ClawhubSkill"] = "运行 Clawhub 技能脚本",
         ["技能"] = "用户技能与 Clawhub 脚本",
@@ -123,7 +125,11 @@ public sealed class ToolSelectionService : IToolSelector
             ["Browser-页面操作"] = new List<(string, string)> { ("Browser", "run_page_script") },
             ["Browser-标签页"] = new List<(string, string)> { ("Browser", "run_page_script") },
             ["Browser-高亮与笔记"] = new List<(string, string)> { ("Browser", "highlight_webpage_text"), ("Browser", "add_floating_note") },
-            ["File"] = new List<(string, string)> { ("File", "get_attachment_path"), ("File", "get_file_size"), ("File", "save_screenshot_to_downloads") },
+            ["File"] = new List<(string, string)>
+            {
+                ("File", "get_attachment_path"), ("File", "get_file_size"), ("File", "save_screenshot_to_downloads"),
+                ("File", "text_file_read"), ("File", "text_file_write")
+            },
             ["PDF"] = new List<(string, string)>
             {
                 ("Pdf", "get_pdf_text"), ("Pdf", "get_pdf_info"), ("Pdf", "pdf_document_create"), ("Pdf", "pdf_merge")
