@@ -19,6 +19,8 @@
         <p id="current-page-label" class="header-subtitle" title="当前对话摘要（首条用户消息截断）；与历史列表标题一致。">(无)</p>
       </div>
       <div class="header-controls">
+        <label for="agent-profile-select" class="visually-hidden">当前 Agent</label>
+        <select id="agent-profile-select" title="切换 Agent 将新开会话并重连" style="max-width:120px; font-size:11px; padding:2px 4px; border-radius:4px; background:var(--bg-secondary, #1e293b); color:var(--text-primary, #e2e8f0); border:1px solid var(--border, #334155);"></select>
         <button id="history-chat-btn" type="button" title="历史对话" style="background:none; border:none; cursor:pointer; font-size:16px;">📜</button>
         <button id="new-chat-btn" title="新建对话" style="background:none; border:none; cursor:pointer; font-size:16px;">💬</button>
         <div id="status" class="status status--disconnected" title="连接状态">

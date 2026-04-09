@@ -271,7 +271,20 @@ public class OcrConfig
     public string? Language { get; set; }
 }
 
-/// <summary>MAF 对话编排实验开关（user-config.json 键名仍为历史名 <c>semanticKernel</c>）。</summary>
+/// <summary>侧栏可选 Agent 身份；记忆/计划归属与 WS <c>agentProfileId</c> 对齐；不绑定独立对话模型。</summary>
+public sealed class AgentProfileEntry
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = "";
+
+    /// <summary>追加在主模型 system 与内置插件说明之后；宜简短，见 docs/提示词清单.md。</summary>
+    [JsonPropertyName("systemPromptSuffix")]
+    public string? SystemPromptSuffix { get; set; }
+}
+
 public class SemanticKernelFeaturesConfig
 {
     /// <summary>主模型流式前增加轻量 <c>ChatClientAgent</c>（Host 前言），输出走 agent_trace；可临时影响本轮 <c>historyToUse</c>。</summary>
@@ -313,6 +326,12 @@ public class AppConfig
     public List<AiModelEntry> AiModels { get; set; } = new();
     /// <summary>当前使用的模型 Id，对应 AiModels 中某条的 Id。</summary>
     public string ActiveModelId { get; set; } = "";
+    /// <summary>可选 Agent 配置列表；空时在加载时注入一条 <c>default</c>。</summary>
+    [JsonPropertyName("agentProfiles")]
+    public List<AgentProfileEntry> AgentProfiles { get; set; } = new();
+    /// <summary>设置页/侧栏默认选中的 Agent Id；无效时回退列表首项。</summary>
+    [JsonPropertyName("activeAgentProfileId")]
+    public string ActiveAgentProfileId { get; set; } = "default";
     public List<McpServerConfig> McpServers { get; set; } = new();
     /// <summary>全局 CLI/页面脚本运行模式：RunEverything | AskEverytime | UseAllowList；全端共用。<see cref="ConfigService.GetCliRunModeForEnd"/> 对 <c>backend</c> 会将 AskEverytime 视为 UseAllowList（无 HITL）。</summary>
     public string CliRunMode { get; set; } = "UseAllowList";
@@ -602,6 +621,42 @@ public sealed class ConfigService
         return _currentConfig.EmbeddingModels.FirstOrDefault(e => string.Equals((e.Id ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>WebSocket 握手：按 query 或 <see cref="AppConfig.ActiveAgentProfileId"/> 解析稳定 profile；无效 id 回退首项。</summary>
+    public (string ProfileId, string DisplayName) ResolveAgentProfileForWebSocket(string? agentProfileIdFromQuery)
+    {
+        lock (_lock)
+        {
+            NormalizeAgentProfiles(_currentConfig);
+            var list = _currentConfig.AgentProfiles;
+            var requested = (agentProfileIdFromQuery ?? "").Trim();
+            if (string.IsNullOrEmpty(requested))
+                requested = (_currentConfig.ActiveAgentProfileId ?? "").Trim();
+            var entry = list.FirstOrDefault(p => string.Equals(p.Id, requested, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+            {
+                _logger.LogWarning("WS agentProfileId \"{Id}\" not in agentProfiles, using \"{Fallback}\".", requested, list[0].Id);
+                entry = list[0];
+            }
+
+            var name = string.IsNullOrWhiteSpace(entry.DisplayName) ? entry.Id : entry.DisplayName.Trim();
+            return (entry.Id, name);
+        }
+    }
+
+    /// <summary>按 profile Id 取可选 system 后缀（trim 后空则 null）。</summary>
+    public string? GetAgentSystemPromptSuffix(string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId)) return null;
+        lock (_lock)
+        {
+            NormalizeAgentProfiles(_currentConfig);
+            var e = _currentConfig.AgentProfiles.FirstOrDefault(p =>
+                string.Equals(p.Id, profileId.Trim(), StringComparison.OrdinalIgnoreCase));
+            var s = e?.SystemPromptSuffix?.Trim();
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+    }
+
     /// <summary>获取当前选中的 OCR 配置条目；未配置或未选中时若存在旧版 Ocr 则返回其等效条目，否则返回 null。</summary>
     public OcrModelEntry? GetActiveOcrEntry()
     {
@@ -662,6 +717,8 @@ public sealed class ConfigService
         config.AiModels ??= new List<AiModelEntry>();
         config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
         config.OcrModels ??= new List<OcrModelEntry>();
+        config.AgentProfiles ??= new List<AgentProfileEntry>();
+        NormalizeAgentProfiles(config);
         config.Session ??= new SessionConfig();
         config.ContextWindow ??= new ContextWindowConfig();
         // 旧配置文件无 enableToolNeedGate 字段时 Json 会得到 false；产品默认应开启门控
@@ -698,6 +755,8 @@ public sealed class ConfigService
             AiModels = new List<AiModelEntry>(),
             EmbeddingModels = new List<EmbeddingModelEntry>(),
             OcrModels = new List<OcrModelEntry>(),
+            AgentProfiles = new List<AgentProfileEntry>(),
+            ActiveAgentProfileId = "default",
             CliRunMode = "UseAllowList",
             RagStorageType = "Sqlite",
             SemanticKernel = new SemanticKernelFeaturesConfig(),
@@ -705,6 +764,7 @@ public sealed class ConfigService
         ApplyActivePresetIfSet(appConfig);
         MigrateLegacyAiIfNeeded(appConfig);
         MigrateLegacyOcrIfNeeded(appConfig);
+        NormalizeAgentProfiles(appConfig);
         return appConfig;
     }
 
@@ -1009,6 +1069,45 @@ public sealed class ConfigService
         _logger.LogInformation("Migrated legacy AI config to AiModels (Id=default).");
     }
 
+    /// <summary>保证至少一条 profile；去重 id；修正 <see cref="AppConfig.ActiveAgentProfileId"/>。</summary>
+    private void NormalizeAgentProfiles(AppConfig config)
+    {
+        config.AgentProfiles ??= new List<AgentProfileEntry>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var next = new List<AgentProfileEntry>();
+        foreach (var e in config.AgentProfiles)
+        {
+            if (e == null) continue;
+            var id = (e.Id ?? "").Trim();
+            if (string.IsNullOrEmpty(id)) continue;
+            if (!seen.Add(id)) continue;
+            var dn = string.IsNullOrWhiteSpace(e.DisplayName) ? id : e.DisplayName.Trim();
+            next.Add(new AgentProfileEntry
+            {
+                Id = id,
+                DisplayName = dn,
+                SystemPromptSuffix = string.IsNullOrWhiteSpace(e.SystemPromptSuffix) ? null : e.SystemPromptSuffix.Trim()
+            });
+        }
+
+        config.AgentProfiles = next;
+        if (config.AgentProfiles.Count == 0)
+        {
+            config.AgentProfiles.Add(new AgentProfileEntry { Id = "default", DisplayName = "默认助手" });
+            config.ActiveAgentProfileId = "default";
+            return;
+        }
+
+        var active = (config.ActiveAgentProfileId ?? "").Trim();
+        if (string.IsNullOrEmpty(active) ||
+            config.AgentProfiles.All(p => !string.Equals(p.Id, active, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!string.IsNullOrEmpty(active))
+                _logger.LogWarning("ActiveAgentProfileId \"{Id}\" not in agentProfiles, using \"{Fallback}\".", active, config.AgentProfiles[0].Id);
+            config.ActiveAgentProfileId = config.AgentProfiles[0].Id;
+        }
+    }
+
     /// <summary>若 OcrModels 为空且 Ocr 有值，则迁移为一条并设 ActiveOcrModelId。</summary>
     private void MigrateLegacyOcrIfNeeded(AppConfig config)
     {
@@ -1065,6 +1164,20 @@ public sealed class ConfigService
                     newConfig.ActiveModelId = _currentConfig.ActiveModelId ?? "";
                 if (newConfig.AlwaysIncludePlugins == null)
                     newConfig.AlwaysIncludePlugins = _currentConfig.AlwaysIncludePlugins ?? new List<string>();
+                if (newConfig.AgentProfiles == null || newConfig.AgentProfiles.Count == 0)
+                {
+                    newConfig.AgentProfiles = _currentConfig.AgentProfiles is { Count: > 0 } curAp
+                        ? curAp.Select(p => new AgentProfileEntry
+                        {
+                            Id = p.Id,
+                            DisplayName = p.DisplayName,
+                            SystemPromptSuffix = p.SystemPromptSuffix
+                        }).ToList()
+                        : new List<AgentProfileEntry>();
+                }
+                if (string.IsNullOrWhiteSpace(newConfig.ActiveAgentProfileId))
+                    newConfig.ActiveAgentProfileId = _currentConfig.ActiveAgentProfileId ?? "default";
+                NormalizeAgentProfiles(newConfig);
                 MigrateLegacyAiIfNeeded(newConfig);
                 newConfig.AI = null;
                 var activeEmbId = (newConfig.ActiveEmbeddingModelId ?? "").Trim();

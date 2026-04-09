@@ -628,6 +628,165 @@ function updateOcrModelSummary() {
   }
 }
 
+var agentProfilesCache = [];
+var editingAgentProfileId = null;
+
+function syncAgentProfilesCacheFromFullConfig() {
+  var data = fullConfig || {};
+  var raw = data.agentProfiles || data.AgentProfiles;
+  if (Array.isArray(raw) && raw.length > 0) {
+    agentProfilesCache = raw.map(function (p) {
+      return {
+        id: String(p.id || p.Id || '').trim(),
+        displayName: String(p.displayName || p.DisplayName || '').trim(),
+        systemPromptSuffix: (p.systemPromptSuffix != null || p.SystemPromptSuffix != null)
+          ? String(p.systemPromptSuffix || p.SystemPromptSuffix || '')
+          : ''
+      };
+    }).filter(function (p) { return p.id; });
+  } else {
+    agentProfilesCache = [{ id: 'default', displayName: '默认助手', systemPromptSuffix: '' }];
+  }
+}
+
+function getOptionsActiveAgentProfileId() {
+  var el = document.getElementById('optionsActiveAgentProfileSelect');
+  if (el && el.options.length && el.value) return el.value;
+  var a = fullConfig && (fullConfig.activeAgentProfileId || fullConfig.ActiveAgentProfileId);
+  if (a) return String(a);
+  return agentProfilesCache[0] ? agentProfilesCache[0].id : 'default';
+}
+
+function renderAgentProfilesList() {
+  syncAgentProfilesCacheFromFullConfig();
+  var listEl = document.getElementById('agentProfilesList');
+  var selEl = document.getElementById('optionsActiveAgentProfileSelect');
+  if (!listEl) return;
+  var activeId = String((fullConfig && (fullConfig.activeAgentProfileId || fullConfig.ActiveAgentProfileId)) || '').trim();
+  if (!activeId && agentProfilesCache[0]) activeId = agentProfilesCache[0].id;
+  listEl.innerHTML = agentProfilesCache.map(function (p) {
+    var isActive = activeId === p.id;
+    var setDef = isActive ? '' : ('<button type="button" class="btn-secondary set-default-ap-btn" data-id="' + escapeAttr(p.id) + '">设为默认</button>');
+    return '<div class="mcp-server-row" data-ap-id="' + escapeAttr(p.id) + '">' +
+      '<div class="mcp-icon">A</div>' +
+      '<div class="mcp-info"><div class="mcp-name">' + escapeHtml(p.displayName || p.id) + (isActive ? ' <span style="color:var(--success);font-size:12px;">默认</span>' : '') + '</div>' +
+      '<div class="mcp-desc">' + escapeHtml(p.id) + '</div></div>' +
+      '<div class="mcp-actions">' + setDef +
+      '<button type="button" class="btn-secondary edit-ap-btn" data-id="' + escapeAttr(p.id) + '">编辑</button>' +
+      '<button type="button" class="btn-danger delete-ap-btn" data-id="' + escapeAttr(p.id) + '">删除</button></div></div>';
+  }).join('');
+  listEl.querySelectorAll('.set-default-ap-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      fullConfig = fullConfig || {};
+      fullConfig.activeAgentProfileId = btn.dataset.id;
+      fullConfig.ActiveAgentProfileId = btn.dataset.id;
+      scheduleSaveConfig();
+      renderAgentProfilesList();
+    });
+  });
+  listEl.querySelectorAll('.edit-ap-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openAgentProfileEditor(btn.dataset.id); });
+  });
+  listEl.querySelectorAll('.delete-ap-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { deleteAgentProfile(btn.dataset.id); });
+  });
+  if (selEl) {
+    var prev = selEl.value;
+    selEl.innerHTML = '';
+    agentProfilesCache.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.displayName || p.id;
+      selEl.appendChild(opt);
+    });
+    var pick = prev && agentProfilesCache.some(function (x) { return x.id === prev; }) ? prev : activeId;
+    if (!pick || !agentProfilesCache.some(function (x) { return x.id === pick; })) pick = agentProfilesCache[0] ? agentProfilesCache[0].id : '';
+    selEl.value = pick;
+    selEl.onchange = function () {
+      fullConfig = fullConfig || {};
+      fullConfig.activeAgentProfileId = selEl.value;
+      fullConfig.ActiveAgentProfileId = selEl.value;
+      scheduleSaveConfig();
+      renderAgentProfilesList();
+    };
+  }
+}
+
+function closeAgentProfileEditor() {
+  var ed = document.getElementById('agentProfileEditor');
+  if (ed) ed.style.display = 'none';
+  editingAgentProfileId = null;
+}
+
+function openAgentProfileEditor(id) {
+  editingAgentProfileId = id || null;
+  syncAgentProfilesCacheFromFullConfig();
+  var titleEl = document.getElementById('agentProfileEditorTitle');
+  var editorEl = document.getElementById('agentProfileEditor');
+  var idEl = document.getElementById('agentProfileEditorId');
+  var dnEl = document.getElementById('agentProfileEditorDisplayName');
+  var sufEl = document.getElementById('agentProfileEditorSuffix');
+  if (titleEl) titleEl.textContent = id ? '编辑 Agent' : '添加 Agent';
+  var entry = id ? agentProfilesCache.find(function (x) { return x.id === id; }) : null;
+  if (idEl) {
+    idEl.value = entry ? entry.id : '';
+    idEl.disabled = !!id;
+  }
+  if (dnEl) dnEl.value = entry ? entry.displayName : '';
+  if (sufEl) sufEl.value = entry ? (entry.systemPromptSuffix || '') : '';
+  if (editorEl) editorEl.style.display = 'block';
+}
+
+function saveAgentProfileFromEditor() {
+  var idEl = document.getElementById('agentProfileEditorId');
+  var dnEl = document.getElementById('agentProfileEditorDisplayName');
+  var sufEl = document.getElementById('agentProfileEditorSuffix');
+  var id = idEl ? String(idEl.value || '').trim() : '';
+  var dn = dnEl ? String(dnEl.value || '').trim() : '';
+  if (!id) {
+    alert('请填写 Id');
+    return;
+  }
+  if (!dn) dn = id;
+  var suf = sufEl ? String(sufEl.value || '').trim() : '';
+  syncAgentProfilesCacheFromFullConfig();
+  var oldId = editingAgentProfileId;
+  if (oldId && oldId !== id) {
+    agentProfilesCache = agentProfilesCache.filter(function (x) { return x.id !== oldId; });
+  }
+  var idx = agentProfilesCache.findIndex(function (x) { return x.id === id; });
+  var entry = { id: id, displayName: dn, systemPromptSuffix: suf || undefined };
+  if (idx >= 0) agentProfilesCache[idx] = entry;
+  else agentProfilesCache.push(entry);
+  fullConfig = fullConfig || {};
+  fullConfig.agentProfiles = agentProfilesCache;
+  fullConfig.AgentProfiles = agentProfilesCache;
+  closeAgentProfileEditor();
+  scheduleSaveConfig();
+  renderAgentProfilesList();
+}
+
+function deleteAgentProfile(id) {
+  if (!id) return;
+  syncAgentProfilesCacheFromFullConfig();
+  if (agentProfilesCache.length <= 1) {
+    alert('至少保留一条 Agent。');
+    return;
+  }
+  if (!confirm('确定删除该 Agent？')) return;
+  agentProfilesCache = agentProfilesCache.filter(function (x) { return x.id !== id; });
+  fullConfig = fullConfig || {};
+  fullConfig.agentProfiles = agentProfilesCache;
+  fullConfig.AgentProfiles = agentProfilesCache;
+  var active = fullConfig.activeAgentProfileId || fullConfig.ActiveAgentProfileId;
+  if (active === id) {
+    fullConfig.activeAgentProfileId = agentProfilesCache[0].id;
+    fullConfig.ActiveAgentProfileId = agentProfilesCache[0].id;
+  }
+  scheduleSaveConfig();
+  renderAgentProfilesList();
+}
+
 var editingOcrId = null;
 
 function openOcrEditor(id) {
@@ -1011,6 +1170,9 @@ async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl, ve
 }
 if (document.getElementById('testEmbeddingBtn')) document.getElementById('testEmbeddingBtn').addEventListener('click', testEmbeddingConnection);
 if (document.getElementById('addEmbeddingModelBtn')) document.getElementById('addEmbeddingModelBtn').addEventListener('click', function () { openEmbeddingEditor(null); });
+if (document.getElementById('addAgentProfileBtn')) document.getElementById('addAgentProfileBtn').addEventListener('click', function () { openAgentProfileEditor(null); });
+if (document.getElementById('closeAgentProfileEditorBtn')) document.getElementById('closeAgentProfileEditorBtn').addEventListener('click', function () { closeAgentProfileEditor(); });
+if (document.getElementById('saveAgentProfileBtn')) document.getElementById('saveAgentProfileBtn').addEventListener('click', function () { saveAgentProfileFromEditor(); });
 if (document.getElementById('closeEmbeddingEditorBtn')) document.getElementById('closeEmbeddingEditorBtn').addEventListener('click', closeEmbeddingEditor);
 if (document.getElementById('saveEmbeddingModelBtn')) document.getElementById('saveEmbeddingModelBtn').addEventListener('click', saveEmbeddingFromEditor);
 
@@ -1639,6 +1801,7 @@ async function loadConfig() {
       chrome.storage.local.set(o);
     }
     renderAiModelsList();
+    renderAgentProfilesList();
     renderCliScriptUnifiedConfig();
     const mcps = data.mcpServers ?? data.McpServers;
     renderMcpList(mcps || []);
@@ -1885,6 +2048,9 @@ function updatePresetRenameDeleteVisibility(activePresetId, presets) {
 async function saveConfig() {
   try {
     setSaveConfigButtonsState(true, '保存中…');
+    syncAgentProfilesCacheFromFullConfig();
+    var agentProfilesToSave = agentProfilesCache.slice();
+    var activeAgentProfileIdToSave = getOptionsActiveAgentProfileId();
     var perEnd = collectCliSecurityPayload();
     const activeId = (fullConfig && (fullConfig.activeModelId || fullConfig.ActiveModelId)) || '';
     var aiModelsToSave = (aiModelsCache && aiModelsCache.length) ? aiModelsCache : (fullConfig.aiModels || fullConfig.AiModels || []);
@@ -1924,6 +2090,8 @@ async function saveConfig() {
       alwaysIncludePlugins: alwaysIncludePluginsToSave,
       aiModels: aiModelsToSave,
       activeModelId: activeId,
+      agentProfiles: agentProfilesToSave,
+      activeAgentProfileId: activeAgentProfileIdToSave,
       skillEnv: collectSkillEnv(),
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
       cliRunMode: perEnd.cliRunMode,
@@ -1957,7 +2125,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';

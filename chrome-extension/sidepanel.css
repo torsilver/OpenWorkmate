@@ -6,6 +6,18 @@
   box-sizing: border-box;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* 侧栏/嵌入页不要用 100vh 撑满：与宿主可视高度不一致时会出现整页微滚动，
    #messages 可滚但永远差一截到不了底。与 html/body 统一用 100% 并禁止文档级滚动条。 */
 html, body {

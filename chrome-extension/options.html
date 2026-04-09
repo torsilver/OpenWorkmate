@@ -550,6 +550,40 @@
         </div>
       </details>
 
+      <details class="settings-block" id="agentProfilesDetails">
+        <summary>Agent 身份（侧栏）</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">用于区分记忆/计划归属与可选的 system 后缀；<strong>不</strong>绑定独立对话模型（全局仍用上方「当前」对话模型）。侧栏切换 Agent 会新开会话并重连 WebSocket。</p>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="optionsActiveAgentProfileSelect">默认 Agent（服务端在 WS 未带 <code>agentProfileId</code> 时使用）</label>
+            <select id="optionsActiveAgentProfileSelect" style="min-width: 200px;"></select>
+          </div>
+          <div id="agentProfilesList" class="ai-models-list"></div>
+          <button type="button" id="addAgentProfileBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 Agent</button>
+          <div id="agentProfileEditor" class="skill-card" style="display: none; margin-top: 20px;">
+            <div class="skill-header">
+              <span id="agentProfileEditorTitle" class="skill-title">添加 Agent</span>
+              <button type="button" id="closeAgentProfileEditorBtn" class="btn-secondary">取消</button>
+            </div>
+            <div class="form-group">
+              <label for="agentProfileEditorId">Id（唯一，如 default、coder）</label>
+              <input type="text" id="agentProfileEditorId" placeholder="default" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="agentProfileEditorDisplayName">展示名称</label>
+              <input type="text" id="agentProfileEditorDisplayName" placeholder="默认助手" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="agentProfileEditorSuffix">System 后缀（可选）</label>
+              <textarea id="agentProfileEditorSuffix" rows="3" placeholder="追加在主对话 system 后的简短说明"></textarea>
+            </div>
+            <div style="margin-top: 12px;">
+              <button type="button" id="saveAgentProfileBtn">完成</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
       <details class="settings-block" id="embeddingModelDetails">
         <summary id="embeddingModelSummary">Embedding 模型（未配置）</summary>
         <div class="settings-block-inner">

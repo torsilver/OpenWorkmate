@@ -267,10 +267,16 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     if (string.IsNullOrEmpty(clientType))
         clientType = null;
 
-    using var ws = await context.WebSockets.AcceptWebSocketAsync();
-    app.Logger.LogInformation("Session {SessionId} connected clientType={ClientType}", sessionId, clientType ?? "(none)");
+    var agentProfileIdFromQuery = context.Request.Query["agentProfileId"].ToString();
+    var (resolvedProfileId, resolvedDisplayName) = configService.ResolveAgentProfileForWebSocket(
+        string.IsNullOrWhiteSpace(agentProfileIdFromQuery) ? null : agentProfileIdFromQuery);
 
-    sessions.Add(sessionId, ws, clientType);
+    using var ws = await context.WebSockets.AcceptWebSocketAsync();
+    app.Logger.LogInformation(
+        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId}",
+        sessionId, clientType ?? "(none)", resolvedProfileId);
+
+    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName);
     try
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
@@ -972,11 +978,12 @@ app.MapDelete("/api/plans/{id}", async (string id, IPlanStore planStore, Cancell
     return Results.Ok(new { ok = true });
 });
 
-app.MapGet("/api/chat-sessions", async (int? skip, int? take, IChatSessionStore store, CancellationToken ct) =>
+app.MapGet("/api/chat-sessions", async (int? skip, int? take, string? agentProfileId, IChatSessionStore store, CancellationToken ct) =>
 {
     var s = skip ?? 0;
     var t = take ?? 10;
-    var (items, hasMore) = await store.ListAsync(s, t, ct).ConfigureAwait(false);
+    var aid = string.IsNullOrWhiteSpace(agentProfileId) ? null : agentProfileId.Trim();
+    var (items, hasMore) = await store.ListAsync(s, t, aid, ct).ConfigureAwait(false);
     var res = new ChatSessionListResponse { Items = items.ToList(), HasMore = hasMore };
     return Results.Json(res, JsonCtx.Default.ChatSessionListResponse);
 });
@@ -1331,8 +1338,10 @@ static async Task HandleSessionAsync(
             case "set_context":
                 if (!string.IsNullOrEmpty(incoming.PageTitle))
                 {
-                    sessions.SetDisplayName(sessionId, incoming.PageTitle.Trim().Length > 200 ? incoming.PageTitle.Trim()[..200] : incoming.PageTitle.Trim());
-                    logger.LogDebug("[{SessionId}] set_context displayName={DisplayName}", sessionId, LogPreview.HeadTail(incoming.PageTitle.Trim(), 50, 50));
+                    var pt = incoming.PageTitle.Trim();
+                    if (pt.Length > 200) pt = pt[..200];
+                    sessions.SetPageContextTitle(sessionId, pt);
+                    logger.LogDebug("[{SessionId}] set_context pageTitle={PageTitle}", sessionId, LogPreview.HeadTail(pt, 50, 50));
                 }
                 break;
             case "ping":

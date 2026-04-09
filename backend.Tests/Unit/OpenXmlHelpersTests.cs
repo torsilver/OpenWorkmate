@@ -46,6 +46,83 @@ public class OpenXmlHelpersTests
     }
 
     [Theory]
+    [InlineData("report.md", "report.docx")]
+    [InlineData("a.MARKDOWN", "a.docx")]
+    [InlineData("note.txt", "note.docx")]
+    [InlineData("legacy.doc", "legacy.docx")]
+    [InlineData("x.rtf", "x.docx")]
+    [InlineData("already.docx", "already.docx")]
+    [InlineData("macro.docm", "macro.docm")]
+    [InlineData("no-ext", "no-ext.docx")]
+    [InlineData("  spaced.md  ", "spaced.docx")]
+    public void NormalizeWordCreateOutputPath_CoercesCommonExtensions(string input, string expectedSuffix)
+    {
+        var actual = OpenXmlHelpers.NormalizeWordCreateOutputPath(input);
+        Assert.EndsWith(expectedSuffix, actual, StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(Path.GetExtension(expectedSuffix), ".docm", StringComparison.OrdinalIgnoreCase))
+            Assert.Equal(expectedSuffix, Path.GetFileName(actual), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NormalizeWordCreateOutputPath_LeavesUnknownExtensionUnchanged()
+    {
+        var actual = OpenXmlHelpers.NormalizeWordCreateOutputPath("file.pdf");
+        Assert.Equal("file.pdf", actual);
+    }
+
+    [Theory]
+    [InlineData("book.md", "book.xlsx")]
+    [InlineData("sheet.csv", "sheet.xlsx")]
+    [InlineData("legacy.xls", "legacy.xlsx")]
+    [InlineData("macro.xlsm", "macro.xlsm")]
+    [InlineData("newbook", "newbook.xlsx")]
+    public void NormalizeExcelCreateOutputPath_CoercesCommonExtensions(string input, string expectedFileName)
+    {
+        var actual = OpenXmlHelpers.NormalizeExcelCreateOutputPath(input);
+        Assert.Equal(expectedFileName, Path.GetFileName(actual), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NormalizeExcelCreateOutputPath_LeavesUnknownExtensionUnchanged()
+    {
+        Assert.Equal("a.pdf", OpenXmlHelpers.NormalizeExcelCreateOutputPath("a.pdf"));
+    }
+
+    [Theory]
+    [InlineData("deck.md", "deck.pptx")]
+    [InlineData("old.ppt", "old.pptx")]
+    [InlineData("withmacro.pptm", "withmacro.pptm")]
+    [InlineData("slides", "slides.pptx")]
+    public void NormalizePptCreateOutputPath_CoercesCommonExtensions(string input, string expectedFileName)
+    {
+        var actual = OpenXmlHelpers.NormalizePptCreateOutputPath(input);
+        Assert.Equal(expectedFileName, Path.GetFileName(actual), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NormalizePptCreateOutputPath_LeavesUnknownExtensionUnchanged()
+    {
+        Assert.Equal("x.xlsx", OpenXmlHelpers.NormalizePptCreateOutputPath("x.xlsx"));
+    }
+
+    [Theory]
+    [InlineData("out.md", "out.pdf")]
+    [InlineData("doc.txt", "doc.pdf")]
+    [InlineData("merged", "merged.pdf")]
+    [InlineData("ok.pdf", "ok.pdf")]
+    public void NormalizePdfOutputPath_CoercesCommonExtensions(string input, string expectedFileName)
+    {
+        var actual = OpenXmlHelpers.NormalizePdfOutputPath(input);
+        Assert.Equal(expectedFileName, Path.GetFileName(actual), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NormalizePdfOutputPath_LeavesUnknownExtensionUnchanged()
+    {
+        Assert.Equal("x.docx", OpenXmlHelpers.NormalizePdfOutputPath("x.docx"));
+    }
+
+    [Theory]
     [InlineData("demo.pptx", true, null)]
     [InlineData("demo.PPTX", true, null)]
     [InlineData("demo.pptm", true, null)]

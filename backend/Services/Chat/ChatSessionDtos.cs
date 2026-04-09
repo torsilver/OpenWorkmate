@@ -16,6 +16,10 @@ public sealed class ChatSessionListItemDto
 
     [JsonPropertyName("messageCount")]
     public int MessageCount { get; set; }
+
+    /// <summary>握手时的 Agent 配置 Id；旧会话可能为空。</summary>
+    [JsonPropertyName("agentProfileId")]
+    public string? AgentProfileId { get; set; }
 }
 
 /// <summary>GET /api/chat-sessions/{id}/messages 单条消息。</summary>

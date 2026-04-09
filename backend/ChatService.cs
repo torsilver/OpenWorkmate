@@ -196,7 +196,7 @@ public sealed partial class ChatService : IDisposable
         if (!disabledBuiltIn.Contains("cli"))
             RegisterPlugin(new CliPlugin(), "CLI");
         if (!disabledBuiltIn.Contains("excel"))
-            RegisterPlugin(new ExcelPlugin(), "Excel");
+            RegisterPlugin(new ExcelPlugin(_loggerFactory.CreateLogger<ExcelPlugin>()), "Excel");
         if (!disabledBuiltIn.Contains("word"))
         {
             var wordPluginLogger = _loggerFactory.CreateLogger<WordPlugin>();
@@ -431,9 +431,22 @@ public sealed partial class ChatService : IDisposable
         return basePrompt + "\n\n" + guidance;
     }
 
+    /// <summary>首条 system：全局模型 prompt + 内置插件说明 + 当前会话 Agent 的 <c>systemPromptSuffix</c>（须在持有 <see cref="_runtimeLock"/> 时调用 <see cref="GetActiveSystemPrompt"/>）。</summary>
+    private string BuildInitialSystemPromptForSessionUnderLock(string sessionId)
+    {
+        var basePrompt = GetActiveSystemPrompt();
+        var sm = _serviceProvider.GetRequiredService<SessionManager>();
+        var pid = sm.GetAgentProfileId(sessionId);
+        var suffix = _configService.GetAgentSystemPromptSuffix(pid);
+        if (string.IsNullOrEmpty(suffix)) return basePrompt;
+        return basePrompt + "\n\n" + suffix.Trim();
+    }
+
     public List<ChatMessage> GetSessionHistory(string sessionId)
     {
-        var systemPrompt = GetActiveSystemPrompt();
+        string systemPrompt;
+        lock (_runtimeLock)
+            systemPrompt = BuildInitialSystemPromptForSessionUnderLock(sessionId);
         var state = _sessions.GetOrAdd(sessionId, _ => LoadOrCreateSessionState(sessionId, systemPrompt));
         return state.History;
     }
@@ -468,7 +481,9 @@ public sealed partial class ChatService : IDisposable
             return;
         try
         {
-            await _chatSessionStore.SaveFromHistoryAsync(sessionId, state.History, ct).ConfigureAwait(false);
+            var sm = _serviceProvider.GetRequiredService<SessionManager>();
+            var agentPid = sm.GetAgentProfileId(sessionId);
+            await _chatSessionStore.SaveFromHistoryAsync(sessionId, state.History, agentPid, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -521,7 +536,7 @@ public sealed partial class ChatService : IDisposable
 
         lock (_runtimeLock)
         {
-            systemPrompt = GetActiveSystemPrompt();
+            systemPrompt = BuildInitialSystemPromptForSessionUnderLock(sessionId);
         }
 
         var state = _sessions.GetOrAdd(sessionId, _ => LoadOrCreateSessionState(sessionId, systemPrompt));

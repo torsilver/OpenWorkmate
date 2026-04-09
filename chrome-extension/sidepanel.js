@@ -98,6 +98,10 @@ const $historyOverlayClose = document.getElementById("history-overlay-close");
 const $historyList = document.getElementById("history-list");
 const $historyError = document.getElementById("history-error");
 const $historyLoadMore = document.getElementById("history-load-more");
+const $agentProfileSelect = document.getElementById("agent-profile-select");
+/** 与 WS query、设置页 <code>activeAgentProfileId</code> 对齐 */
+const STORAGE_ACTIVE_AGENT_PROFILE_ID = "activeAgentProfileId";
+let _suppressAgentProfileSelectChange = false;
 const $cancelPlanBtn = document.getElementById("cancel-plan-btn");
 const $planStepIndicator = document.getElementById("plan-step-indicator");
 const $meetingBtn = document.getElementById("meeting-btn");
@@ -216,6 +220,31 @@ if ($newChatBtn) {
     if ($attachmentsPreview) { $attachmentsPreview.innerHTML = ""; $attachmentsPreview.style.display = "none"; }
     if (ws) { ws.close(); ws = null; }
     connect();
+  });
+}
+
+if ($agentProfileSelect) {
+  $agentProfileSelect.addEventListener("change", function () {
+    if (_suppressAgentProfileSelectChange) return;
+    const v = ($agentProfileSelect.value || "default").trim() || "default";
+    const o = {};
+    o[STORAGE_ACTIVE_AGENT_PROFILE_ID] = v;
+    chrome.storage.local.set(o, function () {
+      sessionStorage.removeItem("copilot_session_id");
+      clearConversationTitleStorage();
+      setCurrentPlan(null, null);
+      if ($messages) $messages.innerHTML = WELCOME_INNER_HTML_NEW_CHAT;
+      attachments.length = 0;
+      if ($attachmentsPreview) {
+        $attachmentsPreview.innerHTML = "";
+        $attachmentsPreview.style.display = "none";
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      connect();
+    });
   });
 }
 
@@ -947,6 +976,55 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
+async function refreshAgentProfileSelector() {
+  if (!$agentProfileSelect) return;
+  try {
+    await tasklyEnsureApiBase();
+    await ensureLocalServiceTokenFromBootstrap();
+    const res = await tasklyFetch(API_BASE + "/api/config");
+    const data = await res.json();
+    if (!res.ok) return;
+    const list = data.agentProfiles || data.AgentProfiles || [];
+    _suppressAgentProfileSelectChange = true;
+    $agentProfileSelect.innerHTML = "";
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      const id = String(p.id || p.Id || "").trim();
+      if (!id) continue;
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = p.displayName || p.DisplayName || id;
+      $agentProfileSelect.appendChild(opt);
+    }
+    if ($agentProfileSelect.options.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "default";
+      opt.textContent = "默认助手";
+      $agentProfileSelect.appendChild(opt);
+    }
+    const serverDefault = String(data.activeAgentProfileId || data.ActiveAgentProfileId || "default").trim() || "default";
+    await new Promise(function (resolve) {
+      chrome.storage.local.get([STORAGE_ACTIVE_AGENT_PROFILE_ID], function (r) {
+        let active = String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || serverDefault).trim() || serverDefault;
+        const ids = Array.from($agentProfileSelect.options).map(function (o) {
+          return o.value;
+        });
+        if (ids.indexOf(active) < 0) active = ids[0] || "default";
+        $agentProfileSelect.value = active;
+        const o = {};
+        o[STORAGE_ACTIVE_AGENT_PROFILE_ID] = active;
+        chrome.storage.local.set(o, function () {
+          resolve();
+        });
+      });
+    });
+  } catch (e) {
+    console.warn("refreshAgentProfileSelector", e);
+  } finally {
+    _suppressAgentProfileSelectChange = false;
+  }
+}
+
 // ───── WebSocket ─────
 
 function connect() {
@@ -956,11 +1034,13 @@ function connect() {
 
   sessionId = getSessionId();
   ensureLocalServiceTokenFromBootstrap().then(function () {
-  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
+  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY, STORAGE_ACTIVE_AGENT_PROFILE_ID], function (r) {
     var token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
+    var ap = String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || "default").trim() || "default";
     var qs = new URLSearchParams();
     qs.set("sessionId", sessionId);
     qs.set("clientType", "chrome");
+    qs.set("agentProfileId", ap);
     if (token) qs.set("token", token);
     var url = WS_URL + "?" + qs.toString();
     ws = new WebSocket(url);
@@ -1721,7 +1801,14 @@ async function fetchHistoryPage(append) {
       historyHasMore = true;
       if ($historyList) $historyList.innerHTML = "";
     }
-    const res = await tasklyFetch(API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10");
+    const ap = await new Promise(function (resolve) {
+      chrome.storage.local.get([STORAGE_ACTIVE_AGENT_PROFILE_ID], function (r) {
+        resolve(String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || "default").trim() || "default");
+      });
+    });
+    const res = await tasklyFetch(
+      API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10&agentProfileId=" + encodeURIComponent(ap)
+    );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.message || "加载历史列表失败");
@@ -1746,6 +1833,8 @@ function appendHistoryListItem(it, currentSessionId) {
   const li = document.createElement("li");
   li.className = "history-list-item" + (it.sessionId === currentSessionId ? " history-list-item--current" : "");
   li.dataset.sessionId = it.sessionId;
+  if (it.agentProfileId != null && String(it.agentProfileId).trim() !== "")
+    li.dataset.agentProfileId = String(it.agentProfileId).trim();
 
   const main = document.createElement("div");
   main.className = "history-list-item-main";
@@ -1775,7 +1864,7 @@ function appendHistoryListItem(it, currentSessionId) {
   });
 
   li.addEventListener("click", function () {
-    void switchToHistorySession(it.sessionId);
+    void switchToHistorySession(it.sessionId, it.agentProfileId);
   });
 
   li.appendChild(main);
@@ -1818,12 +1907,33 @@ async function deleteHistorySession(sid, liEl) {
   }
 }
 
-async function switchToHistorySession(sid) {
+async function switchToHistorySession(sid, agentProfileIdFromItem) {
   if (!sid) return;
   finalizeStream();
   try {
     await tasklyEnsureApiBase();
     await ensureLocalServiceTokenFromBootstrap();
+    if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== "") {
+      const ap = String(agentProfileIdFromItem).trim();
+      _suppressAgentProfileSelectChange = true;
+      try {
+        await new Promise(function (resolve) {
+          const o = {};
+          o[STORAGE_ACTIVE_AGENT_PROFILE_ID] = ap;
+          chrome.storage.local.set(o, function () {
+            resolve();
+          });
+        });
+        if ($agentProfileSelect) {
+          const ids = Array.from($agentProfileSelect.options).map(function (o) {
+            return o.value;
+          });
+          if (ids.indexOf(ap) >= 0) $agentProfileSelect.value = ap;
+        }
+      } finally {
+        _suppressAgentProfileSelectChange = false;
+      }
+    }
     const res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -4498,5 +4608,13 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", ensureConnectionOnVisible);
 
-// 统一走 connect()：内含解析本机地址、引导 token、WebSocket；失败时由 scheduleReconnect 重试
-connect();
+// 先拉 Agent 列表再连 WS，保证首连即带 agentProfileId
+void (async function tasklySidepanelBoot() {
+  try {
+    await tasklyEnsureApiBase();
+    await refreshAgentProfileSelector();
+  } catch (e) {
+    console.warn("tasklySidepanelBoot", e);
+  }
+  connect();
+})();

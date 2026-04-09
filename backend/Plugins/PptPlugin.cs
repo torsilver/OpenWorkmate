@@ -26,11 +26,15 @@ public sealed class PptPlugin
         return s;
     }
     [ToolFunction("ppt_document_create")]
-    [Description("创建新的空白 PPT 文件（至少含一张可编辑幻灯片）。若文件已存在则覆盖。新建后可用 ppt_slide_write / ppt_slide_insert 编辑。勿用 shell 重定向伪造 .pptx。路径支持环境变量与相对路径；须对应当前登录用户，勿用 Public/%PUBLIC% 代替用户主目录。")]
+    [Description("创建新的空白 PPT（Open XML，至少含一张可编辑幻灯片）。filePath 必须以 .pptx（推荐）或 .pptm 结尾，勿用 .md/.txt/.ppt。若文件已存在则覆盖。新建后可用 ppt_slide_write / ppt_slide_insert 编辑。勿用 shell 重定向伪造 .pptx。路径支持环境变量与相对路径；须对应当前登录用户，勿用 Public/%PUBLIC% 代替用户主目录。")]
     public string PptDocumentCreate(
-        [Description("优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；须 .pptx 或 .pptm；绝对路径用 %USERPROFILE%\\…")] string filePath)
+        [Description("目标路径，必须以 .pptx（推荐）或 .pptm 结尾；禁止 .md、.txt、旧版二进制 .ppt。优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；绝对路径用 %USERPROFILE%\\…")] string filePath)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
+        var beforeNormalize = filePath;
+        filePath = OpenXmlHelpers.NormalizePptCreateOutputPath(filePath);
+        if (!string.Equals(filePath, beforeNormalize, StringComparison.OrdinalIgnoreCase))
+            _logger?.LogInformation("[Ppt] ppt_document_create normalized path from {Before} to {After}", beforeNormalize, filePath);
         if (!OpenXmlHelpers.ValidatePptExtension(filePath, out var extErr)) return extErr;
         try
         {

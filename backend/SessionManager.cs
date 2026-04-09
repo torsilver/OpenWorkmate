@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>Stores WebSocket, optional client type (chrome | office-word | office-excel | office-powerpoint | wps), and optional display name (e.g. page title) per session.</summary>
+/// <summary>WebSocket 会话：clientType、Agent 身份（来自配置 + WS query）、页签标题（仅页面上下文）。</summary>
 public sealed class SessionManager
 {
     private readonly ILogger<SessionManager> _logger;
@@ -15,7 +15,7 @@ public sealed class SessionManager
     public SessionManager(ILogger<SessionManager> logger) => _logger = logger;
 
     /// <summary>Registers or replaces a session. If the same <paramref name="sessionId"/> reconnects, the previous entry's send lock is disposed.</summary>
-    public void Add(string sessionId, WebSocket ws, string? clientType = null)
+    public void Add(string sessionId, WebSocket ws, string? clientType, string agentProfileId, string agentDisplayName)
     {
         if (_connections.TryRemove(sessionId, out var old))
         {
@@ -23,7 +23,9 @@ public sealed class SessionManager
             catch (ObjectDisposedException) { /* ignore */ }
         }
 
-        _connections[sessionId] = new SessionEntry(ws, clientType, null, new SemaphoreSlim(1, 1));
+        var pid = (agentProfileId ?? "").Trim();
+        var dn = (agentDisplayName ?? "").Trim();
+        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, new SemaphoreSlim(1, 1));
     }
 
     public void Remove(string sessionId)
@@ -46,16 +48,28 @@ public sealed class SessionManager
     public string? GetClientType(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.ClientType : null;
 
-    /// <summary>Sets the display name (e.g. Agent name / page title) for the session.</summary>
-    public void SetDisplayName(string sessionId, string? displayName)
+    /// <summary>当前 WS 绑定的 Agent 配置 Id（握手时解析）。</summary>
+    public string? GetAgentProfileId(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry)
+            ? (string.IsNullOrEmpty(entry.AgentProfileId) ? null : entry.AgentProfileId)
+            : null;
+
+    /// <summary>Agent 展示名（记忆/计划归属）；非页签标题。</summary>
+    public string? GetDisplayName(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry)
+            ? (string.IsNullOrEmpty(entry.AgentDisplayName) ? null : entry.AgentDisplayName)
+            : null;
+
+    /// <summary>set_context 更新的当前页标题（日志/调试）。</summary>
+    public void SetPageContextTitle(string sessionId, string? pageTitle)
     {
         if (_connections.TryGetValue(sessionId, out var entry))
-            _connections[sessionId] = entry with { DisplayName = displayName };
+            _connections[sessionId] = entry with { PageContextTitle = pageTitle };
     }
 
-    /// <summary>Gets the display name for the session, if any.</summary>
-    public string? GetDisplayName(string sessionId) =>
-        _connections.TryGetValue(sessionId, out var entry) ? entry.DisplayName : null;
+    /// <summary>当前页标题（若有）。</summary>
+    public string? GetPageContextTitle(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry) ? entry.PageContextTitle : null;
 
     public int Count => _connections.Count;
 
@@ -140,5 +154,11 @@ public sealed class SessionManager
         }
     }
 
-    private sealed record SessionEntry(WebSocket WebSocket, string? ClientType, string? DisplayName, SemaphoreSlim SendLock);
+    private sealed record SessionEntry(
+        WebSocket WebSocket,
+        string? ClientType,
+        string AgentProfileId,
+        string AgentDisplayName,
+        string? PageContextTitle,
+        SemaphoreSlim SendLock);
 }

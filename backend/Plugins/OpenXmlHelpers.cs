@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace OfficeCopilot.Server.Plugins;
 
-/// <summary>Excel/Word 插件共用的路径解析与扩展名校验，Phase 0 共享层。</summary>
+/// <summary>Excel/Word/PPT 等插件共用的路径解析、扩展名校验，以及「创建输出」前的常见误用扩展名纠正。</summary>
 public static class OpenXmlHelpers
 {
     /// <summary>展开环境变量，相对路径解析到用户下载目录。</summary>
@@ -56,6 +56,88 @@ public static class OpenXmlHelpers
         if (ext.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) || ext.Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
             return true;
         errorMessage = "[错误] 仅支持 .xlsx 或 .xlsm 文件。"; return false;
+    }
+
+    /// <summary>
+    /// 供 <c>word_document_create</c> 在校验前调用：将模型常见的错误扩展名改为 <c>.docx</c>，无扩展名则补 <c>.docx</c>。
+    /// 不改动已是 <c>.docx</c>/<c>.docm</c> 的路径，其它未知扩展名保持原样交由 <see cref="ValidateWordExtension"/> 报错。
+    /// </summary>
+    public static string NormalizeWordCreateOutputPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+        filePath = filePath.Trim();
+        var ext = Path.GetExtension(filePath);
+        if (string.IsNullOrEmpty(ext))
+            return filePath + ".docx";
+        if (ext.Equals(".docx", StringComparison.OrdinalIgnoreCase) || ext.Equals(".docm", StringComparison.OrdinalIgnoreCase))
+            return filePath;
+        if (ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".txt", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".doc", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".rtf", StringComparison.OrdinalIgnoreCase))
+            return filePath[..^ext.Length] + ".docx";
+        return filePath;
+    }
+
+    /// <summary>
+    /// 供 <c>excel_range_write</c> 等「会新建工作簿」的路径在校验前调用：无扩展名或常见误用改为 <c>.xlsx</c>；已是 <c>.xlsm</c> 则保留。
+    /// </summary>
+    public static string NormalizeExcelCreateOutputPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+        filePath = filePath.Trim();
+        var ext = Path.GetExtension(filePath);
+        if (string.IsNullOrEmpty(ext))
+            return filePath + ".xlsx";
+        if (ext.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) || ext.Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
+            return filePath;
+        if (ext.Equals(".xls", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".txt", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".csv", StringComparison.OrdinalIgnoreCase))
+            return filePath[..^ext.Length] + ".xlsx";
+        return filePath;
+    }
+
+    /// <summary>
+    /// 供 <c>ppt_document_create</c> 在校验前调用：无扩展名或常见误用改为 <c>.pptx</c>；已是 <c>.pptm</c> 则保留。
+    /// </summary>
+    public static string NormalizePptCreateOutputPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+        filePath = filePath.Trim();
+        var ext = Path.GetExtension(filePath);
+        if (string.IsNullOrEmpty(ext))
+            return filePath + ".pptx";
+        if (ext.Equals(".pptx", StringComparison.OrdinalIgnoreCase) || ext.Equals(".pptm", StringComparison.OrdinalIgnoreCase))
+            return filePath;
+        if (ext.Equals(".ppt", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+            return filePath[..^ext.Length] + ".pptx";
+        return filePath;
+    }
+
+    /// <summary>
+    /// 供 <c>pdf_document_create</c> / <c>pdf_merge</c> 输出路径：无扩展名或 .md/.txt 等改为 <c>.pdf</c>。
+    /// </summary>
+    public static string NormalizePdfOutputPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+        filePath = filePath.Trim();
+        var ext = Path.GetExtension(filePath);
+        if (string.IsNullOrEmpty(ext))
+            return filePath + ".pdf";
+        if (ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            return filePath;
+        if (ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+            return filePath[..^ext.Length] + ".pdf";
+        return filePath;
     }
 
     /// <summary>仅允许 .docx / .docm；.doc 返回明确错误。</summary>

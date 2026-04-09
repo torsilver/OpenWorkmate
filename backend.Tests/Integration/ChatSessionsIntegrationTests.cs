@@ -247,4 +247,75 @@ public class ChatSessionsIntegrationTests : IDisposable
             }
         }
     }
+
+    [Fact]
+    public async Task GetChatSessions_FilterByAgentProfileId_ReturnsMatchingRowsOnly()
+    {
+        await _client.GetAsync("/api/chat-sessions?skip=0&take=10");
+
+        var dbPath = Path.Combine(_chatSessionsDir, "chat-sessions.db");
+        Assert.True(File.Exists(dbPath));
+
+        const string sidA = "filtertestaa01";
+        const string sidB = "filtertestbb02";
+
+        await using (var conn = new SqliteConnection("Data Source=" + dbPath))
+        {
+            await conn.OpenAsync();
+            await using var pragma = conn.CreateCommand();
+            pragma.CommandText = "PRAGMA foreign_keys = ON;";
+            await pragma.ExecuteNonQueryAsync();
+
+            foreach (var tuple in new (string Sid, string Aid, string Title)[] { (sidA, "alpha", "a-title"), (sidB, "beta", "b-title") })
+            {
+                await using (var insSess = conn.CreateCommand())
+                {
+                    insSess.CommandText =
+                        """
+                        INSERT INTO chat_sessions (session_id, updated_at_utc, title_preview, message_count, agent_profile_id)
+                        VALUES ($sid, $upd, $title, $cnt, $aid);
+                        """;
+                    insSess.Parameters.AddWithValue("$sid", tuple.Sid);
+                    insSess.Parameters.AddWithValue("$upd", "2026-02-01T12:00:00.0000000Z");
+                    insSess.Parameters.AddWithValue("$title", tuple.Title);
+                    insSess.Parameters.AddWithValue("$cnt", 1);
+                    insSess.Parameters.AddWithValue("$aid", tuple.Aid);
+                    await insSess.ExecuteNonQueryAsync();
+                }
+
+                await using (var m0 = conn.CreateCommand())
+                {
+                    m0.CommandText =
+                        """
+                        INSERT INTO chat_session_messages (session_id, sort_order, role, text, created_at_utc)
+                        VALUES ($sid, 0, $r, $t, $c);
+                        """;
+                    m0.Parameters.AddWithValue("$sid", tuple.Sid);
+                    m0.Parameters.AddWithValue("$r", "user");
+                    m0.Parameters.AddWithValue("$t", "hi");
+                    m0.Parameters.AddWithValue("$c", "2026-02-01T12:00:00.0000000Z");
+                    await m0.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        var alphaRes = await _client.GetAsync("/api/chat-sessions?skip=0&take=10&agentProfileId=alpha");
+        alphaRes.EnsureSuccessStatusCode();
+        var alphaJson = await alphaRes.Content.ReadAsStringAsync();
+        using (var doc = JsonDocument.Parse(alphaJson))
+        {
+            var items = doc.RootElement.GetProperty("items");
+            Assert.Equal(1, items.GetArrayLength());
+            Assert.Equal(sidA, items[0].GetProperty("sessionId").GetString());
+            Assert.Equal("alpha", items[0].GetProperty("agentProfileId").GetString());
+        }
+
+        var allRes = await _client.GetAsync("/api/chat-sessions?skip=0&take=10");
+        allRes.EnsureSuccessStatusCode();
+        var allJson = await allRes.Content.ReadAsStringAsync();
+        using (var doc = JsonDocument.Parse(allJson))
+        {
+            Assert.Equal(2, doc.RootElement.GetProperty("items").GetArrayLength());
+        }
+    }
 }

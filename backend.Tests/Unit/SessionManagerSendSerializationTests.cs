@@ -13,7 +13,7 @@ public sealed class SessionManagerSendSerializationTests
     {
         using var ws = new CountingFakeWebSocket();
         var mgr = new SessionManager(NullLogger<SessionManager>.Instance);
-        mgr.Add("s1", ws, null);
+        mgr.Add("s1", ws, null, "default", "Test");
 
         var tasks = Enumerable.Range(0, 40)
             .Select(_ => mgr.SendToAsync("s1", """{"type":"ping"}""", CancellationToken.None))
@@ -29,7 +29,7 @@ public sealed class SessionManagerSendSerializationTests
     {
         using var ws = new CountingFakeWebSocket();
         var mgr = new SessionManager(NullLogger<SessionManager>.Instance);
-        mgr.Add("s1", ws, null);
+        mgr.Add("s1", ws, null, "default", "Test");
         ws.SetClosed();
         await mgr.SendToAsync("s1", """{"type":"x"}""", CancellationToken.None);
     }

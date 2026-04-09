@@ -128,9 +128,9 @@ public sealed class PdfPlugin
 
     [ToolFunction("pdf_document_create")]
     [Description(
-        "Create a new PDF with plain text using PDFsharp. If overwrite is false (default) and outputPath already exists, fails. Use form feed \\f in bodyText to start a new page. Latin and common Windows fonts work best; complex scripts may need host fonts. Returns success message or 失败：.")]
+        "Create a new PDF with plain text using PDFsharp. outputPath must end with .pdf (not .md/.txt). If overwrite is false (default) and outputPath already exists, fails. Use form feed \\f in bodyText to start a new page. Latin and common Windows fonts work best; complex scripts may need host fonts. Returns success message or 失败：.")]
     public string PdfDocumentCreate(
-        [Description("Full path for the new .pdf file")] string outputPath,
+        [Description("Full path for the new file; must use .pdf extension (e.g. report.pdf), not .md or .txt")] string outputPath,
         [Description("Body text; use \\f between segments to force a new page")] string bodyText,
         [Description("If true, replace existing output file")] bool overwrite = false)
     {
@@ -139,7 +139,13 @@ public sealed class PdfPlugin
         if (bodyText == null)
             return "失败：正文不能为 null。";
 
-        var outFull = Path.GetFullPath(outputPath.Trim());
+        var trimmed = outputPath.Trim();
+        var beforeNorm = trimmed;
+        trimmed = OpenXmlHelpers.NormalizePdfOutputPath(trimmed);
+        if (!string.Equals(trimmed, beforeNorm, StringComparison.OrdinalIgnoreCase))
+            _logger.LogInformation("[Pdf] pdf_document_create normalized output path from {Before} to {After}", beforeNorm, trimmed);
+
+        var outFull = Path.GetFullPath(trimmed);
         if (!string.Equals(Path.GetExtension(outFull), ".pdf", StringComparison.OrdinalIgnoreCase))
             return "失败：输出路径须为 .pdf 扩展名。";
 
@@ -181,9 +187,9 @@ public sealed class PdfPlugin
 
     [ToolFunction("pdf_merge")]
     [Description(
-        "Merge multiple existing PDFs into one using PDFsharp, in the order given. inputPdfPaths: one absolute path per line (or separate with ;). If overwrite is false and output exists, fails. Returns success or 失败：.")]
+        "Merge multiple existing PDFs into one using PDFsharp, in the order given. inputPdfPaths: one absolute path per line (or separate with ;). outputPath must end with .pdf (not .md/.txt). If overwrite is false and output exists, fails. Returns success or 失败：.")]
     public string PdfMerge(
-        [Description("Full path for merged output .pdf")] string outputPath,
+        [Description("Full path for merged output; must use .pdf extension")] string outputPath,
         [Description("Input PDF paths, one per line or separated by ;")] string inputPdfPaths,
         [Description("If true, replace existing output file")] bool overwrite = false)
     {
@@ -192,7 +198,13 @@ public sealed class PdfPlugin
         if (string.IsNullOrWhiteSpace(inputPdfPaths))
             return "失败：请提供至少一个输入 PDF 路径。";
 
-        var outFull = Path.GetFullPath(outputPath.Trim());
+        var trimmedOut = outputPath.Trim();
+        var beforeNormOut = trimmedOut;
+        trimmedOut = OpenXmlHelpers.NormalizePdfOutputPath(trimmedOut);
+        if (!string.Equals(trimmedOut, beforeNormOut, StringComparison.OrdinalIgnoreCase))
+            _logger.LogInformation("[Pdf] pdf_merge normalized output path from {Before} to {After}", beforeNormOut, trimmedOut);
+
+        var outFull = Path.GetFullPath(trimmedOut);
         if (!string.Equals(Path.GetExtension(outFull), ".pdf", StringComparison.OrdinalIgnoreCase))
             return "失败：输出路径须为 .pdf 扩展名。";
 

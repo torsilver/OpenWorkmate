@@ -147,13 +147,17 @@ public sealed class WordPlugin
     }
 
     [ToolFunction("word_document_create")]
-    [Description("创建新 Word 文档并写入标题与段落；文件已存在则覆盖。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。Markdown：以 # / ## / ### 开头的行变为标题，以 - 或 * 开头的行变为列表项，其余为正文。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。")]
+    [Description("创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 必须是 .docx（推荐）或 .docm 扩展名，勿用 .md/.txt/.doc；paragraphs 内可用 Markdown 语法（# 标题、列表等），与输出格式无关。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。")]
     public string WordDocumentCreate(
-        [Description("目标路径：优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
+        [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题")] string title,
         [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表")] string paragraphs)
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
+        var beforeNormalize = filePath;
+        filePath = OpenXmlHelpers.NormalizeWordCreateOutputPath(filePath);
+        if (!string.Equals(filePath, beforeNormalize, StringComparison.OrdinalIgnoreCase))
+            _logger?.LogInformation("[Word] word_document_create normalized path from {Before} to {After}", beforeNormalize, filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         _logger?.LogInformation("[Word] word_document_create path={Path}", filePath);
         try

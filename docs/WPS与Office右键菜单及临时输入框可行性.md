@@ -142,4 +142,3 @@
 - [OfficeMenu](https://learn.microsoft.com/en-us/javascript/api/manifest/officemenu)
 - [Dialog API](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/dialog-api-in-office-add-ins)
 - [Office.DialogOptions](https://learn.microsoft.com/en-us/javascript/api/office/office.dialogoptions)
-

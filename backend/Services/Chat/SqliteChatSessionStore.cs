@@ -54,6 +54,7 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
                     CREATE INDEX IF NOT EXISTS idx_csm_session ON chat_session_messages(session_id, sort_order);
                     """;
                 cmd.ExecuteNonQuery();
+                EnsureAgentProfileColumn(conn);
                 _initialized = true;
             }
             catch (Exception ex)
@@ -74,7 +75,26 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
         p2.ExecuteNonQuery();
     }
 
-    public async Task SaveFromHistoryAsync(string sessionId, IReadOnlyList<ChatMessage> history, CancellationToken ct = default)
+    private static void EnsureAgentProfileColumn(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(chat_sessions);";
+        using (var r = cmd.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                var colName = r.GetString(1);
+                if (string.Equals(colName, "agent_profile_id", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+        }
+
+        using var alter = conn.CreateCommand();
+        alter.CommandText = "ALTER TABLE chat_sessions ADD COLUMN agent_profile_id TEXT NULL;";
+        alter.ExecuteNonQuery();
+    }
+
+    public async Task SaveFromHistoryAsync(string sessionId, IReadOnlyList<ChatMessage> history, string? agentProfileId = null, CancellationToken ct = default)
     {
         if (!ChatSessionPersistenceHelper.IsValidSessionId(sessionId))
             return;
@@ -122,17 +142,19 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
                 await delSess.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
+            object aidDb = string.IsNullOrWhiteSpace(agentProfileId) ? DBNull.Value : agentProfileId.Trim();
             await using (var insSess = conn.CreateCommand())
             {
                 insSess.Transaction = tx;
                 insSess.CommandText = """
-                    INSERT INTO chat_sessions (session_id, updated_at_utc, title_preview, message_count)
-                    VALUES ($sid, $upd, $title, $cnt);
+                    INSERT INTO chat_sessions (session_id, updated_at_utc, title_preview, message_count, agent_profile_id)
+                    VALUES ($sid, $upd, $title, $cnt, $aid);
                     """;
                 insSess.Parameters.AddWithValue("$sid", sessionId);
                 insSess.Parameters.AddWithValue("$upd", nowStr);
                 insSess.Parameters.AddWithValue("$title", title.Trim());
                 insSess.Parameters.AddWithValue("$cnt", lines.Count);
+                insSess.Parameters.AddWithValue("$aid", aidDb);
                 await insSess.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -243,10 +265,11 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
         }
     }
 
-    public async Task<(IReadOnlyList<ChatSessionListItemDto> Items, bool HasMore)> ListAsync(int skip, int take, CancellationToken ct = default)
+    public async Task<(IReadOnlyList<ChatSessionListItemDto> Items, bool HasMore)> ListAsync(int skip, int take, string? agentProfileId = null, CancellationToken ct = default)
     {
         skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 50);
+        var filterAid = string.IsNullOrWhiteSpace(agentProfileId) ? null : agentProfileId.Trim();
 
         EnsureInitialized();
         await using var conn = new SqliteConnection(_connectionString);
@@ -260,7 +283,11 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
         long total;
         await using (var countCmd = conn.CreateCommand())
         {
-            countCmd.CommandText = "SELECT COUNT(*) FROM chat_sessions;";
+            countCmd.CommandText = filterAid == null
+                ? "SELECT COUNT(*) FROM chat_sessions;"
+                : "SELECT COUNT(*) FROM chat_sessions WHERE agent_profile_id = $aid;";
+            if (filterAid != null)
+                countCmd.Parameters.AddWithValue("$aid", filterAid);
             var o = await countCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
             total = o is long l ? l : Convert.ToInt64(o, CultureInfo.InvariantCulture);
         }
@@ -268,14 +295,24 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
         var slice = new List<ChatSessionListItemDto>();
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = """
-                SELECT session_id, title_preview, updated_at_utc, message_count
-                FROM chat_sessions
-                ORDER BY updated_at_utc DESC
-                LIMIT $take OFFSET $skip;
-                """;
+            cmd.CommandText = filterAid == null
+                ? """
+                  SELECT session_id, title_preview, updated_at_utc, message_count, agent_profile_id
+                  FROM chat_sessions
+                  ORDER BY updated_at_utc DESC
+                  LIMIT $take OFFSET $skip;
+                  """
+                : """
+                  SELECT session_id, title_preview, updated_at_utc, message_count, agent_profile_id
+                  FROM chat_sessions
+                  WHERE agent_profile_id = $aid
+                  ORDER BY updated_at_utc DESC
+                  LIMIT $take OFFSET $skip;
+                  """;
             cmd.Parameters.AddWithValue("$take", take);
             cmd.Parameters.AddWithValue("$skip", skip);
+            if (filterAid != null)
+                cmd.Parameters.AddWithValue("$aid", filterAid);
             await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await r.ReadAsync(ct).ConfigureAwait(false))
             {
@@ -287,7 +324,8 @@ public sealed class SqliteChatSessionStore : IChatSessionStore
                     SessionId = r.GetString(0),
                     TitlePreview = r.GetString(1),
                     UpdatedAtUtc = upd,
-                    MessageCount = r.GetInt32(3)
+                    MessageCount = r.GetInt32(3),
+                    AgentProfileId = r.IsDBNull(4) ? null : r.GetString(4)
                 });
             }
         }

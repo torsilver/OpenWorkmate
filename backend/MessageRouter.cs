@@ -101,7 +101,7 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? PlanCurrentStepIndex { get; set; }
 
-    /// <summary>set_context 时：当前页面/Agent 名称（如页面 title），用于会话 DisplayName。</summary>
+    /// <summary>set_context 时：当前浏览页标题；仅写入会话的页面上下文字段，不覆盖 Agent 展示名。</summary>
     [JsonPropertyName("pageTitle")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PageTitle { get; set; }
@@ -319,6 +319,8 @@ public class ScheduledTaskUpdateRequest
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(WsMessage))]
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(AgentProfileEntry))]
+[JsonSerializable(typeof(List<AgentProfileEntry>))]
 [JsonSerializable(typeof(ToolPermissionRule))]
 [JsonSerializable(typeof(List<ToolPermissionRule>))]
 [JsonSerializable(typeof(SemanticKernelFeaturesConfig))]
