@@ -351,6 +351,8 @@ public class AppConfig
     public string? AccurateDataDirectory { get; set; }
     /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
     public string? ScheduledTasksDirectory { get; set; }
+    /// <summary>历史对话 SQLite 所在目录（内含 <c>chat-sessions.db</c>）；为空时使用 %LocalAppData%/OfficeCopilot/ChatSessions。可被宿主键 OfficeCopilot:ChatSessionsDirectory 覆盖。</summary>
+    public string? ChatSessionsDirectory { get; set; }
     /// <summary>OCR 配置；为空时 MCP_OCR 工具不可用。已废弃，请使用 OcrModels + ActiveOcrModelId。</summary>
     public OcrConfig? Ocr { get; set; }
     /// <summary>百炼实时语音识别（v1/inference WebSocket）；语音输入、会议与文件转写均依赖此项。</summary>

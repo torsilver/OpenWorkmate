@@ -369,4 +369,10 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(ToolInvocationDebugStatDto))]
 [JsonSerializable(typeof(List<ToolInvocationDebugStatDto>))]
 [JsonSerializable(typeof(DebugStatsResetResponse))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionListItemDto))]
+[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.Chat.ChatSessionListItemDto>))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionMessageDto))]
+[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.Chat.ChatSessionMessageDto>))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionListResponse))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionMessagesResponse))]
 internal partial class JsonCtx : JsonSerializerContext;

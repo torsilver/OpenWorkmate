@@ -100,9 +100,10 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
             if (_telemetry.SsePayloadPreviews.Count < 6)
             {
                 var oneLine = text.Replace('\r', ' ').Replace('\n', ' ');
+                var forLog = DashScopeChatRequestDiagnostics.FormatSseJsonPayloadForLog(oneLine);
                 _telemetry.SsePayloadPreviews.Add(
                     DashScopeChatRequestDiagnostics.HeadTailOmitMiddle(
-                        oneLine,
+                        forLog,
                         DashScopeChatRequestDiagnostics.LogPreviewHeadChars,
                         DashScopeChatRequestDiagnostics.LogPreviewTailChars));
             }

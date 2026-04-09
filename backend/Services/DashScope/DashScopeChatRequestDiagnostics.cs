@@ -73,7 +73,7 @@ internal static class DashScopeChatRequestDiagnostics
                 toolsLen,
                 entry?.EnableThinking?.ToString() ?? "(null)");
 
-            var preview = BuildOutgoingBodyPreview(bodyUtf8);
+            var preview = BuildOutgoingBodyPreview(root);
             logger.LogInformation(
                 "[DashScope] req entry={Entry} bodyUtf8Bytes={Bytes} bodyPreview={Preview}",
                 modelEntryId,
@@ -107,25 +107,31 @@ internal static class DashScopeChatRequestDiagnostics
             s.Substring(s.Length - tailChars));
     }
 
-    /// <summary>较短时整段做可读 JSON；超过头+尾阈值则只打原文头尾（不整包 Parse 大 JSON）。</summary>
-    private static string BuildOutgoingBodyPreview(ReadOnlySpan<byte> bodyUtf8)
+    /// <summary>
+    /// 将已解析的请求根节点序列化为日志用单行 JSON（中文等不转义为 <c>\uXXXX</c>），再按头尾省略。
+    /// 大 body 也走同一路径：与「仅截取原始字符串」相比多一次 Serialize，但日志可读性更好。
+    /// </summary>
+    private static string BuildOutgoingBodyPreview(JsonElement root)
     {
-        if (bodyUtf8.IsEmpty)
-            return "";
-        var s = Encoding.UTF8.GetString(bodyUtf8);
-        if (s.Length <= LogPreviewHeadChars + LogPreviewTailChars)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(s);
-                return JsonSerializer.Serialize(doc.RootElement, LogJsonOptions);
-            }
-            catch (JsonException)
-            {
-                return s;
-            }
-        }
+        var readable = JsonSerializer.Serialize(root, LogJsonOptions);
+        if (readable.Length <= LogPreviewHeadChars + LogPreviewTailChars)
+            return readable;
+        return HeadTailOmitMiddle(readable, LogPreviewHeadChars, LogPreviewTailChars);
+    }
 
-        return HeadTailOmitMiddle(s, LogPreviewHeadChars, LogPreviewTailChars);
+    /// <summary>SSE <c>data:</c> 单行 JSON 在日志中转为可读（去掉 <c>\uXXXX</c> 中文转义）。解析失败则返回原文。</summary>
+    internal static string FormatSseJsonPayloadForLog(string jsonOneLine)
+    {
+        if (string.IsNullOrEmpty(jsonOneLine))
+            return jsonOneLine;
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonOneLine);
+            return JsonSerializer.Serialize(doc.RootElement, LogJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return jsonOneLine;
+        }
     }
 }

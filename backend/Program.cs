@@ -13,6 +13,7 @@ using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
+using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Security;
 using Microsoft.Extensions.Hosting;
@@ -156,6 +157,28 @@ builder.Services.AddSingleton<UserOptionsManager>();
                 dir = Path.Combine(AppContext.BaseDirectory, dir);
         }
         return new FileScheduledTaskStore(dir, sp.GetRequiredService<ILogger<FileScheduledTaskStore>>());
+    });
+    builder.Services.AddSingleton<IChatSessionStore>(sp =>
+    {
+        var cfg = sp.GetRequiredService<IConfiguration>();
+        var appCfg = sp.GetRequiredService<ConfigService>().Current;
+        var dir = (cfg["OfficeCopilot:ChatSessionsDirectory"] ?? "").Trim();
+        if (string.IsNullOrEmpty(dir))
+            dir = (appCfg.ChatSessionsDirectory ?? "").Trim();
+        if (string.IsNullOrEmpty(dir))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            dir = Path.Combine(appData, "OfficeCopilot", "ChatSessions");
+        }
+        else
+        {
+            dir = Environment.ExpandEnvironmentVariables(dir);
+            if (!Path.IsPathRooted(dir))
+                dir = Path.Combine(AppContext.BaseDirectory, dir);
+        }
+
+        Directory.CreateDirectory(dir);
+        return new SqliteChatSessionStore(dir, sp.GetRequiredService<ILogger<SqliteChatSessionStore>>());
     });
 
     builder.Services.AddCors();
@@ -945,6 +968,37 @@ app.MapDelete("/api/plans/{id}", async (string id, IPlanStore planStore, Cancell
     return Results.Ok(new { ok = true });
 });
 
+app.MapGet("/api/chat-sessions", async (int? skip, int? take, IChatSessionStore store, CancellationToken ct) =>
+{
+    var s = skip ?? 0;
+    var t = take ?? 10;
+    var (items, hasMore) = await store.ListAsync(s, t, ct).ConfigureAwait(false);
+    var res = new ChatSessionListResponse { Items = items.ToList(), HasMore = hasMore };
+    return Results.Json(res, JsonCtx.Default.ChatSessionListResponse);
+});
+
+app.MapGet("/api/chat-sessions/{sessionId}/messages", async (string sessionId, IChatSessionStore store, CancellationToken ct) =>
+{
+    if (!ChatSessionPersistenceHelper.IsValidSessionId(sessionId))
+        return Results.Json(new { ok = false, message = "请求参数无效：会话 ID 格式不正确。" }, statusCode: 400);
+    var msgs = await store.GetMessagesAsync(sessionId, ct).ConfigureAwait(false);
+    if (msgs == null || msgs.Count == 0)
+        return Results.Json(new { ok = false, message = "未找到该历史对话或尚无已保存消息。" }, statusCode: 404);
+    var res = new ChatSessionMessagesResponse { Messages = msgs.ToList() };
+    return Results.Json(res, JsonCtx.Default.ChatSessionMessagesResponse);
+});
+
+app.MapDelete("/api/chat-sessions/{sessionId}", async (string sessionId, IChatSessionStore store, ChatService chatService, CancellationToken ct) =>
+{
+    if (!ChatSessionPersistenceHelper.IsValidSessionId(sessionId))
+        return Results.Json(new { ok = false, message = "请求参数无效：会话 ID 格式不正确。" }, statusCode: 400);
+    chatService.TryRemoveSession(sessionId);
+    var existed = await store.TryDeleteAsync(sessionId, ct).ConfigureAwait(false);
+    if (!existed)
+        return Results.Json(new { ok = false, message = "未找到该历史对话或已删除。" }, statusCode: 404);
+    return Results.Ok(new { ok = true });
+});
+
 // ----- 准确数据 API（仅列表 + 删除，与 MCP 共用目录）-----
 static string GetAccurateDataDirectory(ConfigService configService)
 {
@@ -1446,6 +1500,15 @@ static async Task HandleChatStreamAsync(
         streamCancelService.Remove(sessionId);
         SessionContext.SetSessionId(null);
         logger.LogDebug("[{SessionId}] SessionContext cleared", sessionId);
+    }
+
+    try
+    {
+        await chatService.PersistSessionTranscriptAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[{SessionId}] Persist chat transcript failed", sessionId);
     }
 
     logger.LogInformation(

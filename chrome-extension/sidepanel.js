@@ -91,6 +91,13 @@ const $planChecklistList = document.getElementById("plan-checklist-list");
 const $planChecklistSummary = document.getElementById("plan-checklist-summary");
 
 const $newChatBtn = document.getElementById("new-chat-btn");
+const $historyChatBtn = document.getElementById("history-chat-btn");
+const $historyOverlay = document.getElementById("history-overlay");
+const $historyOverlayBackdrop = document.getElementById("history-overlay-backdrop");
+const $historyOverlayClose = document.getElementById("history-overlay-close");
+const $historyList = document.getElementById("history-list");
+const $historyError = document.getElementById("history-error");
+const $historyLoadMore = document.getElementById("history-load-more");
 const $cancelPlanBtn = document.getElementById("cancel-plan-btn");
 const $planStepIndicator = document.getElementById("plan-step-indicator");
 const $meetingBtn = document.getElementById("meeting-btn");
@@ -194,12 +201,17 @@ if ($settingsBtn) {
   });
 }
 
+/** 与新建对话、删除当前历史会话共用（历史对话块内 WELCOME_INNER_HTML 与此相同文案）。 */
+const WELCOME_INNER_HTML_NEW_CHAT =
+  '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p></div>';
+
 // ───── New conversation ─────
 if ($newChatBtn) {
   $newChatBtn.addEventListener("click", () => {
     sessionStorage.removeItem("copilot_session_id");
+    clearConversationTitleStorage();
     setCurrentPlan(null, null);
-    $messages.innerHTML = '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p></div>';
+    $messages.innerHTML = WELCOME_INNER_HTML_NEW_CHAT;
     attachments.length = 0;
     if ($attachmentsPreview) { $attachmentsPreview.innerHTML = ""; $attachmentsPreview.style.display = "none"; }
     if (ws) { ws.close(); ws = null; }
@@ -249,7 +261,7 @@ function scheduleSyncActiveTabContext() {
 
 async function syncActiveTabContextNow() {
   const title = await getActiveTabTitle();
-  updateCurrentPageLabel(title, getSessionId());
+  // 顶栏显示对话摘要，不再用标签页标题，避免与历史会话混淆；仍向后台同步活动标签标题供 Browser 等工具使用。
   sendSetContext(title);
 }
 
@@ -456,8 +468,7 @@ function reloadOpenPlanTabsForPlanId(planId) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const pageTitle = await getActiveTabTitle();
-  updateCurrentPageLabel(pageTitle, getSessionId());
+  refreshConversationTitleLabel();
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     chrome.storage.local.get(["copilot_plan_id", "copilot_plan_title", "copilot_execute_plan_id", "copilot_execute_plan_title"], (r) => {
       if (r.copilot_plan_id) setCurrentPlan(r.copilot_plan_id, r.copilot_plan_title || "");
@@ -847,6 +858,67 @@ function getSessionId() {
   return id;
 }
 
+/** 与后端历史列表 titlePreview 一致：首条用户话截断 80 字（见 SqliteChatSessionStore）。 */
+const STORAGE_CONV_TITLE = "copilot_conv_title";
+const STORAGE_CONV_TITLE_SID = "copilot_conv_title_sid";
+const MAX_CONV_TITLE_CHARS = 80;
+
+function truncConvTitlePreview(text) {
+  let t = (text != null ? String(text) : "").trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  if (t.length <= MAX_CONV_TITLE_CHARS) return t;
+  return t.slice(0, MAX_CONV_TITLE_CHARS) + "…";
+}
+
+function getConversationTitleForCurrentSession() {
+  const id = getSessionId();
+  const sid = sessionStorage.getItem(STORAGE_CONV_TITLE_SID);
+  if (sid !== id) return "";
+  return sessionStorage.getItem(STORAGE_CONV_TITLE) || "";
+}
+
+function refreshConversationTitleLabel() {
+  const id = getSessionId();
+  const t = getConversationTitleForCurrentSession();
+  const label = t || "（尚未发送消息）";
+  updateCurrentPageLabel(label, id);
+}
+
+/** 仅在本会话尚无标题时写入（首条用户消息定标题）。 */
+function trySetFirstConversationTitlePreview(userVisibleText) {
+  if (getConversationTitleForCurrentSession()) return;
+  const truncated = truncConvTitlePreview(userVisibleText);
+  if (!truncated) return;
+  sessionStorage.setItem(STORAGE_CONV_TITLE_SID, getSessionId());
+  sessionStorage.setItem(STORAGE_CONV_TITLE, truncated);
+  refreshConversationTitleLabel();
+}
+
+function clearConversationTitleStorage() {
+  sessionStorage.removeItem(STORAGE_CONV_TITLE);
+  sessionStorage.removeItem(STORAGE_CONV_TITLE_SID);
+}
+
+/** 从历史 API 回填首条用户话作为顶栏标题（与列表一致）。 */
+function applyConversationTitleFromLoadedMessages(msgs) {
+  const id = getSessionId();
+  let firstUser = "";
+  for (let i = 0; i < (msgs || []).length; i++) {
+    const m = msgs[i];
+    if ((m.role || "").toLowerCase() === "user" && (m.text || "").trim()) {
+      firstUser = String(m.text).trim();
+      break;
+    }
+  }
+  if (firstUser) {
+    sessionStorage.setItem(STORAGE_CONV_TITLE_SID, id);
+    sessionStorage.setItem(STORAGE_CONV_TITLE, truncConvTitlePreview(firstUser));
+  } else {
+    clearConversationTitleStorage();
+  }
+  refreshConversationTitleLabel();
+}
+
 // ───── DevTools logging（侧栏页面右键「检查」打开 Console） ─────
 function debugLog(tag, message, type = "info", detail) {
   const prefix = "[OfficeCopilot]";
@@ -900,8 +972,8 @@ function connect() {
     setStatus("connected");
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
+    refreshConversationTitleLabel();
     const pageTitle = await getActiveTabTitle();
-    updateCurrentPageLabel(pageTitle, sessionId);
     sendSetContext(pageTitle);
     const toFlush = pendingMessages.length;
     while (pendingMessages.length > 0) {
@@ -1599,6 +1671,238 @@ function finalizeStream() {
     scheduleCrossAgentAutoRun();
   }
 }
+
+// ───── 历史对话（/api/chat-sessions）─────
+let historySkip = 0;
+let historyHasMore = true;
+let historyLoading = false;
+
+function showHistoryError(text) {
+  if (!$historyError) return;
+  const t = (text || "").trim();
+  if (!t) {
+    $historyError.style.display = "none";
+    $historyError.textContent = "";
+    return;
+  }
+  $historyError.textContent = t;
+  $historyError.style.display = "block";
+}
+
+function updateHistoryLoadMoreButton() {
+  if (!$historyLoadMore) return;
+  if (!historyHasMore) {
+    $historyLoadMore.textContent = "没有更多了";
+    $historyLoadMore.disabled = true;
+  } else {
+    $historyLoadMore.textContent = "加载更多";
+    $historyLoadMore.disabled = historyLoading;
+  }
+}
+
+function closeHistoryOverlay() {
+  if (!$historyOverlay) return;
+  $historyOverlay.style.display = "none";
+  $historyOverlay.setAttribute("aria-hidden", "true");
+  showHistoryError("");
+}
+
+async function fetchHistoryPage(append) {
+  if (historyLoading) return;
+  if (append && !historyHasMore) return;
+  historyLoading = true;
+  if ($historyLoadMore) $historyLoadMore.disabled = true;
+  try {
+    await tasklyEnsureApiBase();
+    await ensureLocalServiceTokenFromBootstrap();
+    const skip = append ? historySkip : 0;
+    if (!append) {
+      historySkip = 0;
+      historyHasMore = true;
+      if ($historyList) $historyList.innerHTML = "";
+    }
+    const res = await tasklyFetch(API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || "加载历史列表失败");
+    }
+    const items = data.items || [];
+    historyHasMore = !!data.hasMore;
+    historySkip = skip + items.length;
+    const curSid = getSessionId();
+    for (const it of items) {
+      appendHistoryListItem(it, curSid);
+    }
+  } catch (e) {
+    showHistoryError(e.message || String(e));
+  } finally {
+    historyLoading = false;
+    updateHistoryLoadMoreButton();
+  }
+}
+
+function appendHistoryListItem(it, currentSessionId) {
+  if (!$historyList || !it || !it.sessionId) return;
+  const li = document.createElement("li");
+  li.className = "history-list-item" + (it.sessionId === currentSessionId ? " history-list-item--current" : "");
+  li.dataset.sessionId = it.sessionId;
+
+  const main = document.createElement("div");
+  main.className = "history-list-item-main";
+  const titleEl = document.createElement("div");
+  titleEl.className = "history-list-item-title";
+  titleEl.textContent = (it.titlePreview && String(it.titlePreview).trim()) || it.sessionId || "（无标题）";
+  const meta = document.createElement("div");
+  meta.className = "history-list-item-meta";
+  if (it.updatedAtUtc) {
+    try {
+      meta.textContent = new Date(it.updatedAtUtc).toLocaleString();
+    } catch {
+      meta.textContent = "";
+    }
+  }
+  main.appendChild(titleEl);
+  main.appendChild(meta);
+
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "history-list-item-delete";
+  delBtn.textContent = "删除";
+  delBtn.title = "删除此历史对话";
+  delBtn.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    void deleteHistorySession(it.sessionId, li);
+  });
+
+  li.addEventListener("click", function () {
+    void switchToHistorySession(it.sessionId);
+  });
+
+  li.appendChild(main);
+  li.appendChild(delBtn);
+  $historyList.appendChild(li);
+}
+
+async function deleteHistorySession(sid, liEl) {
+  if (!sid) return;
+  if (!confirm("确定删除此历史对话？本地保存的记录将移除，且无法恢复。")) return;
+  try {
+    await tasklyEnsureApiBase();
+    await ensureLocalServiceTokenFromBootstrap();
+    const res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.message || "删除失败");
+      return;
+    }
+    if (liEl && liEl.parentNode) liEl.parentNode.removeChild(liEl);
+    const cur = getSessionId();
+    if (cur === sid) {
+      sessionStorage.removeItem("copilot_session_id");
+      clearConversationTitleStorage();
+      setCurrentPlan(null, null);
+      if ($messages) $messages.innerHTML = WELCOME_INNER_HTML_NEW_CHAT;
+      attachments.length = 0;
+      if ($attachmentsPreview) {
+        $attachmentsPreview.innerHTML = "";
+        $attachmentsPreview.style.display = "none";
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      connect();
+    }
+  } catch (e) {
+    alert(e.message || String(e));
+  }
+}
+
+async function switchToHistorySession(sid) {
+  if (!sid) return;
+  finalizeStream();
+  try {
+    await tasklyEnsureApiBase();
+    await ensureLocalServiceTokenFromBootstrap();
+    const res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      addBotMessage(data.message || "加载该对话消息失败", true);
+      return;
+    }
+    sessionStorage.setItem("copilot_session_id", sid);
+    setCurrentPlan(null, null);
+    attachments.length = 0;
+    if ($attachmentsPreview) {
+      $attachmentsPreview.innerHTML = "";
+      $attachmentsPreview.style.display = "none";
+    }
+    if ($messages) $messages.innerHTML = "";
+    const msgs = data.messages || [];
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i];
+      const r = (m.role || "").toLowerCase();
+      if (r === "user") addUserMessage(m.text || "");
+      else addBotMessage(m.text || "", false);
+    }
+    if (msgs.length === 0 && $messages) {
+      $messages.innerHTML = WELCOME_INNER_HTML_NEW_CHAT;
+    }
+    applyConversationTitleFromLoadedMessages(msgs);
+    closeHistoryOverlay();
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+    connect();
+  } catch (e) {
+    addBotMessage(e.message || String(e), true);
+  }
+}
+
+async function openHistoryOverlay() {
+  if (!$historyOverlay) return;
+  showHistoryError("");
+  historySkip = 0;
+  historyHasMore = true;
+  if ($historyList) $historyList.innerHTML = "";
+  $historyOverlay.style.display = "flex";
+  $historyOverlay.setAttribute("aria-hidden", "false");
+  updateHistoryLoadMoreButton();
+  try {
+    await fetchHistoryPage(false);
+  } catch (e) {
+    showHistoryError(e.message || String(e));
+  }
+}
+
+if ($historyChatBtn) {
+  $historyChatBtn.addEventListener("click", function () {
+    void openHistoryOverlay();
+  });
+}
+if ($historyOverlayClose) {
+  $historyOverlayClose.addEventListener("click", function () {
+    closeHistoryOverlay();
+  });
+}
+if ($historyOverlayBackdrop) {
+  $historyOverlayBackdrop.addEventListener("click", function () {
+    closeHistoryOverlay();
+  });
+}
+if ($historyLoadMore) {
+  $historyLoadMore.addEventListener("click", function () {
+    void fetchHistoryPage(true);
+  });
+}
+
+document.addEventListener("keydown", function (ev) {
+  if (ev.key !== "Escape") return;
+  if (!$historyOverlay || $historyOverlay.style.display === "none") return;
+  if ($historyOverlay.getAttribute("aria-hidden") !== "false") return;
+  closeHistoryOverlay();
+});
 
 // ───── Message handling ─────
 // 主会话「一问一答」中，助手侧一轮 = msg--round：内含 msg--agent-timeline（时间线）与流式块。
@@ -3224,6 +3528,7 @@ async function handleSend() {
 
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
+    trySetFirstConversationTitlePreview(text || (hasAttachments ? "（附图片）" : ""));
     pendingMessages.push({ text, attachmentsPayload });
     addBotMessage("连接已断开，正在重连并自动重发…", true);
     if (reconnectTimer) {
@@ -3240,6 +3545,7 @@ async function handleSend() {
   }
 
   addUserMessage(text || (hasAttachments ? "（附图片）" : ""));
+  trySetFirstConversationTitlePreview(text || (hasAttachments ? "（附图片）" : ""));
 
   send(text, attachmentsPayload);
   showThinkingIndicator();

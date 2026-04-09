@@ -36,9 +36,10 @@ public sealed partial class ChatService : IDisposable
     private readonly EmbeddingProvider _embeddingProvider;
     private readonly IPlanStore _planStore;
     private readonly AgentDebugStatsService _agentDebugStats;
+    private readonly IChatSessionStore _chatSessionStore;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -51,6 +52,7 @@ public sealed partial class ChatService : IDisposable
         _embeddingProvider = embeddingProvider;
         _planStore = planStore;
         _agentDebugStats = agentDebugStats;
+        _chatSessionStore = chatSessionStore;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -431,8 +433,46 @@ public sealed partial class ChatService : IDisposable
     public List<ChatMessage> GetSessionHistory(string sessionId)
     {
         var systemPrompt = GetActiveSystemPrompt();
-        var state = _sessions.GetOrAdd(sessionId, _ => new SessionState(systemPrompt));
+        var state = _sessions.GetOrAdd(sessionId, _ => LoadOrCreateSessionState(sessionId, systemPrompt));
         return state.History;
+    }
+
+    /// <summary>从磁盘恢复或新建会话状态（内存淘汰后仍可继续对话）。</summary>
+    private SessionState LoadOrCreateSessionState(string sessionId, string systemPrompt)
+    {
+        var persisted = _chatSessionStore.TryGetPersistedMessages(sessionId);
+        if (persisted == null || persisted.Count == 0)
+            return new SessionState(systemPrompt);
+
+        var state = new SessionState(systemPrompt);
+        foreach (var m in persisted)
+        {
+            if (string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase))
+                state.History.Add(new ChatMessage(ChatRole.User, m.Text));
+            else if (string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+                state.History.Add(new ChatMessage(ChatRole.Assistant, m.Text));
+        }
+
+        state.Touch();
+        return state;
+    }
+
+    /// <summary>删除内存中的会话（历史对话「删除」时与落盘一并清理）。</summary>
+    public bool TryRemoveSession(string sessionId) => _sessions.TryRemove(sessionId, out _);
+
+    /// <summary>将当前内存中的 History 覆盖写入 transcript（每轮流式结束后调用）。</summary>
+    public async Task PersistSessionTranscriptAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var state))
+            return;
+        try
+        {
+            await _chatSessionStore.SaveFromHistoryAsync(sessionId, state.History, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Persist chat transcript failed for session {SessionId}", sessionId);
+        }
     }
 
     public async IAsyncEnumerable<StreamItem> StreamChatAsync(
@@ -483,7 +523,7 @@ public sealed partial class ChatService : IDisposable
             systemPrompt = GetActiveSystemPrompt();
         }
 
-        var state = _sessions.GetOrAdd(sessionId, _ => new SessionState(systemPrompt));
+        var state = _sessions.GetOrAdd(sessionId, _ => LoadOrCreateSessionState(sessionId, systemPrompt));
         state.Touch();
 
         // SessionContext 已在 Program.HandleChatStream 中按当前请求设置，供 Filter/Plugin 使用

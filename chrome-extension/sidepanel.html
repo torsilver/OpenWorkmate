@@ -16,9 +16,10 @@
   <div id="app">
     <header class="header">
       <div class="header-title">
-        <p id="current-page-label" class="header-subtitle" title="当前活动标签（本窗口）；工具默认作用于该标签">(无)</p>
+        <p id="current-page-label" class="header-subtitle" title="当前对话摘要（首条用户消息截断）；与历史列表标题一致。">(无)</p>
       </div>
       <div class="header-controls">
+        <button id="history-chat-btn" type="button" title="历史对话" style="background:none; border:none; cursor:pointer; font-size:16px;">📜</button>
         <button id="new-chat-btn" title="新建对话" style="background:none; border:none; cursor:pointer; font-size:16px;">💬</button>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
@@ -134,6 +135,21 @@
         <div class="ask-options-options" id="ask-options-options" role="listbox" aria-label="候选项列表"></div>
         <div class="ask-options-actions">
           <button id="ask-options-confirm-btn" type="button" class="ask-options-confirm-btn">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="history-overlay" class="history-overlay" style="display: none;" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="history-overlay-title">
+      <div id="history-overlay-backdrop" class="history-overlay-backdrop" aria-hidden="true"></div>
+      <div class="history-overlay-panel">
+        <div class="history-overlay-header">
+          <h2 id="history-overlay-title" class="history-overlay-title">历史对话</h2>
+          <button type="button" id="history-overlay-close" class="history-overlay-close" aria-label="关闭">✕</button>
+        </div>
+        <p id="history-error" class="history-error" style="display: none;" role="alert"></p>
+        <ul id="history-list" class="history-list"></ul>
+        <div class="history-footer">
+          <button type="button" id="history-load-more" class="history-load-more">加载更多</button>
         </div>
       </div>
     </div>
