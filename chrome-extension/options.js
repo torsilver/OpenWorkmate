@@ -1246,7 +1246,7 @@ var DEFAULT_PAGE_SCRIPTS = [
   'scroll_to_top', 'scroll_to_bottom', 'scroll_by', 'scroll_into_view',
   'wait_for_selector',
   'click_selector', 'fill_input', 'select_option', 'set_checked', 'hover_selector', 'focus_selector', 'press_key',
-  'tab_list', 'tab_activate', 'tab_reload', 'tab_go_back', 'tab_go_forward', 'tab_close'
+  'tab_list', 'tab_list_all_windows', 'tab_activate', 'tab_reload', 'tab_go_back', 'tab_go_forward', 'tab_close'
 ];
 /** 与 Office 任务窗格 DOCUMENT_SCRIPTS 对齐（current_run_document_script） */
 var DEFAULT_OFFICE_DOCUMENT_SCRIPTS = ['word_read_selection', 'office_doc_meta', 'office_word_body_preview', 'office_host_quick_glance'];

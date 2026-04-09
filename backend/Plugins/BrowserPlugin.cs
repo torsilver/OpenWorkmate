@@ -117,7 +117,7 @@ public class BrowserPlugin
         "滚动：scroll_to_top/bottom；scroll_by{deltaY,smooth}；scroll_into_view{selector,block,inline}。\n" +
         "等待：wait_for_selector{selector,timeoutMs,requireVisible}。\n" +
         "交互：click_selector{selector,doubleClick}；fill_input{selector,value}；select_option{selector,value}；set_checked{selector,checked}；hover_selector/focus_selector{selector}；press_key{key,code?,selector?,ctrlKey?...}（合成事件，部分站点不响应）。\n" +
-        "标签：tab_list{maxTabs}；tab_activate{tabId}；tab_reload{tabId?}；tab_go_back/forward{tabId?}；tab_close{tabId}（须非当前活动页）；tab_open{url?} 默认不在白名单（打开任意链接须在设置中勾选 scriptId）。")]
+        "标签：tab_list{maxTabs,scope?,urlMaxLength?} — 默认仅当前窗口；scope 为 browser 时列出本浏览器所有窗口的标签（条数受 maxTabs 限制，url 会截断）。tab_list_all_windows{maxTabs,urlMaxLength?} 等同于 tab_list 且 scope=browser。tab_activate{tabId}；tab_reload{tabId?}；tab_go_back/forward{tabId?}；tab_close{tabId}（须非当前活动页）；tab_open{url?} 默认不在白名单（打开任意链接须在设置中勾选 scriptId）。")]
     public async Task<string> RunPageScriptAsync(
         [Description("scriptId：见工具 Description 列表；须在允许白名单内。")] string scriptId,
         [Description("JSON 参数字符串，如 {} 或 {\"selector\":\"#x\",\"timeoutMs\":8000}。默认 {}。")] string paramsJson = "{}")

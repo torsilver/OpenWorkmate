@@ -16,7 +16,7 @@
   <div id="app">
     <header class="header">
       <div class="header-title">
-        <p id="current-page-label" class="header-subtitle" title="当前页面">(无)</p>
+        <p id="current-page-label" class="header-subtitle" title="当前活动标签（本窗口）；工具默认作用于该标签">(无)</p>
       </div>
       <div class="header-controls">
         <button id="new-chat-btn" title="新建对话" style="background:none; border:none; cursor:pointer; font-size:16px;">💬</button>
@@ -37,7 +37,7 @@
     <main id="messages" class="messages">
       <div class="welcome">
         <p class="welcome-title">你好，我是 Office Copilot 👋</p>
-        <p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p>
+        <p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p>
       </div>
     </main>
 

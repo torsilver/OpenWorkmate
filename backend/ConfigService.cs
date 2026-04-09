@@ -401,7 +401,7 @@ public static class CliScriptEndKeys
         "scroll_to_top", "scroll_to_bottom", "scroll_by", "scroll_into_view",
         "wait_for_selector",
         "click_selector", "fill_input", "select_option", "set_checked", "hover_selector", "focus_selector", "press_key",
-        "tab_list", "tab_activate", "tab_reload", "tab_go_back", "tab_go_forward", "tab_close"
+        "tab_list", "tab_list_all_windows", "tab_activate", "tab_reload", "tab_go_back", "tab_go_forward", "tab_close"
     };
 
     /// <summary>Office 任务窗格 <c>DOCUMENT_SCRIPTS</c> 预置 scriptId（与 <c>office-addin/taskpane.js</c> 对齐）。</summary>

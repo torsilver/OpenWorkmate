@@ -199,7 +199,7 @@ if ($newChatBtn) {
   $newChatBtn.addEventListener("click", () => {
     sessionStorage.removeItem("copilot_session_id");
     setCurrentPlan(null, null);
-    $messages.innerHTML = '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手。输入任何内容开始对话。</p></div>';
+    $messages.innerHTML = '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p></div>';
     attachments.length = 0;
     if ($attachmentsPreview) { $attachmentsPreview.innerHTML = ""; $attachmentsPreview.style.display = "none"; }
     if (ws) { ws.close(); ws = null; }
@@ -232,6 +232,50 @@ function sendSetContext(pageTitle) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !pageTitle || pageTitle === "(无)") return;
   const t = pageTitle.length > 200 ? pageTitle.slice(0, 200) : pageTitle;
   ws.send(JSON.stringify({ type: "set_context", pageTitle: t }));
+}
+
+/** 当前窗口活动标签标题与 WS set_context 同步（防抖；监听器仅注册一次） */
+const ACTIVE_TAB_CONTEXT_DEBOUNCE_MS = 200;
+let activeTabContextDebounceTimer = null;
+let activeTabContextListenersRegistered = false;
+
+function scheduleSyncActiveTabContext() {
+  if (activeTabContextDebounceTimer != null) clearTimeout(activeTabContextDebounceTimer);
+  activeTabContextDebounceTimer = setTimeout(function () {
+    activeTabContextDebounceTimer = null;
+    void syncActiveTabContextNow();
+  }, ACTIVE_TAB_CONTEXT_DEBOUNCE_MS);
+}
+
+async function syncActiveTabContextNow() {
+  const title = await getActiveTabTitle();
+  updateCurrentPageLabel(title, getSessionId());
+  sendSetContext(title);
+}
+
+function initActiveTabContextSync() {
+  if (typeof chrome === "undefined" || !chrome.tabs?.onActivated || !chrome.tabs?.onUpdated) return;
+  if (activeTabContextListenersRegistered) return;
+  activeTabContextListenersRegistered = true;
+
+  chrome.tabs.onActivated.addListener(function () {
+    scheduleSyncActiveTabContext();
+  });
+
+  chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
+    if (changeInfo.title === undefined && changeInfo.status !== "complete") return;
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      const cur = tabs && tabs[0];
+      if (!cur || cur.id !== tabId) return;
+      scheduleSyncActiveTabContext();
+    });
+  });
+}
+
+function truncateTabListUrl(url, maxLen) {
+  const s = url != null ? String(url) : "";
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen) + "…";
 }
 
 function getCurrentPlanId() {
@@ -444,6 +488,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   initAtModeUI();
+  initActiveTabContextSync();
 });
 
 let ws = null;
@@ -1932,6 +1977,7 @@ async function executeCustomPageScriptViaUserScripts(scriptCode) {
 /** run_page_script 中在扩展上下文执行（chrome.tabs），非页面注入 */
 const EXTENSION_PAGE_SCRIPT_IDS = new Set([
   "tab_list",
+  "tab_list_all_windows",
   "tab_activate",
   "tab_reload",
   "tab_go_back",
@@ -1954,18 +2000,25 @@ async function runExtensionPageScript(scriptId, params) {
     return tab.id;
   }
 
-  if (scriptId === "tab_list") {
+  if (scriptId === "tab_list" || scriptId === "tab_list_all_windows") {
     const maxTabs = Math.min(200, Math.max(1, Number(p.maxTabs) || 50));
-    const tabs = await chrome.tabs.query({ currentWindow: true });
+    const allBrowser =
+      scriptId === "tab_list_all_windows" || String(p.scope || "").toLowerCase() === "browser";
+    const tabs = await chrome.tabs.query(allBrowser ? {} : { currentWindow: true });
+    const urlMax = Math.min(500, Math.max(80, Number(p.urlMaxLength) || 200));
     const slice = tabs.slice(0, maxTabs).map((t) => ({
       tabId: t.id,
+      windowId: t.windowId,
       title: t.title || "",
-      url: t.url || "",
+      url: truncateTabListUrl(t.url || "", urlMax),
       active: !!t.active,
       index: t.index
     }));
+    const scopeLabel = allBrowser ? "当前浏览器（所有窗口）" : "当前窗口";
     return (
-      "成功：当前窗口共 " +
+      "成功：" +
+      scopeLabel +
+      "共 " +
       tabs.length +
       " 个标签（下列为前 " +
       slice.length +
