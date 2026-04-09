@@ -1929,6 +1929,99 @@ async function executeCustomPageScriptViaUserScripts(scriptCode) {
   return JSON.stringify(v);
 }
 
+/** run_page_script 中在扩展上下文执行（chrome.tabs），非页面注入 */
+const EXTENSION_PAGE_SCRIPT_IDS = new Set([
+  "tab_list",
+  "tab_activate",
+  "tab_reload",
+  "tab_go_back",
+  "tab_go_forward",
+  "tab_close",
+  "tab_open"
+]);
+
+async function runExtensionPageScript(scriptId, params) {
+  const p = params && typeof params === "object" ? params : {};
+
+  async function getTargetTabId(explicitId) {
+    if (explicitId != null && explicitId !== "") {
+      const n = Number(explicitId);
+      if (!Number.isFinite(n) || n <= 0) throw new Error("失败：tabId 无效。");
+      return n;
+    }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error("失败：无法解析当前活动标签页。");
+    return tab.id;
+  }
+
+  if (scriptId === "tab_list") {
+    const maxTabs = Math.min(200, Math.max(1, Number(p.maxTabs) || 50));
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    const slice = tabs.slice(0, maxTabs).map((t) => ({
+      tabId: t.id,
+      title: t.title || "",
+      url: t.url || "",
+      active: !!t.active,
+      index: t.index
+    }));
+    return (
+      "成功：当前窗口共 " +
+      tabs.length +
+      " 个标签（下列为前 " +
+      slice.length +
+      " 个）。\n" +
+      JSON.stringify(slice, null, 2)
+    );
+  }
+
+  if (scriptId === "tab_activate") {
+    const tabId = p.tabId != null ? Number(p.tabId) : NaN;
+    if (!Number.isFinite(tabId) || tabId <= 0) throw new Error("失败：tab_activate 需要有效的 tabId。");
+    await chrome.tabs.update(tabId, { active: true });
+    return "成功：已激活标签 tabId=" + tabId + "。";
+  }
+
+  if (scriptId === "tab_reload") {
+    const tabId = await getTargetTabId(p.tabId);
+    await chrome.tabs.reload(tabId);
+    return "成功：已刷新标签 tabId=" + tabId + "。";
+  }
+
+  if (scriptId === "tab_go_back") {
+    const tabId = await getTargetTabId(p.tabId);
+    await chrome.tabs.goBack(tabId);
+    return "成功：已在标签 tabId=" + tabId + " 执行后退。";
+  }
+
+  if (scriptId === "tab_go_forward") {
+    const tabId = await getTargetTabId(p.tabId);
+    await chrome.tabs.goForward(tabId);
+    return "成功：已在标签 tabId=" + tabId + " 执行前进。";
+  }
+
+  if (scriptId === "tab_close") {
+    const tabId = p.tabId != null ? Number(p.tabId) : NaN;
+    if (!Number.isFinite(tabId) || tabId <= 0) {
+      throw new Error("失败：tab_close 必须显式传入 tabId，禁止默认关闭当前页以免误关侧栏上下文。");
+    }
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (active?.id === tabId) {
+      throw new Error("失败：不允许关闭当前活动标签页，请先切换到其他标签再关闭。");
+    }
+    await chrome.tabs.remove(tabId);
+    return "成功：已关闭标签 tabId=" + tabId + "。";
+  }
+
+  if (scriptId === "tab_open") {
+    let url = typeof p.url === "string" ? p.url.trim() : "";
+    if (!url) url = "about:blank";
+    const tab = await chrome.tabs.create({ url });
+    return "成功：已新建标签 tabId=" + (tab.id != null ? tab.id : "?") + " url=" + url + "。";
+  }
+
+  throw new Error("未知扩展脚本: " + scriptId);
+}
+
 // ───── RPC Handling ─────
 async function handleRpcRequest(msg) {
   const { id, method, params } = msg;
@@ -1943,14 +2036,25 @@ async function handleRpcRequest(msg) {
       result = await executeInActiveTab(addFloatingNoteInPage, params.message, params.title, params.anchorText);
     } else if (method === "run_page_script") {
       const scriptId = params?.scriptId;
-      if (!scriptId || typeof PAGE_SCRIPTS[scriptId] !== "function") {
+      if (!scriptId || typeof scriptId !== "string") {
         throw new Error("未知脚本 ID: " + (scriptId || ""));
       }
       let paramsObj = params?.scriptParams ?? params?.params;
       if (typeof paramsObj === "string") {
-        try { paramsObj = paramsObj ? JSON.parse(paramsObj) : {}; } catch (_) { paramsObj = {}; }
+        try {
+          paramsObj = paramsObj ? JSON.parse(paramsObj) : {};
+        } catch (_) {
+          paramsObj = {};
+        }
       }
-      result = await executeInActiveTab(PAGE_SCRIPTS[scriptId], paramsObj || {});
+      paramsObj = paramsObj || {};
+      if (EXTENSION_PAGE_SCRIPT_IDS.has(scriptId)) {
+        result = await runExtensionPageScript(scriptId, paramsObj);
+      } else if (typeof PAGE_SCRIPTS[scriptId] === "function") {
+        result = await executeInActiveTab(PAGE_SCRIPTS[scriptId], paramsObj);
+      } else {
+        throw new Error("未知脚本 ID: " + scriptId);
+      }
     } else if (method === "run_custom_page_script") {
       const scriptCode = params?.scriptCode;
       if (typeof scriptCode !== "string" || !scriptCode.trim()) {
@@ -2350,24 +2454,330 @@ async function captureFullPage() {
   return { viewportHeight, images };
 }
 
-// MCP 工具 run_page_script：预定义脚本注册表，仅执行白名单内 scriptId
+// MCP 工具 run_page_script：预定义脚本注册表，仅执行白名单内 scriptId（函数在页面隔离世界执行，须自包含）
 const PAGE_SCRIPTS = {
-  scroll_to_top: function (params) {
+  scroll_to_top: function () {
     window.scrollTo(0, 0);
     return "成功：已滚动到页面顶部。";
   },
-  scroll_to_bottom: function (params) {
+  scroll_to_bottom: function () {
     window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
     return "成功：已滚动到页面底部。";
   },
   get_visible_text: function (params) {
+    var p = params || {};
     var text = document.body ? document.body.innerText : "";
-    var max = typeof params && params.maxLength > 0 ? params.maxLength : 8000;
+    var max = p.maxLength > 0 ? Math.min(500000, Number(p.maxLength)) : 8000;
     if (text.length > max) text = text.slice(0, max) + "\n...(已截断)";
     return text || "(无文本)";
   },
-  get_page_title: function (params) {
+  get_page_title: function () {
     return document.title || "(无标题)";
+  },
+  get_page_outline: function (params) {
+    try {
+      var p = params || {};
+      var maxLevel = Math.min(6, Math.max(1, Number(p.maxHeadingLevel) || 3));
+      var maxHeadings = Math.min(200, Math.max(1, Number(p.maxHeadings) || 50));
+      var includeTextPrefix = !!p.includeTextPrefix;
+      var maxLen = Math.min(100000, Math.max(0, Number(p.maxLength) || 2000));
+      var metaDesc = "";
+      var m = document.querySelector('meta[name="description"]');
+      if (m && m.content) metaDesc = String(m.content).trim();
+      var nodes = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+      var headings = [];
+      for (var i = 0; i < nodes.length && headings.length < maxHeadings; i++) {
+        var n = nodes[i];
+        var lvl = parseInt(n.tagName.slice(1), 10);
+        if (lvl > maxLevel) continue;
+        var t = (n.innerText || "").replace(/\s+/g, " ").trim();
+        if (t) headings.push({ level: lvl, text: t });
+      }
+      var lines = [];
+      lines.push("url: " + (location.href || ""));
+      lines.push("title: " + (document.title || ""));
+      if (metaDesc) lines.push("meta_description: " + metaDesc);
+      lines.push("headings: " + JSON.stringify(headings));
+      if (includeTextPrefix && maxLen > 0 && document.body) {
+        var prefix = document.body.innerText.replace(/\s+/g, " ").trim().slice(0, maxLen);
+        lines.push("text_prefix: " + prefix + (document.body.innerText.length > maxLen ? "\n...(已截断)" : ""));
+      }
+      return "成功：页面概要如下。\n" + lines.join("\n");
+    } catch (e) {
+      return "失败：get_page_outline — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  extract_links: function (params) {
+    try {
+      var p = params || {};
+      var maxLinks = Math.min(500, Math.max(1, Number(p.maxLinks) || 100));
+      var sameOriginOnly = !!p.sameOriginOnly;
+      var origin = location.origin;
+      var anchors = document.querySelectorAll("a[href]");
+      var out = [];
+      for (var i = 0; i < anchors.length && out.length < maxLinks; i++) {
+        var a = anchors[i];
+        var href = "";
+        try {
+          href = a.href || "";
+        } catch (_) {
+          continue;
+        }
+        if (!href || href.indexOf("javascript:") === 0) continue;
+        if (sameOriginOnly) {
+          try {
+            var u = new URL(href, location.href);
+            if (u.origin !== origin) continue;
+          } catch (_) {
+            continue;
+          }
+        }
+        var label = (a.innerText || a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 500);
+        out.push({ text: label || "(无文本)", href: href });
+      }
+      return "成功：提取 " + out.length + " 条链接。\n" + JSON.stringify(out, null, 2);
+    } catch (e) {
+      return "失败：extract_links — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  extract_tables: function (params) {
+    try {
+      var p = params || {};
+      var sel = typeof p.selector === "string" && p.selector.trim() ? p.selector.trim() : "table";
+      if (sel.length > 500) return "失败：selector 过长。";
+      var maxTables = Math.min(20, Math.max(1, Number(p.maxTables) || 5));
+      var maxRows = Math.min(200, Math.max(1, Number(p.maxRows) || 30));
+      var maxCols = Math.min(50, Math.max(1, Number(p.maxCols) || 20));
+      var tables = document.querySelectorAll(sel);
+      var parts = [];
+      function escCell(s) {
+        return String(s == null ? "" : s)
+          .replace(/\|/g, "\\|")
+          .replace(/\r?\n/g, " ")
+          .trim();
+      }
+      for (var ti = 0; ti < tables.length && ti < maxTables; ti++) {
+        var tbl = tables[ti];
+        var rows = tbl.querySelectorAll("tr");
+        var md = [];
+        var rowCount = 0;
+        for (var ri = 0; ri < rows.length && rowCount < maxRows; ri++) {
+          var cells = rows[ri].querySelectorAll("th, td");
+          if (!cells.length) continue;
+          var cols = [];
+          for (var ci = 0; ci < cells.length && ci < maxCols; ci++) {
+            cols.push(escCell(cells[ci].innerText));
+          }
+          md.push("| " + cols.join(" | ") + " |");
+          rowCount++;
+          if (rowCount === 1) {
+            md.push("| " + cols.map(function () {
+              return "---";
+            }).join(" | ") + " |");
+          }
+        }
+        if (md.length) {
+          parts.push("### table_" + (ti + 1) + "\n" + md.join("\n"));
+        }
+      }
+      if (!parts.length) return "成功：未找到符合条件的表格（selector=" + sel + "）。";
+      return "成功：导出 " + parts.length + " 个表格（Markdown）。\n\n" + parts.join("\n\n");
+    } catch (e) {
+      return "失败：extract_tables — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  scroll_by: function (params) {
+    try {
+      var p = params || {};
+      var dy = Number(p.deltaY);
+      if (!isFinite(dy)) return "失败：deltaY 无效。";
+      var smooth = !!p.smooth;
+      window.scrollBy({ top: dy, behavior: smooth ? "smooth" : "auto" });
+      return "成功：已纵向滚动 " + dy + "px。";
+    } catch (e) {
+      return "失败：scroll_by — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  scroll_into_view: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      var block = p.block === "start" || p.block === "center" || p.block === "end" || p.block === "nearest" ? p.block : "nearest";
+      var inline = p.inline === "start" || p.inline === "center" || p.inline === "end" || p.inline === "nearest" ? p.inline : "nearest";
+      el.scrollIntoView({ block: block, inline: inline });
+      return "成功：已滚动到元素（selector=" + s + "）。";
+    } catch (e) {
+      return "失败：scroll_into_view — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  wait_for_selector: async function (params) {
+    var p = params || {};
+    var s = typeof p.selector === "string" ? p.selector.trim() : "";
+    if (!s) return "失败：selector 不能为空。";
+    if (s.length > 500) return "失败：selector 过长。";
+    var timeoutMs = Math.min(120000, Math.max(100, Number(p.timeoutMs) || 10000));
+    var requireVisible = !!p.requireVisible;
+    var t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      var el = document.querySelector(s);
+      if (el) {
+        if (requireVisible) {
+          var st = window.getComputedStyle(el);
+          var r = el.getBoundingClientRect();
+          if (st.display === "none" || st.visibility === "hidden" || r.width < 1 || r.height < 1) {
+            await new Promise(function (res) {
+              setTimeout(res, 100);
+            });
+            continue;
+          }
+        }
+        return "成功：已找到元素（selector=" + s + "）。";
+      }
+      await new Promise(function (res) {
+        setTimeout(res, 100);
+      });
+    }
+    return "失败：在 " + timeoutMs + "ms 内未找到元素（selector=" + s + "）。";
+  },
+  click_selector: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      if (typeof el.click !== "function") return "失败：该元素不可点击。";
+      if (p.doubleClick) {
+        el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
+      } else {
+        el.click();
+      }
+      return "成功：已" + (p.doubleClick ? "双击" : "点击") + "（selector=" + s + "）。";
+    } catch (e) {
+      return "失败：click_selector — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  fill_input: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      var tag = el.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") return "失败：元素不是 input/textarea。";
+      var val = p.value != null ? String(p.value) : "";
+      el.focus();
+      el.value = val;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return "成功：已填充（selector=" + s + "）。";
+    } catch (e) {
+      return "失败：fill_input — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  select_option: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el || el.tagName !== "SELECT") return "失败：元素不是 select。";
+      var v = p.value != null ? String(p.value) : "";
+      el.value = v;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return "成功：已选择 value=" + v + "。";
+    } catch (e) {
+      return "失败：select_option — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  set_checked: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      if (el.tagName !== "INPUT" || (el.type !== "checkbox" && el.type !== "radio")) {
+        return "失败：元素不是 checkbox/radio。";
+      }
+      el.checked = !!p.checked;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return "成功：已设置 checked=" + !!p.checked + "。";
+    } catch (e) {
+      return "失败：set_checked — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  hover_selector: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, view: window }));
+      return "成功：已派发悬停事件（selector=" + s + "）。";
+    } catch (e) {
+      return "失败：hover_selector — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  focus_selector: function (params) {
+    try {
+      var p = params || {};
+      var s = typeof p.selector === "string" ? p.selector.trim() : "";
+      if (!s) return "失败：selector 不能为空。";
+      if (s.length > 500) return "失败：selector 过长。";
+      var el = document.querySelector(s);
+      if (!el) return "失败：未找到元素（selector=" + s + "）。";
+      el.focus();
+      return "成功：已聚焦（selector=" + s + "）。";
+    } catch (e) {
+      return "失败：focus_selector — " + (e && e.message ? e.message : String(e));
+    }
+  },
+  press_key: function (params) {
+    try {
+      var p = params || {};
+      var key = typeof p.key === "string" ? p.key : "";
+      if (!key) return "失败：key 不能为空（合成键盘事件，部分站点可能不响应）。";
+      var sel = typeof p.selector === "string" ? p.selector.trim() : "";
+      var el = null;
+      if (sel) {
+        if (sel.length > 500) return "失败：selector 过长。";
+        el = document.querySelector(sel);
+        if (!el) return "失败：未找到元素（selector=" + sel + "）。";
+        el.focus();
+      } else {
+        el = document.activeElement;
+        if (!el || el === document.body) el = document.documentElement;
+      }
+      var code = typeof p.code === "string" && p.code ? p.code : key;
+      var evtInit = {
+        key: key,
+        code: code,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: !!p.ctrlKey,
+        altKey: !!p.altKey,
+        shiftKey: !!p.shiftKey,
+        metaKey: !!p.metaKey
+      };
+      el.dispatchEvent(new KeyboardEvent("keydown", evtInit));
+      el.dispatchEvent(new KeyboardEvent("keyup", evtInit));
+      return "成功：已在目标元素上派发 keydown/keyup（key=" + key + "）。注意：合成事件与真实键盘输入不等价。";
+    } catch (e) {
+      return "失败：press_key — " + (e && e.message ? e.message : String(e));
+    }
   }
 };
 

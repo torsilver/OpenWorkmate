@@ -1240,7 +1240,14 @@ if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveC
 var CLI_SCRIPT_END_KEYS = ['chrome', 'backend', 'office', 'wps'];
 var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Office', wps: 'WPS' };
 var DEFAULT_CLI_COMMANDS_BACKEND = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
-var DEFAULT_PAGE_SCRIPTS = ['scroll_to_top', 'scroll_to_bottom', 'get_visible_text', 'get_page_title'];
+/** 与 backend CliScriptEndKeys.DefaultAllowedScriptIds 一致；tab_open 可打开任意 URL，默认不纳入须用户在设置中手动添加 */
+var DEFAULT_PAGE_SCRIPTS = [
+  'get_visible_text', 'get_page_title', 'get_page_outline', 'extract_links', 'extract_tables',
+  'scroll_to_top', 'scroll_to_bottom', 'scroll_by', 'scroll_into_view',
+  'wait_for_selector',
+  'click_selector', 'fill_input', 'select_option', 'set_checked', 'hover_selector', 'focus_selector', 'press_key',
+  'tab_list', 'tab_activate', 'tab_reload', 'tab_go_back', 'tab_go_forward', 'tab_close'
+];
 /** 与 Office 任务窗格 DOCUMENT_SCRIPTS 对齐（current_run_document_script） */
 var DEFAULT_OFFICE_DOCUMENT_SCRIPTS = ['word_read_selection', 'office_doc_meta', 'office_word_body_preview', 'office_host_quick_glance'];
 /** 与 WPS 任务窗格 DOCUMENT_SCRIPTS 对齐 */

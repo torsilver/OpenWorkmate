@@ -394,7 +394,15 @@ public static class CliScriptEndKeys
 
     public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
 
-    public static readonly string[] DefaultAllowedScriptIds = { "scroll_to_top", "scroll_to_bottom", "get_visible_text", "get_page_title" };
+    /// <summary>Chrome <c>run_page_script</c> 默认白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_SCRIPTS</c> 一致）。<c>tab_open</c> 可导航至任意 URL，默认不包含，由用户在设置中手动加入。</summary>
+    public static readonly string[] DefaultAllowedScriptIds =
+    {
+        "get_visible_text", "get_page_title", "get_page_outline", "extract_links", "extract_tables",
+        "scroll_to_top", "scroll_to_bottom", "scroll_by", "scroll_into_view",
+        "wait_for_selector",
+        "click_selector", "fill_input", "select_option", "set_checked", "hover_selector", "focus_selector", "press_key",
+        "tab_list", "tab_activate", "tab_reload", "tab_go_back", "tab_go_forward", "tab_close"
+    };
 
     /// <summary>Office 任务窗格 <c>DOCUMENT_SCRIPTS</c> 预置 scriptId（与 <c>office-addin/taskpane.js</c> 对齐）。</summary>
     public static readonly string[] DefaultAllowedDocumentScriptIdsOffice =

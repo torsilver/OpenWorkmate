@@ -111,10 +111,16 @@ public class BrowserPlugin
 
     /// <summary>MCP 风格工具：在当前标签页执行预定义页面脚本，仅支持白名单内的 scriptId。</summary>
     [ToolFunction("run_page_script")]
-    [Description("运行位置：用户当前浏览器标签页的页面上下文中（由扩展注入执行）。在当前标签页执行预定义脚本，仅支持白名单内的 scriptId。使用 scriptId 指定脚本（如 scroll_to_top、get_visible_text），paramsJson 为可选 JSON 参数。")]
+    [Description(
+        "运行位置：Chrome 当前标签页（DOM 脚本由扩展注入；tab_* 在扩展内用 chrome.tabs 执行）。仅白名单内 scriptId。paramsJson 为 JSON 对象字符串。\n" +
+        "读页：get_visible_text{maxLength}；get_page_title；get_page_outline{maxHeadingLevel,maxHeadings,includeTextPrefix,maxLength}；extract_links{maxLinks,sameOriginOnly}；extract_tables{selector,maxTables,maxRows,maxCols}。\n" +
+        "滚动：scroll_to_top/bottom；scroll_by{deltaY,smooth}；scroll_into_view{selector,block,inline}。\n" +
+        "等待：wait_for_selector{selector,timeoutMs,requireVisible}。\n" +
+        "交互：click_selector{selector,doubleClick}；fill_input{selector,value}；select_option{selector,value}；set_checked{selector,checked}；hover_selector/focus_selector{selector}；press_key{key,code?,selector?,ctrlKey?...}（合成事件，部分站点不响应）。\n" +
+        "标签：tab_list{maxTabs}；tab_activate{tabId}；tab_reload{tabId?}；tab_go_back/forward{tabId?}；tab_close{tabId}（须非当前活动页）；tab_open{url?} 默认不在白名单（打开任意链接须在设置中勾选 scriptId）。")]
     public async Task<string> RunPageScriptAsync(
-        [Description("Predefined script ID (e.g. scroll_to_top, scroll_to_bottom, get_visible_text, get_page_title). Must be in the allowed whitelist.")] string scriptId,
-        [Description("Optional JSON string for script parameters, e.g. {} or {\"selector\":\"#main\"}. Default empty object.")] string paramsJson = "{}")
+        [Description("scriptId：见工具 Description 列表；须在允许白名单内。")] string scriptId,
+        [Description("JSON 参数字符串，如 {} 或 {\"selector\":\"#x\",\"timeoutMs\":8000}。默认 {}。")] string paramsJson = "{}")
     {
         var sessionId = SessionContext.GetSessionId();
         _logger.LogInformation("[Browser] run_page_script scriptId={ScriptId} sessionId={SessionId}", scriptId, sessionId ?? "(null)");
