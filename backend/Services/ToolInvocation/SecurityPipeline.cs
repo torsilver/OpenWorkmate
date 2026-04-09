@@ -1,3 +1,4 @@
+using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
@@ -66,7 +67,8 @@ public sealed class SecurityPipeline : ISecurityPipeline
 
         if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行命令 {Command}", endKey, cmdObj?.ToString());
+            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行命令 len={Len} preview={Command}",
+                endKey, cmdObj?.ToString()?.Length ?? 0, LogPreview.HeadTail(cmdObj?.ToString(), 96, 96));
             return null;
         }
 
@@ -95,7 +97,8 @@ public sealed class SecurityPipeline : ISecurityPipeline
             var result = await RequestHitlWithPlainSummaryAsync(sessionId, commandLine, "run_command", cmdName, ct);
             if (!result.Allowed)
                 return "用户拒绝执行或未在限定时间内确认，已取消执行。";
-            _logger.LogInformation("用户已允许执行命令: {Command}", command);
+            _logger.LogInformation("用户已允许执行命令 len={Len} preview={Command}",
+                commandLine.Length, LogPreview.HeadTail(commandLine, 96, 96));
         }
         return null;
     }

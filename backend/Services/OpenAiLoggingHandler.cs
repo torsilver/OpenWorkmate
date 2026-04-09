@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -13,7 +14,8 @@ namespace OfficeCopilot.Server.Services;
 public sealed class OpenAiLoggingHandler : DelegatingHandler
 {
     private readonly ILogger<OpenAiLoggingHandler> _logger;
-    private const int MaxBodyLogLength = 32 * 1024; // 32KB
+    /// <summary>超过此长度的响应体不做 JSON 规范化解析，避免日志路径占用过大 CPU/内存。</summary>
+    private const int MaxJsonNormalizeLength = 256 * 1024;
 
     private static readonly JsonSerializerOptions LogJsonOptions = new()
     {
@@ -31,7 +33,7 @@ public sealed class OpenAiLoggingHandler : DelegatingHandler
     private static string ToReadableJson(string? body)
     {
         if (string.IsNullOrEmpty(body)) return body ?? "";
-        if (body.Length > MaxBodyLogLength) return body;
+        if (body.Length > MaxJsonNormalizeLength) return body;
         try
         {
             using var doc = JsonDocument.Parse(body);
@@ -62,22 +64,25 @@ public sealed class OpenAiLoggingHandler : DelegatingHandler
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         var status = (int)response.StatusCode;
-        var resBody = "";
+        var errorBodyLen = 0;
+        string? errorBodyPreview = null;
         if (response.Content != null && status >= 400)
         {
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
             response.Content = new ByteArrayContent(bytes);
-            resBody = Encoding.UTF8.GetString(bytes);
-            if (resBody.Length > MaxBodyLogLength)
-                resBody = resBody.AsSpan(0, MaxBodyLogLength).ToString() + $"... [truncated, total {bytes.Length} bytes]";
-            else
-                resBody = ToReadableJson(resBody);
+            var text = Encoding.UTF8.GetString(bytes);
+            errorBodyLen = bytes.Length;
+            var normalized = ToReadableJson(text);
+            // 超大响应体避免整段 SingleLine 扫描
+            errorBodyPreview = normalized.Length <= MaxJsonNormalizeLength
+                ? LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(normalized), 400, 400)
+                : LogPreview.HeadTailOmitMiddle(normalized, 400, 400);
         }
 
         if (status >= 400)
             _logger.LogError(
-                "[AI-HTTP-RESPONSE] StatusCode={Status} RequestUri={Uri} ResponseBody={Body}",
-                status, request.RequestUri, resBody);
+                "[AI-HTTP-RESPONSE] StatusCode={Status} RequestUri={Uri} ResponseBodyLen={Len} ResponseBodyPreview={Preview}",
+                status, request.RequestUri, errorBodyLen, errorBodyPreview ?? "");
         else
             _logger.LogInformation("[AI-HTTP-RESPONSE] StatusCode={Status} RequestUri={Uri}",
                 status, request.RequestUri);

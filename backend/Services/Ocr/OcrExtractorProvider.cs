@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server.Services.Ocr;
 
@@ -62,8 +63,8 @@ public sealed class OcrExtractorProvider
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("OCR API failed: {Status} {Body}", response.StatusCode,
-                    responseText.Length > 300 ? responseText[..300] + "..." : responseText);
+                _logger.LogWarning("OCR API failed: {Status} bodyLen={Len} bodyPreview={Body}", response.StatusCode, responseText.Length,
+                    LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText), 96, 96));
                 var errMsg = responseText.Length > 200 ? responseText[..200] + "..." : responseText;
                 throw new InvalidOperationException("OCR 请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") +
                                                      (string.IsNullOrEmpty(errMsg) ? "" : " — " + errMsg));
@@ -89,8 +90,8 @@ public sealed class OcrExtractorProvider
 
         if (!response2.IsSuccessStatusCode)
         {
-            _logger.LogWarning("OCR API failed: {Status} {Body}", response2.StatusCode,
-                responseText2.Length > 300 ? responseText2[..300] + "..." : responseText2);
+            _logger.LogWarning("OCR API failed: {Status} bodyLen={Len} bodyPreview={Body}", response2.StatusCode, responseText2.Length,
+                LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText2), 96, 96));
             var errMsg = responseText2.Length > 200 ? responseText2[..200] + "..." : responseText2;
             throw new InvalidOperationException("OCR 请求失败: " + (int)response2.StatusCode + " " + (response2.ReasonPhrase ?? "") +
                                                  (string.IsNullOrEmpty(errMsg) ? "" : " — " + errMsg));

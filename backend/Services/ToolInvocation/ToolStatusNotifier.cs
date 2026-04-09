@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Plan;
 
@@ -226,14 +227,14 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         if (functionName == "run_command" && arguments.TryGetValue("command", out var cmdObj))
         {
             var cmd = cmdObj?.ToString()?.Trim();
-            return string.IsNullOrEmpty(cmd) ? null : $"命令 «{cmd}»";
+            return string.IsNullOrEmpty(cmd) ? null : $"命令 «{LogPreview.HeadTail(cmd, 48, 48)}»";
         }
         if (functionName == "run_page_script" && arguments.TryGetValue("scriptId", out var scriptObj))
         {
             var scriptId = scriptObj?.ToString()?.Trim();
             if (string.IsNullOrEmpty(scriptId)) return null;
             if (arguments.TryGetValue("paramsJson", out var paramsObj) && paramsObj is string paramsStr && !string.IsNullOrWhiteSpace(paramsStr) && paramsStr != "{}")
-                return $"页面脚本 «{scriptId}» 参数: {paramsStr}";
+                return $"页面脚本 «{scriptId}» 参数: {LogPreview.HeadTail(paramsStr, 64, 64)}";
             return $"页面脚本 «{scriptId}»";
         }
         if (functionName == "run_custom_page_script" && arguments.TryGetValue("scriptCode", out var customCodeObj))

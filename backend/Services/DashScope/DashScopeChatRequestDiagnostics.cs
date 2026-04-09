@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server.Services.DashScope;
 
@@ -11,8 +12,8 @@ namespace OfficeCopilot.Server.Services.DashScope;
 internal static class DashScopeChatRequestDiagnostics
 {
     /// <summary>日志预览：前若干 + 后若干字符，中间省略（大 JSON 只看头尾即可对齐参数/收尾）。</summary>
-    internal const int LogPreviewHeadChars = 300;
-    internal const int LogPreviewTailChars = 300;
+    internal const int LogPreviewHeadChars = 160;
+    internal const int LogPreviewTailChars = 160;
 
     private static readonly JsonSerializerOptions LogJsonOptions = new()
     {
@@ -92,20 +93,8 @@ internal static class DashScopeChatRequestDiagnostics
     }
 
     /// <summary>前 <paramref name="headChars"/> + 后 <paramref name="tailChars"/>；中间用省略标记（单行日志友好）。</summary>
-    internal static string HeadTailOmitMiddle(string s, int headChars = LogPreviewHeadChars, int tailChars = LogPreviewTailChars)
-    {
-        if (string.IsNullOrEmpty(s))
-            return "";
-        if (s.Length <= headChars + tailChars)
-            return s;
-        var omitted = s.Length - headChars - tailChars;
-        return string.Concat(
-            s.Substring(0, headChars),
-            " …[omitted ",
-            omitted.ToString(),
-            " chars]… ",
-            s.Substring(s.Length - tailChars));
-    }
+    internal static string HeadTailOmitMiddle(string s, int headChars = LogPreviewHeadChars, int tailChars = LogPreviewTailChars) =>
+        LogPreview.HeadTailOmitMiddle(s, headChars, tailChars);
 
     /// <summary>
     /// 将已解析的请求根节点序列化为日志用单行 JSON（中文等不转义为 <c>\uXXXX</c>），再按头尾省略。

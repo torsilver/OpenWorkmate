@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -31,7 +32,8 @@ public class BrowserPlugin
         [Description("The CSS color to use for highlighting (e.g., 'yellow', '#ff0000'). Default is yellow.")] string color = "yellow")
     {
         var sessionId = SessionContext.GetSessionId();
-        _logger.LogInformation("[Browser] highlight_webpage_text text={Text} color={Color} sessionId={SessionId}", text, color, sessionId ?? "(null)");
+        _logger.LogInformation("[Browser] highlight_webpage_text textLen={Len} textPreview={Text} color={Color} sessionId={SessionId}",
+            text?.Length ?? 0, LogPreview.HeadTail(text, 40, 40), color, sessionId ?? "(null)");
         if (string.IsNullOrEmpty(sessionId))
             return "Error: Session ID is missing (no active chat context).";
 
@@ -59,7 +61,8 @@ public class BrowserPlugin
         {
             var result = await responseTask;
             var resultMsg = result?.ToString() ?? "成功：高亮指令已发送并在页面上执行。";
-            _logger.LogInformation("[Browser] highlight_webpage_text reqId={ReqId} result={Result}", reqId, resultMsg);
+            _logger.LogInformation("[Browser] highlight_webpage_text reqId={ReqId} resultLen={Len} resultPreview={Result}",
+                reqId, resultMsg.Length, LogPreview.HeadTail(resultMsg, 120, 120));
             return resultMsg;
         }
         catch (Exception ex)
@@ -77,7 +80,8 @@ public class BrowserPlugin
         [Description("Optional. If provided, the note will be positioned above the first occurrence of this text on the page; otherwise shown at top-right corner.")] string? anchorText = null)
     {
         var sessionId = SessionContext.GetSessionId();
-        _logger.LogInformation("[Browser] add_floating_note sessionId={SessionId} anchor={Anchor}", sessionId ?? "(null)", anchorText ?? "(default)");
+        _logger.LogInformation("[Browser] add_floating_note sessionId={SessionId} anchorLen={AnchorLen} anchorPreview={Anchor}",
+            sessionId ?? "(null)", anchorText?.Length ?? 0, LogPreview.HeadTail(anchorText ?? "(default)", 40, 40));
         if (string.IsNullOrEmpty(sessionId))
             return "Error: Session ID is missing (no active chat context).";
 

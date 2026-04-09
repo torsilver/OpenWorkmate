@@ -5,6 +5,7 @@ using System.Threading;
 using System.Text;
 using System.Text.Json;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Plugins;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Memory;
@@ -443,7 +444,8 @@ app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logg
         var responseText = await response.Content.ReadAsStringAsync();
         if (response.IsSuccessStatusCode)
             return Results.Ok(new { ok = true, message = "连接成功，接口与 Key/模型可用。" });
-        logger.LogWarning("Test AI failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        logger.LogWarning("Test AI failed: {Status} bodyLen={Len} bodyPreview={Body}", response.StatusCode, responseText.Length,
+            LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText), 96, 96));
         var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
         return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
     }
@@ -499,7 +501,8 @@ app.MapPost("/api/config/test-embedding", async (HttpContext ctx, ILogger<Progra
         var responseText = await response.Content.ReadAsStringAsync();
         if (response.IsSuccessStatusCode)
             return Results.Ok(new { ok = true, message = "连接成功，Embedding 接口可用。" });
-        logger.LogWarning("Test Embedding failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        logger.LogWarning("Test Embedding failed: {Status} bodyLen={Len} bodyPreview={Body}", response.StatusCode, responseText.Length,
+            LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText), 96, 96));
         var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
         return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + response.ReasonPhrase + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
     }
@@ -675,8 +678,8 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
 
-            logger.LogWarning("Test OCR failed: {Status} {Body}", response.StatusCode,
-                responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+            logger.LogWarning("Test OCR failed: {Status} bodyLen={Len} bodyPreview={Body}", response.StatusCode, responseText.Length,
+                LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText), 96, 96));
             var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
             return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
         }
@@ -708,7 +711,8 @@ app.MapPost("/api/config/test-ocr", async (HttpContext ctx, ILogger<Program> log
             return Results.Ok(new { ok = true, message = "连接成功，OCR 接口可用。" });
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             return Results.Json(new { ok = false, message = "API Key 无效或未授权。" }, statusCode: 401);
-        logger.LogWarning("Test OCR failed: {Status} {Body}", response.StatusCode, responseText.Length > 200 ? responseText[..200] + "..." : responseText);
+        logger.LogWarning("Test OCR failed: {Status} bodyLen={Len} bodyPreview={Body}", response.StatusCode, responseText.Length,
+            LogPreview.HeadTailOmitMiddle(LogPreview.SingleLine(responseText), 96, 96));
         var err = responseText.Length > 300 ? responseText[..300] + "..." : responseText;
         return Results.Json(new { ok = false, message = "请求失败: " + (int)response.StatusCode + " " + (response.ReasonPhrase ?? "") + (string.IsNullOrEmpty(err) ? "" : " — " + err) }, statusCode: 502);
     }
@@ -1295,7 +1299,7 @@ static async Task HandleSessionAsync(
 
         var raw = Encoding.UTF8.GetString(ms.ToArray());
         var msgType = GetMessageType(raw);
-        logger.LogInformation("[{SessionId}] WS Recv type={Type} len={Len}", sessionId, msgType, raw.Length);
+        logger.LogDebug("[{SessionId}] WS Recv type={Type} len={Len}", sessionId, msgType, raw.Length);
 
         WsMessage? incoming;
         try
@@ -1328,7 +1332,7 @@ static async Task HandleSessionAsync(
                 if (!string.IsNullOrEmpty(incoming.PageTitle))
                 {
                     sessions.SetDisplayName(sessionId, incoming.PageTitle.Trim().Length > 200 ? incoming.PageTitle.Trim()[..200] : incoming.PageTitle.Trim());
-                    logger.LogDebug("[{SessionId}] set_context displayName={DisplayName}", sessionId, incoming.PageTitle.Trim().Length > 50 ? incoming.PageTitle.Trim()[..50] + "…" : incoming.PageTitle.Trim());
+                    logger.LogDebug("[{SessionId}] set_context displayName={DisplayName}", sessionId, LogPreview.HeadTail(incoming.PageTitle.Trim(), 50, 50));
                 }
                 break;
             case "ping":
@@ -1376,13 +1380,6 @@ static async Task HandleChatStreamAsync(
     var wsReasoningChunkFrames = 0;
     var wsStreamChunkFrames = 0;
 
-    static string WsLogPreview(string? s, int max = 120)
-    {
-        if (string.IsNullOrEmpty(s)) return "";
-        var t = s.Replace('\r', ' ').Replace('\n', ' ');
-        return t.Length <= max ? t : t.Substring(0, max) + "…";
-    }
-
     async Task SendChatStreamWsAsync(string frameType, string content)
     {
         await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = frameType, Content = content });
@@ -1390,8 +1387,8 @@ static async Task HandleChatStreamAsync(
         {
             wsReasoningChunkFrames++;
             logger.LogDebug(
-                "[{SessionId}] WS send reasoning_chunk len={Len} preview={Preview}",
-                sessionId, content.Length, WsLogPreview(content));
+                "[{SessionId}] WS send reasoning_chunk len={Len} headTail={HeadTail}",
+                sessionId, content.Length, LogPreview.HeadTail(content, 16, 16));
         }
         else if (frameType == "stream_chunk")
             wsStreamChunkFrames++;
@@ -1480,7 +1477,6 @@ static async Task HandleChatStreamAsync(
         var historyCount = 0;
         try { historyCount = chatService.GetSessionHistory(sessionId)?.Count ?? 0; } catch { /* ignore */ }
         logger.LogError(ex, "[{SessionId}] Chat stream error (history messages: {HistoryCount})", sessionId, historyCount);
-        logger.LogError("[AI-RESPONSE-ERROR] 对方返回/异常全文 FullDetail={Detail}", ex.ToString());
         var friendlyMessage = ErrorMessageHelper.GetFriendlyMessage(ex);
         if (!sessions.IsSessionWebSocketOpen(sessionId))
             logger.LogWarning("[{SessionId}] Skip sending error: WebSocket not open", sessionId);

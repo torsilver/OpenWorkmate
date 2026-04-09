@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using Microsoft.Extensions.AI;
 
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Services.DashScope;
 
 namespace OfficeCopilot.Server.Services;
@@ -354,7 +355,7 @@ public sealed class ToolSelectionService : IToolSelector
             return null;
         }
 
-        var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
+        var userPreview = LogPreview.HeadTail(userPrompt, 64, 64);
         _logger.LogDebug("ToolSelection stage1 request subcategoriesCount={Count} userPreview={UserPreview}", subcategories.Count, userPreview);
 
         try
@@ -371,7 +372,7 @@ public sealed class ToolSelectionService : IToolSelector
             }
 
             var raw = responseText.ToString().Trim();
-            _logger.LogDebug("ToolSelection stage1 response raw={Raw}", raw);
+            _logger.LogDebug("ToolSelection stage1 response rawLen={Len} rawPreview={Raw}", raw.Length, LogPreview.HeadTail(raw, 96, 96));
             if (string.IsNullOrEmpty(raw)) return null;
 
             if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)
@@ -587,7 +588,7 @@ public sealed class ToolSelectionService : IToolSelector
             return Array.Empty<string>();
         }
 
-        var userPreview = userPrompt.Length > 300 ? userPrompt[..300] + "..." : userPrompt;
+        var userPreview = LogPreview.HeadTail(userPrompt, 64, 64);
         _logger.LogDebug("ToolSelection LLM request systemLen={SystemLen} userPreview={UserPreview}", systemPrompt.Length, userPreview);
 
         try
@@ -604,7 +605,7 @@ public sealed class ToolSelectionService : IToolSelector
             }
 
             var raw = responseText.ToString().Trim();
-            _logger.LogDebug("ToolSelection LLM response raw={Raw}", raw);
+            _logger.LogDebug("ToolSelection LLM response rawLen={Len} rawPreview={Raw}", raw.Length, LogPreview.HeadTail(raw, 96, 96));
             if (string.IsNullOrEmpty(raw))
                 return Array.Empty<string>();
             if (raw.Contains(FallbackAllKeyword, StringComparison.OrdinalIgnoreCase) && raw.Length < 20)

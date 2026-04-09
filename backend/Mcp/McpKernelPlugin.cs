@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server.Mcp;
 
@@ -57,7 +58,8 @@ public sealed class McpKernelPlugin
             if (result.IsError)
             {
                 var errorMsg = string.Join("\n", result.Content.Select(c => c.Text));
-                _logger.LogWarning("[{Plugin}] MCP tool {Tool} returned error: {Message}", _pluginName, toolName, errorMsg);
+                _logger.LogWarning("[{Plugin}] MCP tool {Tool} returned error len={Len} preview={Message}",
+                    _pluginName, toolName, errorMsg.Length, LogPreview.HeadTail(errorMsg, 160, 160));
                 return $"[MCP 工具错误] {errorMsg}";
             }
 

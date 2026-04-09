@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server.Mcp;
 
@@ -33,7 +34,8 @@ public sealed class McpClientManager : IDisposable
                 log,
                 ct).ConfigureAwait(false);
             _clients[config.Id] = client;
-            _logger.LogInformation("MCP Client started: {Name} ({Command})", config.Name, config.Command);
+            _logger.LogInformation("MCP Client started: {Name} commandLen={Len} commandPreview={Command}",
+                config.Name, config.Command?.Length ?? 0, LogPreview.HeadTail(config.Command ?? "", 120, 120));
             return client;
         }
         catch (Exception ex)

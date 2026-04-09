@@ -16,6 +16,7 @@ using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.Maf;
+using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server;
 
@@ -950,9 +951,7 @@ public sealed partial class ChatService : IDisposable
 
             var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());
             state.History.Add(new ChatMessage(ChatRole.Assistant, assistantText));
-            var previewLen = Math.Min(200, assistantText.Length);
-            var preview = previewLen > 0 ? assistantText.AsSpan(0, previewLen).ToString().Replace('\r', ' ').Replace('\n', ' ') : "";
-            if (assistantText.Length > previewLen) preview += "…";
+            var preview = assistantText.Length > 0 ? LogPreview.HeadTail(assistantText, 64, 64) : "";
             _logger.LogInformation("[{SessionId}] Turn completed, turns={Turns}, assistantChars={AssistantChars}, assistantPreview={Preview}",
                 sessionId, state.History.Count, assistantText.Length, preview);
         }
