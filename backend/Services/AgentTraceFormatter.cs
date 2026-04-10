@@ -75,44 +75,12 @@ public static class AgentTraceFormatter
         return (title, sb.ToString().TrimEnd());
     }
 
-    private static string MapTwoStageReason(string reasonCode) => reasonCode switch
+    public static (string Title, string Detail) BuildDynamicToolingBootstrapTrace(int bootstrapToolCount, int catalogEntryCount)
     {
-        "kernel_null" => "Kernel 为空，使用全量工具。",
-        "tool_registry_null" => "ToolRegistry 为空，使用全量工具。",
-        "no_functions" => "注册表中无可用函数，使用全量工具。",
-        "no_subcategories" => "无可用子类列表，使用全量工具。",
-        "stage1_fallback" => "一阶段子类选择返回「全部」或失败，使用全量工具。",
-        "no_candidates_after_stage1" => "一阶段选中的子类下无候选函数，使用全量工具。",
-        "ok_two_stage" => "已采用两阶段路径：子类 → 合并 AlwaysInclude 后的函数集。",
-        _ => $"reasonCode={reasonCode}"
-    };
-
-    public static (string Title, string Detail) BuildTwoStageToolTrace(ToolSelectionOutcome outcome, int maxFunctionLines = DefaultMaxFunctionSampleLines)
-    {
-        var title = outcome.SelectedPairs is { Count: > 0 }
-            ? $"工具选择：两阶段，合并后 {outcome.MergedFunctionCount} 个 (插件,函数) 对"
-            : "工具选择：两阶段未收窄，使用全量工具";
-        var sb = new StringBuilder();
-        sb.AppendLine(MapTwoStageReason(outcome.ReasonCode));
-        if (outcome.SelectedSubcategoryIds is { Count: > 0 })
-            sb.AppendLine("一阶段子类 id：" + string.Join(", ", outcome.SelectedSubcategoryIds));
-        sb.AppendLine(CultureInfo.InvariantCulture, $"候选函数数（子类并集）：{outcome.CandidateFunctionCount}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"合并 AlwaysInclude 后：(插件,函数) 对数 = {outcome.MergedFunctionCount}");
-        if (outcome.SelectedPairs is { Count: > 0 })
-        {
-            sb.AppendLine("函数列表（截断）：");
-            var n = 0;
-            foreach (var p in outcome.SelectedPairs)
-            {
-                if (n++ >= maxFunctionLines)
-                {
-                    sb.AppendLine(CultureInfo.InvariantCulture, $"  … 其余 {outcome.SelectedPairs.Count - maxFunctionLines} 条省略");
-                    break;
-                }
-                sb.AppendLine($"  {p.PluginName}.{p.FunctionName}");
-            }
-        }
-        return (title, sb.ToString().TrimEnd());
+        var title = $"动态工具：首轮绑定 {bootstrapToolCount} 个函数（含 search/activate 与保底）";
+        var detail = $"允许列表内可检索条目数（索引）：{catalogEntryCount}。\n"
+            + "模型须先 search_available_tools 再 activate_tools，外层 Runner 会在激活后扩容工具 schema。";
+        return (title, detail);
     }
 
     /// <summary>自动摘要成功后的 context 类 agent_trace。</summary>

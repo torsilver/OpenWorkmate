@@ -43,12 +43,10 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             "[ToolCapability] {Plugin}.{Function} readOnly={RO} destructive={D} suggestHitl={H} parallelOk={P}",
             pluginName, functionName, cap.ReadOnly, cap.Destructive, cap.SuggestHitl, cap.AllowParallelSameTurn);
 
-        ToolInvocationTurnMeter.RecordInvocation();
-
         if (string.IsNullOrEmpty(sessionId))
         {
             _logger.LogWarning(
-                "ToolStatusNotifier: SessionContext 无 sessionId，已记录工具调用计数但无法推送 tool_invocation 状态。{Plugin}.{Function}",
+                "ToolStatusNotifier: 无 sessionId，无法推送 tool_invocation 状态。{Plugin}.{Function}",
                 pluginName, functionName);
             return new ToolStatusContext { SessionId = null, PluginName = pluginName, FunctionName = functionName };
         }

@@ -5,6 +5,7 @@ using OfficeCopilot.Server.Services;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>上下文管理：提供 compact_conversation 工具，供模型在换任务或已总结完时主动压缩对话以释放上下文。</summary>
+[CopilotPluginId("Context")]
 public sealed class CompactConversationPlugin
 {
     private readonly ChatService _chatService;

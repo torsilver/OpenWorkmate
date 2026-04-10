@@ -6,6 +6,7 @@ using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("UserOptions")]
 public sealed class UserOptionsPlugin
 {
     private readonly UserOptionsManager _userOptionsManager;

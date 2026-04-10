@@ -28,18 +28,12 @@ public class AgentTraceFormatterTests
     }
 
     [Fact]
-    public void BuildTwoStageToolTrace_OkTwoStage_IncludesSubcategoriesAndSampleFunctions()
+    public void BuildDynamicToolingBootstrapTrace_MentionsBootstrapAndIndex()
     {
-        var outcome = new ToolSelectionOutcome(
-            SelectedPairs: new[] { ("Word", "word_body_read"), ("CLI", "run_command") },
-            ReasonCode: "ok_two_stage",
-            SelectedSubcategoryIds: new[] { "Word-获取信息" },
-            CandidateFunctionCount: 10,
-            MergedFunctionCount: 2);
-        var (title, detail) = AgentTraceFormatter.BuildTwoStageToolTrace(outcome, maxFunctionLines: 10);
-        Assert.Contains("两阶段", title, StringComparison.Ordinal);
-        Assert.Contains("Word-获取信息", detail, StringComparison.Ordinal);
-        Assert.Contains("Word.word_body_read", detail, StringComparison.Ordinal);
+        var (title, detail) = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrapToolCount: 5, catalogEntryCount: 120);
+        Assert.Contains("动态工具", title, StringComparison.Ordinal);
+        Assert.Contains("5", title, StringComparison.Ordinal);
+        Assert.Contains("120", detail, StringComparison.Ordinal);
     }
 
     [Fact]

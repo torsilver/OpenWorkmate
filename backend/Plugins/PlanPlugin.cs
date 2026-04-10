@@ -3,17 +3,18 @@ using Microsoft.Extensions.AI;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
+using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Plan;
 
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>计划插件：生成计划、读取/更新计划、按步骤执行计划。</summary>
+[CopilotPluginId("Plan")]
 public sealed class PlanPlugin
 {
     private readonly IPlanStore _store;
     private readonly IChatRuntimeAccessor _runtime;
     private readonly SessionManager _sessionManager;
-    private readonly IToolSelector _toolSelector;
     private readonly ILogger<PlanPlugin> _logger;
 
     private const string PlanAuthoringCapabilityRules =
@@ -26,13 +27,11 @@ public sealed class PlanPlugin
         IPlanStore store,
         IChatRuntimeAccessor runtimeAccessor,
         SessionManager sessionManager,
-        IToolSelector toolSelector,
         ILogger<PlanPlugin> logger)
     {
         _store = store;
         _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
-        _toolSelector = toolSelector;
         _logger = logger;
     }
 
@@ -50,8 +49,8 @@ public sealed class PlanPlugin
         var sessionId = SessionContext.GetSessionId();
         var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
 
-        var selectionPrompt = BuildPlanToolSelectionUserPrompt(goal, context);
-        var toolDigest = await BuildToolDigestForPlanAuthoringAsync(selectionPrompt, sessionId, clientType, ct).ConfigureAwait(false);
+        var searchQuery = BuildPlanToolSelectionUserPrompt(goal, context);
+        var toolDigest = await BuildToolDigestForPlanAuthoringAsync(searchQuery, sessionId, clientType, ct).ConfigureAwait(false);
 
         var systemPrompt =
             "你是一个实现计划撰写助手。根据用户目标，输出一份 Markdown 格式的实现计划。\n\n"
@@ -131,38 +130,39 @@ public sealed class PlanPlugin
         return userPrompt;
     }
 
-    private async Task<string> BuildToolDigestForPlanAuthoringAsync(
-        string selectionUserPrompt,
+    private Task<string> BuildToolDigestForPlanAuthoringAsync(
+        string searchQuery,
         string? sessionId,
         string? clientType,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var registry = _runtime.ToolRegistry;
-        var outcome = await _toolSelector
-            .SelectFunctionsAsync(selectionUserPrompt, null, registry, ct, new ToolSelectionContext(clientType))
-            .ConfigureAwait(false);
-
-        IReadOnlyList<AITool> tools;
-        if (outcome.SelectedPairs is { Count: > 0 })
+        var catalog = ToolCatalogIndex.BuildFromAllowedTools(registry, clientType, sessionId);
+        var hits = catalog.Search(searchQuery, topK: 40);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tools = new List<AITool>();
+        foreach (var e in hits)
         {
-            var resolved = SessionToolResolver.ResolveToolsByClientType(registry, outcome.SelectedPairs, clientType, sessionId);
-            tools = SessionToolResolver.MergePlanTools(registry, resolved ?? Array.Empty<AITool>());
-            _logger.LogInformation(
-                "create_plan: tool selection ok reason={Reason} pairs={Pairs} digestFrom=selected",
-                outcome.ReasonCode,
-                outcome.SelectedPairs.Count);
+            if (!names.Add(e.FunctionName)) continue;
+            var t = registry.FindTool(e.PluginName, e.FunctionName);
+            if (t != null) tools.Add(t);
+        }
+
+        IReadOnlyList<AITool> digestTools;
+        if (tools.Count < 12)
+        {
+            var full = SessionToolResolver.ResolveToolsByClientType(registry, null, clientType, sessionId) ?? Array.Empty<AITool>();
+            digestTools = SessionToolResolver.MergePlanTools(registry, full);
+            _logger.LogInformation("create_plan: digest full allow-list (search hits={Hits})", hits.Count);
         }
         else
         {
-            _logger.LogInformation(
-                "create_plan: tool selection fallback reason={Reason}, using full allowed tools for digest",
-                outcome.ReasonCode);
-            var fallback = SessionToolResolver.ResolveToolsByClientType(registry, null, clientType, sessionId)
-                           ?? Array.Empty<AITool>();
-            tools = SessionToolResolver.MergePlanTools(registry, fallback);
+            digestTools = SessionToolResolver.MergePlanTools(registry, tools);
+            _logger.LogInformation("create_plan: digest from catalog search hits={Hits} tools={Count}", hits.Count, tools.Count);
         }
 
-        return PlanAuthoringToolDigest.Build(tools, registry);
+        return Task.FromResult(PlanAuthoringToolDigest.Build(digestTools, registry));
     }
 
     [ToolFunction("get_plan")]

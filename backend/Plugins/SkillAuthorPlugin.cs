@@ -10,6 +10,7 @@ using OfficeCopilot.Server.Services.ToolInvocation;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>根据对话意图生成并保存用户技能（SKILL.md），与设置页技能列表同源。</summary>
+[CopilotPluginId("SkillAuthor")]
 public sealed class SkillAuthorPlugin
 {
     private readonly SkillService _skillService;

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using OfficeCopilot.Server.Services.DynamicTooling;
 
 namespace OfficeCopilot.Server.Services;
 
@@ -7,7 +8,7 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public static class SessionToolResolver
 {
-    /// <summary>按 clientType 解析本轮暴露给模型的工具：使用 selectedPairs，或该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script；Chrome 追加 run_page_script；所有端追加 run_command。</summary>
+    /// <summary>按 clientType 解析本轮暴露给模型的工具：使用 selectedPairs，或该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script 与 current_run_custom_document_script；Chrome 追加 run_page_script 与 run_custom_page_script；所有端追加 run_command。</summary>
     public static IReadOnlyList<AITool>? ResolveToolsByClientType(
         ToolRegistry toolRegistry,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
@@ -38,7 +39,10 @@ public static class SessionToolResolver
                 EnsureTool("CurrentDocument", "current_run_custom_document_script");
             }
             if (IsChromeClient(clientType))
+            {
+                EnsureTool("Browser", "run_page_script");
                 EnsureTool("Browser", "run_custom_page_script");
+            }
             EnsureTool("CLI", "run_command");
         }
         return result;
@@ -69,6 +73,63 @@ public static class SessionToolResolver
             if (tool != null) tools.Add(tool);
         }
         return tools;
+    }
+
+    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；Chrome 含 run_page_script 与 run_custom_page_script；可选合并 Plan 四函数。</summary>
+    public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
+        ToolRegistry toolRegistry,
+        string? clientType,
+        string? sessionId,
+        bool mergePlanTools)
+    {
+        var list = new List<AITool>();
+        void AddIf(string plugin, string func)
+        {
+            var t = toolRegistry.FindTool(plugin, func);
+            if (t != null && !list.Any(x => string.Equals(x.Name, func, StringComparison.OrdinalIgnoreCase)))
+                list.Add(t);
+        }
+
+        AddIf("AgentTooling", DynamicToolingConstants.SearchFunctionName);
+        AddIf("AgentTooling", DynamicToolingConstants.ActivateFunctionName);
+        if (IsOfficeOrWpsClient(clientType))
+        {
+            AddIf("CurrentDocument", "current_run_document_script");
+            AddIf("CurrentDocument", "current_run_custom_document_script");
+        }
+        if (IsChromeClient(clientType))
+        {
+            AddIf("Browser", "run_page_script");
+            AddIf("Browser", "run_custom_page_script");
+        }
+        AddIf("CLI", "run_command");
+        return mergePlanTools ? MergePlanTools(toolRegistry, list) : list;
+    }
+
+    /// <summary>动态工具当前外层 pass 应绑定到模型的完整列表：bootstrap ∪ 已激活业务工具。</summary>
+    public static IReadOnlyList<AITool> BuildDynamicActiveToolList(
+        ToolRegistry registry,
+        DynamicToolingTurnState state,
+        string? clientType,
+        string? sessionId,
+        bool mergePlanTools)
+    {
+        var bootstrap = GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools);
+        var set = new HashSet<string>(bootstrap.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
+        var list = new List<AITool>(bootstrap);
+        foreach (var func in state.ActivatedFunctionNames)
+        {
+            if (DynamicToolingConstants.MetaFunctionNames.Contains(func))
+                continue;
+            if (!registry.TryGetPluginName(func, out var plugin))
+                continue;
+            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId))
+                continue;
+            var tool = registry.FindTool(plugin, func);
+            if (tool != null && set.Add(func))
+                list.Add(tool);
+        }
+        return list;
     }
 
     private static bool IsChromeClient(string? clientType)

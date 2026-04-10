@@ -1,0 +1,25 @@
+---
+description: MAF / Microsoft.Agents 仅为开发便利；若与需求冲突应改封装、Runner 或外层循环，勿被框架绑架
+alwaysApply: true
+---
+
+# MAF：便利封装，可改可绕
+
+## 原则
+
+- **MAF（如 `Microsoft.Agents.*`、`ChatClientAgent`、Workflow 等）是引入来加快落地的手段**，不是产品架构的不可变边界。
+- 若出现：**流式语义**、**工具轮次 / 动态 Tools**、**中间件顺序**、**重试与取消**、**与 MEAI `IChatClient` 的契合度**等与需求不一致，**允许且应当**改本地封装、改 `MafMainSessionStreamRunner`、在外层增加循环、必要时 fork / 精简 Agents 用法，而不是硬把需求塞进 MAF 默认形态。
+
+## 开发时怎么做
+
+1. **先满足契约与可测行为**（HTTP/WebSocket、工具协议、`StreamItem` 等），再谈「是否纯正 MAF 写法」。
+2. **文档或示例若写「MAF 标准做法」但阻碍本仓库需求**，以本仓库实现为准，并同步更新 `docs/` 中与 MAF 相关的描述（避免误导后续 Agent）。
+
+## 反例
+
+- 「官方 Sample 没有这么做，所以我们不能改 Runner。」
+- 为保留 MAF 结构而牺牲明确的动态工具、阶段扩容或错误可见性需求。
+
+## 正例
+
+- 为支持轮内 `ChatOptions.Tools` 扩容而扩展 Runner 或外层多轮 `IChatClient` 调用，并保留与现有流式/追踪一致。

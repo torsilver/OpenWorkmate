@@ -72,7 +72,8 @@ try
         {
             ConfigService = sp.GetRequiredService<ConfigService>(),
             SecurityPipeline = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline>(),
-            ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>()
+            ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>(),
+            Logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("DynamicTooling")
         });
     builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
     builder.Services.AddSingleton<EmbeddingProvider>();
@@ -94,7 +95,6 @@ try
         return new InMemoryVectorStore();
     });
     builder.Services.AddSingleton<IMemoryStoreService, MemoryStoreService>();
-    builder.Services.AddSingleton<IToolSelector, ToolSelectionService>();
     builder.Services.AddSingleton<SessionManager>();
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
@@ -1388,6 +1388,7 @@ static async Task HandleChatStreamAsync(
     var streamEndedByError = false;
     var wsReasoningChunkFrames = 0;
     var wsStreamChunkFrames = 0;
+    var reasoningLog = new LogPreview.ReasoningStreamLogState();
 
     async Task SendChatStreamWsAsync(string frameType, string content)
     {
@@ -1395,9 +1396,8 @@ static async Task HandleChatStreamAsync(
         if (frameType == "reasoning_chunk")
         {
             wsReasoningChunkFrames++;
-            logger.LogDebug(
-                "[{SessionId}] WS send reasoning_chunk len={Len} headTail={HeadTail}",
-                sessionId, content.Length, LogPreview.HeadTail(content, 16, 16));
+            if (!string.IsNullOrEmpty(content))
+                reasoningLog.AppendChunk(content);
         }
         else if (frameType == "stream_chunk")
             wsStreamChunkFrames++;
@@ -1519,6 +1519,13 @@ static async Task HandleChatStreamAsync(
     logger.LogInformation(
         "[{SessionId}] Chat stream end {Suffix} (WS frames: reasoningChunk={Reasoning}, streamChunk={Stream})",
         sessionId, streamEndedByError ? "(after error)" : "(completed)", wsReasoningChunkFrames, wsStreamChunkFrames);
+    if (reasoningLog.TotalChars > 0)
+    {
+        logger.LogInformation(
+            "[{SessionId}] Chat stream reasoning preview frames={Frames} preview={Preview}",
+            sessionId, wsReasoningChunkFrames, reasoningLog.BuildPreview());
+    }
+
     if (!sessions.IsSessionWebSocketOpen(sessionId))
         logger.LogWarning("[{SessionId}] Skip sending stream_end: WebSocket not open", sessionId);
     else

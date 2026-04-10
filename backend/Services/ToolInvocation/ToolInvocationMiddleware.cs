@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.DynamicTooling;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
 
@@ -20,8 +22,33 @@ public static class ToolInvocationMiddleware
     {
         return async (agent, context, next, cancellationToken) =>
         {
-            var funcName = context.Function?.Name ?? "?";
-            var pluginName = toolRegistry.TryGetPluginName(funcName, out var pn) ? pn : "?";
+            var rawName = context.Function?.Name ?? "?";
+            string funcName;
+            string pluginName;
+
+            if (toolRegistry.TryGetPluginName(rawName, out var pnBare))
+            {
+                pluginName = pnBare;
+                funcName = rawName;
+            }
+            else if (ToolQualifiedNameResolver.TryResolve(toolRegistry, rawName, out var pQual, out var bare, out var toolResolved)
+                     && toolResolved is AIFunction afResolved)
+            {
+                pluginName = pQual;
+                funcName = bare;
+                if (!string.Equals(rawName, bare, StringComparison.Ordinal))
+                {
+                    pipelineServices.Logger.LogDebug(
+                        "[ToolInvoke] Resolved qualified name {Raw} -> bare={Bare} plugin={Plugin}",
+                        rawName, bare, pQual);
+                    context.Function = afResolved;
+                }
+            }
+            else
+            {
+                pluginName = "?";
+                funcName = rawName;
+            }
 
             // --- Permission rule (fast path: Deny blocks all tools) ---
             var ruleEffect = ToolPermissionRuleEvaluator.Evaluate(
@@ -54,6 +81,8 @@ public static class ToolInvocationMiddleware
             {
                 var result = await next(context, cancellationToken).ConfigureAwait(false);
 
+                TryRefreshDynamicToolingToolsAfterActivate(toolRegistry, funcName, pipelineServices.Logger);
+
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, result, success: true, cancellationToken).ConfigureAwait(false);
 
@@ -63,15 +92,31 @@ public static class ToolInvocationMiddleware
             {
                 var toolMsg =
                     $"[参数绑定失败] 工具 {pluginName}.{funcName} 的 JSON 参数与期望类型不一致（例如布尔请用 JSON 的 true/false，勿写成带引号的字符串 \"true\"/\"false\"）。详情：{jsonEx.Message}";
+                pipelineServices.Logger.LogWarning(
+                    jsonEx,
+                    "[ToolInvoke] JSON parameter binding failed plugin={Plugin} func={Func}",
+                    pluginName,
+                    funcName);
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
                 return toolMsg;
             }
+            catch (Exception ex) when (ToolInvocationFailureFormatter.ShouldRethrowAsCancellation(ex, cancellationToken))
+            {
+                throw;
+            }
             catch (Exception ex)
             {
+                var toolMsg = ToolInvocationFailureFormatter.FormatToolInvocationFailure(pluginName, funcName, ex);
+                pipelineServices.Logger.LogWarning(
+                    ex,
+                    "[ToolInvoke] Tool failed plugin={Plugin} func={Func} returnToModelLen={Len}",
+                    pluginName,
+                    funcName,
+                    toolMsg.Length);
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
-                    statusCtx, ErrorMessageHelper.GetFriendlyMessage(ex), success: false, cancellationToken).ConfigureAwait(false);
-                throw;
+                    statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
+                return toolMsg;
             }
         };
     }
@@ -87,4 +132,66 @@ public static class ToolInvocationMiddleware
     private static bool IsMeetingTranscriptFunction(string? functionName) =>
         string.Equals(functionName, "meeting_transcript_read", StringComparison.OrdinalIgnoreCase)
         || string.Equals(functionName, "meeting_transcript_meta", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 同一次 <c>RunStreamingAsync</c> 内，<c>activate_tools</c> 会更新 <see cref="DynamicToolingTurnState.ActivatedFunctionNames"/>，
+    /// 但 <see cref="ChatOptions.Tools"/> 仍指向 pass 开始时的列表；此处原地同步，使下一跳模型请求能调用新激活的工具。
+    /// </summary>
+    private static void TryRefreshDynamicToolingToolsAfterActivate(ToolRegistry registry, string funcName, ILogger log)
+    {
+        if (!string.Equals(funcName, DynamicToolingConstants.ActivateFunctionName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var dts = DynamicToolingTurnScope.Current;
+        if (dts is null)
+        {
+            log.LogDebug("[DynamicTools] activate_tools finished but DynamicToolingTurnScope.Current is null (not a dynamic-tooling pass)");
+            return;
+        }
+
+        var target = dts.ToolListMutationTarget;
+        if (target is null)
+        {
+            log.LogWarning(
+                "[DynamicTools] activate_tools finished but ToolListMutationTarget is missing; ChatOptions.Tools will NOT refresh until next MAF outer pass. session={SessionId} clientType={ClientType}",
+                dts.SessionIdForTools ?? SessionContext.GetSessionId() ?? "?",
+                dts.ClientTypeForTools ?? "?");
+            return;
+        }
+
+        var beforeCount = target.Count;
+        var fresh = SessionToolResolver.BuildDynamicActiveToolList(
+            registry,
+            dts,
+            dts.ClientTypeForTools,
+            dts.SessionIdForTools,
+            dts.MergePlanIntoDynamicBootstrap);
+
+        var activatedSorted = dts.ActivatedFunctionNames.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var activatedPreview = string.Join(',', activatedSorted);
+        if (activatedPreview.Length > 480)
+            activatedPreview = activatedPreview[..480] + "…";
+
+        var nameList = fresh.Select(t => t.Name ?? "?").ToArray();
+        var preview = string.Join(',', nameList.Take(28));
+        if (nameList.Length > 28)
+            preview += ",…";
+
+        target.Clear();
+        target.AddRange(fresh);
+
+        // 已在同一 RunStreamingAsync 内刷新 ChatOptions.Tools，后续模型请求会带上新工具；不必再开外层 RunSinglePass（否则多一次 Agent 会话，模型常从头再跑浏览器/检索）。
+        dts.ClearExpansionFlag();
+
+        log.LogInformation(
+            "[DynamicTools] ChatOptions.Tools refreshed after activate_tools session={SessionId} clientType={ClientType} mergePlan={MergePlan} beforeCount={Before} afterCount={After} activatedCount={ActivatedCount} activated={ActivatedPreview} toolsPreview={ToolsPreview}",
+            dts.SessionIdForTools ?? SessionContext.GetSessionId() ?? "?",
+            dts.ClientTypeForTools ?? "?",
+            dts.MergePlanIntoDynamicBootstrap,
+            beforeCount,
+            fresh.Count,
+            activatedSorted.Length,
+            activatedPreview,
+            preview);
+    }
 }

@@ -9,10 +9,12 @@ using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using DocumentFormat.OpenXml.Wordprocessing;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("Word")]
 public sealed class WordPlugin
 {
     private readonly ILogger<WordPlugin>? _logger;
@@ -147,11 +149,11 @@ public sealed class WordPlugin
     }
 
     [ToolFunction("word_document_create")]
-    [Description("创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 必须是 .docx（推荐）或 .docm 扩展名，勿用 .md/.txt/.doc；paragraphs 内可用 Markdown 语法（# 标题、列表等），与输出格式无关。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。")]
+    [Description("创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 必须是 .docx（推荐）或 .docm 扩展名，勿用 .md/.txt/.doc；paragraphs 内可用 Markdown 语法（# 标题、列表等），与输出格式无关。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。title 与 paragraphs 可省略：未传 title 时用文件名（无扩展名）作为文档内标题；未传正文则仅含标题段。")]
     public string WordDocumentCreate(
         [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
-        [Description("文档标题")] string title,
-        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表")] string paragraphs)
+        [Description("文档标题；可省略，省略时用目标文件名（无扩展名）")] string title = "",
+        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表；可省略则仅标题")] string paragraphs = "")
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         var beforeNormalize = filePath;
@@ -159,6 +161,12 @@ public sealed class WordPlugin
         if (!string.Equals(filePath, beforeNormalize, StringComparison.OrdinalIgnoreCase))
             _logger?.LogInformation("[Word] word_document_create normalized path from {Before} to {After}", beforeNormalize, filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            var stem = Path.GetFileNameWithoutExtension(filePath);
+            title = string.IsNullOrWhiteSpace(stem) ? "文档" : stem.Trim();
+        }
+
         _logger?.LogInformation("[Word] word_document_create path={Path}", filePath);
         try
         {

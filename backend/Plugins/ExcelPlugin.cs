@@ -7,10 +7,12 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("Excel")]
 public sealed class ExcelPlugin
 {
     private readonly ILogger<ExcelPlugin>? _logger;

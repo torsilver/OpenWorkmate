@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -31,7 +32,6 @@ public sealed partial class ChatService : IDisposable
     private readonly ConfigService _configService;
     private readonly SkillService _skillService;
     private readonly McpClientManager _mcpManager;
-    private readonly IToolSelector _toolSelector;
     private readonly IServiceProvider _serviceProvider;
     private readonly IChatRuntimeAccessor _runtime;
     private readonly EmbeddingProvider _embeddingProvider;
@@ -40,14 +40,13 @@ public sealed partial class ChatService : IDisposable
     private readonly IChatSessionStore _chatSessionStore;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IToolSelector toolSelector, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
         _configService = configService;
         _skillService = skillService;
         _mcpManager = mcpManager;
-        _toolSelector = toolSelector;
         _serviceProvider = serviceProvider;
         _runtime = runtimeAccessor;
         _embeddingProvider = embeddingProvider;
@@ -190,117 +189,81 @@ public sealed partial class ChatService : IDisposable
             .Select(s => s.Trim().ToLowerInvariant())
             .ToHashSet() ?? new HashSet<string>();
 
-        var pluginInstances = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        void RegisterPlugin(object instance, string name) => pluginInstances[name] = instance;
+        var pluginInstances = new List<object>();
 
-        if (!disabledBuiltIn.Contains("cli"))
-            RegisterPlugin(new CliPlugin(), "CLI");
-        if (!disabledBuiltIn.Contains("excel"))
-            RegisterPlugin(new ExcelPlugin(_loggerFactory.CreateLogger<ExcelPlugin>()), "Excel");
-        if (!disabledBuiltIn.Contains("word"))
+        void TryAddBuiltInPlugin(object instance)
         {
-            var wordPluginLogger = _loggerFactory.CreateLogger<WordPlugin>();
-            RegisterPlugin(new WordPlugin(wordPluginLogger), "Word");
+            var attr = instance.GetType().GetCustomAttribute<CopilotPluginIdAttribute>()
+                ?? throw new InvalidOperationException(
+                    $"内置插件类型 {instance.GetType().FullName} 缺少 [CopilotPluginId]。");
+            if (disabledBuiltIn.Contains(attr.Id.ToLowerInvariant()))
+                return;
+            pluginInstances.Add(instance);
         }
-        if (!disabledBuiltIn.Contains("ppt"))
-            RegisterPlugin(new PptPlugin(_loggerFactory.CreateLogger<PptPlugin>()), "Ppt");
+
+        TryAddBuiltInPlugin(new CliPlugin());
+        TryAddBuiltInPlugin(new ExcelPlugin(_loggerFactory.CreateLogger<ExcelPlugin>()));
+        TryAddBuiltInPlugin(new WordPlugin(_loggerFactory.CreateLogger<WordPlugin>()));
+        TryAddBuiltInPlugin(new PptPlugin(_loggerFactory.CreateLogger<PptPlugin>()));
 
         var rpcManager = _serviceProvider.GetRequiredService<RpcManager>();
         var screenshotCache = _serviceProvider.GetRequiredService<ScreenshotCacheService>();
         var attachmentCache = _serviceProvider.GetRequiredService<AttachmentCacheService>();
         var browserPluginLogger = _loggerFactory.CreateLogger<BrowserPlugin>();
         var filePluginLogger = _loggerFactory.CreateLogger<FilePlugin>();
-        if (!disabledBuiltIn.Contains("browser"))
-            RegisterPlugin(new BrowserPlugin(sessionManager, rpcManager, screenshotCache, browserPluginLogger), "Browser");
-        if (!disabledBuiltIn.Contains("file"))
-            RegisterPlugin(new FilePlugin(screenshotCache, attachmentCache, filePluginLogger), "File");
-        if (!disabledBuiltIn.Contains("system"))
-            RegisterPlugin(new SystemPlugin(), "System");
-        if (!disabledBuiltIn.Contains("mcp_stt"))
-        {
-            var transcribeService = _serviceProvider.GetRequiredService<ITranscribeService>();
-            var sttPluginLogger = _loggerFactory.CreateLogger<SttPlugin>();
-            RegisterPlugin(new SttPlugin(transcribeService, sttPluginLogger), "MCP_STT");
-        }
-        if (!disabledBuiltIn.Contains("mcp_ocr"))
-        {
-            var ocrService = _serviceProvider.GetRequiredService<IOcrService>();
-            var ocrPluginLogger = _loggerFactory.CreateLogger<OcrPlugin>();
-            RegisterPlugin(new OcrPlugin(ocrService, ocrPluginLogger), "MCP_OCR");
-        }
-        if (!disabledBuiltIn.Contains("pdf"))
-        {
-            var pdfPluginLogger = _loggerFactory.CreateLogger<PdfPlugin>();
-            RegisterPlugin(new PdfPlugin(pdfPluginLogger), "Pdf");
-        }
+        TryAddBuiltInPlugin(new BrowserPlugin(sessionManager, rpcManager, screenshotCache, browserPluginLogger));
+        TryAddBuiltInPlugin(new FilePlugin(screenshotCache, attachmentCache, filePluginLogger));
+        TryAddBuiltInPlugin(new SystemPlugin());
+        var transcribeService = _serviceProvider.GetRequiredService<ITranscribeService>();
+        var sttPluginLogger = _loggerFactory.CreateLogger<SttPlugin>();
+        TryAddBuiltInPlugin(new SttPlugin(transcribeService, sttPluginLogger));
+        var ocrService = _serviceProvider.GetRequiredService<IOcrService>();
+        var ocrPluginLogger = _loggerFactory.CreateLogger<OcrPlugin>();
+        TryAddBuiltInPlugin(new OcrPlugin(ocrService, ocrPluginLogger));
+        TryAddBuiltInPlugin(new PdfPlugin(_loggerFactory.CreateLogger<PdfPlugin>()));
 
-        if (!disabledBuiltIn.Contains("currentdocument"))
-        {
-            var currentDocLogger = _loggerFactory.CreateLogger<CurrentDocumentPlugin>();
-            RegisterPlugin(new CurrentDocumentPlugin(sessionManager, rpcManager, currentDocLogger), "CurrentDocument");
-        }
+        var currentDocLogger = _loggerFactory.CreateLogger<CurrentDocumentPlugin>();
+        TryAddBuiltInPlugin(new CurrentDocumentPlugin(sessionManager, rpcManager, currentDocLogger));
 
         var clawhubRunner = _serviceProvider.GetRequiredService<ClawhubScriptRunner>();
-        if (!disabledBuiltIn.Contains("clawhub"))
-            RegisterPlugin(new ClawhubSkillPlugin(_skillService, clawhubRunner, _configService, _loggerFactory.CreateLogger<ClawhubSkillPlugin>()), "ClawhubSkill");
+        TryAddBuiltInPlugin(new ClawhubSkillPlugin(_skillService, clawhubRunner, _configService, _loggerFactory.CreateLogger<ClawhubSkillPlugin>()));
 
-        // 阶段 3：记忆插件（仅当已配置 Embedding 时注册）
-        if (_embeddingProvider.IsConfigured && !disabledBuiltIn.Contains("memory"))
+        if (_embeddingProvider.IsConfigured)
         {
             var memorySvc = _serviceProvider.GetRequiredService<IMemoryStoreService>();
-            RegisterPlugin(new MemoryPlugin(memorySvc, sessionManager, _loggerFactory.CreateLogger<MemoryPlugin>()), "Memory");
+            TryAddBuiltInPlugin(new MemoryPlugin(memorySvc, sessionManager, _loggerFactory.CreateLogger<MemoryPlugin>()));
         }
 
-        if (!disabledBuiltIn.Contains("context"))
-            RegisterPlugin(new CompactConversationPlugin(this), "Context");
+        TryAddBuiltInPlugin(new CompactConversationPlugin(this));
+        TryAddBuiltInPlugin(new SubagentPlugin(this));
 
-        if (!disabledBuiltIn.Contains("subagent"))
-            RegisterPlugin(new SubagentPlugin(this), "Subagent");
+        var taskStore = _serviceProvider.GetRequiredService<ICrossAgentTaskStore>();
+        TryAddBuiltInPlugin(new CrossAgentTaskPlugin(taskStore, sessionManager, _loggerFactory.CreateLogger<CrossAgentTaskPlugin>()));
 
-        if (!disabledBuiltIn.Contains("crossagenttask"))
-        {
-            var taskStore = _serviceProvider.GetRequiredService<ICrossAgentTaskStore>();
-            RegisterPlugin(new CrossAgentTaskPlugin(taskStore, sessionManager, _loggerFactory.CreateLogger<CrossAgentTaskPlugin>()), "CrossAgentTask");
-        }
+        TryAddBuiltInPlugin(new AgentToolingPlugin(_runtime, sessionManager, _loggerFactory.CreateLogger<AgentToolingPlugin>()));
 
-        if (!disabledBuiltIn.Contains("plan"))
-        {
-            var planPlugin = _serviceProvider.GetRequiredService<PlanPlugin>();
-            RegisterPlugin(planPlugin, "Plan");
-        }
+        var planPlugin = _serviceProvider.GetRequiredService<PlanPlugin>();
+        TryAddBuiltInPlugin(planPlugin);
 
-        if (!disabledBuiltIn.Contains("skillauthor"))
-        {
-            var skillAuthorPlugin = _serviceProvider.GetRequiredService<SkillAuthorPlugin>();
-            RegisterPlugin(skillAuthorPlugin, "SkillAuthor");
-        }
+        var skillAuthorPlugin = _serviceProvider.GetRequiredService<SkillAuthorPlugin>();
+        TryAddBuiltInPlugin(skillAuthorPlugin);
 
-        if (!disabledBuiltIn.Contains("user_options"))
-        {
-            var userOptionsManager = _serviceProvider.GetRequiredService<UserOptionsManager>();
-            var userOptionsLogger = _loggerFactory.CreateLogger<UserOptionsPlugin>();
-            RegisterPlugin(new UserOptionsPlugin(userOptionsManager, userOptionsLogger), "UserOptions");
-        }
+        var userOptionsManager = _serviceProvider.GetRequiredService<UserOptionsManager>();
+        var userOptionsLogger = _loggerFactory.CreateLogger<UserOptionsPlugin>();
+        TryAddBuiltInPlugin(new UserOptionsPlugin(userOptionsManager, userOptionsLogger));
 
-        if (!disabledBuiltIn.Contains("accuratedata"))
-            RegisterPlugin(new AccurateDataPlugin(_configService), "AccurateData");
+        TryAddBuiltInPlugin(new AccurateDataPlugin(_configService));
 
-        if (!disabledBuiltIn.Contains("meetingtranscript"))
-        {
-            var meetingStore = _serviceProvider.GetRequiredService<IMeetingTranscriptStore>();
-            RegisterPlugin(new MeetingTranscriptPlugin(meetingStore), "MeetingTranscript");
-        }
+        var meetingStore = _serviceProvider.GetRequiredService<IMeetingTranscriptStore>();
+        TryAddBuiltInPlugin(new MeetingTranscriptPlugin(meetingStore));
 
-        if (!disabledBuiltIn.Contains("scheduledtask"))
-        {
-            var scheduledTaskStore = _serviceProvider.GetRequiredService<IScheduledTaskStore>();
-            RegisterPlugin(new ScheduledTaskPlugin(scheduledTaskStore), "ScheduledTask");
-        }
+        var scheduledTaskStore = _serviceProvider.GetRequiredService<IScheduledTaskStore>();
+        TryAddBuiltInPlugin(new ScheduledTaskPlugin(scheduledTaskStore));
 
         // 动态注册 UserSkill（prompt-based skills 作为简单的 AIFunction 注册到 ToolRegistry）
         var toolRegistry = new ToolRegistry();
-        foreach (var (name, instance) in pluginInstances)
-            toolRegistry.RegisterPluginFromObject(instance, name);
+        foreach (var instance in pluginInstances)
+            toolRegistry.RegisterPluginFromObject(instance);
 
         var userSkills = _skillService.GetAllSkills();
         var skillCount = 0;
@@ -623,21 +586,13 @@ public sealed partial class ChatService : IDisposable
 
             if (skFeat?.UseAgentGroupChatMainSession == true)
             {
-                ToolInvocationTurnMeter.BeginTurn(sessionId);
-                try
+                await foreach (var streamItem in MafAgentGroupChatSessionRunner.InvokeStreamingAsync(
+                                   _runtime, _loggerFactory, turn.HistoryToUse, turn.ExecSettings, turn.SessionManager, sessionId, ct)
+                               .ConfigureAwait(false))
                 {
-                    await foreach (var streamItem in MafAgentGroupChatSessionRunner.InvokeStreamingAsync(
-                                       _runtime, _loggerFactory, turn.HistoryToUse, turn.ExecSettings, turn.SessionManager, sessionId, ct)
-                                   .ConfigureAwait(false))
-                    {
-                        if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                            fullResponse.Append(streamItem.Content);
-                        yield return streamItem;
-                    }
-                }
-                finally
-                {
-                    ToolInvocationTurnMeter.EndTurn(sessionId);
+                    if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
+                        fullResponse.Append(streamItem.Content);
+                    yield return streamItem;
                 }
             }
             else
@@ -682,20 +637,17 @@ public sealed partial class ChatService : IDisposable
                     }
                 }
 
-                ToolInvocationTurnMeter.BeginTurn(sessionId);
-                try
+                var streamOutcome = new StreamPassOutcome();
+                var useMafMain = _runtime.GetChatClient() is not null;
+                if (!useMafMain)
                 {
-                    var streamOutcome = new StreamPassOutcome();
-                    var useMafMain = _runtime.GetChatClient() is not null;
-                    if (!useMafMain)
-                    {
-                        const string errMsg =
-                            "[错误] 主会话需要 MEAI IChatClient（MAF）。请确认模型已配置且 Kernel 重建成功；已不再使用 Semantic Kernel 流式路径。";
-                        yield return new StreamItem(IsWarning: true, Content: errMsg);
-                        fullResponse.Append(errMsg);
-                    }
-                    else
-                    {
+                    const string errMsg =
+                        "[错误] 主会话需要 MEAI IChatClient（MAF）。请确认模型已配置且 Kernel 重建成功；已不再使用 Semantic Kernel 流式路径。";
+                    yield return new StreamItem(IsWarning: true, Content: errMsg);
+                    fullResponse.Append(errMsg);
+                }
+                else
+                {
                     for (var attempt = 0; attempt < 2; attempt++)
                     {
                         if (attempt > 0)
@@ -718,7 +670,9 @@ public sealed partial class ChatService : IDisposable
                                            requireToolInvocation: false,
                                            contextProviders: contextProviders,
                                            toolsForAgent: turn.ToolsForAgentRound,
-                                           ct).ConfigureAwait(false))
+                                           dynamicTooling: turn.DynamicToolingState,
+                                           mergePlanIntoDynamicBootstrap: turn.PlanResult != null,
+                                           ct: ct).ConfigureAwait(false))
                         {
                             if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
                                 fullResponse.Append(streamItem.Content);
@@ -734,233 +688,9 @@ public sealed partial class ChatService : IDisposable
                         break;
                     }
 
-                    // 工具接地重试：依据「真实执行过的 Kernel 工具数」+ 用户原文启发式 + 可用函数列表。
-                    // 百炼 thinking 走 reasoning_chunk，不入 fullResponse；不得用推理条数/正文参与判定（harness-engineering）。
-                    // stream_warning 仅在首轮已有「可见助手正文」（fullResponse strip 后非空）却未调工具时下发；仅 thinking、无正文则静默续跑。
-                    var firstPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
-                    var visibleAssistantFirstPass = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()).Trim();
-                    var firstPassHadVisibleAssistantText = visibleAssistantFirstPass.Length > 0;
-                    var clientTypeForTools = sessionManagerForStatus.GetClientType(sessionId);
-                    IReadOnlyList<AITool> toolsForRequired = turn.ToolsForAgentRound
-                        ?? _runtime.GetAllowedTools(clientTypeForTools, sessionId);
-                    var needToolGroundingRetry = firstPassTools == 0
-                        && MutationIntentHeuristic.LikelyRequiresLocalMutationTool(userMessage)
-                        && toolsForRequired is { Count: > 0 };
-
-                    if (needToolGroundingRetry)
-                    {
-                        _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry: firstPassTools=0 mutationIntent=true functionsForRequired={FnCount} streamWarning={StreamWarning}",
-                            sessionId, toolsForRequired.Count, firstPassHadVisibleAssistantText);
-                        if (firstPassHadVisibleAssistantText)
-                        {
-                            yield return new StreamItem(
-                                IsWarning: true,
-                                Content: "首轮响应未触发本机文件类工具调用；正在自动续跑一轮以完成操作…");
-                        }
-
-                        var retryHistory = CloneHistory(turn.HistoryToUse);
-                        retryHistory.Add(new ChatMessage(ChatRole.Assistant, visibleAssistantFirstPass));
-                        retryHistory.Add(new ChatMessage(ChatRole.User, ToolGroundingRetryMessages.NudgeUserMessage));
-                        fullResponse.Clear();
-                        ToolInvocationTurnMeter.ResetCount(sessionId);
-
-                        var maxTok = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
-                        var retrySettings = new ChatOptions
-                        {
-                            MaxOutputTokens = maxTok,
-                        };
-                        CopyOptionalPromptSettings(turn.ExecSettings, retrySettings);
-
-                        var requiredApiFallback = false;
-                        var requiredPassBuffer = new List<StreamItem>();
-                        streamOutcome.ContextLengthRetryRequested = false;
-                        try
-                        {
-                            await foreach (var streamItem in MafMainSessionStreamRunner.EnumerateStreamingAsync(
-                                               _runtime.GetChatClient()!,
-                                               _runtime,
-                                               _loggerFactory,
-                                               _serviceProvider,
-                                               retryHistory,
-                                               retrySettings,
-                                               sessionManagerForStatus,
-                                               sessionId,
-                                               state,
-                                               ctxConfig,
-                                               streamOutcome,
-                                               contextAttemptIndex: 0,
-                                               requireToolInvocation: true,
-                                               toolsForAgent: turn.ToolsForAgentRound,
-                                               ct: ct).ConfigureAwait(false))
-                            {
-                                if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                                    fullResponse.Append(streamItem.Content);
-                                requiredPassBuffer.Add(streamItem);
-                            }
-                        }
-                        catch (Exception ex) when (IsLikelyToolChoiceOrFunctionCallApiError(ex))
-                        {
-                            _logger.LogWarning(ex, "[{SessionId}] tool_choice Required 重试失败，回退为 Auto + 强提示。", sessionId);
-                            requiredApiFallback = true;
-                            requiredPassBuffer.Clear();
-                            fullResponse.Clear();
-                        }
-
-                        foreach (var streamItem in requiredPassBuffer)
-                            yield return streamItem;
-
-                        if (requiredApiFallback)
-                        {
-                            ToolInvocationTurnMeter.ResetCount(sessionId);
-                            fullResponse.Clear();
-                            var fallbackSettings = new ChatOptions
-                            {
-                                MaxOutputTokens = maxTok,
-                            };
-                            CopyOptionalPromptSettings(turn.ExecSettings, fallbackSettings);
-                            streamOutcome.ContextLengthRetryRequested = false;
-                            await foreach (var streamItem in MafMainSessionStreamRunner.EnumerateStreamingAsync(
-                                               _runtime.GetChatClient()!,
-                                               _runtime,
-                                               _loggerFactory,
-                                               _serviceProvider,
-                                               retryHistory,
-                                               fallbackSettings,
-                                               sessionManagerForStatus,
-                                               sessionId,
-                                               state,
-                                               ctxConfig,
-                                               streamOutcome,
-                                               contextAttemptIndex: 0,
-                                               requireToolInvocation: false,
-                                               toolsForAgent: turn.ToolsForAgentRound,
-                                               ct: ct).ConfigureAwait(false))
-                            {
-                                if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                                    fullResponse.Append(streamItem.Content);
-                                yield return streamItem;
-                            }
-                        }
-
-                        var retryPassTools = ToolInvocationTurnMeter.GetCount(sessionId);
-                        _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry finished: toolsInvokedAfterRetry={Count}",
-                            sessionId, retryPassTools);
-                    }
-                    // 读类工具接地：判定依据同上；stream_warning 规则与写类一致（须首轮已有可见正文）。
-                    else if (firstPassTools == 0
-                             && DocumentReadIntentHeuristic.LikelyRequiresDocumentReadTool(userMessage)
-                             && toolsForRequired is { Count: > 0 })
-                    {
-                        _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry (read): firstPassTools=0 documentReadIntent=true functionsForRequired={FnCount} streamWarning={StreamWarning}",
-                            sessionId, toolsForRequired.Count, firstPassHadVisibleAssistantText);
-                        if (firstPassHadVisibleAssistantText)
-                        {
-                            yield return new StreamItem(
-                                IsWarning: true,
-                                Content: "首轮响应未执行读类文档工具；正在自动续跑一轮…");
-                        }
-
-                        var retryHistoryRead = CloneHistory(turn.HistoryToUse);
-                        retryHistoryRead.Add(new ChatMessage(ChatRole.Assistant, visibleAssistantFirstPass));
-                        retryHistoryRead.Add(new ChatMessage(ChatRole.User, ToolGroundingRetryMessages.ReadNudgeUserMessage));
-                        fullResponse.Clear();
-                        ToolInvocationTurnMeter.ResetCount(sessionId);
-
-                        var maxTokRead = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
-                        var retrySettingsRead = new ChatOptions
-                        {
-                            MaxOutputTokens = maxTokRead,
-                        };
-                        CopyOptionalPromptSettings(turn.ExecSettings, retrySettingsRead);
-
-                        var requiredApiFallbackRead = false;
-                        var requiredPassBufferRead = new List<StreamItem>();
-                        streamOutcome.ContextLengthRetryRequested = false;
-                        try
-                        {
-                            await foreach (var streamItem in MafMainSessionStreamRunner.EnumerateStreamingAsync(
-                                               _runtime.GetChatClient()!,
-                                               _runtime,
-                                               _loggerFactory,
-                                               _serviceProvider,
-                                               retryHistoryRead,
-                                               retrySettingsRead,
-                                               sessionManagerForStatus,
-                                               sessionId,
-                                               state,
-                                               ctxConfig,
-                                               streamOutcome,
-                                               contextAttemptIndex: 0,
-                                               requireToolInvocation: true,
-                                               toolsForAgent: turn.ToolsForAgentRound,
-                                               ct: ct).ConfigureAwait(false))
-                            {
-                                if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                                    fullResponse.Append(streamItem.Content);
-                                requiredPassBufferRead.Add(streamItem);
-                            }
-                        }
-                        catch (Exception ex) when (IsLikelyToolChoiceOrFunctionCallApiError(ex))
-                        {
-                            _logger.LogWarning(ex, "[{SessionId}] tool_choice Required 读类重试失败，回退为 Auto + 强提示。", sessionId);
-                            requiredApiFallbackRead = true;
-                            requiredPassBufferRead.Clear();
-                            fullResponse.Clear();
-                        }
-
-                        foreach (var streamItem in requiredPassBufferRead)
-                            yield return streamItem;
-
-                        if (requiredApiFallbackRead)
-                        {
-                            ToolInvocationTurnMeter.ResetCount(sessionId);
-                            fullResponse.Clear();
-                            var fallbackSettingsRead = new ChatOptions
-                            {
-                                MaxOutputTokens = maxTokRead,
-                            };
-                            CopyOptionalPromptSettings(turn.ExecSettings, fallbackSettingsRead);
-                            streamOutcome.ContextLengthRetryRequested = false;
-                            await foreach (var streamItem in MafMainSessionStreamRunner.EnumerateStreamingAsync(
-                                               _runtime.GetChatClient()!,
-                                               _runtime,
-                                               _loggerFactory,
-                                               _serviceProvider,
-                                               retryHistoryRead,
-                                               fallbackSettingsRead,
-                                               sessionManagerForStatus,
-                                               sessionId,
-                                               state,
-                                               ctxConfig,
-                                               streamOutcome,
-                                               contextAttemptIndex: 0,
-                                               requireToolInvocation: false,
-                                               toolsForAgent: turn.ToolsForAgentRound,
-                                               ct: ct).ConfigureAwait(false))
-                            {
-                                if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
-                                    fullResponse.Append(streamItem.Content);
-                                yield return streamItem;
-                            }
-                        }
-
-                        var retryPassToolsRead = ToolInvocationTurnMeter.GetCount(sessionId);
-                        _logger.LogInformation(
-                            "[{SessionId}] Tool grounding retry (read) finished: toolsInvokedAfterRetry={Count}",
-                            sessionId, retryPassToolsRead);
-                    }
-
                     _logger.LogInformation(
                         "[{SessionId}] MAF 主会话流结束（百炼 reasoning 经 MafMainSessionStreamRunner / DashScope* 桥；若 SSE tap 与 Drain 不一致请查 AsyncLocal）",
                         sessionId);
-                    }
-                }
-                finally
-                {
-                    ToolInvocationTurnMeter.EndTurn(sessionId);
                 }
             }
 
@@ -972,34 +702,6 @@ public sealed partial class ChatService : IDisposable
         }
         finally { }
     }
-
-    private static List<ChatMessage> CloneHistory(List<ChatMessage> source)
-    {
-        var h = new List<ChatMessage>(source.Count);
-        for (var i = 0; i < source.Count; i++)
-            h.Add(source[i]);
-        return h;
-    }
-
-    private static void CopyOptionalPromptSettings(ChatOptions from, ChatOptions to)
-    {
-        to.Temperature = from.Temperature;
-        to.TopP = from.TopP;
-        to.FrequencyPenalty = from.FrequencyPenalty;
-        to.PresencePenalty = from.PresencePenalty;
-        if (from.StopSequences is not null && from.StopSequences.Count > 0)
-            to.StopSequences = from.StopSequences;
-    }
-
-    private static bool IsLikelyToolChoiceOrFunctionCallApiError(Exception ex)
-    {
-        var msg = ex.Message + "\n" + ex;
-        return msg.Contains("tool_choice", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("tool choice", StringComparison.OrdinalIgnoreCase)
-            || (msg.Contains("required", StringComparison.OrdinalIgnoreCase)
-                && (msg.Contains("tools", StringComparison.OrdinalIgnoreCase) || msg.Contains("function", StringComparison.OrdinalIgnoreCase)));
-    }
-
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
     public async Task<string> RunSubtaskAsync(string sessionId, string taskDescription, string? constraints, CancellationToken ct = default)

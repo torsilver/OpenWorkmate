@@ -8,6 +8,7 @@ namespace OfficeCopilot.Server.Plugins;
 /// 为 Clawhub 可执行技能提供通用脚本执行：根据技能 BaseDir 与 scripts/ 下的脚本名执行 node，并注入技能所需环境变量。
 /// 适用于尚无原生适配器的可执行技能。
 /// </summary>
+[CopilotPluginId("ClawhubSkill")]
 public sealed class ClawhubSkillPlugin
 {
     private readonly SkillService _skillService;

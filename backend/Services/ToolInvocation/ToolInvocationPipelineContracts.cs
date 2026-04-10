@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
@@ -8,6 +9,8 @@ public sealed class ToolInvocationPipelineServices
     public required ConfigService ConfigService { get; init; }
     public required ISecurityPipeline SecurityPipeline { get; init; }
     public required IToolStatusNotifier ToolStatus { get; init; }
+    /// <summary>动态工具表刷新、工具名解析等（分类名 <c>DynamicTooling</c>）。</summary>
+    public required ILogger Logger { get; init; }
 }
 
 /// <summary>HITL / 白名单安全检查；由 <see cref="SecurityPipeline"/> 实现。</summary>

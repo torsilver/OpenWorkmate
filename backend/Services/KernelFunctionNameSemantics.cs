@@ -1,7 +1,7 @@
 namespace OfficeCopilot.Server.Services;
 
 /// <summary>
-/// 仅依据 Kernel 函数名（不含插件前缀）推断只读/写倾向，供 <see cref="ToolCapabilityRegistry"/> 与 <see cref="MutationIntentHeuristic"/> 共用，避免规则漂移。
+/// 仅依据 Kernel 函数名（不含插件前缀）推断只读/写倾向，供 <see cref="ToolCapabilityRegistry"/> 等共用，避免规则漂移。
 /// </summary>
 public static class KernelFunctionNameSemantics
 {

@@ -7,6 +7,7 @@ using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("File")]
 public sealed class FilePlugin
 {
     private readonly ScreenshotCacheService _screenshotCache;

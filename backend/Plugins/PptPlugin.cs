@@ -8,10 +8,12 @@ using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("Ppt")]
 public sealed class PptPlugin
 {
     private readonly ILogger<PptPlugin>? _logger;

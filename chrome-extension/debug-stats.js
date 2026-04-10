@@ -80,13 +80,10 @@
       const entries = [
         ["服务启动时间 (UTC)", data.serverStartedUtc ? String(data.serverStartedUtc) : "—"],
         ["累计统计起始时间 (UTC)", data.statsAccumulatedSinceUtc ? String(data.statsAccumulatedSinceUtc) : "—"],
-        ["非计划模式工具选择总次数", String(ts.totalNonPlanSelections ?? 0)],
-        ["选择阶段异常回退全量工具", String(ts.selectionExceptionFallbackCount ?? 0)],
-        ["工具需求门控：主模型调用次数", String(ts.toolNeedGateLlmInvocationCount ?? 0)],
-        ["其中判定闲聊（本轮不绑工具）", String(ts.toolNeedGateChatOnlyCount ?? 0)],
-        ["闲聊占比 / 门控 LLM 次数", pct(ts.toolNeedGateChatOnlyRateAmongGateLlm)],
-        ["两阶段选择调用次数", String(ts.twoStageInvocationsCount ?? 0)],
-        ["两阶段 / 非计划选择总次数", pct(ts.twoStageRateAmongSelections)]
+        ["主会话工具阶段总次数", String(ts.totalNonPlanSelections ?? 0)],
+        ["工具阶段异常回退全量", String(ts.selectionExceptionFallbackCount ?? 0)],
+        ["动态工具首轮 bootstrap 次数", String(ts.dynamicToolingBootstrapCount ?? 0)],
+        ["bootstrap / 工具阶段总次数", pct(ts.dynamicBootstrapRateAmongToolingPhases)]
       ];
       for (const [dt, dd] of entries) {
         const [dEl, ddEl] = row(dt, dd);

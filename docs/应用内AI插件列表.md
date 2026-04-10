@@ -7,7 +7,7 @@
 
 - **注册逻辑**：`backend/ChatService.cs` 在 **`RebuildRuntimeAsync`** 中通过 `ToolRegistry.RegisterPluginFromObject` / MCP 包装（`McpKernelPlugin`）等注册工具；详见 [`maf-migration-baseline.md`](./maf-migration-baseline.md)。
 - **按端裁剪**：`backend/Services/ClientTypeToolFilter.cs` 决定某 `clientType` 下模型**实际可见**的插件与函数（同名插件在不同端暴露的子集不同）。
-- **工具选择文案**：`backend/Services/ToolSelectionService.cs` 中 `PluginDescriptions` 供两阶段选工具时的简短说明。
+- **动态工具索引**：`backend/Services/DynamicTooling/ToolCatalogIndex.cs` 从允许列表构建轻量检索；`AgentTooling` 插件提供 `search_available_tools` / `activate_tools`。
 - **设置页「内置工具」列表**（与运行时注册可能略不同步）：`backend/Program.cs` 的 **`GET /api/tools/builtin`**。截至当前代码，该接口**未包含** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见本文 **§五**）；**以 `ChatService.RebuildRuntimeAsync` 注册为准**。
 
 若增删插件或改端侧过滤，请**先改代码**，再同步本文。
@@ -161,7 +161,7 @@
 | 工具注册 / 运行时重建 | `backend/ChatService.cs`（`RebuildRuntimeAsync`） |
 | 内置插件清单（HTTP，可能与运行时略不同步） | `backend/Program.cs`（`GET /api/tools/builtin`） |
 | 端侧过滤 | `backend/Services/ClientTypeToolFilter.cs` |
-| 选工具描述 | `backend/Services/ToolSelectionService.cs` |
+| 动态工具 / 检索 | `backend/Services/DynamicTooling/`、`backend/Plugins/AgentToolingPlugin.cs` |
 | 技能撰写 | `backend/Plugins/SkillAuthorPlugin.cs` |
 | Chrome 端逐工具手工测 | `docs/Chrome端手工测试计划.md` |
 

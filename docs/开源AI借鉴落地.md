@@ -86,7 +86,7 @@
 | 能力 | 代码/模块 | 说明 |
 |------|-----------|------|
 | 会话与对话历史 | `SessionState` + `List<ChatMessage>` (MEAI) | 多轮对话与摘要、Compaction 等 |
-| 工具范围裁剪 | `ToolSelectionService` / 向量索引 + 本轮 `ChatOptions` 所选函数列表 | 降低无关工具干扰 |
+| 工具范围裁剪 | `ToolCatalogIndex` + `search_available_tools` / `activate_tools` + 本轮 `ChatOptions.Tools` | 降低无关工具干扰 |
 | 计划与分步 | `IPlanStore` + `PlanPlugin` + system 动态注入 | 绑定计划 ID、当前步骤文本注入 system |
 | 子任务隔离 | `RunSubtaskAsync` | 子代理内多轮工具不污染主会话 |
 | 人机确认 | `HitlManager` + `SecurityPipeline` | 拦截 → 前端确认 → 继续调用 |

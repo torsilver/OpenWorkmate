@@ -196,16 +196,26 @@ public sealed class SecurityPipeline : ISecurityPipeline
         if (IsScheduledTaskSession(sessionId))
             return "[系统拦截] 定时任务到点执行不支持自定义页面脚本（需人工确认且无浏览器会话）。";
 
-        if (ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
+        var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+        var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+        var mode = _configService.GetCliRunModeForEnd(endKey);
+
+        if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrEmpty(sessionId))
-                return "[系统拦截] 执行自定义页面脚本需在会话中由用户确认，当前无会话。";
-            var code = scriptCodeObj?.ToString()?.Trim() ?? "";
-            var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_page_script", null, ct);
-            if (!result.Allowed)
-                return "用户拒绝执行或未在限定时间内确认，已取消执行。";
-            _logger.LogInformation("用户已允许执行自定义页面脚本");
+            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行自定义页面脚本", endKey);
+            return null;
         }
+
+        if (!ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
+            return null;
+
+        if (string.IsNullOrEmpty(sessionId))
+            return "[系统拦截] 执行自定义页面脚本需在会话中由用户确认，当前无会话。";
+        var code = scriptCodeObj?.ToString()?.Trim() ?? "";
+        var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_page_script", null, ct);
+        if (!result.Allowed)
+            return "用户拒绝执行或未在限定时间内确认，已取消执行。";
+        _logger.LogInformation("用户已允许执行自定义页面脚本");
         return null;
     }
 
@@ -217,16 +227,26 @@ public sealed class SecurityPipeline : ISecurityPipeline
         if (IsScheduledTaskSession(sessionId))
             return "[系统拦截] 定时任务到点执行不支持自定义文档脚本（需人工确认）。";
 
-        if (ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
+        var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
+        var endKey = CliScriptEndKeys.ResolveEndKey(clientType);
+        var mode = _configService.GetCliRunModeForEnd(endKey);
+
+        if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrEmpty(sessionId))
-                return "[系统拦截] 执行自定义文档脚本需在会话中由用户确认，当前无会话。";
-            var code = docCodeObj?.ToString()?.Trim() ?? "";
-            var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_document_script", null, ct);
-            if (!result.Allowed)
-                return "用户拒绝执行或未在限定时间内确认，已取消执行。";
-            _logger.LogInformation("用户已允许执行自定义文档脚本");
+            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行自定义文档脚本", endKey);
+            return null;
         }
+
+        if (!ToolPermissionRuleEvaluator.RequiresConfirmation(ruleEffect))
+            return null;
+
+        if (string.IsNullOrEmpty(sessionId))
+            return "[系统拦截] 执行自定义文档脚本需在会话中由用户确认，当前无会话。";
+        var code = docCodeObj?.ToString()?.Trim() ?? "";
+        var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_document_script", null, ct);
+        if (!result.Allowed)
+            return "用户拒绝执行或未在限定时间内确认，已取消执行。";
+        _logger.LogInformation("用户已允许执行自定义文档脚本");
         return null;
     }
 

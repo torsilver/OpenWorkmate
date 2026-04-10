@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Chat;
+using OfficeCopilot.Server.Services.DynamicTooling;
 
 #pragma warning disable MAAI001 // Compaction API is experimental
 
@@ -103,96 +104,75 @@ public sealed partial class ChatService
     internal async Task RunStreamChatToolingPhaseAsync(StreamChatTurnContext turn, CancellationToken ct)
     {
         var sessionId = turn.SessionId;
-        var userMessage = turn.UserMessage;
         var state = turn.State;
         var ctxConfig = turn.CtxConfig;
         var sessionManagerForStatus = turn.SessionManager;
         var planResult = turn.PlanResult;
-
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
-        IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs = null;
-        var gateEnabled = ctxConfig.EnableToolNeedGate;
+        var dynCfg = ctxConfig.DynamicTooling ?? new DynamicToolingConfig();
+
         await NotifyAgentStatusAsync(
             sessionManagerForStatus,
             sessionId,
-            gateEnabled ? "正在判断本轮是否需要工具…" : "正在筛选可用工具…",
+            dynCfg.Enabled ? "正在准备动态工具…" : "正在准备工具…",
             ct).ConfigureAwait(false);
         _agentDebugStats.IncrementToolSelectionTotal();
 
-        var recentHistory = state.History.Count > 1 ? state.History : null;
         try
         {
-            ToolNeedGateResult gate;
-            if (planResult != null)
-                gate = new ToolNeedGateResult(true, "已加载计划，跳过工具需求门控。", false);
-            else
-                gate = await _toolSelector.EvaluateToolNeedGateAsync(userMessage, recentHistory, ct).ConfigureAwait(false);
-            if (gate.InvokedLlm)
+            if (dynCfg.Enabled)
             {
-                _agentDebugStats.RecordToolNeedGateLlmInvocation();
-                if (!gate.BindTools)
-                    _agentDebugStats.RecordToolNeedGateChatOnly();
-            }
-
-            // 门控关闭时不推 trace，避免时间线出现「已关闭」误导；有计划跳过门控或实际跑了门控 LLM 时再记录
-            if (planResult != null || gateEnabled || gate.InvokedLlm)
-            {
+                var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId);
+                var mergePlan = planResult != null;
+                var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(_runtime.ToolRegistry, clientType, sessionId, mergePlan);
+                var bootstrapNames = bootstrap
+                    .Select(t => t.Name)
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, bootstrapNames)
+                {
+                    MergePlanIntoDynamicBootstrap = mergePlan,
+                    ClientTypeForTools = clientType,
+                    SessionIdForTools = sessionId
+                };
+                var trace = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrap.Count, catalog.Entries.Count);
                 await NotifyAgentTraceAsync(
-                    sessionManagerForStatus,
-                    sessionId,
-                    "toolSelection",
-                    "工具需求门控",
-                    AgentTraceFormatter.TruncateDetail(gate.TraceDetail),
-                    ct).ConfigureAwait(false);
+                    sessionManagerForStatus, sessionId, "toolSelection", trace.Title, trace.Detail, ct).ConfigureAwait(false);
+                _agentDebugStats.RecordDynamicToolingBootstrap();
+                _logger.LogInformation(
+                    "[{SessionId}] Dynamic tooling: bootstrapCount={Boot} indexEntries={Idx}",
+                    sessionId, bootstrap.Count, catalog.Entries.Count);
+                FinalizeToolingPhaseTurn(turn, state, clientType, bootstrap, selectedPairs: null, restrictedSubset: true, appendDynamicToolingInstruction: true);
             }
-
-            if (!gate.BindTools)
+            else
             {
-                _logger.LogInformation("[{SessionId}] ToolSelection: gate chose chat-only (no tools bound).", sessionId);
-                FinalizeToolingPhaseTurn(turn, state, clientType, Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false);
-                return;
+                turn.DynamicToolingState = null;
+                IReadOnlyList<AITool>? selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId);
+                if (planResult != null && selectedTools != null)
+                    selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
+                var funcsCount = selectedTools?.Count ?? 0;
+                _logger.LogInformation("[{SessionId}] Static tooling: full allow-list functionCount={Count}.", sessionId, funcsCount);
+                await NotifyAgentTraceAsync(
+                    sessionManagerForStatus, sessionId, "toolSelection", "全量允许工具",
+                    $"本端可用 {funcsCount} 个函数。", ct).ConfigureAwait(false);
+                FinalizeToolingPhaseTurn(
+                    turn, state, clientType, selectedTools ?? Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false, appendDynamicToolingInstruction: false);
             }
-
-            if (gateEnabled)
-                await NotifyAgentStatusAsync(sessionManagerForStatus, sessionId, "正在筛选可用工具…", ct).ConfigureAwait(false);
-            _logger.LogInformation("[{SessionId}] ToolSelection: gate passed, two-stage clientType={ClientType}.",
-                sessionId, clientType ?? "(null)");
-            _agentDebugStats.RecordTwoStageUsed();
-            var twoStage = await _toolSelector.SelectFunctionsAsync(
-                userMessage,
-                recentHistory,
-                _runtime.ToolRegistry,
-                ct,
-                new ToolSelectionContext(clientType)).ConfigureAwait(false);
-            selectedPairs = twoStage.SelectedPairs;
-            _logger.LogInformation("[{SessionId}] ToolSelection: two-stage returned selectedPairsCount={Count}.",
-                sessionId, selectedPairs?.Count ?? -1);
-            var tsTrace = AgentTraceFormatter.BuildTwoStageToolTrace(twoStage);
-            await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "toolSelection", tsTrace.Title, tsTrace.Detail, ct).ConfigureAwait(false);
-
-            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, selectedPairs, clientType, sessionId);
-            if (planResult != null && selectedTools != null)
-                selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
-            var restrictedSubset = selectedPairs is { Count: > 0 };
-            var funcsCount = selectedTools?.Count ?? 0;
-            _logger.LogInformation("[{SessionId}] ToolSelection: resolved functionCount={FuncCount} restrictedSubset={Restricted}.",
-                sessionId, funcsCount, restrictedSubset);
-
-            FinalizeToolingPhaseTurn(turn, state, clientType, selectedTools!, selectedPairs, restrictedSubset);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[{SessionId}] Tool selection failed, using all tools.", sessionId);
+            _logger.LogWarning(ex, "[{SessionId}] Tooling phase failed, using full allow-list.", sessionId);
             _agentDebugStats.RecordToolSelectionException();
-            selectedPairs = null;
-            await NotifyAgentTraceAsync(
-                sessionManagerForStatus, sessionId, "toolSelection", "工具选择异常，已回退全量工具",
-                ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
-
+            turn.DynamicToolingState = null;
             var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId);
             if (planResult != null && selectedTools != null)
                 selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
-            FinalizeToolingPhaseTurn(turn, state, clientType, selectedTools!, selectedPairs: null, restrictedSubset: false);
+            await NotifyAgentTraceAsync(
+                sessionManagerForStatus, sessionId, "toolSelection", "工具阶段异常，已回退全量工具",
+                ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
+            FinalizeToolingPhaseTurn(
+                turn, state, clientType, selectedTools ?? Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false, appendDynamicToolingInstruction: false);
         }
     }
 
@@ -202,26 +182,27 @@ public sealed partial class ChatService
         string? clientType,
         IReadOnlyList<AITool> toolsForAgent,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
-        bool restrictedSubset)
+        bool restrictedSubset,
+        bool appendDynamicToolingInstruction)
     {
         var sessionId = turn.SessionId;
         var ctxConfig = turn.CtxConfig;
         var pairsCount = selectedPairs?.Count ?? 0;
         var funcsCount = toolsForAgent.Count;
-        _logger.LogInformation("[{SessionId}] ToolSelection: finalize pairsCount={PairsCount} toolsForAgentCount={FuncCount} restricted={Restricted}.",
-            sessionId, pairsCount, funcsCount, restrictedSubset);
+        _logger.LogInformation("[{SessionId}] Tooling: finalize pairsCount={PairsCount} toolsForAgentCount={FuncCount} restricted={Restricted} dynamicInstr={Dyn}.",
+            sessionId, pairsCount, funcsCount, restrictedSubset, appendDynamicToolingInstruction);
 
         var maxOutputTokens = Math.Clamp(ctxConfig.ReservedOutputTokens, 256, 16_384);
         turn.ExecSettings = new ChatOptions { MaxOutputTokens = maxOutputTokens };
         if (funcsCount > 0)
         {
             if (restrictedSubset)
-                _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to {FunctionCount} functions (subset).", sessionId, funcsCount);
+                _logger.LogInformation("[{SessionId}] Tooling: MAF bound to {FunctionCount} functions (subset/bootstrap).", sessionId, funcsCount);
             else
-                _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to {FunctionCount} functions (full allow-list).", sessionId, funcsCount);
+                _logger.LogInformation("[{SessionId}] Tooling: MAF bound to {FunctionCount} functions (full allow-list).", sessionId, funcsCount);
         }
         else
-            _logger.LogInformation("[{SessionId}] ToolSelection: MAF bound to zero tools (chat-only).", sessionId);
+            _logger.LogInformation("[{SessionId}] Tooling: MAF bound to zero tools (chat-only).", sessionId);
 
         turn.ToolsForAgentRound = toolsForAgent;
         turn.SelectedTools = funcsCount > 0 ? toolsForAgent : null;
@@ -229,7 +210,10 @@ public sealed partial class ChatService
         var activeModel = GetActiveModelEntry();
         turn.EnableSearchSuppressionSuffix = activeModel?.EnableSearch == true ? EnableSearchSuppressionInstruction : null;
 
-        turn.IdentitySuffix = GetClientTypeIdentitySuffix(clientType);
+        var id = GetClientTypeIdentitySuffix(clientType);
+        if (appendDynamicToolingInstruction)
+            id = string.IsNullOrEmpty(id) ? DynamicToolingInstruction.Text : id + "\n\n" + DynamicToolingInstruction.Text;
+        turn.IdentitySuffix = id;
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
     }
 

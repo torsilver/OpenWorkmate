@@ -14,6 +14,7 @@ using SharpPdfDocument = PdfSharp.Pdf.PdfDocument;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>内置 PDF 读写：读用 PdfPig，写与合并用 PDFsharp。</summary>
+[CopilotPluginId("Pdf")]
 public sealed class PdfPlugin
 {
     private readonly ILogger<PdfPlugin> _logger;

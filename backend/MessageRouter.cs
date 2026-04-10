@@ -327,6 +327,7 @@ public class ScheduledTaskUpdateRequest
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]
+[JsonSerializable(typeof(OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig))]
 [JsonSerializable(typeof(ContextOptimizationPreset))]
 [JsonSerializable(typeof(List<ContextOptimizationPreset>))]
 [JsonSerializable(typeof(AiModelEntry))]

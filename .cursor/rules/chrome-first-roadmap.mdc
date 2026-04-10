@@ -1,0 +1,25 @@
+---
+description: 功能迭代与交付优先级：一律先做 Chrome 扩展；Office/WPS 非紧急，不纳入同期必交付
+alwaysApply: true
+---
+
+# 产品节奏：Chrome 优先，Office/WPS 靠后
+
+## 原则
+
+- **一切新功能、交互与协议演进，默认只在 [chrome-extension/](chrome-extension/) 落地并验收**；除非用户明确要求，**不要把 Office / WPS 当作同一迭代的必做项**。
+- **Office**（[office-addin/](office-addin/)）与 **WPS**（[wps-addin-new/](wps-addin-new/)）**不着急对齐**：可 backlog、可延后多轮；不要为了「多端同时上线」而拖慢 Chrome 侧或牺牲质量。
+
+## 与「以 Chrome 为准」的关系
+
+- **规范源**（什么叫正确）见 [multi-client-chrome-canonical.mdc](multi-client-chrome-canonical.mdc)。
+- 本条强调 **排期与范围**：Agent 默认 **不主动** 大改 Office/WPS；仅在用户点名或专项任务时再动。
+
+## 反例
+
+- Chrome 未完成就分散精力去改 WPS `taskpane`「保持一致」。
+- PR 要求「必须三端一起改完才能合并」（除非用户明确如此要求）。
+
+## 正例
+
+- 同一需求：Chrome 做完、测完、合并；Office/WPS 另开后续项或等用户安排。

@@ -48,6 +48,18 @@ public sealed class ToolRegistry
         }
     }
 
+    /// <summary>从实例类型上的 <see cref="CopilotPluginIdAttribute"/> 读取插件 Id 并注册工具（内置插件须标注该特性）。</summary>
+    /// <exception cref="InvalidOperationException">类型上缺少 <see cref="CopilotPluginIdAttribute"/>。</exception>
+    public void RegisterPluginFromObject(object instance)
+    {
+        var type = instance.GetType();
+        var attr = type.GetCustomAttribute<CopilotPluginIdAttribute>();
+        if (attr is null)
+            throw new InvalidOperationException(
+                $"类型 {type.FullName} 未标注 [CopilotPluginId(\"...\")]，无法使用无参 RegisterPluginFromObject。");
+        RegisterPluginFromObject(instance, attr.Id);
+    }
+
     public void RegisterPlugin(string pluginName, IEnumerable<AITool> tools)
     {
         foreach (var tool in tools)

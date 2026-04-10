@@ -8,6 +8,7 @@ using OfficeCopilot.Server.Services.ToolInvocation;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>RPC 调用当前打开的 Office 文档（Word/Excel 任务窗格）。仅当用户从 Word 或 Excel 加载项连接时有效。</summary>
+[CopilotPluginId("CurrentDocument")]
 public sealed class CurrentDocumentPlugin
 {
     private readonly SessionManager _sessionManager;

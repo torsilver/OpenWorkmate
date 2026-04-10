@@ -34,15 +34,13 @@ public class AgentDebugStatsServiceTests
         {
             var s = CreateService(path);
             s.IncrementToolSelectionTotal();
-            s.RecordTwoStageUsed();
+            s.RecordDynamicToolingBootstrap();
             s.RecordToolInvocation("Word", "read", success: true);
             s.RecordToolInvocation("Word", "read", success: false);
             s.Reset();
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
-            Assert.Equal(0, snap.ToolSelection.TwoStageInvocationsCount);
-            Assert.Equal(0, snap.ToolSelection.ToolNeedGateLlmInvocationCount);
-            Assert.Equal(0, snap.ToolSelection.ToolNeedGateChatOnlyCount);
+            Assert.Equal(0, snap.ToolSelection.DynamicToolingBootstrapCount);
             Assert.Empty(snap.ToolInvocations);
             Assert.Null(snap.StatsAccumulatedSinceUtc);
             Assert.False(File.Exists(path));
@@ -78,7 +76,7 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
-    public void TwoStageRate_DerivedFromTotals()
+    public void DynamicBootstrapRate_DerivedFromTotals()
     {
         var path = NewTempPersistencePath();
         try
@@ -86,12 +84,12 @@ public class AgentDebugStatsServiceTests
             var s = CreateService(path);
             s.IncrementToolSelectionTotal();
             s.IncrementToolSelectionTotal();
-            s.RecordTwoStageUsed();
+            s.RecordDynamicToolingBootstrap();
             var ts = s.GetSnapshot().ToolSelection;
             Assert.Equal(2, ts.TotalNonPlanSelections);
-            Assert.Equal(1, ts.TwoStageInvocationsCount);
-            Assert.NotNull(ts.TwoStageRateAmongSelections);
-            Assert.Equal(0.5, ts.TwoStageRateAmongSelections!.Value, 3);
+            Assert.Equal(1, ts.DynamicToolingBootstrapCount);
+            Assert.NotNull(ts.DynamicBootstrapRateAmongToolingPhases);
+            Assert.Equal(0.5, ts.DynamicBootstrapRateAmongToolingPhases!.Value, 3);
         }
         finally
         {
@@ -100,7 +98,7 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
-    public void Persistence_RoundTrip_RestoresTwoStageAndToolInvocations()
+    public void Persistence_RoundTrip_RestoresCountersAndToolInvocations()
     {
         var path = NewTempPersistencePath();
         try
@@ -108,7 +106,7 @@ public class AgentDebugStatsServiceTests
             {
                 var s = CreateService(path);
                 s.IncrementToolSelectionTotal();
-                s.RecordTwoStageUsed();
+                s.RecordDynamicToolingBootstrap();
                 s.RecordToolInvocation("CLI", "run_command", true);
                 s.RecordToolInvocation("CLI", "run_command", false);
                 s.FlushPersistenceForTests();
@@ -120,7 +118,7 @@ public class AgentDebugStatsServiceTests
                 var snap = s2.GetSnapshot();
                 Assert.NotNull(snap.StatsAccumulatedSinceUtc);
                 Assert.Equal(1, snap.ToolSelection.TotalNonPlanSelections);
-                Assert.Equal(1, snap.ToolSelection.TwoStageInvocationsCount);
+                Assert.Equal(1, snap.ToolSelection.DynamicToolingBootstrapCount);
                 var row = Assert.Single(snap.ToolInvocations);
                 Assert.Equal("CLI.run_command", row.ToolId);
                 Assert.Equal(1, row.SuccessCount);
@@ -135,59 +133,15 @@ public class AgentDebugStatsServiceTests
     }
 
     [Fact]
-    public void Persistence_Version1File_StartsFresh()
+    public void Persistence_OldVersionFile_StartsFresh()
     {
         var path = NewTempPersistencePath();
         try
         {
-            File.WriteAllText(path, """{"version":1,"toolSelectionTotal":99,"toolInvocations":[]}""");
+            File.WriteAllText(path, """{"version":3,"toolSelectionTotal":99,"toolInvocations":[]}""");
             var s = CreateService(path);
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Fact]
-    public void Persistence_Version2File_StartsFresh()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            File.WriteAllText(path, """{"version":2,"toolSelectionTotal":3,"twoStageInvocationsCount":1,"toolInvocations":[]}""");
-            var s = CreateService(path);
-            Assert.Equal(0, s.GetSnapshot().ToolSelection.TotalNonPlanSelections);
-        }
-        finally
-        {
-            TryDeleteFile(path);
-        }
-    }
-
-    [Fact]
-    public void ToolNeedGateStats_RoundTrip()
-    {
-        var path = NewTempPersistencePath();
-        try
-        {
-            {
-                var s = CreateService(path);
-                s.RecordToolNeedGateLlmInvocation();
-                s.RecordToolNeedGateLlmInvocation();
-                s.RecordToolNeedGateChatOnly();
-                s.FlushPersistenceForTests();
-            }
-            {
-                var s2 = CreateService(path);
-                var ts = s2.GetSnapshot().ToolSelection;
-                Assert.Equal(2, ts.ToolNeedGateLlmInvocationCount);
-                Assert.Equal(1, ts.ToolNeedGateChatOnlyCount);
-                Assert.NotNull(ts.ToolNeedGateChatOnlyRateAmongGateLlm);
-                Assert.Equal(0.5, ts.ToolNeedGateChatOnlyRateAmongGateLlm!.Value, 3);
-            }
         }
         finally
         {

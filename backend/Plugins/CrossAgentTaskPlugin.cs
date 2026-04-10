@@ -7,6 +7,7 @@ using OfficeCopilot.Server.Services.CrossAgentTask;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>跨 Agent 任务：由当前端发起，让另一端的 Agent 执行任务。</summary>
+[CopilotPluginId("CrossAgentTask")]
 public sealed class CrossAgentTaskPlugin
 {
     private readonly ICrossAgentTaskStore _store;

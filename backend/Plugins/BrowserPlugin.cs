@@ -10,6 +10,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("Browser")]
 public class BrowserPlugin
 {
     private readonly SessionManager _sessionManager;

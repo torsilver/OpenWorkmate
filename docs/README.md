@@ -9,6 +9,7 @@
 | [maf-host-debug-removal.md](./maf-host-debug-removal.md) | 已移除的 MAF DevUI / AG-UI 等宿主调试端点说明 |
 | [应用内AI插件列表.md](./应用内AI插件列表.md) | 内置/动态插件名与 `ClientTypeToolFilter` 可见性 |
 | [提示词清单.md](./提示词清单.md) | System 与各层提示词归档（与 `ConfigService` 等对照） |
+| [模型运行时服务约定.md](./模型运行时服务约定.md) | 后端对「工具调用客户端」的义务：错误回传、动态工具同步、可观测性与安全边界 |
 | [开源AI借鉴落地.md](./开源AI借鉴落地.md) | 开源 Agent 模式与当前 MAF 栈的对照与优先级 |
 | [未完成功能与能力缺口.md](./未完成功能与能力缺口.md) | 代码扫描得到的边界与占位（非 `todo` 想法列表） |
 | [Chrome端手工测试计划.md](./Chrome端手工测试计划.md) | Chrome 扩展 + 本机服务的逐项手工回归 |

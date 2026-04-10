@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
 
+[CopilotPluginId("CLI")]
 public sealed class CliPlugin
 {
     private const int DefaultTimeoutMs = 30_000;

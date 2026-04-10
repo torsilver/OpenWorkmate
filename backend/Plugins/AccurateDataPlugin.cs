@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -9,6 +10,7 @@ namespace OfficeCopilot.Server.Plugins;
 /// 准确数据插件：以文件形式持久化与按 id 读取规范数据，供 AI 写入与精确检索。
 /// 目录由 ConfigService.AccurateDataDirectory 配置，为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。
 /// </summary>
+[CopilotPluginId("AccurateData")]
 public sealed class AccurateDataPlugin
 {
     private readonly ConfigService _configService;

@@ -120,7 +120,7 @@ flowchart LR
   CS --> CFG["ConfigService"]
   CS --> SKL["SkillService"]
   CS --> MCP["McpClientManager"]
-  CS --> TS["IToolSelector / ToolSelectionService"]
+  CS --> DT["DynamicTooling<br/>ToolCatalogIndex + AgentToolingPlugin"]
   CS --> VS["IVectorStore"]
   CS --> CRA["IChatRuntimeAccessor<br/>ToolRegistry + 模型 IChatClient"]
   CS --> EP["EmbeddingProvider"]
@@ -280,7 +280,7 @@ flowchart LR
 
 1. 函数上的 `[Description]`（及 `[ToolFunction]` 元数据）是否写清输入形状与失败时模型可执行的重试方式（另见 `error-visibility`）。
 2. [`docs/提示词清单.md`](docs/提示词清单.md) 中与默认 system 相关的句子是否与 [`ConfigService`](backend/ConfigService.cs) 一致。
-3. [`ToolSelectionService`](backend/Services/ToolSelectionService.cs) 中的 `PluginDescriptions` / `SubcategoryDescriptions` 是否与 `Program.cs` 里实际注册的插件名一致。
+3. 主会话动态工具：`ToolCatalogIndex` 检索质量、`AgentToolingPlugin` 的 `[Description]` 与 [`DynamicToolingInstruction`](backend/Services/DynamicTooling/DynamicToolingInstruction.cs) 是否与 `Program.cs` 注册的工具一致；计划撰写见 `PlanPlugin` + `PlanAuthoringToolDigest`。
 4. 若涉及**多行/结构化字符串**工具参数，优先在服务端做确定性解析（例如 Word `paragraphs`、PPT `bodyText` 经 `ToolMultilineTextNormalizer`），并补 [`backend.Tests/Unit`](backend.Tests/Unit) 单测。
 5. **用户技能**（`SkillAuthorPlugin` 生成内容）中列举的插件名应与上述字典及真实注册名一致，避免技能误导后续工具选择。
 

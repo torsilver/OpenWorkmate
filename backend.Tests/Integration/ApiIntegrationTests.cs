@@ -617,11 +617,9 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(root.TryGetProperty("serverStartedUtc", out _));
         Assert.True(root.TryGetProperty("toolSelection", out var ts));
         Assert.True(ts.TryGetProperty("totalNonPlanSelections", out _));
-        Assert.True(ts.TryGetProperty("twoStageInvocationsCount", out _));
-        Assert.True(ts.TryGetProperty("twoStageRateAmongSelections", out _));
-        Assert.True(ts.TryGetProperty("toolNeedGateLlmInvocationCount", out _));
-        Assert.True(ts.TryGetProperty("toolNeedGateChatOnlyCount", out _));
-        Assert.True(ts.TryGetProperty("toolNeedGateChatOnlyRateAmongGateLlm", out _));
+        Assert.True(ts.TryGetProperty("selectionExceptionFallbackCount", out _));
+        Assert.True(ts.TryGetProperty("dynamicToolingBootstrapCount", out _));
+        Assert.True(ts.TryGetProperty("dynamicBootstrapRateAmongToolingPhases", out _));
         Assert.True(root.TryGetProperty("toolInvocations", out var inv));
         Assert.Equal(JsonValueKind.Array, inv.ValueKind);
         Assert.True(root.TryGetProperty("statsAccumulatedSinceUtc", out _));
@@ -639,9 +637,8 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         get.EnsureSuccessStatusCode();
         var ts = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement.GetProperty("toolSelection");
         Assert.Equal(0, ts.GetProperty("totalNonPlanSelections").GetInt64());
-        Assert.Equal(0, ts.GetProperty("twoStageInvocationsCount").GetInt64());
-        Assert.Equal(0, ts.GetProperty("toolNeedGateLlmInvocationCount").GetInt64());
-        Assert.Equal(0, ts.GetProperty("toolNeedGateChatOnlyCount").GetInt64());
+        Assert.Equal(0, ts.GetProperty("selectionExceptionFallbackCount").GetInt64());
+        Assert.Equal(0, ts.GetProperty("dynamicToolingBootstrapCount").GetInt64());
     }
 
     [Fact]

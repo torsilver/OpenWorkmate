@@ -6,6 +6,7 @@ using OfficeCopilot.Server.Services;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>内置 OCR 能力，以 MCP 风格插件名 MCP_OCR 注册，供主模型按需调用 ocr_image。</summary>
+[CopilotPluginId("MCP_OCR")]
 public sealed class OcrPlugin
 {
     private readonly IOcrService _ocrService;

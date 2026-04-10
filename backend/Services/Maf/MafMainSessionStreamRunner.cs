@@ -7,11 +7,12 @@ using OfficeCopilot.Server;
 using OfficeCopilot.Server.Diagnostics;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
+using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
 
-/// <summary>使用 MAF <see cref="ChatClientAgent"/> + MEAI 消息流映射主会话 <see cref="StreamItem"/>（主路径；工具来自 <see cref="MafRuntimeToolFacade"/>）。</summary>
+/// <summary>使用 MAF <see cref="ChatClientAgent"/> + MEAI 消息流映射主会话 <see cref="StreamItem"/>（主路径；工具来自 <see cref="MafRuntimeToolFacade"/> 或动态扩容）。</summary>
 public static class MafMainSessionStreamRunner
 {
     public static async IAsyncEnumerable<StreamItem> EnumerateStreamingAsync(
@@ -30,6 +31,8 @@ public static class MafMainSessionStreamRunner
         bool requireToolInvocation = false,
         MessageAIContextProvider[]? contextProviders = null,
         IReadOnlyList<AITool>? toolsForAgent = null,
+        DynamicToolingTurnState? dynamicTooling = null,
+        bool mergePlanIntoDynamicBootstrap = false,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
@@ -37,17 +40,71 @@ public static class MafMainSessionStreamRunner
         activity?.SetTag("sessionId", sessionId);
         activity?.SetTag("clientType", clientType ?? "");
         activity?.SetTag("requireToolInvocation", requireToolInvocation);
+        activity?.SetTag("dynamicTooling", dynamicTooling != null && dynamicTooling.Config.Enabled);
+
+        if (dynamicTooling is { Config.Enabled: true } dts)
+        {
+            using (DynamicToolingTurnScope.Push(dts))
+            {
+                for (var outer = 0; outer < dts.Config.MaxOuterLoops; outer++)
+                {
+                    dts.ClearExpansionFlag();
+                    var active = SessionToolResolver.BuildDynamicActiveToolList(
+                        runtime.ToolRegistry, dts, clientType, sessionId, mergePlanIntoDynamicBootstrap);
+                    await foreach (var item in RunSinglePassStreamingAsync(
+                                       chatClient, runtime, loggerFactory, services, history, settings,
+                                       sessionId, state, ctxConfig, outcome, contextAttemptIndex,
+                                       requireToolInvocation, contextProviders, active, ct).ConfigureAwait(false))
+                        yield return item;
+
+                    if (!dts.ExpansionOccurredInLastPass)
+                        break;
+                }
+
+                if (dts.Config.FallbackToFullAllowlistWhenNoActivation && !dts.HasActivatedAnyBusinessTool())
+                {
+                    var full = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+                    await foreach (var item in RunSinglePassStreamingAsync(
+                                       chatClient, runtime, loggerFactory, services, history, settings,
+                                       sessionId, state, ctxConfig, outcome, contextAttemptIndex,
+                                       requireToolInvocation, contextProviders, full, ct).ConfigureAwait(false))
+                        yield return item;
+                }
+            }
+
+            yield break;
+        }
 
         var tools = toolsForAgent != null
             ? new List<AITool>(toolsForAgent)
             : new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+        await foreach (var item in RunSinglePassStreamingAsync(
+                           chatClient, runtime, loggerFactory, services, history, settings,
+                           sessionId, state, ctxConfig, outcome, contextAttemptIndex,
+                           requireToolInvocation, contextProviders, tools, ct).ConfigureAwait(false))
+            yield return item;
+    }
 
-        var chatOpts = MafChatOptionsMapper.ToChatOptions(settings, tools, requireToolInvocation);
-        var agentOpts = new ChatClientAgentOptions
-        {
-            ChatOptions = chatOpts,
-        };
-
+    private static async IAsyncEnumerable<StreamItem> RunSinglePassStreamingAsync(
+        IChatClient chatClient,
+        IChatRuntimeAccessor runtime,
+        ILoggerFactory loggerFactory,
+        IServiceProvider services,
+        List<ChatMessage> history,
+        ChatOptions settings,
+        string sessionId,
+        SessionState state,
+        ContextWindowConfig ctxConfig,
+        StreamPassOutcome outcome,
+        int contextAttemptIndex,
+        bool requireToolInvocation,
+        MessageAIContextProvider[]? contextProviders,
+        IReadOnlyList<AITool> tools,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var toolList = tools is List<AITool> tl ? tl : new List<AITool>(tools);
+        var chatOpts = MafChatOptionsMapper.ToChatOptions(settings, toolList, requireToolInvocation);
+        var agentOpts = new ChatClientAgentOptions { ChatOptions = chatOpts };
         var pipelineServices = services.GetRequiredService<ToolInvocationPipelineServices>();
         var toolRegistry = runtime.ToolRegistry;
         var allowContextRetry = contextAttemptIndex == 0 && !ctxConfig.PassThroughContext && ctxConfig.ContextLengthRetryEnabled;
@@ -59,27 +116,50 @@ public static class MafMainSessionStreamRunner
             builder = builder.UseAIContextProviders(contextProviders);
         var agent = builder.Build();
         var session = await agent.CreateSessionAsync(ct).ConfigureAwait(false);
-        var messages = history;
         var runOpts = new ChatClientAgentRunOptions(chatOpts);
 
         var toolBudget = new Dictionary<string, int>(StringComparer.Ordinal);
         var callState = new Dictionary<string, (string Name, string ArgsSoFar)>(StringComparer.Ordinal);
 
-        await foreach (var update in agent.RunStreamingAsync(messages, session, runOpts, ct).ConfigureAwait(false))
+        var dtsBind = DynamicToolingTurnScope.Current;
+        if (dtsBind != null)
         {
+            dtsBind.ToolListMutationTarget = toolList;
+            pipelineServices.Logger.LogDebug(
+                "[DynamicTools] ToolListMutationTarget bound passSession={PassSession} dtsSession={DtsSession} initialToolCount={Count}",
+                sessionId,
+                dtsBind.SessionIdForTools ?? "?",
+                toolList.Count);
+        }
 
-            foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
-                yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+        try
+        {
+            await foreach (var update in agent.RunStreamingAsync(history, session, runOpts, ct).ConfigureAwait(false))
+            {
+                foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
+                    yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
 
-            foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
-                yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+                foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                    yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
 
-            foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolBudget, callState))
-                yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+                foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolBudget, callState))
+                    yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
 
-            var text = update.Text;
-            if (text is { Length: > 0 })
-                yield return new StreamItem(IsWarning: false, Content: text);
+                var text = update.Text;
+                if (text is { Length: > 0 })
+                    yield return new StreamItem(IsWarning: false, Content: text);
+            }
+        }
+        finally
+        {
+            if (DynamicToolingTurnScope.Current is { } dtsUnbind)
+            {
+                pipelineServices.Logger.LogDebug(
+                    "[DynamicTools] ToolListMutationTarget unbound passSession={PassSession} dtsSession={DtsSession}",
+                    sessionId,
+                    dtsUnbind.SessionIdForTools ?? "?");
+                dtsUnbind.ToolListMutationTarget = null;
+            }
         }
     }
 }

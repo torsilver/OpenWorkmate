@@ -5,7 +5,7 @@
 ## 测试基线
 
 - 命令：`dotnet test backend.Tests/backend.Tests.csproj`
-- **最近一次全绿计数**：381（`net10.0`，Unit + Integration，2026-04 校验）。
+- **最近一次全绿计数**：423（`net10.0`，Unit + Integration，2026-04 校验）。
 
 ## 完全 MAF 迁移进度（摘要）
 
@@ -20,9 +20,9 @@
 | 辅助 LLM 调用 | 全部走 `IChatClient` + `List<ChatMessage>` + `ChatOptions`。 |
 | 会话历史 | `SessionState.History` 为 `List<ChatMessage>` (MEAI)。 |
 | 插件注册 | `[ToolFunction]` 自定义属性 + `ToolRegistry.RegisterPluginFromObject`（`AIFunctionFactory`）。 |
-| 工具选择 | `ToolSelectionService` 从 `ToolRegistry` 枚举 `(PluginName, FunctionName)` 对。 |
-| 工具预筛选 | **已移除** — 主会话不再维护工具向量索引；仅 `ToolSelectionService` 两阶段 LLM 子类选择。记忆/RAG 仍用 `IVectorStore`。 |
-| 主会话工具面 | `ContextWindow.enableToolNeedGate` **默认 true**：先 `EvaluateToolNeedGateAsync`，再两阶段；设为 `false` 可关闭门控。`ToolsForAgentRound` 传入 `MafMainSessionStreamRunner`（空列表 = 闲聊无工具）。 |
+| 工具选择 | **动态工具**：`ToolCatalogIndex`（关键词检索）+ `AgentToolingPlugin`（`search_available_tools` / `activate_tools`）；`SessionToolResolver` 按端类型与会话解析允许列表。 |
+| 工具预筛选 | 主会话**无**独立向量工具索引；记忆/RAG 仍用 `IVectorStore`。 |
+| 主会话工具面 | 首轮仅注入动态工具插件 + 少量引导工具；模型检索并 `activate` 后扩容本轮 `ChatOptions.Tools`。无 `ToolNeedGate` / 两阶段选型 LLM。 |
 | MCP | `McpKernelPlugin.BuildMcpAIToolsAsync()` 产出 `IReadOnlyList<AITool>`，注册到 `ToolRegistry`。 |
 | UserSkill (Prompt) | `AIFunctionFactory.Create` 包装为 `AIFunction`，通过 `IChatClient` 执行。 |
 | 横切（安全/会话/tool 状态） | **MAF Function Calling Middleware** (`ToolInvocationMiddleware.Create`) → `SecurityPipeline`（HITL/白名单）→ SessionContext 注入 → `ToolStatusNotifier`（前端推送/审计）。通过 `agent.AsBuilder().Use(middleware).Build()` 注册到每个 `ChatClientAgent`，无需手动包装工具。 |

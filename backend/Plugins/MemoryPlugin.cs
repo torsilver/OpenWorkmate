@@ -8,6 +8,7 @@ using OfficeCopilot.Server.Services.ToolInvocation;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>阶段 3：长期记忆插件，供模型在对话中主动「记住」与「检索」记忆。</summary>
+[CopilotPluginId("Memory")]
 public sealed class MemoryPlugin
 {
     private readonly IMemoryStoreService _memory;

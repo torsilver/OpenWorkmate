@@ -7,6 +7,7 @@ namespace OfficeCopilot.Server.Plugins;
 /// <summary>
 /// 会议实录读取：与 Chrome 侧栏 POST 落盘的会话文本配合，支持分块读取以生成超长会议纪要。
 /// </summary>
+[CopilotPluginId("MeetingTranscript")]
 public sealed class MeetingTranscriptPlugin
 {
     private readonly IMeetingTranscriptStore _store;
