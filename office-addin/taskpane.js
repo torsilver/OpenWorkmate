@@ -729,6 +729,89 @@
   const TIMELINE_TAIL_MAX = 100;
   let currentRoundToolBlocks = [];
   let currentToolEndIndex = 0;
+  let timelineThinkCells = new Map();
+  let timelineAnswerCells = new Map();
+
+  function insertTimelineBlockInOrder(detailsEl, blockSeq) {
+    ensureTimeline();
+    detailsEl.dataset.blockSeq = String(blockSeq);
+    const nodes = timelineRoot.children;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const raw = node.dataset && node.dataset.blockSeq;
+      if (raw == null || raw === "") continue;
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n) && n > blockSeq) {
+        timelineRoot.insertBefore(detailsEl, node);
+        return;
+      }
+    }
+    timelineRoot.appendChild(detailsEl);
+  }
+
+  function collapseThinkSegmentsWithSeqLessThan(answerSeq) {
+    if (!timelineRoot) return;
+    timelineRoot.querySelectorAll(":scope > .timeline-seg--think").forEach(function (el) {
+      const raw = el.dataset.blockSeq;
+      if (raw == null || raw === "") return;
+      const s = parseInt(raw, 10);
+      if (Number.isFinite(s) && s < answerSeq) el.open = false;
+    });
+  }
+
+  function ensureThinkTimelineBlock(blockSeq) {
+    let cell = timelineThinkCells.get(blockSeq);
+    if (cell) return cell;
+    ensureTimeline();
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--think";
+    d.dataset.kind = "think";
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = "推理";
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const pre = document.createElement("pre");
+    pre.className = "timeline-seg__body";
+    d.appendChild(sum);
+    d.appendChild(pre);
+    insertTimelineBlockInOrder(d, blockSeq);
+    cell = { details: d, pre, tail };
+    timelineThinkCells.set(blockSeq, cell);
+    return cell;
+  }
+
+  function ensureAnswerTimelineBlock(blockSeq) {
+    let cell = timelineAnswerCells.get(blockSeq);
+    if (cell) return cell;
+    ensureTimeline();
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--answer";
+    d.dataset.kind = "answer";
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = "助手回复";
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const body = document.createElement("div");
+    body.className = "timeline-seg__body timeline-seg__body--md";
+    d.appendChild(sum);
+    d.appendChild(body);
+    insertTimelineBlockInOrder(d, blockSeq);
+    cell = { details: d, body, tail, rawMd: "" };
+    timelineAnswerCells.set(blockSeq, cell);
+    return cell;
+  }
 
   function formatActivityTail(log, maxChars) {
     const s = log || "";
@@ -820,9 +903,24 @@
     if (ref && ref.details) ref.details.open = false;
   }
 
+  function collapsePhasesForToolStart() {
+    collapseSeg(openPrepSeg);
+    openPrepSeg = null;
+    collapseSeg(openDigestSeg);
+    openDigestSeg = null;
+    collapseSeg(openIntentSeg);
+    openIntentSeg = null;
+    closeOpenAnswerSegment();
+  }
+
   function collapseAllOpenPhases() {
     collapseSeg(openPrepSeg);
     openPrepSeg = null;
+    if (timelineRoot) {
+      timelineRoot.querySelectorAll(":scope > .timeline-seg--think").forEach(function (el) {
+        el.open = false;
+      });
+    }
     collapseSeg(openThinkSeg);
     openThinkSeg = null;
     collapseSeg(openDigestSeg);
@@ -856,10 +954,21 @@
     appendAgentStatusLine(block);
   }
 
-  function appendReasoningChunk(text) {
+  function appendReasoningChunk(text, blockSeq, blockKind) {
     const t = text != null ? String(text) : "";
     if (!t) return;
     if (!currentRoundWrapper) beginStream();
+    const useBlock =
+      typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
+    if (useBlock) {
+      const cell = ensureThinkTimelineBlock(blockSeq);
+      openThinkSeg = cell;
+      cell.pre.textContent += t;
+      cell.tail.textContent = formatActivityTail(cell.pre.textContent, TIMELINE_TAIL_MAX);
+      cell.details.title = cell.pre.textContent;
+      $messages.scrollTop = $messages.scrollHeight;
+      return;
+    }
     if (!openThinkSeg) openThinkSeg = newTimelineSeg("think", "推理");
     openThinkSeg.pre.textContent += t;
     openThinkSeg.tail.textContent = formatActivityTail(openThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
@@ -879,6 +988,8 @@
     openDigestSeg = null;
     openIntentSeg = null;
     openAnswerSeg = null;
+    timelineThinkCells = new Map();
+    timelineAnswerCells = new Map();
 
     $messages.appendChild(currentRoundWrapper);
     currentBotMessageRaw = "";
@@ -916,14 +1027,42 @@
   }
 
   let _streamRenderPending = false;
-  function appendStreamChunk(text) {
+  function appendStreamChunk(text, blockSeq, blockKind) {
     if (!currentRoundWrapper) beginStream();
+    const chunk = text != null ? String(text) : "";
+    const useBlock =
+      typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "answer";
+
+    if (useBlock) {
+      if (!chunk) return;
+      collapseThinkSegmentsWithSeqLessThan(blockSeq);
+      openThinkSeg = null;
+      collapseSeg(openDigestSeg);
+      openDigestSeg = null;
+      currentBotMessageRaw += chunk;
+      const cell = ensureAnswerTimelineBlock(blockSeq);
+      openAnswerSeg = cell;
+      cell.rawMd += chunk;
+      cell.details.dataset.streamRaw = cell.rawMd;
+      if (_streamRenderPending) return;
+      _streamRenderPending = true;
+      requestAnimationFrame(() => {
+        _streamRenderPending = false;
+        if (!openAnswerSeg) return;
+        applyMarkedToElement(openAnswerSeg.body, openAnswerSeg.rawMd);
+        const plain = openAnswerSeg.rawMd.replace(/\s+/g, " ").trim();
+        openAnswerSeg.tail.textContent = formatActivityTail(plain, TIMELINE_TAIL_MAX);
+        openAnswerSeg.details.title = plain.slice(0, 200);
+        $messages.scrollTop = $messages.scrollHeight;
+      });
+      return;
+    }
+
+    if (!chunk) return;
     collapseSeg(openThinkSeg);
     openThinkSeg = null;
     collapseSeg(openDigestSeg);
     openDigestSeg = null;
-    const chunk = text != null ? String(text) : "";
-    if (!chunk) return;
     currentBotMessageRaw += chunk;
     if (!openAnswerSeg) openAnswerSeg = newAnswerStreamSeg();
     openAnswerSeg.rawMd += chunk;
@@ -1169,7 +1308,7 @@
         appendAgentTrace(msg);
         break;
       case "reasoning_chunk":
-        appendReasoningChunk(msg.content);
+        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "agent_phase": {
         const phase = (msg.phase && String(msg.phase)) || "";
@@ -1194,7 +1333,7 @@
         break;
       }
       case "stream_chunk":
-        appendStreamChunk(msg.content);
+        appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_warning":
         appendStreamWarning(msg.content);
@@ -1217,7 +1356,7 @@
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, "in_progress");
         }
-        collapseAllOpenPhases();
+        collapsePhasesForToolStart();
         ensureTimeline();
         if (!timelineRoot) break;
         const label = msg.summary || "正在执行: " + (msg.plugin || "") + "." + (msg.function || "");

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using OfficeCopilot.Server.Logging;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.Plan;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
@@ -19,19 +20,22 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
     private readonly IPlanStore _planStore;
     private readonly ILogger<ToolStatusNotifier> _logger;
     private readonly AgentDebugStatsService _debugStats;
+    private readonly TimelineBlockStreamCoordinator _timelineBlocks;
 
     public ToolStatusNotifier(
         SessionManager sessionManager,
         ConfigService configService,
         IPlanStore planStore,
         ILogger<ToolStatusNotifier> logger,
-        AgentDebugStatsService debugStats)
+        AgentDebugStatsService debugStats,
+        TimelineBlockStreamCoordinator timelineBlocks)
     {
         _sessionManager = sessionManager;
         _configService = configService;
         _planStore = planStore;
         _logger = logger;
         _debugStats = debugStats;
+        _timelineBlocks = timelineBlocks;
     }
 
     public async Task<ToolStatusContext> BeforeInvocationAsync(
@@ -62,6 +66,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         if (!string.IsNullOrEmpty(agentStatusJson))
             await _sessionManager.SendToAsync(sessionId, agentStatusJson, ct).ConfigureAwait(false);
 
+        _timelineBlocks.OnToolInvocationStart(sessionId);
         await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix, ct).ConfigureAwait(false);
         _logger.LogDebug(
             "[ToolStatus] session={SessionId} pushed tool_invocation_start {Plugin}.{Function}",

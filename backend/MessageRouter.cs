@@ -6,7 +6,7 @@ using OfficeCopilot.Server.Mcp;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>WebSocket 消息。type=<c>agent_status</c> 为准备阶段文案；<c>agent_trace</c> 为内部过程详情；<c>agent_phase</c> 配合 <see cref="Phase"/>（intent/digest）；<c>reasoning_chunk</c> 为模型推理增量（与 <c>stream_chunk</c> 并列），仅供 UI 按序展示，不得在后端或扩展内参与业务判断。</summary>
+/// <summary>WebSocket 消息。type=<c>agent_status</c> 为准备阶段文案；<c>agent_trace</c> 为内部过程详情；<c>agent_phase</c> 配合 <see cref="Phase"/>（intent/digest）；<c>reasoning_chunk</c> 为模型推理增量（与 <c>stream_chunk</c> 并列），仅供 UI 按序展示，不得在后端或扩展内参与业务判断。<c>reasoning_chunk</c>/<c>stream_chunk</c> 必选 <c>blockSeq</c>、<c>blockKind</c>（think|answer）。</summary>
 public class WsMessage
 {
     [JsonPropertyName("type")]
@@ -180,6 +180,16 @@ public class WsMessage
     [JsonPropertyName("argumentsDelta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ArgumentsDelta { get; set; }
+
+    /// <summary><c>reasoning_chunk</c>/<c>stream_chunk</c>：本轮时间线逻辑段序号（同段多 chunk 共用）。</summary>
+    [JsonPropertyName("blockSeq")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BlockSeq { get; set; }
+
+    /// <summary><c>reasoning_chunk</c>/<c>stream_chunk</c>：<c>think</c> 或 <c>answer</c>。</summary>
+    [JsonPropertyName("blockKind")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BlockKind { get; set; }
 }
 
 public class AttachmentDto

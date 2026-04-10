@@ -16,6 +16,7 @@ using OfficeCopilot.Server.Services.ContextProviders;
 using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Services.Chat;
+using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Logging;
 
@@ -38,9 +39,10 @@ public sealed partial class ChatService : IDisposable
     private readonly IPlanStore _planStore;
     private readonly AgentDebugStatsService _agentDebugStats;
     private readonly IChatSessionStore _chatSessionStore;
+    private readonly IBuiltinTurnCompletionVerifier _builtinTurnCompletionVerifier;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -53,6 +55,7 @@ public sealed partial class ChatService : IDisposable
         _planStore = planStore;
         _agentDebugStats = agentDebugStats;
         _chatSessionStore = chatSessionStore;
+        _builtinTurnCompletionVerifier = builtinTurnCompletionVerifier;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -648,6 +651,7 @@ public sealed partial class ChatService : IDisposable
                 }
                 else
                 {
+                    var mafHistoryBaselineCount = turn.HistoryToUse.Count;
                     for (var attempt = 0; attempt < 2; attempt++)
                     {
                         if (attempt > 0)
@@ -691,6 +695,62 @@ public sealed partial class ChatService : IDisposable
                     _logger.LogInformation(
                         "[{SessionId}] MAF 主会话流结束（百炼 reasoning 经 MafMainSessionStreamRunner / DashScope* 桥；若 SSE tap 与 Drain 不一致请查 AsyncLocal）",
                         sessionId);
+
+                    var visibleAssistantForVerifier = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString()).Trim();
+                    if (ShouldInvokeBuiltinCompletionVerifier(turn, visibleAssistantForVerifier))
+                    {
+                        var dts = turn.DynamicToolingState!;
+                        var bizNames = GetActivatedBusinessToolNamesForVerifier(dts);
+                        var verifierReq = new TurnCompletionVerifierRequest(
+                            turn.UserMessage,
+                            visibleAssistantForVerifier,
+                            dts.SearchInvocationCount,
+                            dts.ActivateInvocationCount,
+                            bizNames);
+                        var eval = await _builtinTurnCompletionVerifier.EvaluateAsync(verifierReq, ct).ConfigureAwait(false);
+                        if (eval.ParseOk && eval.Incomplete)
+                        {
+                            _logger.LogInformation(
+                                "[{SessionId}] Builtin completion verifier: triggering one MAF continuation pass (historyBaseline={Baseline}, historyNow={Now}).",
+                                sessionId, mafHistoryBaselineCount, turn.HistoryToUse.Count);
+                            yield return new StreamItem(
+                                IsWarning: true,
+                                Content: BuiltinTurnCompletionMessages.StreamWarningBeforeContinuation);
+                            AppendContinuationHistoryAfterVerifier(turn, visibleAssistantForVerifier, mafHistoryBaselineCount);
+                            var continuationOutcome = new StreamPassOutcome();
+                            await foreach (var streamItem in MafMainSessionStreamRunner.EnumerateStreamingAsync(
+                                               _runtime.GetChatClient()!,
+                                               _runtime,
+                                               _loggerFactory,
+                                               _serviceProvider,
+                                               turn.HistoryToUse,
+                                               turn.ExecSettings,
+                                               sessionManagerForStatus,
+                                               sessionId,
+                                               state,
+                                               ctxConfig,
+                                               continuationOutcome,
+                                               contextAttemptIndex: 0,
+                                               requireToolInvocation: false,
+                                               contextProviders: contextProviders,
+                                               toolsForAgent: turn.ToolsForAgentRound,
+                                               dynamicTooling: turn.DynamicToolingState,
+                                               mergePlanIntoDynamicBootstrap: turn.PlanResult != null,
+                                               ct: ct).ConfigureAwait(false))
+                            {
+                                if (!streamItem.IsWarning && streamItem.Kind == StreamSegmentKind.Normal && !string.IsNullOrEmpty(streamItem.Content))
+                                    fullResponse.Append(streamItem.Content);
+                                yield return streamItem;
+                            }
+
+                            if (continuationOutcome.ContextLengthRetryRequested)
+                            {
+                                _logger.LogWarning(
+                                    "[{SessionId}] Builtin completion continuation pass requested context-length retry; not chaining another rebuild in this experimental path.",
+                                    sessionId);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -959,6 +1019,42 @@ public sealed partial class ChatService : IDisposable
         + "用户只要网络资讯、新闻、实时事实或「去网上查/搜一下」类需求时，优先直接作答，由服务端检索能力提供时效信息；"
         + "不要轻易使用 run_command 打开默认浏览器、run_custom_page_script（如 window.open 搜索页）或依赖 get_visible_text 抓取搜索结果页来替代检索。"
         + "例外：用户明确要求操作其正在浏览的**当前网页**（高亮、读可见内容、截图等）或内置检索明显不足以完成该任务时，再用 Browser 等工具。";
+
+    private static bool ShouldInvokeBuiltinCompletionVerifier(StreamChatTurnContext turn, string visibleAssistantTrimmed)
+    {
+        var dts = turn.DynamicToolingState;
+        if (dts is not { Config.Enabled: true })
+            return false;
+        if (!string.IsNullOrWhiteSpace(visibleAssistantTrimmed))
+            return false;
+        return dts.SearchInvocationCount + dts.ActivateInvocationCount > 0;
+    }
+
+    private static List<string> GetActivatedBusinessToolNamesForVerifier(DynamicToolingTurnState dts)
+    {
+        var list = new List<string>();
+        foreach (var n in dts.ActivatedFunctionNames)
+        {
+            if (!DynamicToolingConstants.MetaFunctionNames.Contains(n))
+                list.Add(n);
+        }
+
+        list.Sort(StringComparer.OrdinalIgnoreCase);
+        return list;
+    }
+
+    /// <summary>
+    /// 若 MAF 未把本轮助手消息写入 <paramref name="turn"/>.HistoryToUse，则先追加可见正文（可为空）再追加续跑 user 提示；否则仅追加续跑提示。
+    /// </summary>
+    private static void AppendContinuationHistoryAfterVerifier(
+        StreamChatTurnContext turn,
+        string visibleAssistant,
+        int historyCountBeforeFirstMafPass)
+    {
+        if (turn.HistoryToUse.Count == historyCountBeforeFirstMafPass)
+            turn.HistoryToUse.Add(new ChatMessage(ChatRole.Assistant, visibleAssistant));
+        turn.HistoryToUse.Add(new ChatMessage(ChatRole.User, BuiltinTurnCompletionMessages.ContinuationUserNudge));
+    }
 
     /// <summary>
     /// 构建本轮流式请求用的消息列表：可选追加 client 身份后缀；再追加意图/事实约束与工具结果复述约束。

@@ -436,11 +436,41 @@ export function useCopilot() {
     }
   }
 
+  /** 工具开始时保留推理段展开引用，与 Chrome collapsePhasesForToolStart 一致 */
+  function collapsePhasesForToolStart() {
+    const r = currentRound.value
+    if (!r) return
+    for (const k of ['openPrep', 'openDigest', 'openIntent', 'openAnswer']) {
+      if (r[k]) {
+        r[k].open = false
+        r[k] = null
+      }
+    }
+  }
+
+  function findSpliceIndexForBlockSeq(segments, blockSeq) {
+    for (let i = 0; i < segments.length; i++) {
+      const bs = segments[i].blockSeq
+      if (typeof bs === 'number' && bs > blockSeq) return i
+    }
+    return segments.length
+  }
+
   function newTimelineSeg(kind, title) {
     const r = ensureRound()
     const id = ++r.nextSegId
     const seg = { id, kind, title, body: '', tail: '', open: true, parsedHtml: '' }
     r.timelineSegments.push(seg)
+    return seg
+  }
+
+  /** 带 blockSeq 的 think/answer 段，按序号插入 timelineSegments */
+  function newTimelineSegOrdered(kind, title, blockSeq) {
+    const r = ensureRound()
+    const id = ++r.nextSegId
+    const seg = { id, kind, title, body: '', tail: '', open: true, parsedHtml: '', blockSeq }
+    const idx = findSpliceIndexForBlockSeq(r.timelineSegments, blockSeq)
+    r.timelineSegments.splice(idx, 0, seg)
     return seg
   }
 
@@ -468,10 +498,22 @@ export function useCopilot() {
     appendPrepLine(block)
   }
 
-  function appendReasoningChunk(text) {
+  function appendReasoningChunk(text, blockSeq, blockKind) {
     const t = text != null ? String(text) : ''
     if (!t) return
     const r = ensureRound()
+    const useBlock =
+      typeof blockSeq === 'number' && Number.isFinite(blockSeq) && blockKind === 'think'
+    if (useBlock) {
+      let seg = r.timelineSegments.find((s) => s.kind === 'think' && s.blockSeq === blockSeq)
+      if (!seg) {
+        seg = newTimelineSegOrdered('think', '推理', blockSeq)
+      }
+      r.openThink = seg
+      seg.body += t
+      seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+      return
+    }
     if (!r.openThink) r.openThink = newTimelineSeg('think', '推理')
     const seg = r.openThink
     seg.body += t
@@ -497,9 +539,45 @@ export function useCopilot() {
     inputEnabled.value = false
   }
 
-  function appendStreamChunk(text) {
+  function appendStreamChunk(text, blockSeq, blockKind) {
     if (!currentRound.value) beginStream()
     const r = currentRound.value
+    const chunk = text != null ? String(text) : ''
+    const useBlock =
+      typeof blockSeq === 'number' && Number.isFinite(blockSeq) && blockKind === 'answer'
+
+    if (useBlock) {
+      if (!chunk) return
+      r.timelineSegments.forEach((s) => {
+        if (
+          s.kind === 'think' &&
+          typeof s.blockSeq === 'number' &&
+          s.blockSeq < blockSeq
+        ) {
+          s.open = false
+        }
+      })
+      r.openThink = null
+      if (r.openDigest) {
+        r.openDigest.open = false
+        r.openDigest = null
+      }
+      r.streamContent += chunk
+      let a = r.timelineSegments.find((s) => s.kind === 'answer' && s.blockSeq === blockSeq)
+      if (!a) {
+        a = newTimelineSegOrdered('answer', '助手回复', blockSeq)
+      }
+      r.openAnswer = a
+      a.body += chunk
+      a.parsedHtml =
+        typeof marked.parse === 'function' ? marked.parse(a.body) : a.body
+      a.tail = formatActivityTail(a.body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
+      r.parsedHtml =
+        typeof marked.parse === 'function' ? marked.parse(r.streamContent) : r.streamContent
+      return
+    }
+
+    if (!chunk) return
     if (r.openThink) {
       r.openThink.open = false
       r.openThink = null
@@ -508,8 +586,6 @@ export function useCopilot() {
       r.openDigest.open = false
       r.openDigest = null
     }
-    const chunk = text != null ? String(text) : ''
-    if (!chunk) return
     r.streamContent += chunk
     if (!r.openAnswer) {
       r.openAnswer = newTimelineSeg('answer', '助手回复')
@@ -688,7 +764,7 @@ export function useCopilot() {
         beginStream()
         break
       case 'reasoning_chunk':
-        appendReasoningChunk(msg.content)
+        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind)
         break
       case 'agent_phase': {
         const phase = (msg.phase && String(msg.phase)) || ''
@@ -714,7 +790,7 @@ export function useCopilot() {
         break
       }
       case 'stream_chunk':
-        appendStreamChunk(msg.content)
+        appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind)
         break
       case 'stream_end':
         finalizeStream()
@@ -745,7 +821,7 @@ export function useCopilot() {
         break
       case 'tool_invocation_start': {
         const r = ensureRound()
-        collapseAllOpenPhases()
+        collapsePhasesForToolStart()
         const label = msg.summary || '正在执行: ' + (msg.plugin || '') + '.' + (msg.function || '')
         const seg = newTimelineSeg('tool', label)
         seg.status = 'running'

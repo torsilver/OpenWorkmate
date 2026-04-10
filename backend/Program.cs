@@ -99,7 +99,8 @@ try
     builder.Services.AddSingleton<RpcManager>();
     builder.Services.AddSingleton<HitlManager>();
     builder.Services.AddSingleton<IHitlPlainLanguageExplainer, HitlPlainLanguageExplainer>();
-builder.Services.AddSingleton<UserOptionsManager>();
+    builder.Services.AddSingleton<IBuiltinTurnCompletionVerifier, BuiltinTurnCompletionVerifier>();
+    builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ScreenshotCacheService>();
     builder.Services.AddSingleton<AttachmentCacheService>();
     builder.Services.AddSingleton<IMeetingTranscriptStore, MeetingTranscriptStore>();
@@ -109,6 +110,7 @@ builder.Services.AddSingleton<UserOptionsManager>();
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.WorkflowHitlBridge>();
     builder.Services.AddSingleton<ContextManager>();
     builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
@@ -284,7 +286,8 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
         var userOptionsManager = app.Services.GetRequiredService<UserOptionsManager>();
         var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
         var attachmentCache = app.Services.GetRequiredService<AttachmentCacheService>();
-        await HandleSessionAsync(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, app.Logger);
+        var timelineBlockCoordinator = app.Services.GetRequiredService<OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator>();
+        await HandleSessionAsync(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, timelineBlockCoordinator, app.Logger);
     }
     finally
     {
@@ -1284,7 +1287,7 @@ finally
 
 static async Task HandleSessionAsync(
     WebSocket ws, string sessionId, SessionManager sessions,
-    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
 {
     var buffer = new byte[4096];
 
@@ -1375,7 +1378,7 @@ static async Task HandleSessionAsync(
                 break;
             default:
                 // 不 await，避免阻塞消息循环；否则工具发 rpc_request 后无法在同一连接上收到 rpc_response，导致超时
-                _ = HandleChatStreamAsync(sessionId, incoming, sessions, chatService, streamCancelService, attachmentCache, logger);
+                _ = HandleChatStreamAsync(sessionId, incoming, sessions, chatService, streamCancelService, attachmentCache, timelineBlockCoordinator, logger);
                 break;
         }
     }
@@ -1383,7 +1386,7 @@ static async Task HandleSessionAsync(
 
 static async Task HandleChatStreamAsync(
     string sessionId, WsMessage incoming, SessionManager sessions,
-    ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
     var wsReasoningChunkFrames = 0;
@@ -1392,19 +1395,30 @@ static async Task HandleChatStreamAsync(
 
     async Task SendChatStreamWsAsync(string frameType, string content)
     {
-        await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = frameType, Content = content });
+        WsMessage payload = new() { Type = frameType, Content = content };
         if (frameType == "reasoning_chunk")
         {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindThink);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
             wsReasoningChunkFrames++;
             if (!string.IsNullOrEmpty(content))
                 reasoningLog.AppendChunk(content);
         }
         else if (frameType == "stream_chunk")
+        {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindAnswer);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
             wsStreamChunkFrames++;
+        }
+
+        await sessions.SendWsMessageAsync(sessionId, payload);
     }
 
     logger.LogDebug("[{SessionId}] Chat stream start, promptLen={Len}", sessionId, incoming.Content?.Length ?? 0);
     await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "stream_start", SessionId = sessionId });
+    timelineBlockCoordinator.BeginRound(sessionId);
 
     var ct = streamCancelService.CreateForSession(sessionId);
     SessionContext.SetSessionId(sessionId);
@@ -1502,6 +1516,7 @@ static async Task HandleChatStreamAsync(
     }
     finally
     {
+        timelineBlockCoordinator.EndRound(sessionId);
         streamCancelService.Remove(sessionId);
         SessionContext.SetSessionId(null);
         logger.LogDebug("[{SessionId}] SessionContext cleared", sessionId);

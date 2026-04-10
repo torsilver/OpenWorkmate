@@ -1275,6 +1275,93 @@ let currentSubtaskToolsEl = null;
 let currentSubtaskToolBlocks = [];
 let currentSubtaskToolEndIndex = 0;
 
+/** 与服务端 blockSeq 对齐的推理/正文段（Map: seq -> { details, pre|body, tail, rawMd? }） */
+let timelineThinkCells = new Map();
+let timelineAnswerCells = new Map();
+let _reasoningPendingSeq = null;
+
+/** 将带 data-block-seq 的时间线段按序号插入 timelineRoot（无序号子节点视为透明跳过） */
+function insertTimelineBlockInOrder(detailsEl, blockSeq) {
+  ensureTimeline();
+  detailsEl.dataset.blockSeq = String(blockSeq);
+  const nodes = timelineRoot.children;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const raw = node.dataset && node.dataset.blockSeq;
+    if (raw == null || raw === "") continue;
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > blockSeq) {
+      timelineRoot.insertBefore(detailsEl, node);
+      return;
+    }
+  }
+  timelineRoot.appendChild(detailsEl);
+}
+
+function collapseThinkSegmentsWithSeqLessThan(answerSeq) {
+  if (!timelineRoot) return;
+  timelineRoot.querySelectorAll(":scope > .timeline-seg--think").forEach(function (el) {
+    const raw = el.dataset.blockSeq;
+    if (raw == null || raw === "") return;
+    const s = parseInt(raw, 10);
+    if (Number.isFinite(s) && s < answerSeq) el.open = false;
+  });
+}
+
+function ensureThinkTimelineBlock(blockSeq) {
+  let cell = timelineThinkCells.get(blockSeq);
+  if (cell) return cell;
+  ensureTimeline();
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--think";
+  d.dataset.kind = "think";
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = "推理";
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const pre = document.createElement("pre");
+  pre.className = "timeline-seg__body";
+  d.appendChild(sum);
+  d.appendChild(pre);
+  insertTimelineBlockInOrder(d, blockSeq);
+  cell = { details: d, pre, tail };
+  timelineThinkCells.set(blockSeq, cell);
+  return cell;
+}
+
+function ensureAnswerTimelineBlock(blockSeq) {
+  let cell = timelineAnswerCells.get(blockSeq);
+  if (cell) return cell;
+  ensureTimeline();
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--answer";
+  d.dataset.kind = "answer";
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = "助手回复";
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const body = document.createElement("div");
+  body.className = "timeline-seg__body timeline-seg__body--md";
+  d.appendChild(sum);
+  d.appendChild(body);
+  insertTimelineBlockInOrder(d, blockSeq);
+  cell = { details: d, body, tail, rawMd: "" };
+  timelineAnswerCells.set(blockSeq, cell);
+  return cell;
+}
+
 /** 工具开始时折叠除「推理」外的阶段，避免误清空 openThinkSeg 导致长时间无可见动态 */
 function collapsePhasesForToolStart() {
   collapseSeg(openPrepSeg);
@@ -1392,6 +1479,11 @@ function collapseAllOpenPhases() {
   flushReasoningPendingSync();
   collapseSeg(openPrepSeg);
   openPrepSeg = null;
+  if (timelineRoot) {
+    timelineRoot.querySelectorAll(":scope > .timeline-seg--think").forEach(function (el) {
+      el.open = false;
+    });
+  }
   collapseSeg(openThinkSeg);
   openThinkSeg = null;
   collapseSeg(openDigestSeg);
@@ -1577,13 +1669,38 @@ function flushReasoningPendingSync() {
   }
 }
 
-function appendReasoningChunk(text) {
+/** 新建「推理」段时应插在何处：优先工具执行中块前；否则插在「当前/最后一段助手回复」之前，避免迟到的 reasoning_chunk 被 append 到时间线末尾、看起来卡在已完成正文之后。 */
+function getTimelineInsertBeforeForNewThinkSeg() {
+  const liveTool = getTimelineInsertBeforeForLiveThink();
+  if (liveTool) return liveTool;
+  if (openAnswerSeg && openAnswerSeg.details && openAnswerSeg.details.parentNode === timelineRoot)
+    return openAnswerSeg.details;
+  if (timelineRoot) {
+    const answers = timelineRoot.querySelectorAll(":scope > .timeline-seg--answer");
+    if (answers.length) return answers[answers.length - 1];
+  }
+  return null;
+}
+
+function appendReasoningChunk(text, blockSeq, blockKind) {
   const t = text != null ? String(text) : "";
   if (!t) return;
   if (!currentRoundWrapper) beginStream();
+  const useBlock =
+    typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
+  if (useBlock) {
+    if (_reasoningPendingSeq !== null && _reasoningPendingSeq !== blockSeq) flushReasoningPendingSync();
+    const cell = ensureThinkTimelineBlock(blockSeq);
+    openThinkSeg = cell;
+    _reasoningPendingSeq = blockSeq;
+    _reasoningPendingText += t;
+    scheduleReasoningFlush();
+    return;
+  }
+  _reasoningPendingSeq = null;
   if (!openThinkSeg) {
     ensureTimeline();
-    openThinkSeg = newTimelineSeg("think", "推理", getTimelineInsertBeforeForLiveThink());
+    openThinkSeg = newTimelineSeg("think", "推理", getTimelineInsertBeforeForNewThinkSeg());
   }
   _reasoningPendingText += t;
   scheduleReasoningFlush();
@@ -1606,6 +1723,9 @@ function beginStream() {
   openIntentSeg = null;
   openToolDraftSeg = null;
   openAnswerSeg = null;
+  timelineThinkCells = new Map();
+  timelineAnswerCells = new Map();
+  _reasoningPendingSeq = null;
 
   $messages.appendChild(currentRoundWrapper);
   currentBotMessageRaw = "";
@@ -1648,15 +1768,48 @@ function applyMarkedToElement(el, rawMarkdown) {
   }
 }
 
-function appendStreamChunk(text) {
+function appendStreamChunk(text, blockSeq, blockKind) {
   if (!currentRoundWrapper) beginStream();
+  const chunk = text != null ? String(text) : "";
+  const useBlock =
+    typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "answer";
+
+  if (useBlock) {
+    if (!chunk) return;
+    flushReasoningPendingSync();
+    _reasoningPendingSeq = null;
+    collapseThinkSegmentsWithSeqLessThan(blockSeq);
+    openThinkSeg = null;
+    collapseSeg(openDigestSeg);
+    openDigestSeg = null;
+    currentBotMessageRaw += chunk;
+    const cell = ensureAnswerTimelineBlock(blockSeq);
+    openAnswerSeg = cell;
+    cell.rawMd += chunk;
+    cell.details.dataset.streamRaw = cell.rawMd;
+
+    if (_streamRenderPending) return;
+    _streamRenderPending = true;
+    _streamRenderRafId = requestAnimationFrame(() => {
+      _streamRenderPending = false;
+      _streamRenderRafId = null;
+      if (!openAnswerSeg) return;
+      applyMarkedToElement(openAnswerSeg.body, openAnswerSeg.rawMd);
+      const plain = openAnswerSeg.rawMd.replace(/\s+/g, " ").trim();
+      openAnswerSeg.tail.textContent = timelineTail(plain, TIMELINE_TAIL_MAX);
+      openAnswerSeg.details.title = plain.slice(0, 200);
+      if ($messages) $messages.scrollTop = $messages.scrollHeight;
+    });
+    return;
+  }
+
+  if (!chunk) return;
   flushReasoningPendingSync();
+  _reasoningPendingSeq = null;
   collapseSeg(openThinkSeg);
   openThinkSeg = null;
   collapseSeg(openDigestSeg);
   openDigestSeg = null;
-  const chunk = text != null ? String(text) : "";
-  if (!chunk) return;
   currentBotMessageRaw += chunk;
   if (!openAnswerSeg) openAnswerSeg = newAnswerStreamSeg();
   openAnswerSeg.rawMd += chunk;
@@ -2058,7 +2211,7 @@ function handleMessage(raw) {
       break;
 
     case "reasoning_chunk":
-      appendReasoningChunk(msg.content);
+      appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind);
       break;
 
     case "agent_phase": {
@@ -2083,7 +2236,7 @@ function handleMessage(raw) {
     }
 
     case "stream_chunk":
-      appendStreamChunk(msg.content);
+      appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
       break;
 
     case "stream_warning":
