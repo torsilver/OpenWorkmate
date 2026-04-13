@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures';
+import { createAuthedApiContext } from '../api-auth';
 
 async function tryGetOk(
   request: { get: (url: string) => Promise<{ ok: () => boolean }> },
@@ -30,11 +31,16 @@ test.describe('后端可选：HTTP 与 §1.4 A1 壳', () => {
     if (!(await tryGetOk(request, '/api/bootstrap/local-service-auth'))) {
       if (!(await tryGetOk(request, '/api/tools/builtin'))) test.skip();
     }
-    const res = await request.get('/api/tools/builtin');
-    if (!res.ok()) test.skip();
-    const data = await res.json();
-    expect(Array.isArray(data)).toBeTruthy();
-    expect(data.length).toBeGreaterThanOrEqual(17);
+    const api = await createAuthedApiContext();
+    try {
+      const res = await api.get('/api/tools/builtin');
+      if (!res.ok()) test.skip();
+      const data = await res.json();
+      expect(Array.isArray(data)).toBeTruthy();
+      expect(data.length).toBeGreaterThanOrEqual(18);
+    } finally {
+      await api.dispose();
+    }
   });
 
   test('A1 输入 @ 后出现工具/技能列表项（需后端与接口成功）', async ({
@@ -42,8 +48,13 @@ test.describe('后端可选：HTTP 与 §1.4 A1 壳', () => {
     extensionId,
     request,
   }) => {
-    if (!(await tryGetOk(request, '/api/tools/builtin'))) {
-      test.skip();
+    const api = await createAuthedApiContext();
+    try {
+      if (!(await tryGetOk(api, '/api/tools/builtin'))) {
+        test.skip();
+      }
+    } finally {
+      await api.dispose();
     }
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     const input = page.locator('#input');

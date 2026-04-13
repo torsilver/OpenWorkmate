@@ -36,8 +36,11 @@ test.describe('§1.1 侧栏壳（Playwright）', () => {
     await expect(page.locator('.attachment-thumb')).toBeVisible();
 
     await page.locator('#new-chat-btn').click();
-    await expect(page.locator('.welcome-title')).toContainText('Office Copilot');
     await expect(page.locator('#attachments-preview')).toBeHidden();
+    // 新对话会先插入欢迎 HTML，再 connect()；连上后 addSystemMessage 会移除 .welcome，故不能只断言欢迎块。
+    await expect(
+      page.getByText(/你好，我是 Office Copilot|已连接到本地服务|未检测到本机 Office Copilot/),
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('C6 回形针仅接受图片：选图后出现预览缩略图', async ({ page, extensionId }) => {

@@ -1,5 +1,7 @@
 # Chrome 手工测试计划中 Playwright 无法（或暂不）覆盖的条目
 
+> **与主计划同步**：最近一次与 `Program.cs`（`GET /api/tools/builtin`）、`FilePlugin`（`text_file_*`）、`SessionToolResolver`（动态工具 bootstrap）对齐校准 **2026-04-13**。
+
 本文档与 `**docs/Chrome端手工测试计划.md**` 配套：已在 `**e2e/**` 中用 Playwright 尽量覆盖「扩展壳、静态页、可选的后端 HTTP」等；**下列条目仍需你手工执行**（或将来用别的手段，如后端集成测试、带密钥的专用 E2E 环境）。
 
 自动化用例入口：`e2e/` 目录，`npm test`（详见该目录 `package.json`）。
@@ -9,7 +11,7 @@
 | ------------------------------------ | ---------------------------------------------------------- |
 | `e2e/tests/chrome-shell.spec.ts`     | C1、C3、C4、C6、输入框 `@` 提示、options 直达                          |
 | `e2e/tests/chrome-aux-pages.spec.ts` | `workspace` / `plans` / `meeting-live` / `debug-stats` 页可达 |
-| `e2e/tests/backend-optional.spec.ts` | 本机后端可达时：HTTP `tools/builtin`、A1 `@` 列表（不可达则 **skip**）      |
+| `e2e/tests/backend-optional.spec.ts` | 本机后端可达时：`GET /api/tools/builtin` 返回数组 `length >= 18`、A1 `@` 列表（不可达则 **skip**） |
 
 
 ---
@@ -60,11 +62,12 @@
 
 ## 三、内置插件与工具（§3 全部表格）
 
-**原因（共性）**：手工文档中每条话术均依赖 **大模型按指令调用指定工具**；工具又在 **本机下载目录、Office 文件、音频、Embedding、外部 API** 等条件下执行。Playwright 当前**未**接入「可控假模型」或「直接调插件函数」的 HTTP 网关，因此 **B01–SK2 等编号用例均保留手工**（若未来为工具层写 `backend.Tests` 集成测试，可部分下沉到 .NET，仍不等价于 Chrome 侧栏 UI）。
+**原因（共性）**：手工文档中每条话术均依赖 **大模型按指令调用指定工具**；工具又在 **本机下载目录、Office 文件、音频、Embedding、外部 API** 等条件下执行。Playwright 当前**未**接入「可控假模型」或「直接调插件函数」的 HTTP 网关，因此 **B01–SK2、F04/F05、§3.22 DT/US 等编号用例均保留手工**（若未来为工具层写 `backend.Tests` 集成测试，可部分下沉到 .NET，仍不等价于 Chrome 侧栏 UI）。
 
 包括但不限于：
 
-- **3.0 数据准备**、**3.1 Browser**～**3.21 SkillAuthor** 各表全部行；
+- **3.0 数据准备**、**3.1 Browser**～**3.21 SkillAuthor**、**3.22 AgentTooling / UserSkillProgressive** 各表全部行；
+- **3.2 File** 中 **`text_file_read` / `text_file_write`**（F04/F05）；
 - **3.2a Pdf 负向**、**3.10 读工具接地** 等说明性场景；
 - **WS1**（百炼 `enable_search` 联网）；
 - **ST6**（cron 与时区）等可选项。
@@ -76,7 +79,7 @@
 
 | 序号     | 原因                                                                 |
 | ------ | ------------------------------------------------------------------ |
-| **O1** | 「运行时 ToolRegistry 与文档差异、`disabledBuiltInPlugins` 逐项停用」需人工对照与改配置重载。 |
+| **O1** | 「运行时 ToolRegistry 与 **`GET /api/tools/builtin`（当前固定 18 条、缺 Pdf 等 5 项）** 差异、`disabledBuiltInPlugins` 逐项停用」需人工对照与改配置重载。 |
 | **O2** | 改模型/密钥/目录并验证侧栏重连，涉及真实密钥与保存流程。                                      |
 | **O3** | 外部 MCP 工具列表因环境而异。                                                  |
 | **O4** | Skills 启用/禁用后 `@` 列表变化，需改配置并目视。                                    |
@@ -116,5 +119,5 @@
 
 | 类别            | 建议                                                              |
 | ------------- | --------------------------------------------------------------- |
-| **每次发版前**     | 跑 `e2e/npm test` + 本表至少抽测（尤其 §3 高优工具与你的环境配置）。                   |
+| **每次发版前**     | 在 `e2e/` 执行 `npm ci`；若本机尚未拉 Playwright 浏览器，先 `npx playwright install`；再 `npm test`。通过后按 `Chrome端手工测试计划.md` 做 §3 等手工。 |
 | **想减少 §3 手工** | 在 `backend.Tests` 为各 `ToolFunction` 增加集成测试（无 UI），与 Chrome 手工互补。 |

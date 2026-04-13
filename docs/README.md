@@ -16,6 +16,12 @@
 | [对话测试清单.md](./对话测试清单.md) | 对话侧按功能复制的测试话术 |
 | [streaming-asr-websocket-plan.md](./streaming-asr-websocket-plan.md) | 百炼实时 ASR（v1/inference）架构与配置 |
 | [OpenXmlPowerTools引用说明.md](./OpenXmlPowerTools引用说明.md) | PPT 幻灯片复制为何自研、与 OpenXmlPowerTools NuGet 的关系 |
-| [WPS与Office右键菜单及临时输入框可行性.md](./WPS与Office右键菜单及临时输入框可行性.md) | 右键/临时输入框类产品设想的可行性备忘 |
+| [Chrome端手工测试-Playwright无法覆盖清单.md](./Chrome端手工测试-Playwright无法覆盖清单.md) | 与 `Chrome端手工测试计划.md` 配套：E2E 未覆盖、仍需手工的条目 |
 
-**已删除**：`PROJECT_PLAN.md`（内容与当前 MAF 栈严重不符，历史里程碑以 `maf-migration-baseline.md` 与 Git 历史为准。）
+**已删除**（冗余或已由代码/其它文档替代，需要时查 Git 历史）：
+
+- `PROJECT_PLAN.md`：与当前 MAF 栈严重不符。
+- `侧栏-页面抓取与Word导出-问题分析.md`：单次复现笔记，结论已体现在浏览器工具边界与错误可见性约定中。
+- `Chrome端-Agent浏览器范围改造计划.md`：阶段 A 等已落地于 `chrome-extension/sidepanel.js` 等；后续扩展以代码与 `architecture-dimensions.md` 为准。
+- `多Agent配置-执行计划.md`：`agentProfileId` 等已落地，执行清单不再需要单独维护。
+- `WPS与Office右键菜单及临时输入框可行性.md`：可行性备忘，无持续维护价值。

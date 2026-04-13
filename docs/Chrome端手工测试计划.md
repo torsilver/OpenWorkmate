@@ -2,9 +2,9 @@
 
 > **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Office Copilot Server**；测试素材与操作在 Chrome 内完成。  
 > **不包含**：Cursor/VSCode 侧自行配置的 MCP、Office/WPS 任务窗格专属能力。  
-> **内置工具定义**：以运行时 `**ToolRegistry`（`ChatService.RebuildRuntimeAsync`）** 为准。 `**GET /api/tools/builtin`** 当前仅返回 **17** 条，**缺少** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见 `**docs/应用内AI插件列表.md` §五**）。手工核对插件开关请以该文档 **§1.1**（`disabledBuiltInPlugins` 小写 id）与 **§1.3**（各插件函数数）为准。  
+> **内置工具定义**：以运行时 `**ToolRegistry`（`ChatService.RebuildRuntimeAsync`）** 为准。 `**GET /api/tools/builtin`**（`Program.cs`）当前返回 **18** 条，**仍缺少** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见 `**docs/应用内AI插件列表.md` §五**）。手工核对插件开关请以该文档 **§1.1**（`disabledBuiltInPlugins` 小写 id）与 **§1.3**（各插件函数数）为准。  
 > **Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余已注册且未禁用的插件均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。  
-> **内置插件数量**：**无条件最多 21** 个插件名 + `**Memory`（Embedding 已配置时）** ⇒ 运行时**最多 22**；与 `**docs/应用内AI插件列表.md` §「与代码核对」** 一致。
+> **内置插件数量**：后端 `RebuildRuntimeAsync` 在「未禁用」前提下**无条件注册 22 个**内置插件名 + 可选 **`Memory`**（Embedding 已配置）⇒ 注册侧最多 **23** 个；Chrome 端裁剪掉 **`CurrentDocument`** 后模型可见 **21** 个 + **`Memory`** ⇒ 最多 **22**。与 `**docs/应用内AI插件列表.md` §「与代码核对」** 一致。
 
 **通过标准（每条用例）**：行为符合描述；失败时 **HTTP 4xx/5xx 或工具返回中带明确原因**（见项目错误可见性约定），侧栏/选项页能展示服务端 `message`。
 
@@ -67,7 +67,7 @@
 
 | 序号  | 场景       | 操作                     | 预期                                                          |
 | --- | -------- | ---------------------- | ----------------------------------------------------------- |
-| A1  | 加载 Tools | 在输入框触发 `@`（或项目约定的唤起方式） | 列出 Tools + Skills；内置项与 `/api/tools/builtin` 一致（或说明部分需配置才注册） |
+| A1  | 加载 Tools | 在输入框触发 `@`（或项目约定的唤起方式） | 列出 Tools + Skills；**运行时**以 WS 下发为准。`/api/tools/builtin` 仅为 **18 条**设置页子集且缺 Pdf 等 5 项（文首说明），与 `@` 全量列表不必逐项相同 |
 | A2  | 指定工具     | 选择某一内置插件名发送            | 对话中带工具约束，模型优先使用该方向能力                                        |
 
 
@@ -137,7 +137,8 @@
 2. **W01** `word_document_create` 生成 `taskly-word-test.docx`。
 3. **P01** `ppt_document_create` 生成 `taskly-ppt-test.pptx`。
 4. 下载目录放一张图片 `**taskly-img.png`**，供 Word/Ppt 插图用例。
-5. **PD01** `pdf_document_create` 生成 `taskly-pdf-a.pdf`；**PD04**（见 §3.2a）再生成 `taskly-pdf-b.pdf`，供 **PD05** `pdf_merge` 使用。可选：自备一份含可选中文字的小 PDF 做附件 + `get_pdf_text`（扫描件可能几乎无字，属预期）。
+5. **PD01** `pdf_document_create` 生成 `taskly-pdf-a.pdf`；**PD04**（见 §3.2a）再生成 `taskly-pdf-b.pdf`，供 **PD05** `pdf_merge` 使用。可选：自备一份含可选中文字的小 PDF 做附件 + `get_pdf_text`（扫描件可能几乎无字，属预期）。  
+6. 可选：**F04/F05** `text_file_write` / `text_file_read` 用 `taskly-text-test.md`（与 §3.2 一致）。
 
 ### 3.1 Browser
 
@@ -168,6 +169,8 @@
 | F01 | `get_attachment_path`          | 先附件一张图    | 「请对我上一张附件调用 get_attachment_path。」                     | `get_attachment_path`          | 本机路径   |
 | F02 | `get_file_size`                | 有测试文件     | 「请 get_file_size：taskly-excel-test.xlsx。」             | `get_file_size`                | 字节数    |
 | F03 | `save_screenshot_to_downloads` | 已有 B05 引用 | 「请 save_screenshot_to_downloads，文件名 taskly-fullpage。」 | `save_screenshot_to_downloads` | 下载目录有图 |
+| F04 | `text_file_write` | — | 「请 text_file_write：相对路径 taskly-text-test.md，content【# 手工测试换行后一行正文】，append false（覆盖或新建）。」 | `text_file_write` | 下载目录生成 UTF-8 文本 |
+| F05 | `text_file_read` | F04 | 「请 text_file_read：taskly-text-test.md，maxChars 100000。」 | `text_file_read` | 内容与 F04 一致 |
 
 
 ### 3.2a Pdf（内置，插件名 `Pdf`）
@@ -251,7 +254,7 @@
 | E15 | `excel_conditional_format_add`   | E01 | 「请对 Sheet1 的 B2:B10 添加 between 条件格式，formula1=60，formula2=100。」                                                                                          | `excel_conditional_format_add`   | 成功               |
 | E16 | `excel_conditional_formats_list` | E15 | 「请 excel_conditional_formats_list：Sheet1。」                                                                                                              | `excel_conditional_formats_list` | 有规则              |
 | E17 | `excel_conditional_format_clear` | E15 | 「请清除 Sheet1 的 B2:B10 条件格式。」                                                                                                                             | `excel_conditional_format_clear` | 已清除              |
-| E18 | `excel_hyperlink_set`            | E01 | 「请 excel_hyperlink_set：文件 taskly-excel-test.xlsx，Sheet1，单元格 F1，url 填 [https://example.com，displayText【测试链接】。」](https://example.com，displayText【测试链接】。」) | `excel_hyperlink_set`            | 成功               |
+| E18 | `excel_hyperlink_set`            | E01 | 「请 excel_hyperlink_set：文件 taskly-excel-test.xlsx，Sheet1，单元格 F1，url 填 https://example.com ，displayText 填【测试链接】。」 | `excel_hyperlink_set`            | 成功               |
 | E19 | `excel_sheet_add`                | E01 | 「请添加工作表 ManualTestExtra。」                                                                                                                               | `excel_sheet_add`                | 新表存在             |
 | E20 | `excel_sheet_remove`             | E19 | 「请删除工作表 ManualTestExtra。」                                                                                                                               | `excel_sheet_remove`             | 已删               |
 | E21 | `excel_charts_list`              | —   | 「请 excel_charts_list：taskly-excel-test.xlsx。」（需非空可先手工插入图表）                                                                                              | `excel_charts_list`              | 列表或「无图表」         |
@@ -289,7 +292,7 @@
 | W20  | `word_image_insert`         | 有 taskly-img.png | 「请 word_image_insert：第 1 段后插入 taskly-img.png。」                                                                                          | `word_image_insert`         | 成功          |
 | W21  | `word_images_list`          | W20 后            | 「请 word_images_list。」                                                                                                                   | `word_images_list`          | 部件数 ≥1      |
 | W22  | `word_sections_list`        | W01              | 「请 word_sections_list。」                                                                                                                 | `word_sections_list`        | ≥1 节        |
-| W23  | `word_hyperlink_insert`     | W01              | 「请 word_hyperlink_insert：在第 2 段插入超链接，地址 [https://example.com，显示文字【点我】。」](https://example.com，显示文字【点我】。」)                                | `word_hyperlink_insert`     | 成功          |
+| W23  | `word_hyperlink_insert`     | W01              | 「请 word_hyperlink_insert：在第 2 段插入超链接，地址 https://example.com ，显示文字【点我】。」                                | `word_hyperlink_insert`     | 成功          |
 
 
 ### 3.10 Ppt（逐工具，共 14 个函数）
@@ -315,7 +318,7 @@
 | P10 | `ppt_slides_reorder`    | 至少 2 页           | 先 P05 再发：「请 ppt_slides_reorder：newOrder=2,1。」                                                                                          | `ppt_slides_reorder`    | 成功      |
 | P11 | `ppt_table_create`      | P01              | 「请 ppt_table_create：slideIndex=1，3 行 2 列。」                                                                                             | `ppt_table_create`      | 成功      |
 | P12 | `ppt_table_write_cells` | P11              | 「请 ppt_table_write_cells：slideIndex=1，rowsCsv 填 2 行 2 列：第一行【第一行左,第一行右】与第二行【第二行左,第二行右】之间用竖线（U+007C）连接，格内只用英文逗号。」                        | `ppt_table_write_cells` | 成功      |
-| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 taskly-ppt-test.pptx，slideIndex=1，url [https://example.com，shapeIndex=1。」](https://example.com，shapeIndex=1。」) | `ppt_hyperlink_add`     | 成功或形状说明 |
+| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 taskly-ppt-test.pptx，slideIndex=1，url https://example.com ，shapeIndex=1。」 | `ppt_hyperlink_add`     | 成功或形状说明 |
 | P14 | `ppt_slide_duplicate`   | P01 或 P07        | 「请 ppt_slide_duplicate：slideIndex=1。」后端复制 `ImagePart` 并重映射 `blip/@embed`；极复杂页（图表等）失败请看工具返回。                                            | `ppt_slide_duplicate`   | 成功      |
 
 
@@ -426,6 +429,23 @@
 | SK2 | `save_user_skill_markdown` | 模型已输出 SKILL.md 时：「save_user_skill_markdown：用上文全文。」    | `save_user_skill_markdown` | 成功     |
 
 
+### 3.22 AgentTooling 与 UserSkillProgressive（动态工具）
+
+> **前提**：`AppConfig.contextWindow.dynamicTooling.enabled` 为 **true**（默认 `true`）。为 **false** 时首轮为全量工具表，本节 **DT1/DT2** 不适用（工具调用会返回「当前不在动态工具模式」类说明）。**US*** 依赖设置中**至少启用一个用户技能**；若 `requireSkillSelectBeforeLoad` 为 true，须 **US2 在 US3 之前**。
+
+
+| 编号  | 工具名                         | 前置                    | 建议粘贴到对话框的话术                                                                 | 应核对工具名                        | 预期要点                    |
+| --- | --------------------------- | --------------------- | --------------------------------------------------------------------------- | ----------------------------- | ----------------------- |
+| DT1 | `search_available_tools`      | 动态工具开启                | 「请 search_available_tools：query【excel 写入】。」                                  | `search_available_tools`      | 返回若干裸函数名（如 `excel_range_write`） |
+| DT2 | `activate_tools`            | DT1 之后、已看到目标函数名       | 「请 activate_tools：只激活【excel_range_read】。」（按你环境把数组换成上一步真实函数名）                 | `activate_tools`              | 工具返回成功；后续轮次可实际调用已激活工具   |
+| US1 | `search_available_skills`   | 已启用用户技能               | 「请 search_available_skills：query【手工】。」                                       | `search_available_skills`     | 返回技能 id 列表              |
+| US2 | `select_skill_for_turn`     | US1 之后                | 「请 select_skill_for_turn：skillId【上一步某一 id】。」                              | `select_skill_for_turn`       | 成功                      |
+| US3 | `load_user_skill_instructions` | US2 之后（若配置要求先选技能）     | 「请 load_user_skill_instructions：skillId【与 US2 相同】。」                        | `load_user_skill_instructions` | 返回 SKILL 正文片段（或配置错误说明）   |
+
+
+**与 `activate_tools` 的门禁**：若本轮已调用过 `search_available_tools` 且存在已启用用户技能，须先至少调用一次 `search_available_skills`，再 `activate_tools`（见 `应用内AI插件列表.md` §1 工具链说明）。
+
+
 ---
 
 ## 四、选项页（options）与配置
@@ -433,7 +453,7 @@
 
 | 序号  | 场景          | 操作           | 预期                                                                                                                                                    |
 | --- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O1  | 内置插件列表      | 打开内置工具/插件区块  | **运行时**以 ToolRegistry 为准；`/api/tools/builtin` **当前缺 5 项**（见 `**docs/应用内AI插件列表.md` §五**）；以该文档 **§1.1** 核对 `disabledBuiltInPlugins`；停用某插件后对话中不可再调用该插件工具 |
+| O1  | 内置插件列表      | 打开内置工具/插件区块  | **运行时**以 ToolRegistry 为准；`/api/tools/builtin` **当前返回 18 条、仍缺 5 项**（见 `**docs/应用内AI插件列表.md` §五**）；以该文档 **§1.1** 核对 `disabledBuiltInPlugins`；停用某插件后对话中不可再调用该插件工具 |
 | O2  | 保存配置        | 修改模型/密钥/目录   | 保存成功；侧栏重连后生效                                                                                                                                          |
 | O3  | MCP 服务器（外部） | 若配置外部 MCP    | Chrome 会话可出现 `MCP`_ 前缀的外部工具；**本计划不强制逐项**（以运行时 tools/list 为准）                                                                                          |
 | O4  | 用户技能        | 启用/禁用某 Skill | 侧栏 `@` 中 Skills 列表变化                                                                                                                                  |
@@ -461,7 +481,7 @@
 | 插件                | 工具函数名（`ToolFunction`）                                                                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Browser           | `highlight_webpage_text`, `add_floating_note`, `run_page_script`, `run_custom_page_script`, `capture_full_page`         |
-| File              | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`                                                  |
+| File              | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`, `text_file_read`, `text_file_write`               |
 | Pdf               | `get_pdf_text`, `get_pdf_info`, `pdf_document_create`, `pdf_merge`                                                      |
 | System            | `get_current_time`                                                                                                      |
 | UserOptions       | `ask_options`                                                                                                           |
@@ -481,9 +501,11 @@
 | CrossAgentTask    | `create_cross_agent_task`, `complete_cross_agent_task`                                                                  |
 | Plan              | `create_plan`, `get_plan`, `update_plan`, `execute_plan_step`, `complete_plan`                                          |
 | SkillAuthor       | `generate_user_skill`, `save_user_skill_markdown`                                                                       |
+| AgentTooling      | `search_available_tools`, `activate_tools`（动态工具开启时；见 §3.22）                                                          |
+| UserSkillProgressive | `search_available_skills`, `select_skill_for_turn`, `load_user_skill_instructions`（见 §3.22）                          |
 
 
-**不计入「内置插件」但会出现的**：`UserSkill`_*（用户技能 Prompt）、`MCP_`*（外部 MCP）。若需「技能」回归，在 §1.4 与 §四 O4 已覆盖；外部 MCP 按各自配置单测。
+**不计入「内置插件」但会出现的**：`MCP_`*（外部 MCP）。用户技能已改为 **UserSkillProgressive** 三工具 + system 元数据（见 §3.22、§1.4、§四 O4）；外部 MCP 按各自配置单测。
 
 ---
 
@@ -504,4 +526,4 @@ Chrome / 扩展版本：
 
 ---
 
-*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；若后端增删工具，以代码为准同步 `**docs/应用内AI插件列表.md*`* 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*
+*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`Program.cs`（`GET /api/tools/builtin`）、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；**校准日期：2026-04-13**（builtin 条数 18、File 增文本读写、§3.22 动态工具与渐进技能）。若后端增删工具，以代码为准同步 `**docs/应用内AI插件列表.md*`* 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*
