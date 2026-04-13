@@ -994,7 +994,11 @@ public sealed class ConfigService
             MaxOuterLoops = s.MaxOuterLoops,
             MaxSearchPerTurn = s.MaxSearchPerTurn,
             MaxActivatePerTurn = s.MaxActivatePerTurn,
-            FallbackToFullAllowlistWhenNoActivation = s.FallbackToFullAllowlistWhenNoActivation
+            FallbackToFullAllowlistWhenNoActivation = s.FallbackToFullAllowlistWhenNoActivation,
+            BootstrapUserSkillIds = s.BootstrapUserSkillIds != null
+                ? new List<string>(s.BootstrapUserSkillIds)
+                : new List<string>(),
+            BootstrapIncludeAllEnabledUserSkills = s.BootstrapIncludeAllEnabledUserSkills
         };
     }
 

@@ -756,7 +756,8 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "MeetingTranscript", Name = "MeetingTranscript", Description = "会议实录：按会话 id 分块读取 Chrome 会议监听落盘的转写全文，用于超长会议总结" },
         new() { Id = "Plan", Name = "Plan", Description = "计划：用户可点名列计划；复杂多步任务可主动生成/按步执行已保存的实现计划" },
         new() { Id = "UserOptions", Name = "UserOptions", Description = "候选项确认（ask_options）：侧栏分步单选让用户确认方案/格式等；需在 Chrome 扩展侧栏连接（WPS 等端若未接 UI 则可能超时）" },
-        new() { Id = "SkillAuthor", Name = "SkillAuthor", Description = "技能撰写：根据目标与对话摘要生成 SKILL.md 并保存为用户技能，与设置页技能列表一致" }
+        new() { Id = "SkillAuthor", Name = "SkillAuthor", Description = "技能撰写：根据目标与对话摘要生成 SKILL.md 并保存为用户技能，与设置页技能列表一致" },
+        new() { Id = "UserSkillProgressive", Name = "UserSkillProgressive", Description = "渐进式用户技能：工具 load_user_skill_instructions 按需加载 SKILL 正文；技能清单见对话 system「渐进式用户技能」元数据块" }
     };
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);
 });

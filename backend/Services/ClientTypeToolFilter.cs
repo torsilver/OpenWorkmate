@@ -17,6 +17,7 @@ public static class ClientTypeToolFilter
             || PluginComparer.Equals(pluginName, "MeetingTranscript")
             || PluginComparer.Equals(pluginName, "ScheduledTask")
             || PluginComparer.Equals(pluginName, "SkillAuthor")
+            || PluginComparer.Equals(pluginName, "UserSkillProgressive")
             || pluginName.StartsWith("UserSkill_", StringComparison.OrdinalIgnoreCase)
             || pluginName.StartsWith("MCP_", StringComparison.OrdinalIgnoreCase);
     }

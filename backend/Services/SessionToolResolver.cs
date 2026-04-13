@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services.DynamicTooling;
 
 namespace OfficeCopilot.Server.Services;
@@ -75,12 +76,41 @@ public static class SessionToolResolver
         return tools;
     }
 
-    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；Chrome 含 run_page_script 与 run_custom_page_script；可选合并 Plan 四函数。</summary>
+    /// <summary>
+    /// 历史配置项：曾为每个 Prompt 技能挂载独立工具。现已改为渐进式（<c>load_user_skill_instructions</c> + system 元数据），
+    /// 此处仅在使用旧配置时打日志，不再向 bootstrap 注入 per-skill 函数。
+    /// </summary>
+    public static void AppendBootstrapUserSkills(
+        List<AITool> list,
+        ToolRegistry toolRegistry,
+        string? clientType,
+        string? sessionId,
+        DynamicToolingConfig cfg,
+        IReadOnlyList<SkillDefinition> skills,
+        ILogger? logger)
+    {
+        _ = list;
+        _ = toolRegistry;
+        _ = clientType;
+        _ = sessionId;
+        if (!cfg.BootstrapIncludeAllEnabledUserSkills && cfg.BootstrapUserSkillIds is not { Count: > 0 })
+            return;
+
+        logger?.LogWarning(
+            "Dynamic tooling bootstrap: bootstrapUserSkillIds / bootstrapIncludeAllEnabledUserSkills 已忽略（UserSkill 已改为渐进式：system 元数据 + {LoadFn}；当前 skills 条数={SkillCount}，见 DynamicToolingConfig 注释）。",
+            DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
+            skills.Count);
+    }
+
+    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；可选配置的 UserSkill；Chrome 含 run_page_script 与 run_custom_page_script；可选合并 Plan 四函数。</summary>
     public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
         ToolRegistry toolRegistry,
         string? clientType,
         string? sessionId,
-        bool mergePlanTools)
+        bool mergePlanTools,
+        DynamicToolingConfig? dynCfg = null,
+        IReadOnlyList<SkillDefinition>? skillsForBootstrap = null,
+        ILogger? bootstrapSkillLogger = null)
     {
         var list = new List<AITool>();
         void AddIf(string plugin, string func)
@@ -103,7 +133,33 @@ public static class SessionToolResolver
             AddIf("Browser", "run_custom_page_script");
         }
         AddIf("CLI", "run_command");
+        AddIf("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName);
+
+        if (dynCfg != null && skillsForBootstrap is { Count: > 0 })
+            AppendBootstrapUserSkills(list, toolRegistry, clientType, sessionId, dynCfg, skillsForBootstrap, bootstrapSkillLogger);
+
         return mergePlanTools ? MergePlanTools(toolRegistry, list) : list;
+    }
+
+    /// <summary>按首轮记录的函数名顺序物化 bootstrap 工具列表。</summary>
+    public static IReadOnlyList<AITool> MaterializeBootstrapFromOrderedFunctionNames(
+        ToolRegistry registry,
+        IReadOnlyList<string> orderedFunctionNames,
+        string? clientType,
+        string? sessionId,
+        bool mergePlanTools)
+    {
+        var list = new List<AITool>();
+        foreach (var func in orderedFunctionNames)
+        {
+            if (string.IsNullOrEmpty(func)) continue;
+            if (!registry.TryGetPluginName(func, out var plugin)) continue;
+            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId)) continue;
+            var tool = registry.FindTool(plugin, func);
+            if (tool != null && !list.Any(x => string.Equals(x.Name, func, StringComparison.OrdinalIgnoreCase)))
+                list.Add(tool);
+        }
+        return mergePlanTools ? MergePlanTools(registry, list) : list;
     }
 
     /// <summary>动态工具当前外层 pass 应绑定到模型的完整列表：bootstrap ∪ 已激活业务工具。</summary>
@@ -114,7 +170,11 @@ public static class SessionToolResolver
         string? sessionId,
         bool mergePlanTools)
     {
-        var bootstrap = GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools);
+        IReadOnlyList<AITool> bootstrap = state.BootstrapFunctionNamesOrder.Count > 0
+            ? MaterializeBootstrapFromOrderedFunctionNames(
+                registry, state.BootstrapFunctionNamesOrder, clientType, sessionId, mergePlanTools)
+            : GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools);
+
         var set = new HashSet<string>(bootstrap.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
         var list = new List<AITool>(bootstrap);
         foreach (var func in state.ActivatedFunctionNames)

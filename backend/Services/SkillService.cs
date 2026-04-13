@@ -319,7 +319,7 @@ public sealed class SkillService
                 try
                 {
                     var existingRaw = File.ReadAllText(skillMdPath, Encoding.UTF8);
-                    var existingBody = ExtractMarkdownBodyAfterFrontmatter(existingRaw);
+                    var existingBody = ExtractMarkdownBodyAfterFrontmatterFromRaw(existingRaw);
                     if (string.Equals(existingBody.Trim(), (skill.PromptTemplate ?? "").Trim(), StringComparison.Ordinal)
                         && TryPatchSkillMdEnabled(skillMdPath, skill.Enabled))
                     {
@@ -427,7 +427,8 @@ public sealed class SkillService
         return false;
     }
 
-    private static string ExtractMarkdownBodyAfterFrontmatter(string raw)
+    /// <summary>从含 YAML frontmatter 的 SKILL.md 全文取出第二个 --- 之后的正文；供渐进式加载与落盘比对复用。</summary>
+    internal static string ExtractMarkdownBodyAfterFrontmatterFromRaw(string raw)
     {
         var m = Regex.Match(raw, @"^\s*---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n([\s\S]*)", RegexOptions.Singleline);
         return m.Success ? m.Groups[1].Value : raw;

@@ -124,12 +124,23 @@ public sealed partial class ChatService
             {
                 var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId);
                 var mergePlan = planResult != null;
-                var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(_runtime.ToolRegistry, clientType, sessionId, mergePlan);
-                var bootstrapNames = bootstrap
-                    .Select(t => t.Name)
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(
+                    _runtime.ToolRegistry,
+                    clientType,
+                    sessionId,
+                    mergePlan,
+                    dynCfg,
+                    _skillService.GetAllSkills(),
+                    _logger);
+                var bootstrapNames = new List<string>();
+                var nameSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var t in bootstrap)
+                {
+                    var n = t.Name;
+                    if (string.IsNullOrWhiteSpace(n)) continue;
+                    if (!nameSeen.Add(n)) continue;
+                    bootstrapNames.Add(n);
+                }
                 turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, bootstrapNames)
                 {
                     MergePlanIntoDynamicBootstrap = mergePlan,
@@ -143,7 +154,17 @@ public sealed partial class ChatService
                 _logger.LogInformation(
                     "[{SessionId}] Dynamic tooling: bootstrapCount={Boot} indexEntries={Idx}",
                     sessionId, bootstrap.Count, catalog.Entries.Count);
-                FinalizeToolingPhaseTurn(turn, state, clientType, bootstrap, selectedPairs: null, restrictedSubset: true, appendDynamicToolingInstruction: true);
+                var hasBootstrapDirectTools = bootstrap.Any(t =>
+                    !string.IsNullOrEmpty(t.Name) && !DynamicToolingConstants.MetaFunctionNames.Contains(t.Name));
+                FinalizeToolingPhaseTurn(
+                    turn,
+                    state,
+                    clientType,
+                    bootstrap,
+                    selectedPairs: null,
+                    restrictedSubset: true,
+                    appendDynamicToolingInstruction: true,
+                    appendBootstrapDirectToolsHint: hasBootstrapDirectTools);
             }
             else
             {
@@ -183,7 +204,8 @@ public sealed partial class ChatService
         IReadOnlyList<AITool> toolsForAgent,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
         bool restrictedSubset,
-        bool appendDynamicToolingInstruction)
+        bool appendDynamicToolingInstruction,
+        bool appendBootstrapDirectToolsHint = false)
     {
         var sessionId = turn.SessionId;
         var ctxConfig = turn.CtxConfig;
@@ -212,7 +234,12 @@ public sealed partial class ChatService
 
         var id = GetClientTypeIdentitySuffix(clientType);
         if (appendDynamicToolingInstruction)
-            id = string.IsNullOrEmpty(id) ? DynamicToolingInstruction.Text : id + "\n\n" + DynamicToolingInstruction.Text;
+        {
+            var dyn = DynamicToolingInstruction.Text;
+            if (appendBootstrapDirectToolsHint)
+                dyn += "\n\n" + DynamicToolingInstruction.BootstrapDirectToolsHint;
+            id = string.IsNullOrEmpty(id) ? dyn : id + "\n\n" + dyn;
+        }
         turn.IdentitySuffix = id;
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
     }

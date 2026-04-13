@@ -1922,6 +1922,22 @@ function fillContextWindowForm(activePresetId, presets) {
   if (truncRatioEl) truncRatioEl.value = (cw.truncateToolArgsThresholdRatio ?? cw.TruncateToolArgsThresholdRatio) ?? 0;
   if (truncKeepEl) truncKeepEl.value = (cw.truncateToolArgsKeepMessages ?? cw.TruncateToolArgsKeepMessages) ?? 10;
   if (truncMaxEl) truncMaxEl.value = (cw.truncateToolArgsMaxChars ?? cw.TruncateToolArgsMaxChars) ?? 2000;
+  var dt = cw.dynamicTooling || cw.DynamicTooling || {};
+  var dtEnEl = document.getElementById('ctxDynToolingEnabled');
+  var dtOuterEl = document.getElementById('ctxDynToolingMaxOuterLoops');
+  var dtSearchEl = document.getElementById('ctxDynToolingMaxSearchPerTurn');
+  var dtActEl = document.getElementById('ctxDynToolingMaxActivatePerTurn');
+  var dtFbEl = document.getElementById('ctxDynToolingFallbackNoActivation');
+  var dtIncAllEl = document.getElementById('ctxDynToolingBootstrapIncludeAll');
+  var dtIdsTa = document.getElementById('ctxDynToolingBootstrapUserSkillIds');
+  if (dtEnEl) dtEnEl.checked = (dt.enabled ?? dt.Enabled ?? true);
+  if (dtOuterEl) dtOuterEl.value = (dt.maxOuterLoops ?? dt.MaxOuterLoops ?? 4);
+  if (dtSearchEl) dtSearchEl.value = (dt.maxSearchPerTurn ?? dt.MaxSearchPerTurn ?? 12);
+  if (dtActEl) dtActEl.value = (dt.maxActivatePerTurn ?? dt.MaxActivatePerTurn ?? 48);
+  if (dtFbEl) dtFbEl.checked = (dt.fallbackToFullAllowlistWhenNoActivation ?? dt.FallbackToFullAllowlistWhenNoActivation ?? true);
+  if (dtIncAllEl) dtIncAllEl.checked = !!(dt.bootstrapIncludeAllEnabledUserSkills ?? dt.BootstrapIncludeAllEnabledUserSkills);
+  var idsRaw = dt.bootstrapUserSkillIds ?? dt.BootstrapUserSkillIds;
+  if (dtIdsTa) dtIdsTa.value = formatBootstrapUserSkillIdsForTextarea(Array.isArray(idsRaw) ? idsRaw : []);
 }
 
 function fillSessionForm(activePresetId, presets) {
@@ -1938,6 +1954,16 @@ function fillSessionForm(activePresetId, presets) {
   if (minTurnsEl) minTurnsEl.value = (sess.minTurnsToKeep ?? sess.MinTurnsToKeep ?? 8);
   if (timeoutEl) timeoutEl.value = (sess.timeoutMinutes ?? sess.TimeoutMinutes ?? 30);
   if (cleanupEl) cleanupEl.value = (sess.cleanupIntervalMinutes ?? sess.CleanupIntervalMinutes ?? 5);
+}
+
+function parseBootstrapUserSkillIdsFromTextarea(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw.split(/[\r\n,]+/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+}
+
+function formatBootstrapUserSkillIdsForTextarea(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return '';
+  return arr.map(function (x) { return String(x).trim(); }).filter(Boolean).join('\n');
 }
 
 function collectSessionFromForm() {
@@ -1977,6 +2003,13 @@ function collectContextWindowFromForm() {
   var retryEnEl = document.getElementById('ctxContextLengthRetryEnabled');
   var retryTurnsEl = document.getElementById('ctxContextLengthRetryMaxTurns');
   var passThroughEl = document.getElementById('ctxPassThroughContext');
+  var dtEnEl = document.getElementById('ctxDynToolingEnabled');
+  var dtOuterEl = document.getElementById('ctxDynToolingMaxOuterLoops');
+  var dtSearchEl = document.getElementById('ctxDynToolingMaxSearchPerTurn');
+  var dtActEl = document.getElementById('ctxDynToolingMaxActivatePerTurn');
+  var dtFbEl = document.getElementById('ctxDynToolingFallbackNoActivation');
+  var dtIncAllEl = document.getElementById('ctxDynToolingBootstrapIncludeAll');
+  var dtIdsTa = document.getElementById('ctxDynToolingBootstrapUserSkillIds');
   return {
     passThroughContext: !!(passThroughEl && passThroughEl.checked),
     maxContextTokens: num(maxCtxEl && maxCtxEl.value ? maxCtxEl.value : '', 64000),
@@ -1997,7 +2030,16 @@ function collectContextWindowFromForm() {
     summarizationMaxSummaryChars: num(sumCharsEl ? sumCharsEl.value : '', 500),
     truncateToolArgsThresholdRatio: floatVal(truncRatioEl ? truncRatioEl.value : '', 0),
     truncateToolArgsKeepMessages: num(truncKeepEl ? truncKeepEl.value : '', 10),
-    truncateToolArgsMaxChars: num(truncMaxEl ? truncMaxEl.value : '', 2000)
+    truncateToolArgsMaxChars: num(truncMaxEl ? truncMaxEl.value : '', 2000),
+    dynamicTooling: {
+      enabled: !!(dtEnEl && dtEnEl.checked),
+      maxOuterLoops: num(dtOuterEl && dtOuterEl.value ? dtOuterEl.value : '', 4),
+      maxSearchPerTurn: num(dtSearchEl && dtSearchEl.value ? dtSearchEl.value : '', 12),
+      maxActivatePerTurn: num(dtActEl && dtActEl.value ? dtActEl.value : '', 48),
+      fallbackToFullAllowlistWhenNoActivation: !!(dtFbEl && dtFbEl.checked),
+      bootstrapIncludeAllEnabledUserSkills: !!(dtIncAllEl && dtIncAllEl.checked),
+      bootstrapUserSkillIds: parseBootstrapUserSkillIdsFromTextarea(dtIdsTa && dtIdsTa.value ? dtIdsTa.value : '')
+    }
   };
 }
 

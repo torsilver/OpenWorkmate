@@ -8,13 +8,28 @@ public sealed class DynamicToolingTurnState
     public DynamicToolingTurnState(
         DynamicToolingConfig config,
         ToolCatalogIndex catalog,
-        IReadOnlyCollection<string>? bootstrapFunctionNames = null)
+        IReadOnlyList<string>? bootstrapFunctionNamesOrder = null)
     {
         Config = config;
         Catalog = catalog;
-        BootstrapFunctionNames = bootstrapFunctionNames is { Count: > 0 }
-            ? new HashSet<string>(bootstrapFunctionNames, StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (bootstrapFunctionNamesOrder is { Count: > 0 })
+        {
+            var order = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var n in bootstrapFunctionNamesOrder)
+            {
+                if (string.IsNullOrWhiteSpace(n)) continue;
+                if (!seen.Add(n.Trim())) continue;
+                order.Add(n.Trim());
+            }
+            BootstrapFunctionNamesOrder = order;
+            BootstrapFunctionNames = seen;
+        }
+        else
+        {
+            BootstrapFunctionNamesOrder = Array.Empty<string>();
+            BootstrapFunctionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     public DynamicToolingConfig Config { get; }
@@ -34,6 +49,9 @@ public sealed class DynamicToolingTurnState
     /// <c>activate_tools</c> 成功后原地替换内容，使同一次 <c>RunStreamingAsync</c> 内后续模型请求带上新工具。
     /// </summary>
     public List<AITool>? ToolListMutationTarget { get; set; }
+
+    /// <summary>首轮 bootstrap 函数名顺序（与 <see cref="ChatService.StreamPhases"/> 写入的 Tools 顺序一致）。</summary>
+    public IReadOnlyList<string> BootstrapFunctionNamesOrder { get; }
 
     /// <summary>本轮动态工具 bootstrap 中的函数名（用于空关键词检索时优先列出）。</summary>
     public HashSet<string> BootstrapFunctionNames { get; }

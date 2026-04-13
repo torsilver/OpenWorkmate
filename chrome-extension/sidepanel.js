@@ -600,15 +600,20 @@ async function loadAtModeCandidates() {
         .filter(c => c.internal);
 
       const skillCandidates = (Array.isArray(skills) ? skills : [])
-        .filter(s => (s.enabled !== false && s.Enabled !== false) && (s.promptTemplate || s.PromptTemplate || ""))
+        .filter(s => s.enabled !== false && s.Enabled !== false)
         .map(s => {
           const id = s.id || s.Id || "";
-          const safeName = sanitizeSkillFunctionName(id);
           return {
             group: "Skills",
             label: s.name || s.Name || id,
-            internal: "UserSkill_" + safeName,
-            desc: s.description || s.Description || ""
+            internal: "skill-progressive:" + id,
+            desc: s.description || s.Description || "",
+            insertText:
+              "（用户技能「" +
+              (s.name || s.Name || id) +
+              "」Id=" +
+              id +
+              "：请先调用工具 load_user_skill_instructions 并传入该 skillId 以加载正文，再按需使用 Word/Excel 等业务工具。）"
           };
         });
 
@@ -806,7 +811,10 @@ function insertAtCandidate(candidate) {
 
   const value = $input.value || "";
   const internal = candidate.internal || "";
-  const inserted = `[TOOL:${internal}]`;
+  const inserted =
+    candidate.insertText != null && String(candidate.insertText).length > 0
+      ? String(candidate.insertText)
+      : `[TOOL:${internal}]`;
   const afterChar = value[atTokenEnd] || "";
   const trailing = afterChar && !/\s/.test(afterChar) ? " " : "";
 

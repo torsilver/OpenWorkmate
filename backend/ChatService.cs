@@ -68,30 +68,6 @@ public sealed partial class ChatService : IDisposable
             TimeSpan.FromMinutes(cleanupInterval));
     }
 
-    /// <summary>将技能 Id（如 "Excel / XLSX"）规范为工具可用的函数名（如 "Excel_XLSX"），避免空格和斜杠导致协议不兼容。</summary>
-    private static string SanitizeSkillFunctionName(string id)
-    {
-        if (string.IsNullOrWhiteSpace(id)) return "Skill";
-        var s = id.Trim().Replace("-", "_").Replace("/", "_").Replace(" ", "_");
-        var sb = new System.Text.StringBuilder(s.Length);
-        var prevUnderscore = false;
-        foreach (var c in s)
-        {
-            if (char.IsLetterOrDigit(c) || c == '_')
-            {
-                sb.Append(c);
-                prevUnderscore = false;
-            }
-            else if (!prevUnderscore)
-            {
-                sb.Append('_');
-                prevUnderscore = true;
-            }
-        }
-        var result = sb.ToString().Trim('_');
-        return string.IsNullOrEmpty(result) ? "Skill" : result;
-    }
-
     /// <summary>获取要注册的模型列表：仅 <see cref="AppConfig.AiModels"/> 中 Enabled 且含 Id 的项（旧 <c>ai</c> 已在加载/保存时迁入此列表）。</summary>
     private IReadOnlyList<AiModelEntry> GetModelEntriesToRegister()
     {
@@ -244,6 +220,7 @@ public sealed partial class ChatService : IDisposable
         TryAddBuiltInPlugin(new CrossAgentTaskPlugin(taskStore, sessionManager, _loggerFactory.CreateLogger<CrossAgentTaskPlugin>()));
 
         TryAddBuiltInPlugin(new AgentToolingPlugin(_runtime, sessionManager, _loggerFactory.CreateLogger<AgentToolingPlugin>()));
+        TryAddBuiltInPlugin(new UserSkillProgressivePlugin(_skillService, _loggerFactory.CreateLogger<UserSkillProgressivePlugin>()));
 
         var planPlugin = _serviceProvider.GetRequiredService<PlanPlugin>();
         TryAddBuiltInPlugin(planPlugin);
@@ -263,42 +240,11 @@ public sealed partial class ChatService : IDisposable
         var scheduledTaskStore = _serviceProvider.GetRequiredService<IScheduledTaskStore>();
         TryAddBuiltInPlugin(new ScheduledTaskPlugin(scheduledTaskStore));
 
-        // 动态注册 UserSkill（prompt-based skills 作为简单的 AIFunction 注册到 ToolRegistry）
         var toolRegistry = new ToolRegistry();
         foreach (var instance in pluginInstances)
             toolRegistry.RegisterPluginFromObject(instance);
 
-        var userSkills = _skillService.GetAllSkills();
-        var skillCount = 0;
-        foreach (var skill in userSkills)
-        {
-            if (!skill.Enabled || string.IsNullOrWhiteSpace(skill.PromptTemplate)) continue;
-            try
-            {
-                var safeName = SanitizeSkillFunctionName(skill.Id);
-                var pluginName = $"UserSkill_{safeName}";
-                var template = skill.PromptTemplate;
-                var desc = skill.Description;
-                var fn = AIFunctionFactory.Create(
-                    async (string input, CancellationToken ct2) =>
-                    {
-                        var client = _runtime.GetChatClient();
-                        if (client == null) return "[错误] IChatClient 未就绪。";
-                        var rendered = template.Replace("{{$input}}", input).Replace("{{input}}", input);
-                        var messages = new List<ChatMessage> { new(ChatRole.User, rendered) };
-                        var opts = new ChatOptions { MaxOutputTokens = 4000, Temperature = 0.1f };
-                        var response = await client.GetResponseAsync(messages, opts, ct2).ConfigureAwait(false);
-                        return response.Text ?? "";
-                    },
-                    new AIFunctionFactoryOptions { Name = safeName, Description = desc ?? "" });
-                toolRegistry.Register(pluginName, safeName, fn);
-                skillCount++;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to register skill {Name}", skill.Name);
-            }
-        }
+        var skillCount = _skillService.GetAllSkills().Count(s => s.Enabled);
 
         // 动态注册外部 MCP 服务
         var mcpCount = 0;
@@ -384,6 +330,40 @@ public sealed partial class ChatService : IDisposable
 记忆、准确数据、计划与候选项确认可同时使用（例如：先 ask_options 定方案，再 Plan 执行并用 AccurateData 存中间结果）。
 """;
 
+    private const int ProgressiveSkillMetadataMaxCount = 32;
+    private const int ProgressiveSkillDescriptionMaxChars = 200;
+
+    /// <summary>渐进式技能 Level1：仅 Id + 描述，正文需 <c>load_user_skill_instructions</c> 按需加载（与动态工具检索分离）。</summary>
+    private string BuildProgressiveUserSkillMetadataBlock()
+    {
+        var skills = _skillService.GetAllSkills()
+            .Where(s => s.Enabled)
+            .OrderBy(s => s.Id, StringComparer.OrdinalIgnoreCase)
+            .Take(ProgressiveSkillMetadataMaxCount)
+            .ToList();
+        if (skills.Count == 0)
+            return "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("[渐进式用户技能 · 元数据]");
+        sb.AppendLine("下列条目仅含发现信息；完整说明未载入上下文。若任务与某技能相关，请先调用工具 load_user_skill_instructions（参数 skillId 填下列 Id），再按需调用 Word/Excel 等业务工具。");
+        sb.AppendLine("技能正文与 references/ 等附属文件均通过 load_user_skill_instructions 按需读取，勿依赖 search_available_tools 发现技能。");
+        foreach (var s in skills)
+        {
+            var desc = (s.Description ?? "").Trim();
+            if (desc.Length > ProgressiveSkillDescriptionMaxChars)
+                desc = desc[..ProgressiveSkillDescriptionMaxChars] + "…";
+            sb.Append("- Id: ").Append(s.Id);
+            if (desc.Length > 0)
+                sb.Append(" — ").Append(desc);
+            sb.AppendLine();
+        }
+
+        if (_skillService.GetAllSkills().Count(x => x.Enabled) > ProgressiveSkillMetadataMaxCount)
+            sb.Append("(其余技能见 Chrome 设置 → 技能列表。)");
+        return sb.ToString().TrimEnd();
+    }
+
     private string GetActiveSystemPrompt()
     {
         var entry = GetActiveModelEntry();
@@ -392,9 +372,15 @@ public sealed partial class ChatService : IDisposable
             ? prompt
             : AiEmbeddedDefaults.DefaultSystemPrompt.Trim();
         var guidance = BuiltinTaskPluginSystemGuidance.Trim();
+        var progressive = BuildProgressiveUserSkillMetadataBlock();
+        string core;
         if (string.IsNullOrEmpty(basePrompt))
-            return guidance;
-        return basePrompt + "\n\n" + guidance;
+            core = guidance;
+        else
+            core = basePrompt + "\n\n" + guidance;
+        if (string.IsNullOrEmpty(progressive))
+            return core;
+        return core + "\n\n" + progressive;
     }
 
     /// <summary>首条 system：全局模型 prompt + 内置插件说明 + 当前会话 Agent 的 <c>systemPromptSuffix</c>（须在持有 <see cref="_runtimeLock"/> 时调用 <see cref="GetActiveSystemPrompt"/>）。</summary>

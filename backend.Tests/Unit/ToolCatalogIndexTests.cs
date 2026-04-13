@@ -47,4 +47,20 @@ public class ToolCatalogIndexTests
         var hits = idx.Search("", 8, pinned);
         Assert.Contains(hits, e => string.Equals(e.FunctionName, "run_page_script", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void BuildFromAllowedTools_ExcludesProgressiveSkillLoaderFromCatalog()
+    {
+        var reg = new ToolRegistry();
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
+            {
+                Name = DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
+                Description = "load"
+            }));
+        reg.Register("Word", "word_x", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "word_x", Description = "w" }));
+        var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
+        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(idx.Entries, e => string.Equals(e.FunctionName, "word_x", StringComparison.OrdinalIgnoreCase));
+    }
 }

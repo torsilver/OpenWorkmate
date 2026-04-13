@@ -15,10 +15,10 @@
 ### 与代码核对（主会话 `ToolRegistry`）
 
 - **`backend/ChatService.cs` → `RebuildRuntimeAsync`**：在 **`disabledBuiltInPlugins`（小写）** 未禁用时注册内置插件实例，再 `RegisterPluginFromObject` 写入 `ToolRegistry`。
-- **无条件注册（最多 21 个插件名）**：`CLI`、`Excel`、`Word`、`Ppt`、`Browser`、`File`、`System`、`MCP_STT`、`MCP_OCR`、`Pdf`、`CurrentDocument`、`ClawhubSkill`、`Context`、`Subagent`、`CrossAgentTask`、`Plan`、`SkillAuthor`、`UserOptions`、`AccurateData`、`MeetingTranscript`、`ScheduledTask`。
+- **无条件注册（最多 22 个插件名）**：`CLI`、`Excel`、`Word`、`Ppt`、`Browser`、`File`、`System`、`MCP_STT`、`MCP_OCR`、`Pdf`、`CurrentDocument`、`ClawhubSkill`、`Context`、`Subagent`、`CrossAgentTask`、`Plan`、`SkillAuthor`、`UserOptions`、`AccurateData`、`MeetingTranscript`、`ScheduledTask`、`UserSkillProgressive`。
 - **条件注册**：`Memory` — 仅当 **`_embeddingProvider.IsConfigured`**（Embedding 已配置）且未禁用 `memory` 时注册。
-- 故运行时**最多 22** 个内置插件名（无 Memory 时为 **21**）。
-- **另有两类动态插件**：用户 Prompt 技能 **`UserSkill_*`**；配置中的外接 MCP **`MCP_{McpServers.Name}`**（**不含**内置的 `MCP_STT` / `MCP_OCR`）。
+- 故运行时**最多 23** 个内置插件名（无 Memory 时为 **22**）。
+- **另有一类动态插件**：配置中的外接 MCP **`MCP_{McpServers.Name}`**（**不含**内置的 `MCP_STT` / `MCP_OCR`）。**用户技能**不再以 `UserSkill_*` 每技能一插件注册，见 **§2.1**。
 - **未发现**其它向主会话注册工具的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂第二套 `ToolRegistry`。
 
 ---
@@ -53,6 +53,7 @@
 | `accuratedata` | AccurateData |
 | `meetingtranscript` | MeetingTranscript |
 | `scheduledtask` | ScheduledTask |
+| `userskillprogressive` | UserSkillProgressive |
 
 ### 1.2 内置插件说明表
 
@@ -80,6 +81,7 @@
 | **AccurateData** | 按 id 存取大块结构化中间数据 | |
 | **MeetingTranscript** | 按 Chrome 会议监听 `sessionId` 分块读取落盘转写 | |
 | **ScheduledTask** | 定时任务的创建/查询/执行等 | 工具 5 个：`scheduled_task_create` / `list` / `read` / `update` / `delete`；会话 id 以 `scheduled:` 开头时**禁止**创建/更新/删除（防套娃），见 `ClientTypeToolFilter` |
+| **UserSkillProgressive** | 渐进式用户技能：`load_user_skill_instructions` 按需读 SKILL.md 正文或技能目录下附属文件 | 技能发现见 `GetActiveSystemPrompt` 注入的「渐进式用户技能」元数据；**不参与** `search_available_tools` 索引 |
 
 ### 1.2.1 常见办公扩展名与插件（本机路径型）
 
@@ -121,15 +123,17 @@
 | AccurateData | 4 | `accurate_data_write`, `read`, `list`, `delete` |
 | MeetingTranscript | 2 | `meeting_transcript_read`, `meeting_transcript_meta` |
 | ScheduledTask | 5 | 见上表 |
+| UserSkillProgressive | 1 | `load_user_skill_instructions` |
 
 ---
 
 ## 二、动态插件
 
-### 2.1 用户 Prompt 技能 `UserSkill_*`
+### 2.1 用户技能（渐进式）
 
-- 来自设置中的 **用户技能**（有 `PromptTemplate`、已启用等）。
-- 插件名为 `UserSkill_{经净化的技能 id}`，每个技能通常对应一个 Prompt 型函数。
+- 来自设置中的 **用户技能**（`Skills/*/SKILL.md` 或遗留 `.json`）；启用后其 **Id 与 description** 会进入主会话 system 的 **「渐进式用户技能 · 元数据」** 块。
+- 完整正文**不**预载；模型需调用 **`UserSkillProgressive.load_user_skill_instructions`**（`skillId` 填元数据中的 Id；可选 `relativeResourcePath` 读 `BaseDir` 下附属文件）。
+- 与 **业务工具检索**（`search_available_tools` / `activate_tools`）分离：`load_user_skill_instructions` 列入动态工具 **bootstrap** 且**不进入** `ToolCatalogIndex`。
 
 ### 2.2 外接 MCP：`MCP_{配置名}`
 
@@ -145,7 +149,7 @@
 | clientType | 模型侧要点 |
 |------------|------------|
 | **chrome**（默认） | **仅排除** `CurrentDocument`：**其余所有已在 ToolRegistry 中注册的插件**（含 **Pdf**、System、Plan、UserOptions、CLI、Browser、File、Office 三件套、Context、Subagent、CrossAgentTask、ScheduledTask 等，若未禁用）均可能暴露。 |
-| **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkill_*`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
+| **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkillProgressive`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
 | **office-excel** | 同上结构，`CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
 | **office-powerpoint** | 同上结构，`CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
 | **wps** | 通用插件 + `CurrentDocument` 下 Word/Excel/PPT 函数及脚本的并集。 |
@@ -169,7 +173,7 @@
 
 ## 五、`GET /api/tools/builtin` 与 `ToolRegistry` 差异（核对用）
 
-`Program.cs` 中 **`GET /api/tools/builtin`** 当前返回 **17** 条 `BuiltInPluginInfo`（`Browser` … `SkillAuthor`），**缺少**下列 **5** 个已在 `RebuildRuntimeAsync` 中注册的插件（选项页若仅依赖该接口展示「全部内置」，会漏项）：
+`Program.cs` 中 **`GET /api/tools/builtin`** 当前返回 **18** 条 `BuiltInPluginInfo`（`Browser` … `UserSkillProgressive`），**缺少**下列 **5** 个已在 `RebuildRuntimeAsync` 中注册的插件（选项页若仅依赖该接口展示「全部内置」，会漏项）：
 
 | 缺失项（插件名） | 配置 id（小写） |
 |------------------|-----------------|
