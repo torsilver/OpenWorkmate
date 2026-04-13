@@ -8,10 +8,12 @@ public sealed class DynamicToolingTurnState
     public DynamicToolingTurnState(
         DynamicToolingConfig config,
         ToolCatalogIndex catalog,
+        SkillCatalogIndex skillCatalog,
         IReadOnlyList<string>? bootstrapFunctionNamesOrder = null)
     {
         Config = config;
         Catalog = catalog;
+        SkillCatalog = skillCatalog;
         if (bootstrapFunctionNamesOrder is { Count: > 0 })
         {
             var order = new List<string>();
@@ -34,6 +36,13 @@ public sealed class DynamicToolingTurnState
 
     public DynamicToolingConfig Config { get; }
     public ToolCatalogIndex Catalog { get; }
+    public SkillCatalogIndex SkillCatalog { get; }
+
+    /// <summary>本轮 <c>select_skill_for_turn</c> 已选中的技能 Id（canonical，大小写不敏感）。</summary>
+    public HashSet<string> SelectedSkillIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public int SkillSearchInvocationCount { get; set; }
+    public int SkillSelectInvocationCount { get; set; }
 
     /// <summary>与 <see cref="SessionToolResolver.BuildDynamicActiveToolList"/> 的 mergePlan 一致（工具阶段写入）。</summary>
     public bool MergePlanIntoDynamicBootstrap { get; set; }

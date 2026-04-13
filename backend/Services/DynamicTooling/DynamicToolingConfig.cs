@@ -19,6 +19,18 @@ public sealed class DynamicToolingConfig
     [JsonPropertyName("maxActivatePerTurn")]
     public int MaxActivatePerTurn { get; set; } = 48;
 
+    /// <summary>每轮 <c>search_available_skills</c> 调用次数上限。</summary>
+    [JsonPropertyName("maxSkillSearchPerTurn")]
+    public int MaxSkillSearchPerTurn { get; set; } = 12;
+
+    /// <summary>每轮 <c>select_skill_for_turn</c> 调用次数上限（每次调用计 1，与 activate_tools 一致）。</summary>
+    [JsonPropertyName("maxSkillSelectPerTurn")]
+    public int MaxSkillSelectPerTurn { get; set; } = 8;
+
+    /// <summary>为 true 时，<c>load_user_skill_instructions</c> 仅允许加载已在 <c>select_skill_for_turn</c> 中选中的技能 Id。</summary>
+    [JsonPropertyName("requireSkillSelectBeforeLoad")]
+    public bool RequireSkillSelectBeforeLoad { get; set; }
+
     /// <summary>若所有外层轮结束后从未激活任何非引导工具，则用全量允许列表再跑一轮 agent（提高可用性）。</summary>
     [JsonPropertyName("fallbackToFullAllowlistWhenNoActivation")]
     public bool FallbackToFullAllowlistWhenNoActivation { get; set; } = true;

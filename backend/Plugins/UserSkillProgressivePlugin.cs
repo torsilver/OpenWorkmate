@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DynamicTooling;
@@ -22,10 +23,119 @@ public sealed class UserSkillProgressivePlugin
         _logger = logger;
     }
 
+    [ToolFunction(DynamicToolingConstants.SearchAvailableSkillsFunctionName)]
+    [Description(
+        "在已启用的用户技能中按关键词检索（与 search_available_tools 无关）。返回技能 Id 与简介；"
+        + "典型流程：search_available_skills → select_skill_for_turn → load_user_skill_instructions → 再 search_available_tools 激活业务工具。"
+        + " 空 query 时仍返回若干项（已选中技能优先）。")]
+    public Task<string> SearchAvailableSkillsAsync(
+        [Description("检索关键词；尽量具体")] string query,
+        [Description("最多返回条数，默认 8")] int topK = 8,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var state = DynamicToolingTurnScope.Current;
+        if (state == null)
+            return Task.FromResult("[search_available_skills] 当前不在动态工具模式，忽略。");
+
+        var maxSearch = Math.Max(1, state.Config.MaxSkillSearchPerTurn);
+        if (state.SkillSearchInvocationCount >= maxSearch)
+        {
+            return Task.FromResult(
+                $"[search_available_skills] 已达本轮检索上限（{maxSearch}），请直接 select_skill_for_turn 或 load_user_skill_instructions。");
+        }
+
+        state.SkillSearchInvocationCount++;
+        var k = Math.Clamp(topK, 1, 32);
+        var hits = state.SkillCatalog.Search(query, k, state.SelectedSkillIds);
+        if (hits.Count == 0)
+        {
+            _logger.LogDebug("[SkillProgressive] search_available_skills hits=0 query={Query}", query);
+            return Task.FromResult("[search_available_skills] 无匹配项；可换关键词或确认设置中已启用技能。");
+        }
+
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $"[search_available_skills] 共 {hits.Count} 条（query={(query ?? "").Trim()}）:\n");
+        var i = 1;
+        foreach (var e in hits)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"{i}. Id: {e.SkillId}");
+            if (!string.IsNullOrWhiteSpace(e.DisplayName) && !string.Equals(e.DisplayName, e.SkillId, StringComparison.Ordinal))
+                sb.Append("（").Append(e.DisplayName.Trim()).Append('）');
+            if (!string.IsNullOrWhiteSpace(e.ShortDescription))
+                sb.Append(" — ").Append(e.ShortDescription.Trim());
+            sb.Append('\n');
+            i++;
+        }
+
+        sb.Append("请用 select_skill_for_turn 传入上列技能 Id；再调用 load_user_skill_instructions(skillId) 加载正文。");
+        _logger.LogDebug("[SkillProgressive] search_available_skills hits={Count} query={Query}", hits.Count, query);
+        return Task.FromResult(sb.ToString());
+    }
+
+    [ToolFunction(DynamicToolingConstants.SelectSkillForTurnFunctionName)]
+    [Description(
+        "将技能 Id 记入本轮「已选中」集合（不读 SKILL 正文）。须与 search_available_skills 结果或 system 元数据中的 Id 一致；"
+        + "加载正文仍需再调 load_user_skill_instructions。")]
+    public Task<string> SelectSkillForTurnAsync(
+        [Description("技能 Id 列表（与 search_available_skills / 设置中 Id 一致，或消毒名）")] string[] skillIds,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var state = DynamicToolingTurnScope.Current;
+        if (state == null)
+            return Task.FromResult("[select_skill_for_turn] 当前不在动态工具模式，忽略。");
+
+        if (skillIds == null || skillIds.Length == 0)
+            return Task.FromResult("[select_skill_for_turn] skillIds 为空，请传入至少一个技能 Id。");
+
+        var maxSelectCalls = Math.Max(1, state.Config.MaxSkillSelectPerTurn);
+        if (state.SkillSelectInvocationCount >= maxSelectCalls)
+        {
+            return Task.FromResult($"[select_skill_for_turn] 已达本轮调用上限（{maxSelectCalls}）。");
+        }
+
+        state.SkillSelectInvocationCount++;
+        var accepted = new List<string>();
+        var rejected = new List<string>();
+        var already = new List<string>();
+
+        foreach (var raw in skillIds)
+        {
+            var s = (raw ?? "").Trim();
+            if (s.Length == 0) continue;
+            var skill = ResolveEnabledSkill(s);
+            if (skill == null)
+            {
+                rejected.Add(s);
+                continue;
+            }
+
+            if (state.SelectedSkillIds.Add(skill.Id))
+                accepted.Add(skill.Id);
+            else
+                already.Add(skill.Id);
+        }
+
+        var msg = new StringBuilder();
+        if (accepted.Count > 0)
+            msg.Append("[select_skill_for_turn] 已选中: ").Append(string.Join(", ", accepted)).Append('\n');
+        if (already.Count > 0)
+            msg.Append("[select_skill_for_turn] 以下已在本轮选中列表中: ").Append(string.Join(", ", already.Distinct(StringComparer.OrdinalIgnoreCase))).Append('\n');
+        if (rejected.Count > 0)
+            msg.Append("[select_skill_for_turn] 未接受（不存在或未启用）: ").Append(string.Join(", ", rejected)).Append('\n');
+        if (accepted.Count == 0 && already.Count == 0 && rejected.Count > 0)
+            msg.Append("[select_skill_for_turn] 未选中任何技能；请检查 Id 是否与检索结果一致。");
+
+        _logger.LogDebug("[SkillProgressive] select_skill_for_turn accepted={Accepted}", string.Join(",", accepted));
+        return Task.FromResult(msg.Length > 0 ? msg.ToString().TrimEnd() : "[select_skill_for_turn] 未处理任何项。");
+    }
+
     [ToolFunction(DynamicToolingConstants.LoadUserSkillInstructionsFunctionName)]
     [Description(
-        "按需加载用户技能（SKILL）的正文或技能目录下的附属文件。与 search_available_tools 无关：技能清单见 system 中的「渐进式用户技能」块。"
-        + " skillId 填技能 Id（frontmatter name）或与其等价的消毒函数名。"
+        "按需加载用户技能（SKILL）的正文或技能目录下的附属文件。与 search_available_tools 无关。"
+        + " 建议流程：search_available_skills → select_skill_for_turn → 再调用本工具；若配置 requireSkillSelectBeforeLoad 则必须先 select。"
+        + " skillId 填技能 Id（frontmatter name）或消毒函数名。"
         + " 不传 relativeResourcePath 时返回 SKILL.md 正文（第二个 --- 之后）；传入时返回该相对路径下的文本文件片段（须在技能 BaseDir 内）。")]
     public Task<string> LoadUserSkillInstructionsAsync(
         [Description("技能 Id（与设置中一致）或消毒后的函数名")] string skillId,
@@ -43,6 +153,15 @@ public sealed class UserSkillProgressivePlugin
             _logger.LogInformation("[SkillProgressive] unknown or disabled skillId={SkillId}", idInput);
             return Task.FromResult(
                 "[load_user_skill_instructions] 未找到已启用的技能，或 skillId 不匹配。请对照 system 中「渐进式用户技能」列表的 Id。");
+        }
+
+        var scopeState = DynamicToolingTurnScope.Current;
+        if (scopeState?.Config.RequireSkillSelectBeforeLoad == true
+            && !scopeState.SelectedSkillIds.Contains(skill.Id))
+        {
+            _logger.LogInformation("[SkillProgressive] load blocked by requireSkillSelectBeforeLoad skillId={SkillId}", skill.Id);
+            return Task.FromResult(
+                "[load_user_skill_instructions] 当前配置要求先调用 select_skill_for_turn 选中本技能（skillId 须与选中 Id 一致），再加载正文。");
         }
 
         var rel = (relativeResourcePath ?? "").Trim();

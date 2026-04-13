@@ -49,9 +49,21 @@ public class ToolCatalogIndexTests
     }
 
     [Fact]
-    public void BuildFromAllowedTools_ExcludesProgressiveSkillLoaderFromCatalog()
+    public void BuildFromAllowedTools_ExcludesProgressiveSkillMetaFromCatalog()
     {
         var reg = new ToolRegistry();
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
+            {
+                Name = DynamicToolingConstants.SearchAvailableSkillsFunctionName,
+                Description = "search skills"
+            }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
+            {
+                Name = DynamicToolingConstants.SelectSkillForTurnFunctionName,
+                Description = "select skill"
+            }));
         reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
             {
@@ -60,6 +72,8 @@ public class ToolCatalogIndexTests
             }));
         reg.Register("Word", "word_x", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "word_x", Description = "w" }));
         var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
+        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.SearchAvailableSkillsFunctionName, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.SelectSkillForTurnFunctionName, StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, StringComparison.OrdinalIgnoreCase));
         Assert.Contains(idx.Entries, e => string.Equals(e.FunctionName, "word_x", StringComparison.OrdinalIgnoreCase));
     }

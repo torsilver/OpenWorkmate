@@ -1,10 +1,18 @@
 ---
 name: Word / Docx
-version: 1.0.1
-description: Read and generate Word documents with correct structure, styles, and cross-platform compatibility.
-changelog: Clarified the skill name and added a page layout compatibility note.
+version: 1.0.2
+description: Open XML / DOCX structure (runs, styles, sections, fields). Use with Taskly Word kernel tools for create-edit; load word_cn_default_formal for Chinese formal layout defaults (GB/T 9704 preset).
+changelog: Taskly integration blurb; cross-link to word_cn_default_formal; version bump.
 metadata: {"clawdbot":{"emoji":"📘","os":["linux","darwin","win32"]}}
 ---
+
+## Taskly（本仓库）
+
+- **落盘与改稿**：优先用服务端 **Word 插件** 工具（如 `word_document_create`、CurrentDocument 系列），而不是手改 ZIP 内的 `document.xml`，除非你是在做互通性排查或离线批处理。
+- **`word_document_create`**：`paragraphs` 用 Markdown（`|` / 空行 / `#` / 列表）；可选 `documentPreset`（`default` 与 `cnGovGbt9704`）；不要把 JSON 数组字面量或抓取到的转义串整块当正文（会被拒绝写盘）。
+- **中文正式稿版式**（页边距、仿宋/层次、行距等操作约定）：用内置技能 **`word_cn_default_formal`**（`load_user_skill_instructions`）与本技能的 **OOXML 结构知识** 互补——本段不写国标细则，避免与那边重复。
+
+以下正文侧重 **Open XML 结构与常见坑**，英文表述便于对照官方与第三方文档。
 
 ## Structure
 

@@ -20,12 +20,16 @@ public class SessionToolResolverDynamicBootstrapTests
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.ActivateFunctionName, Description = "" }));
         reg.Register("CLI", "run_command",
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "run_command", Description = "" }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SearchAvailableSkillsFunctionName, Description = "" }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SelectSkillForTurnFunctionName, Description = "" }));
         reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, Description = "" }));
     }
 
     [Fact]
-    public void GetDynamicBootstrapTools_Chrome_IncludesRunPageScriptAndRunCustomPageScriptAndLoadSkill()
+    public void GetDynamicBootstrapTools_Chrome_IncludesSkillChainAndScripts()
     {
         var reg = new ToolRegistry();
         RegisterChromeBootstrapShell(reg);
@@ -37,6 +41,8 @@ public class SessionToolResolverDynamicBootstrapTests
         Assert.Contains(DynamicToolingConstants.SearchFunctionName, names);
         Assert.Contains(DynamicToolingConstants.ActivateFunctionName, names);
         Assert.Contains("run_command", names);
+        Assert.Contains(DynamicToolingConstants.SearchAvailableSkillsFunctionName, names);
+        Assert.Contains(DynamicToolingConstants.SelectSkillForTurnFunctionName, names);
         Assert.Contains(DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, names);
     }
 
@@ -90,7 +96,7 @@ public class SessionToolResolverDynamicBootstrapTests
         var catalog = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
         var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(reg, "chrome", null, mergePlanTools: false);
         var orderedNames = bootstrap.Select(t => t.Name!).Where(n => !string.IsNullOrEmpty(n)).ToList();
-        var state = new DynamicToolingTurnState(cfg, catalog, orderedNames);
+        var state = new DynamicToolingTurnState(cfg, catalog, SkillCatalogIndex.Empty, orderedNames);
         state.ActivatedFunctionNames.Add("word_document_create");
 
         var list = SessionToolResolver.BuildDynamicActiveToolList(reg, state, "chrome", null, mergePlanTools: false);

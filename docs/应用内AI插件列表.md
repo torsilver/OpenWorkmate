@@ -8,6 +8,7 @@
 - **注册逻辑**：`backend/ChatService.cs` 在 **`RebuildRuntimeAsync`** 中通过 `ToolRegistry.RegisterPluginFromObject` / MCP 包装（`McpKernelPlugin`）等注册工具；详见 [`maf-migration-baseline.md`](./maf-migration-baseline.md)。
 - **按端裁剪**：`backend/Services/ClientTypeToolFilter.cs` 决定某 `clientType` 下模型**实际可见**的插件与函数（同名插件在不同端暴露的子集不同）。
 - **动态工具索引**：`backend/Services/DynamicTooling/ToolCatalogIndex.cs` 从允许列表构建轻量检索；`AgentTooling` 插件提供 `search_available_tools` / `activate_tools`。
+- **工具链后的技能扫描（产品内置，非设置项）**：当本轮已调用过 `search_available_tools` 且至少存在一个已启用的用户技能时，`activate_tools` 会被拒绝，直至模型至少调用过一次 `search_available_skills`；无启用技能或从未调用 `search_available_tools` 时不拦截。见 `DynamicToolingConstants.RequireSkillSearchBeforeActivateAfterToolSearch` 与 `DynamicToolingActivateSkillGate`。
 - **设置页「内置工具」列表**（与运行时注册可能略不同步）：`backend/Program.cs` 的 **`GET /api/tools/builtin`**。截至当前代码，该接口**未包含** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见本文 **§五**）；**以 `ChatService.RebuildRuntimeAsync` 注册为准**。
 
 若增删插件或改端侧过滤，请**先改代码**，再同步本文。
@@ -81,7 +82,7 @@
 | **AccurateData** | 按 id 存取大块结构化中间数据 | |
 | **MeetingTranscript** | 按 Chrome 会议监听 `sessionId` 分块读取落盘转写 | |
 | **ScheduledTask** | 定时任务的创建/查询/执行等 | 工具 5 个：`scheduled_task_create` / `list` / `read` / `update` / `delete`；会话 id 以 `scheduled:` 开头时**禁止**创建/更新/删除（防套娃），见 `ClientTypeToolFilter` |
-| **UserSkillProgressive** | 渐进式用户技能：`load_user_skill_instructions` 按需读 SKILL.md 正文或技能目录下附属文件 | 技能发现见 `GetActiveSystemPrompt` 注入的「渐进式用户技能」元数据；**不参与** `search_available_tools` 索引 |
+| **UserSkillProgressive** | 渐进式用户技能：`search_available_skills` / `select_skill_for_turn` 检索与选中；`load_user_skill_instructions` 按需读 SKILL.md 正文或技能目录下附属文件 | 技能发现见 system「渐进式用户技能」元数据与上述检索工具；**不参与** `search_available_tools` 索引 |
 
 ### 1.2.1 常见办公扩展名与插件（本机路径型）
 
@@ -123,7 +124,9 @@
 | AccurateData | 4 | `accurate_data_write`, `read`, `list`, `delete` |
 | MeetingTranscript | 2 | `meeting_transcript_read`, `meeting_transcript_meta` |
 | ScheduledTask | 5 | 见上表 |
-| UserSkillProgressive | 1 | `load_user_skill_instructions` |
+| UserSkillProgressive | 3 | `search_available_skills`, `select_skill_for_turn`, `load_user_skill_instructions` |
+
+**Word · `word_document_create` 补充**：除 `filePath`、`title`、`paragraphs` 外，另有可选参数 **`documentPreset`**（默认 `default`）：通用 Office 版式（Calibri/雅黑 10.5pt、彩色标题、常见页边距）。`cnGovGbt9704` 为中文正式稿默认版式（GB/T 9704—2012 **常用归纳**：仿宋三号、固定 28 磅行距、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装字体。若正文疑似 JSON 字符串数组整段粘贴，工具会**拒绝写盘**并返回说明。中文正式稿写作须先 **`load_user_skill_instructions`**（如 `word_cn_default_formal`），`search_available_skills` 不可替代正文加载。
 
 ---
 
@@ -132,8 +135,8 @@
 ### 2.1 用户技能（渐进式）
 
 - 来自设置中的 **用户技能**（`Skills/*/SKILL.md` 或遗留 `.json`）；启用后其 **Id 与 description** 会进入主会话 system 的 **「渐进式用户技能 · 元数据」** 块。
-- 完整正文**不**预载；模型需调用 **`UserSkillProgressive.load_user_skill_instructions`**（`skillId` 填元数据中的 Id；可选 `relativeResourcePath` 读 `BaseDir` 下附属文件）。
-- 与 **业务工具检索**（`search_available_tools` / `activate_tools`）分离：`load_user_skill_instructions` 列入动态工具 **bootstrap** 且**不进入** `ToolCatalogIndex`。
+- 完整正文**不**预载；技能较多或不确定 Id 时建议 **`search_available_skills` → `select_skill_for_turn`**，再调用 **`UserSkillProgressive.load_user_skill_instructions`**（`skillId` 填元数据或检索结果中的 Id；可选 `relativeResourcePath` 读 `BaseDir` 下附属文件）。配置 `requireSkillSelectBeforeLoad` 为 true 时，仅允许加载本回合已 `select_skill_for_turn` 选中的技能。
+- 与 **业务工具检索**（`search_available_tools` / `activate_tools`）分离：上述三个函数列入动态工具 **bootstrap** 且**不进入** `ToolCatalogIndex`。
 
 ### 2.2 外接 MCP：`MCP_{配置名}`
 

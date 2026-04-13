@@ -46,10 +46,13 @@ public sealed class SkillService
 
     public event Action? OnSkillsChanged;
 
-    public SkillService(ILogger<SkillService> logger)
+    /// <param name="skillsDirectory">可选：技能根目录（其下为各技能子目录与 SKILL.md）。测试注入用；生产省略则使用 <c>AppContext.BaseDirectory/Skills</c>。</param>
+    public SkillService(ILogger<SkillService> logger, string? skillsDirectory = null)
     {
         _logger = logger;
-        _skillsDir = Path.Combine(AppContext.BaseDirectory, "Skills");
+        _skillsDir = string.IsNullOrWhiteSpace(skillsDirectory)
+            ? Path.Combine(AppContext.BaseDirectory, "Skills")
+            : Path.GetFullPath(skillsDirectory);
         if (!Directory.Exists(_skillsDir))
         {
             Directory.CreateDirectory(_skillsDir);

@@ -123,6 +123,7 @@ public sealed partial class ChatService
             if (dynCfg.Enabled)
             {
                 var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId);
+                var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(_skillService.GetAllSkills());
                 var mergePlan = planResult != null;
                 var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(
                     _runtime.ToolRegistry,
@@ -141,7 +142,7 @@ public sealed partial class ChatService
                     if (!nameSeen.Add(n)) continue;
                     bootstrapNames.Add(n);
                 }
-                turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, bootstrapNames)
+                turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, skillCatalog, bootstrapNames)
                 {
                     MergePlanIntoDynamicBootstrap = mergePlan,
                     ClientTypeForTools = clientType,

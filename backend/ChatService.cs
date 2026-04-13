@@ -346,8 +346,9 @@ public sealed partial class ChatService : IDisposable
 
         var sb = new StringBuilder();
         sb.AppendLine("[渐进式用户技能 · 元数据]");
-        sb.AppendLine("下列条目仅含发现信息；完整说明未载入上下文。若任务与某技能相关，请先调用工具 load_user_skill_instructions（参数 skillId 填下列 Id），再按需调用 Word/Excel 等业务工具。");
-        sb.AppendLine("技能正文与 references/ 等附属文件均通过 load_user_skill_instructions 按需读取，勿依赖 search_available_tools 发现技能。");
+        sb.AppendLine("下列条目仅含发现信息；完整说明未载入上下文。技能较多或不确定 Id 时，请先 search_available_skills → select_skill_for_turn，再 load_user_skill_instructions（参数 skillId 填下列 Id 或检索结果中的 Id），最后按需 search_available_tools / activate_tools 调用 Word/Excel 等业务工具。");
+        sb.AppendLine("search_available_skills 的返回不是技能正文：在按某技能规则写 Word/改格式前，必须再调用 load_user_skill_instructions，否则模型并未看到 SKILL 细则。");
+        sb.AppendLine("技能正文与 references/ 等附属文件仅通过 load_user_skill_instructions 按需读取；勿依赖 search_available_tools 发现技能。");
         foreach (var s in skills)
         {
             var desc = (s.Description ?? "").Trim();

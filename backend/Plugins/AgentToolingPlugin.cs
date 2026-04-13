@@ -68,6 +68,7 @@ public sealed class AgentToolingPlugin
     [ToolFunction(DynamicToolingConstants.ActivateFunctionName)]
     [Description(
         "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。可传裸函数名或 Plugin.function。"
+        + " 固定协议：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
         + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_page_script\"]。")]
     public Task<string> ActivateToolsAsync(
         [Description("要激活的工具函数名列表（裸函数名或 Plugin.function）")] string[] toolNames,
@@ -83,6 +84,9 @@ public sealed class AgentToolingPlugin
 
         if (state.ActivateInvocationCount >= state.Config.MaxActivatePerTurn)
             return Task.FromResult($"[activate_tools] 已达本轮激活次数上限（{state.Config.MaxActivatePerTurn}）。");
+
+        if (DynamicToolingActivateSkillGate.ShouldBlock(state, out var skillGateMsg))
+            return Task.FromResult(skillGateMsg);
 
         state.ActivateInvocationCount++;
         var registry = _runtime.ToolRegistry;

@@ -133,6 +133,8 @@ public static class SessionToolResolver
             AddIf("Browser", "run_custom_page_script");
         }
         AddIf("CLI", "run_command");
+        AddIf("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName);
+        AddIf("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName);
         AddIf("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName);
 
         if (dynCfg != null && skillsForBootstrap is { Count: > 0 })

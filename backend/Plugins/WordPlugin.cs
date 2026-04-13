@@ -149,11 +149,16 @@ public sealed class WordPlugin
     }
 
     [ToolFunction("word_document_create")]
-    [Description("创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 必须是 .docx（推荐）或 .docm 扩展名，勿用 .md/.txt/.doc；paragraphs 内可用 Markdown 语法（# 标题、列表等），与输出格式无关。可用 | 显式分段；段内也可用空行或单行换行分段，服务端会拆成多个 Word 段落。路径须对应当前登录用户：优先仅文件名或相对子路径，勿用 Public/%PUBLIC% 或臆测的用户名目录。title 与 paragraphs 可省略：未传 title 时用文件名（无扩展名）作为文档内标题；未传正文则仅含标题段。")]
+    [Description(
+        "创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 须为 .docx（推荐）或 .docm，勿用 .md/.txt/.doc。"
+        + " paragraphs 用 Markdown（# / ## / ###、- 列表）并用 | 或空行分段；禁止将 JSON 数组、API 调试输出或未转义抓取文本整块传入。"
+        + " documentPreset：default=历史通用 Office 版式（Calibri/微软雅黑 10.5pt、彩色标题、常见页边距）；cnGovGbt9704=中文正式稿默认版式（GB/T 9704—2012 常用归纳：仿宋三号、固定 28 磅、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装仿宋/宋体等字体。"
+        + " 按中文正式稿规则写作前请先 load_user_skill_instructions（skillId 如 word_cn_default_formal）。路径须对应当前登录用户。")]
     public string WordDocumentCreate(
         [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题；可省略，省略时用目标文件名（无扩展名）")] string title = "",
-        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表；可省略则仅标题")] string paragraphs = "")
+        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表；可省略则仅标题")] string paragraphs = "",
+        [Description("版式预设：default 或 cnGovGbt9704，默认 default")] string documentPreset = "default")
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         var beforeNormalize = filePath;
@@ -161,13 +166,17 @@ public sealed class WordPlugin
         if (!string.Equals(filePath, beforeNormalize, StringComparison.OrdinalIgnoreCase))
             _logger?.LogInformation("[Word] word_document_create normalized path from {Before} to {After}", beforeNormalize, filePath);
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
+        if (!WordDocumentCreatePresetParser.TryParse(documentPreset, out var preset, out var presetErr))
+            return presetErr!;
+        if (WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(paragraphs))
+            return WordDocumentCreateParagraphGuard.RejectionMessage;
         if (string.IsNullOrWhiteSpace(title))
         {
             var stem = Path.GetFileNameWithoutExtension(filePath);
             title = string.IsNullOrWhiteSpace(stem) ? "文档" : stem.Trim();
         }
 
-        _logger?.LogInformation("[Word] word_document_create path={Path}", filePath);
+        _logger?.LogInformation("[Word] word_document_create path={Path} preset={Preset}", filePath, preset);
         try
         {
             var dir = Path.GetDirectoryName(filePath);
@@ -177,7 +186,7 @@ public sealed class WordPlugin
             var docType = isDocm ? WordprocessingDocumentType.MacroEnabledDocument : WordprocessingDocumentType.Document;
             using var doc = WordprocessingDocument.Create(filePath, docType);
             var mainPart = doc.AddMainDocumentPart();
-            AddDefaultStyles(mainPart);
+            WordDocumentCreateStyles.Apply(mainPart, preset);
             mainPart.Document = new Document(new Body());
             if (mainPart.Document?.Body is not { } body)
                 return "[错误] 创建文档后未能初始化正文。";
@@ -189,15 +198,15 @@ public sealed class WordPlugin
 
             // Parse each logical line with Markdown conventions (|、空行、换行均会拆段)
             foreach (var line in WordParagraphSplitter.ExpandWordDocumentParagraphs(paragraphs))
-                body.Append(ParseMarkdownParagraph(line));
+                body.Append(ParseMarkdownParagraph(line, preset));
 
-            // A4 page setup with standard margins
-            body.Append(new SectionProperties(
-                new PageSize { Width = 11906, Height = 16838, Orient = PageOrientationValues.Portrait },
-                new PageMargin { Top = 1440, Right = 1800U, Bottom = 1440, Left = 1800U, Header = 720U, Footer = 720U }));
+            body.Append(WordDocumentCreateStyles.CreateFinalSectionProperties(preset));
 
             mainPart.Document.Save();
-            return $"已创建文档: {filePath}（标题: {title}）";
+            var tail = preset == WordDocumentCreatePreset.CnGovGbt9704
+                ? "；documentPreset=cnGovGbt9704（GB/T 9704 常用归纳，字体依赖本机）"
+                : "";
+            return $"已创建文档: {filePath}（标题: {title}{tail}）";
         }
         catch (Exception ex)
         {
@@ -206,94 +215,10 @@ public sealed class WordPlugin
         }
     }
 
-    private static void AddDefaultStyles(MainDocumentPart mainPart)
+    private static Paragraph ParseMarkdownParagraph(string text, WordDocumentCreatePreset preset)
     {
-        var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
-        var styles = new Styles();
+        var firstLineTwips = preset == WordDocumentCreatePreset.CnGovGbt9704 ? "640" : "420"; // 约 2 字：16pt 与 10.5pt
 
-        // Default run properties for the document
-        var docDefaults = new DocDefaults(
-            new RunPropertiesDefault(new RunPropertiesBaseStyle(
-                new RunFonts { Ascii = "Calibri", HighAnsi = "Calibri", EastAsia = "微软雅黑", ComplexScript = "Calibri" },
-                new FontSize { Val = "21" }, // 10.5pt
-                new FontSizeComplexScript { Val = "21" },
-                new Languages { Val = "en-US", EastAsia = "zh-CN" })),
-            new ParagraphPropertiesDefault(new ParagraphPropertiesBaseStyle(
-                new SpacingBetweenLines { After = "160", Line = "360", LineRule = LineSpacingRuleValues.Auto }))); // 段后 8pt, 1.5 倍行距
-        styles.Append(docDefaults);
-
-        // Normal style
-        styles.Append(new Style(
-            new StyleName { Val = "Normal" },
-            new PrimaryStyle(),
-            new StyleParagraphProperties(
-                new SpacingBetweenLines { After = "160", Line = "360", LineRule = LineSpacingRuleValues.Auto }))
-        { Type = StyleValues.Paragraph, StyleId = "Normal", Default = true });
-
-        // Heading 1
-        styles.Append(new Style(
-            new StyleName { Val = "heading 1" },
-            new BasedOn { Val = "Normal" },
-            new NextParagraphStyle { Val = "Normal" },
-            new PrimaryStyle(),
-            new StyleRunProperties(
-                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
-                new Bold(),
-                new FontSize { Val = "44" }, // 22pt
-                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "1F3864" }),
-            new StyleParagraphProperties(
-                new SpacingBetweenLines { Before = "360", After = "120" },
-                new KeepNext()))
-        { Type = StyleValues.Paragraph, StyleId = "Heading1" });
-
-        // Heading 2
-        styles.Append(new Style(
-            new StyleName { Val = "heading 2" },
-            new BasedOn { Val = "Normal" },
-            new NextParagraphStyle { Val = "Normal" },
-            new PrimaryStyle(),
-            new StyleRunProperties(
-                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
-                new Bold(),
-                new FontSize { Val = "32" }, // 16pt
-                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "2E75B6" }),
-            new StyleParagraphProperties(
-                new SpacingBetweenLines { Before = "240", After = "80" },
-                new KeepNext()))
-        { Type = StyleValues.Paragraph, StyleId = "Heading2" });
-
-        // Heading 3
-        styles.Append(new Style(
-            new StyleName { Val = "heading 3" },
-            new BasedOn { Val = "Normal" },
-            new NextParagraphStyle { Val = "Normal" },
-            new PrimaryStyle(),
-            new StyleRunProperties(
-                new RunFonts { Ascii = "Calibri", EastAsia = "微软雅黑" },
-                new Bold(),
-                new FontSize { Val = "28" }, // 14pt
-                new DocumentFormat.OpenXml.Wordprocessing.Color { Val = "404040" }),
-            new StyleParagraphProperties(
-                new SpacingBetweenLines { Before = "200", After = "80" },
-                new KeepNext()))
-        { Type = StyleValues.Paragraph, StyleId = "Heading3" });
-
-        // List Paragraph style
-        styles.Append(new Style(
-            new StyleName { Val = "List Paragraph" },
-            new BasedOn { Val = "Normal" },
-            new PrimaryStyle(),
-            new StyleParagraphProperties(
-                new Indentation { Left = "720" },
-                new SpacingBetweenLines { After = "80" }))
-        { Type = StyleValues.Paragraph, StyleId = "ListParagraph" });
-
-        stylesPart.Styles = styles;
-        stylesPart.Styles.Save();
-    }
-
-    private static Paragraph ParseMarkdownParagraph(string text)
-    {
         // Heading detection: # / ## / ###
         if (text.StartsWith("### ", StringComparison.Ordinal))
         {
@@ -332,7 +257,7 @@ public sealed class WordPlugin
         // Normal paragraph with 2-char first line indent
         var normalPPr = new ParagraphProperties(
             new ParagraphStyleId { Val = "Normal" },
-            new Indentation { FirstLine = "420" }); // ~2 chars at 10.5pt
+            new Indentation { FirstLine = firstLineTwips });
         return new Paragraph(normalPPr, new Run(new Text(text)));
     }
 
