@@ -153,6 +153,9 @@
 | B07 | `run_page_script`        | 含表格的网页      | 「请 run_page_script：scriptId=extract_tables，paramsJson 含 maxTables 2、maxRows 10。」              | `run_page_script`        | Markdown 表格片段或「未找到」说明        |
 | B08 | `run_page_script`        | 当前窗口至少两个标签  | 「请 run_page_script：scriptId=tab_list，paramsJson 含 maxTabs 20。」                          | `run_page_script`        | JSON 含 tabId、active 等           |
 | B09 | `run_page_script`        | 同上           | 「请 run_page_script：scriptId=wait_for_selector，paramsJson 含 selector 为 body、timeoutMs 3000。」   | `run_page_script`        | 成功找到元素或超时原因明确             |
+| B10 | `run_page_script`        | 任选正文很长的网页（或本地长 HTML） | 「请 run_page_script：scriptId=get_visible_text，paramsJson 含 maxLength 2000、truncateMode tail。」 | `run_page_script`        | 返回中含「末尾」或省略提示，且为页底附近文本而非仅页头 |
+| B11 | `run_page_script`        | 任意常见 AI 对话网页（或普通长文页） | 「请 run_page_script：scriptId=chat_page_tail_glance，paramsJson 可含 maxTailChars 8000。」 | `run_page_script`        | 返回含「泛化」「来源：」说明 + 偏末尾正文；无内容时提示改用 get_visible_text+tail |
+| B12 | `run_custom_page_script` | WebSocket 正常、已开 Allow User Scripts | 「请 run_custom_page_script：`1+1`（无 return，需确认则先说明）。」 | `run_custom_page_script` | 工具返回须说明「空」或「需 return」，**不得**仅为泛化「已成功执行」而无原因 |
 
 **说明（白名单）**：设置「安全与确认 → Chrome → 页面脚本」默认勾选与后端 `DefaultAllowedScriptIds` 对齐；**`tab_open` 不在默认列表**（可打开任意 URL），需手动添加 scriptId `tab_open` 后再测新开标签。`tab_close` 须传非当前活动标签的 `tabId`。
 

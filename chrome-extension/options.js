@@ -1404,7 +1404,7 @@ var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Offi
 var DEFAULT_CLI_COMMANDS_BACKEND = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
 /** 与 backend CliScriptEndKeys.DefaultAllowedScriptIds 一致；tab_open 可打开任意 URL，默认不纳入须用户在设置中手动添加 */
 var DEFAULT_PAGE_SCRIPTS = [
-  'get_visible_text', 'get_page_title', 'get_page_outline', 'extract_links', 'extract_tables',
+  'get_visible_text', 'get_page_title', 'chat_page_tail_glance', 'get_page_outline', 'extract_links', 'extract_tables',
   'scroll_to_top', 'scroll_to_bottom', 'scroll_by', 'scroll_into_view',
   'wait_for_selector',
   'click_selector', 'fill_input', 'select_option', 'set_checked', 'hover_selector', 'focus_selector', 'press_key',

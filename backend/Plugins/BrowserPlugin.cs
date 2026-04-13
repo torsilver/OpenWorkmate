@@ -118,7 +118,7 @@ public class BrowserPlugin
     [ToolFunction("run_page_script")]
     [Description(
         "运行位置：Chrome 当前标签页（DOM 脚本由扩展注入；tab_* 在扩展内用 chrome.tabs 执行）。仅白名单内 scriptId。paramsJson 为 JSON 对象字符串。\n" +
-        "读页：get_visible_text{maxLength}；get_page_title；get_page_outline{maxHeadingLevel,maxHeadings,includeTextPrefix,maxLength}；extract_links{maxLinks,sameOriginOnly}；extract_tables{selector,maxTables,maxRows,maxCols}。\n" +
+        "读页：get_visible_text{maxLength?,truncateMode?} — 未传 maxLength 时默认约 50 万字符（与扩展硬上限一致），一般整页可见文本一次返回；更长页面仍会截断。truncateMode：head（超长保留开头，默认）|tail（保留末尾）|both（首尾各半+省略中间）。get_page_title；chat_page_tail_glance{maxTailChars?} — 泛化 AI 对话页末尾摘录（不绑某家产品；尽力用常见 role/data 选择器，失败则用 get_visible_text+tail）；get_page_outline{maxHeadingLevel,maxHeadings,includeTextPrefix,maxLength}；extract_links{maxLinks,sameOriginOnly}；extract_tables{selector,maxTables,maxRows,maxCols}。\n" +
         "滚动：scroll_to_top/bottom；scroll_by{deltaY,smooth}；scroll_into_view{selector,block,inline}。\n" +
         "等待：wait_for_selector{selector,timeoutMs,requireVisible}。\n" +
         "交互：click_selector{selector,doubleClick}；fill_input{selector,value}；select_option{selector,value}；set_checked{selector,checked}；hover_selector/focus_selector{selector}；press_key{key,code?,selector?,ctrlKey?...}（合成事件，部分站点不响应）。\n" +
@@ -149,8 +149,15 @@ public class BrowserPlugin
         try
         {
             var result = await responseTask;
-            var resultStr = (result?.ValueKind == System.Text.Json.JsonValueKind.String ? result.Value.GetString() : null) ?? result?.ToString();
-            return string.IsNullOrEmpty(resultStr) ? "成功：页面脚本已执行。" : resultStr;
+            var kind = result?.ValueKind ?? System.Text.Json.JsonValueKind.Undefined;
+            var resultStr = BrowserPluginRpcText.TryParseResultString(result);
+            if (BrowserPluginRpcText.IsEffectivelyEmpty(resultStr))
+            {
+                _logger.LogDebug("[Browser] run_page_script scriptId={ScriptId} empty RPC result ValueKind={Kind}", scriptId, kind);
+                return BrowserPluginRpcText.PageScriptEmptyNotice(kind);
+            }
+
+            return resultStr!;
         }
         catch (Exception ex)
         {
@@ -192,8 +199,15 @@ public class BrowserPlugin
         try
         {
             var result = await responseTask;
-            var resultStr = (result?.ValueKind == System.Text.Json.JsonValueKind.String ? result.Value.GetString() : null) ?? result?.ToString();
-            return string.IsNullOrEmpty(resultStr) ? "成功：自定义页面脚本已执行。" : resultStr;
+            var kind = result?.ValueKind ?? System.Text.Json.JsonValueKind.Undefined;
+            var resultStr = BrowserPluginRpcText.TryParseResultString(result);
+            if (BrowserPluginRpcText.IsEffectivelyEmpty(resultStr))
+            {
+                _logger.LogDebug("[Browser] run_custom_page_script empty RPC result ValueKind={Kind}", kind);
+                return BrowserPluginRpcText.CustomScriptEmptyNotice(kind);
+            }
+
+            return resultStr!;
         }
         catch (Exception ex)
         {

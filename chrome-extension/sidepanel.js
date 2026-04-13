@@ -2545,7 +2545,12 @@ async function executeCustomPageScriptViaUserScripts(scriptCode) {
   if (first?.error) return "[Error] " + (first.error.message || String(first.error));
   const v = first?.result;
   if (v === undefined || v === null) return "";
-  if (typeof v === "string") return v;
+  if (typeof v === "string") {
+    if (!String(v).trim()) {
+      return "[脚本返回空字符串] 请确认代码末尾使用 return 返回页面中可读取的内容；无 return 或返回 undefined/null 会得到空结果。";
+    }
+    return v;
+  }
   return JSON.stringify(v);
 }
 
@@ -3095,12 +3100,106 @@ const PAGE_SCRIPTS = {
   get_visible_text: function (params) {
     var p = params || {};
     var text = document.body ? document.body.innerText : "";
-    var max = p.maxLength > 0 ? Math.min(500000, Number(p.maxLength)) : 8000;
-    if (text.length > max) text = text.slice(0, max) + "\n...(已截断)";
-    return text || "(无文本)";
+    /** 默认与上限一致：常见页面整段返回；极端长页仍截断以防 WS/上下文爆量。显式 maxLength 可再收紧。 */
+    var hardMax = 500000;
+    var max = p.maxLength > 0 ? Math.min(hardMax, Number(p.maxLength)) : hardMax;
+    var mode = (p.truncateMode != null ? String(p.truncateMode) : "head").toLowerCase();
+    if (mode !== "head" && mode !== "tail" && mode !== "both") mode = "head";
+    if (text.length <= max) return text || "(无文本)";
+    if (mode === "tail") {
+      var tailMarker = "\n...(以下为页面文本末尾，前部已省略)...\n";
+      var tailBudget = Math.max(0, max - tailMarker.length);
+      return tailMarker + text.slice(-tailBudget);
+    }
+    if (mode === "both") {
+      var midMarker = "\n...(已省略中间内容)...\n";
+      var usable = Math.max(0, max - midMarker.length);
+      var headLen = Math.floor(usable / 2);
+      var tailLen = usable - headLen;
+      var headPart = text.slice(0, headLen);
+      var tailPart = text.slice(-tailLen);
+      return headPart + midMarker + tailPart;
+    }
+    var headSuffix = "\n...(已截断：仅保留开头；需要页底请设 truncateMode 为 tail 或 both)";
+    var headBudget = Math.max(0, max - headSuffix.length);
+    return text.slice(0, headBudget) + headSuffix;
   },
   get_page_title: function () {
     return document.title || "(无标题)";
+  },
+  /**
+   * 泛化「AI 对话页」末尾摘录：不绑某一产品；按常见 DOM 习惯尽力取偏末尾正文，失败时提示用 get_visible_text+tail。
+   * params: maxTailChars 可选，默认 16000，范围约 1500～80000。
+   */
+  chat_page_tail_glance: function (params) {
+    var p = params || {};
+    var maxTail = Math.min(80000, Math.max(1500, Number(p.maxTailChars) || 16000));
+    var candidates = [];
+
+    function add(label, el) {
+      if (!el) return;
+      var t = el.innerText != null ? String(el.innerText).trim() : "";
+      if (t.length > 80) candidates.push({ label: label, text: t });
+    }
+
+    try {
+      var roleMsgs = document.querySelectorAll(
+        '[data-message-author-role="assistant"], [data-message-author-role="model"]'
+      );
+      if (roleMsgs.length) add("末条助手气泡(data-message-author-role)", roleMsgs[roleMsgs.length - 1]);
+    } catch (e0) {}
+    try {
+      var mr = document.querySelectorAll("model-response");
+      if (mr.length) add("末条 model-response", mr[mr.length - 1]);
+    } catch (e1) {}
+    try {
+      var arts = document.querySelectorAll('[role="article"]');
+      if (arts.length) {
+        var take = Math.min(5, arts.length);
+        var parts = [];
+        for (var i = arts.length - take; i < arts.length; i++) {
+          parts.push(String((arts[i] && arts[i].innerText) || "").trim());
+        }
+        var joined = parts.filter(Boolean).join("\n\n·\n\n");
+        if (joined.length > 80) candidates.push({ label: "末数条 role=article", text: joined });
+      }
+    } catch (e2) {}
+    try {
+      add("main", document.querySelector("main"));
+      add('role="main"', document.querySelector('[role="main"]'));
+      var fd = document.querySelector('[role="feed"], [role="log"]');
+      if (fd) add("role=feed|log", fd);
+    } catch (e3) {}
+
+    var focused = candidates.filter(function (c) {
+      return /末条助手|model-response/.test(c.label);
+    });
+    var pick;
+    if (focused.length) pick = focused[0];
+    else if (candidates.length) {
+      candidates.sort(function (a, b) {
+        return b.text.length - a.text.length;
+      });
+      pick = candidates[0];
+    } else {
+      var bodyT = document.body && document.body.innerText ? String(document.body.innerText).trim() : "";
+      pick = { label: "document.body", text: bodyT };
+    }
+
+    if (!pick.text || !pick.text.trim()) {
+      return (
+        "泛化对话摘录：未取到足够文本。请先 scroll_to_bottom，再试 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"；或在设置中允许 run_custom_page_script 写页面专属选择器。"
+      );
+    }
+
+    var full = pick.text;
+    var slice = full.length > maxTail ? full.slice(-maxTail) : full;
+    var prefix =
+      "说明：chat_page_tail_glance 为通用脚本，按常见聊天页结构尽力取「偏末尾」正文（来源：" +
+      pick.label +
+      "）；不同站点 DOM 差异大，不保证等于用户口中的「最后一轮」语义。\n";
+    if (full.length > maxTail) prefix += "（已按 maxTailChars 截取末尾 " + maxTail + " 字符）\n";
+    return prefix + "\n" + slice;
   },
   get_page_outline: function (params) {
     try {

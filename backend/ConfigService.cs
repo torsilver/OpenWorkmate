@@ -415,7 +415,7 @@ public static class CliScriptEndKeys
     /// <summary>Chrome <c>run_page_script</c> 默认白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_SCRIPTS</c> 一致）。<c>tab_open</c> 可导航至任意 URL，默认不包含，由用户在设置中手动加入。</summary>
     public static readonly string[] DefaultAllowedScriptIds =
     {
-        "get_visible_text", "get_page_title", "get_page_outline", "extract_links", "extract_tables",
+        "get_visible_text", "get_page_title", "chat_page_tail_glance", "get_page_outline", "extract_links", "extract_tables",
         "scroll_to_top", "scroll_to_bottom", "scroll_by", "scroll_into_view",
         "wait_for_selector",
         "click_selector", "fill_input", "select_option", "set_checked", "hover_selector", "focus_selector", "press_key",
