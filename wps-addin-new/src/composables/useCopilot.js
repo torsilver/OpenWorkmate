@@ -60,6 +60,8 @@ function ensureBootstrapAuthToken() {
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 16000
 const CLIENT_TYPE = 'wps'
+/** 与 chrome-extension 侧栏一致语义：当前 Agent 配置 id（localStorage）。 */
+const STORAGE_ACTIVE_AGENT_PROFILE_ID = 'activeAgentProfileId'
 const TIMELINE_TAIL_MAX = 100
 const STORAGE_PLAN_STEP_INDEX = 'copilot_plan_step_index'
 
@@ -268,6 +270,28 @@ export function useCopilot() {
   const pendingConfirmId = ref(null)
   const hitlShowAddToList = ref(false)
 
+  /** ask_options：与 Chrome sidepanel 同契约（UserOptionsManager）。 */
+  const askOptionsVisible = ref(false)
+  const askOptionsRequestId = ref(null)
+  const askOptionsTitle = ref('')
+  const askOptionsPrompt = ref('')
+  const askOptionsSteps = ref([])
+  const askOptionsStepIndex = ref(0)
+  const askOptionsSelections = ref({})
+  const askOptionsSelectedOptionId = ref(null)
+
+  /** Agent 配置：对齐 Chrome agent-profile-select + WS agentProfileId。 */
+  const agentProfileOptions = ref([])
+  const activeAgentProfileId = ref('default')
+
+  /** 历史对话：对齐 Chrome /api/chat-sessions。 */
+  const historyOverlayVisible = ref(false)
+  const historyItems = ref([])
+  const historyLoading = ref(false)
+  const historyHasMore = ref(true)
+  const historySkip = ref(0)
+  const historyError = ref('')
+
   let ws = null
   let sessionId = null
   let reconnectDelay = RECONNECT_BASE_MS
@@ -363,6 +387,8 @@ export function useCopilot() {
     inputEnabled.value = true
     clearAttachments()
     cancelPlanBinding()
+    closeAskOptionsOverlay()
+    closeHistoryOverlay()
 
     if (ws && ws.readyState === WebSocket.OPEN) {
       try {
@@ -396,6 +422,395 @@ export function useCopilot() {
       sessionStorage.setItem('copilot_session_id', id)
     }
     return id
+  }
+
+  try {
+    activeAgentProfileId.value =
+      (localStorage.getItem(STORAGE_ACTIVE_AGENT_PROFILE_ID) || 'default').trim() || 'default'
+  } catch {
+    activeAgentProfileId.value = 'default'
+  }
+
+  function persistActiveAgentProfileId(id) {
+    const v = (id && String(id).trim()) || 'default'
+    activeAgentProfileId.value = v
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_AGENT_PROFILE_ID, v)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** 对齐 Chrome set_context：供后端注入页面/文档上下文（复用 pageTitle 字段）。 */
+  function getWpsDocumentContextLabel() {
+    try {
+      const wpsGlobal = typeof window !== 'undefined' ? window.wps : null
+      const app = wpsGlobal?.Application || (typeof window !== 'undefined' ? window.Application : null)
+      if (!app) return ''
+      let kind = 'WPS'
+      try {
+        if (app.Name) kind = String(app.Name)
+      } catch {
+        /* ignore */
+      }
+      let name = ''
+      try {
+        const doc = app.ActiveDocument || app.ActiveWorkbook || app.ActivePresentation
+        if (doc) {
+          name =
+            (doc.Name && String(doc.Name).trim()) ||
+            (doc.FullName && String(doc.FullName).trim()) ||
+            ''
+        }
+      } catch {
+        /* ignore */
+      }
+      const line = [kind, name].filter(Boolean).join(' · ')
+      return line.length > 200 ? line.slice(0, 200) : line
+    } catch {
+      return ''
+    }
+  }
+
+  function sendSetContext() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const pageTitle = getWpsDocumentContextLabel()
+    if (!pageTitle) return
+    try {
+      ws.send(JSON.stringify({ type: 'set_context', pageTitle }))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function applyUiThemeChanged(msg) {
+    const tid = (msg && msg.uiThemeId && String(msg.uiThemeId).trim()) || ''
+    if (!tid || typeof window === 'undefined' || typeof window.TasklyTheme === 'undefined') return
+    try {
+      window.TasklyTheme.applyThemeDomOnly(tid)
+      refreshMermaidConfig()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function clearToolDraftSegments(r) {
+    if (!r || !Array.isArray(r.timelineSegments)) return
+    r.timelineSegments = r.timelineSegments.filter((s) => s.kind !== 'tool-draft')
+  }
+
+  function clearSubtaskToolDraftSegments(r) {
+    if (!r || !Array.isArray(r.timelineSegments)) return
+    r.timelineSegments = r.timelineSegments.filter((s) => s.kind !== 'subtask-tool-draft')
+  }
+
+  function appendToolCallDelta(msg) {
+    const callIdRaw = msg.toolCallId != null ? String(msg.toolCallId).trim() : ''
+    const callId = callIdRaw || '_'
+    const name = msg.toolName != null ? String(msg.toolName) : ''
+    const delta = msg.argumentsDelta != null ? String(msg.argumentsDelta) : ''
+    if (!delta && !String(name).trim()) return
+    const r = ensureRound()
+    const isSub = msg.isSubtask === true
+    const kind = isSub ? 'subtask-tool-draft' : 'tool-draft'
+    const title = isSub ? '子任务 · 工具参数（生成中）' : '工具参数（生成中）'
+    let seg = r.timelineSegments.filter((s) => s.kind === kind).pop()
+    if (!seg) {
+      seg = newTimelineSeg(kind, title)
+      seg.lastCallId = ''
+    }
+    if (seg.lastCallId !== callId) {
+      if (seg.body) seg.body += '\n\n'
+      seg.body += '[' + callId + ']' + (String(name).trim() ? ' ' + String(name).trim() : '') + '\n'
+      seg.lastCallId = callId
+    }
+    seg.body += delta
+    seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+  }
+
+  function closeAskOptionsOverlay() {
+    askOptionsVisible.value = false
+    askOptionsRequestId.value = null
+    askOptionsSteps.value = []
+    askOptionsStepIndex.value = 0
+    askOptionsSelections.value = {}
+    askOptionsSelectedOptionId.value = null
+    askOptionsTitle.value = ''
+    askOptionsPrompt.value = ''
+  }
+
+  function sendAskOptionsResponse() {
+    const id = askOptionsRequestId.value
+    const selections = { ...askOptionsSelections.value }
+    if (!id) {
+      closeAskOptionsOverlay()
+      return
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addBotMessage('连接已断开，无法提交候选项选择。', true)
+      closeAskOptionsOverlay()
+      inputEnabled.value = true
+      return
+    }
+    try {
+      ws.send(
+        JSON.stringify({
+          type: 'ask_options_response',
+          id,
+          selections
+        })
+      )
+    } catch {
+      addBotMessage('提交候选项失败。', true)
+    }
+    closeAskOptionsOverlay()
+    inputEnabled.value = true
+  }
+
+  function handleAskOptionsRequest(msg) {
+    try {
+      const id = msg.id || msg.requestId
+      if (!id) return
+      const steps = Array.isArray(msg.steps) ? msg.steps : []
+      if (!steps.length) {
+        askOptionsRequestId.value = id
+        askOptionsSelections.value = {}
+        sendAskOptionsResponse()
+        return
+      }
+      askOptionsRequestId.value = id
+      askOptionsTitle.value = String(msg.title || '')
+      askOptionsPrompt.value = String(msg.prompt || '')
+      askOptionsSteps.value = steps
+      askOptionsStepIndex.value = 0
+      askOptionsSelections.value = {}
+      askOptionsSelectedOptionId.value = null
+      askOptionsVisible.value = true
+      inputEnabled.value = false
+    } catch (e) {
+      console.error('ask_options_request', e)
+      addBotMessage('弹出候选项选择失败，请重试。', true)
+      closeAskOptionsOverlay()
+      inputEnabled.value = true
+    }
+  }
+
+  function setAskOptionsActiveOption(optionId) {
+    askOptionsSelectedOptionId.value = optionId != null ? String(optionId) : null
+  }
+
+  function confirmAskOptionsStep() {
+    const steps = askOptionsSteps.value
+    const idx = askOptionsStepIndex.value
+    if (!steps.length) {
+      sendAskOptionsResponse()
+      return
+    }
+    const step = steps[idx]
+    if (!step) return
+    const sid = step.stepId != null ? String(step.stepId) : ''
+    const oid = askOptionsSelectedOptionId.value
+    if (!oid) {
+      alert('请先选择一个选项后再点击确定。')
+      return
+    }
+    const nextSel = { ...askOptionsSelections.value, [sid]: String(oid) }
+    askOptionsSelections.value = nextSel
+    if (idx < steps.length - 1) {
+      askOptionsStepIndex.value = idx + 1
+      askOptionsSelectedOptionId.value = null
+    } else {
+      sendAskOptionsResponse()
+    }
+  }
+
+  async function loadAgentProfilesFromServer() {
+    await ensureApiBase()
+    const res = await tasklyFetch(API_BASE + '/api/config')
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return
+    const list = data.agentProfiles || data.AgentProfiles || []
+    let normalized = Array.isArray(list)
+      ? list.map((p) => ({
+          id: String((p.id ?? p.Id ?? '') || '').trim() || 'default',
+          displayName: String((p.displayName ?? p.DisplayName ?? p.id) || '助手').trim()
+        }))
+      : []
+    if (normalized.length === 0) normalized = [{ id: 'default', displayName: '默认助手' }]
+    agentProfileOptions.value = normalized
+    const serverDefault = String(data.activeAgentProfileId || data.ActiveAgentProfileId || 'default').trim() || 'default'
+    let cur = activeAgentProfileId.value
+    if (!normalized.some((p) => p.id === cur)) cur = serverDefault
+    if (!normalized.some((p) => p.id === cur)) cur = normalized[0].id
+    persistActiveAgentProfileId(cur)
+  }
+
+  function applyAgentProfileChange(newId) {
+    persistActiveAgentProfileId(newId)
+    try {
+      sessionStorage.removeItem('copilot_session_id')
+    } catch {
+      /* ignore */
+    }
+    sessionId = getSessionId()
+    pendingMessages = []
+    currentToolEndIndex = 0
+    crossAgentAutoRunLock = false
+    crossAgentAutoRunQueued = false
+    currentRound.value = null
+    messages.value = []
+    inputText.value = ''
+    inputEnabled.value = true
+    clearAttachments()
+    cancelPlanBinding()
+    closeAskOptionsOverlay()
+    closeHistoryOverlay()
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+    }
+    ws = null
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    reconnectDelay = RECONNECT_BASE_MS
+    connected.value = false
+    connect()
+  }
+
+  function closeHistoryOverlay() {
+    historyOverlayVisible.value = false
+    historyError.value = ''
+  }
+
+  async function fetchHistoryPage(append) {
+    if (historyLoading.value) return
+    if (append && !historyHasMore.value) return
+    historyLoading.value = true
+    try {
+      await ensureApiBase()
+      await ensureBootstrapAuthToken()
+      const skip = append ? historySkip.value : 0
+      if (!append) {
+        historySkip.value = 0
+        historyHasMore.value = true
+        historyItems.value = []
+      }
+      const ap = activeAgentProfileId.value || 'default'
+      const res = await tasklyFetch(
+        API_BASE +
+          '/api/chat-sessions?skip=' +
+          encodeURIComponent(skip) +
+          '&take=10&agentProfileId=' +
+          encodeURIComponent(ap)
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message || '加载历史列表失败')
+      const items = data.items || []
+      historyHasMore.value = !!data.hasMore
+      historySkip.value = skip + items.length
+      historyItems.value = append ? [...historyItems.value, ...items] : items
+    } catch (e) {
+      historyError.value = e.message || String(e)
+    } finally {
+      historyLoading.value = false
+    }
+  }
+
+  async function openHistoryOverlay() {
+    historyOverlayVisible.value = true
+    historyError.value = ''
+    await fetchHistoryPage(false)
+  }
+
+  async function deleteHistorySession(sid) {
+    if (!sid) return
+    if (!confirm('确定删除此历史对话？本地保存的记录将移除，且无法恢复。')) return
+    try {
+      await ensureApiBase()
+      await ensureBootstrapAuthToken()
+      const res = await tasklyFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid), {
+        method: 'DELETE'
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.message || '删除失败')
+        return
+      }
+      historyItems.value = historyItems.value.filter((it) => it.sessionId !== sid)
+      if (getSessionId() === sid) {
+        try {
+          sessionStorage.removeItem('copilot_session_id')
+        } catch {
+          /* ignore */
+        }
+        sessionId = getSessionId()
+        cancelPlanBinding()
+        messages.value = []
+        currentRound.value = null
+        if (ws) {
+          try {
+            ws.close()
+          } catch {
+            /* ignore */
+          }
+        }
+        ws = null
+        connect()
+      }
+    } catch (e) {
+      alert(e.message || String(e))
+    }
+  }
+
+  async function switchToHistorySession(sid, agentProfileIdFromItem) {
+    if (!sid) return
+    finalizeStream()
+    try {
+      await ensureApiBase()
+      await ensureBootstrapAuthToken()
+      if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== '') {
+        persistActiveAgentProfileId(String(agentProfileIdFromItem).trim())
+      }
+      const res = await tasklyFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid) + '/messages')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        addBotMessage(data.message || '加载该对话消息失败', true)
+        return
+      }
+      try {
+        sessionStorage.setItem('copilot_session_id', sid)
+      } catch {
+        /* ignore */
+      }
+      sessionId = sid
+      cancelPlanBinding()
+      clearAttachments()
+      const msgs = data.messages || []
+      messages.value = []
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i]
+        const r = (m.role || '').toLowerCase()
+        if (r === 'user') addUserMessage(m.text || '')
+        else addBotMessage(m.text || '', false)
+      }
+      closeHistoryOverlay()
+      if (ws) {
+        try {
+          ws.close()
+        } catch {
+          /* ignore */
+        }
+      }
+      ws = null
+      connect()
+    } catch (e) {
+      addBotMessage(e.message || String(e), true)
+    }
   }
 
   function removeWelcome() {
@@ -600,6 +1015,10 @@ export function useCopilot() {
   }
 
   function finalizeStream() {
+    if (askOptionsVisible.value) {
+      closeAskOptionsOverlay()
+      inputEnabled.value = true
+    }
     if (currentRound.value) {
       const round = currentRound.value
       collapseAllOpenPhases()
@@ -647,17 +1066,21 @@ export function useCopilot() {
       })
       .then(() => {
     const tok = getStoredAuthToken()
+    const ap = (activeAgentProfileId.value || 'default').trim() || 'default'
     let qs =
       '?sessionId=' +
       encodeURIComponent(sessionId) +
       '&clientType=' +
-      encodeURIComponent(CLIENT_TYPE)
+      encodeURIComponent(CLIENT_TYPE) +
+      '&agentProfileId=' +
+      encodeURIComponent(ap)
     if (tok) qs += '&token=' + encodeURIComponent(tok)
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {
       reconnectDelay = RECONNECT_BASE_MS
       connected.value = true
       addSystemMessage('已连接到本地服务')
+      sendSetContext()
       while (pendingMessages.length > 0) {
         const m = pendingMessages.shift()
         send(m.text, m.attachmentsPayload || null)
@@ -810,6 +1233,8 @@ export function useCopilot() {
         break
       }
       case 'subtask_start': {
+        const r0 = currentRound.value
+        if (r0) clearSubtaskToolDraftSegments(r0)
         const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || '子任务'
         const titleLen = 48
         const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + '…'
@@ -817,10 +1242,19 @@ export function useCopilot() {
         break
       }
       case 'subtask_chunk':
-      case 'subtask_end':
+        break
+      case 'subtask_end': {
+        const rEnd = currentRound.value
+        if (rEnd) clearSubtaskToolDraftSegments(rEnd)
+        break
+      }
+      case 'tool_call_delta':
+        appendToolCallDelta(msg)
         break
       case 'tool_invocation_start': {
         const r = ensureRound()
+        if (msg.isSubtask === true) clearSubtaskToolDraftSegments(r)
+        else clearToolDraftSegments(r)
         collapsePhasesForToolStart()
         const label = msg.summary || '正在执行: ' + (msg.plugin || '') + '.' + (msg.function || '')
         const seg = newTimelineSeg('tool', label)
@@ -873,6 +1307,12 @@ export function useCopilot() {
         break
       case 'confirm_request':
         handleConfirmRequest(msg)
+        break
+      case 'ask_options_request':
+        handleAskOptionsRequest(msg)
+        break
+      case 'ui_theme_changed':
+        applyUiThemeChanged(msg)
         break
       case 'plan_created': {
         const planIdMsg = msg.planId || ''
@@ -2156,9 +2596,26 @@ export function useCopilot() {
 
   const showWelcome = computed(() => messages.value.length === 0 && !currentRound.value)
 
+  const askOptionsCurrentStep = computed(() => {
+    const steps = askOptionsSteps.value
+    const idx = askOptionsStepIndex.value
+    if (!steps.length || idx < 0 || idx >= steps.length) return null
+    return steps[idx]
+  })
+
+  const askOptionsStepLabel = computed(() => {
+    const n = askOptionsSteps.value.length
+    if (!n) return ''
+    return `步骤 ${askOptionsStepIndex.value + 1}/${n}`
+  })
+
   onMounted(() => {
     sessionId = getSessionId()
-    connect()
+    void loadAgentProfilesFromServer()
+      .catch(() => {})
+      .finally(() => {
+        connect()
+      })
   })
 
   onUnmounted(() => {
@@ -2192,7 +2649,28 @@ export function useCopilot() {
     hitlHumanSummary,
     hitlAction,
     hitlShowAddToList,
+    askOptionsVisible,
+    askOptionsTitle,
+    askOptionsPrompt,
+    askOptionsCurrentStep,
+    askOptionsStepLabel,
+    askOptionsSelectedOptionId,
+    agentProfileOptions,
+    activeAgentProfileId,
+    historyOverlayVisible,
+    historyItems,
+    historyLoading,
+    historyHasMore,
+    historyError,
     showWelcome,
+    loadMoreHistory: () => fetchHistoryPage(true),
+    openHistoryOverlay,
+    closeHistoryOverlay,
+    switchToHistorySession,
+    deleteHistorySession,
+    setAskOptionsActiveOption,
+    confirmAskOptionsStep,
+    applyAgentProfileChange,
     handleSend,
     stopStream,
     showPlanEdit,
@@ -2216,6 +2694,7 @@ export function useCopilot() {
     insertAtCandidate,
     onChatKeydown,
     onChatKeyup,
-    onChatInput
+    onChatInput,
+    getCopilotSessionId: getSessionId
   }
 }

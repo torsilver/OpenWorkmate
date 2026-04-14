@@ -1,5 +1,5 @@
 ---
-description: WPS 插件开发约定（主目录、模板参考、调试命令）
+description: WPS 插件主目录与 wpsjs debug；专项对齐 Chrome 时的对照与注释约定
 alwaysApply: true
 ---
 
@@ -15,4 +15,10 @@ alwaysApply: true
 
 - WPS 插件开发时，必须使用 `wpsjs debug` 来编译和测试。
 - 提交代码前，如涉及 WPS 侧关键逻辑/manifest 配置/打包入口，请优先用 `wpsjs debug` 进行验证，避免只做 `npm run dev/build`（那通常只是 Web 构建，不等价于 WPS 插件可运行状态）。
+
+## 3. 与 Chrome 对齐（专项）
+
+- **产品行为与 WebSocket 消息形状** 以 [chrome-extension/](chrome-extension/) 为准；改 WPS 前先定位 Chrome 侧对应实现（如 `sidepanel.js`、options 等），再在 `wps-addin-new/` 对齐。
+- 非 trivial 的 WPS 改动建议在代码中简短注释 **对齐 Chrome：`<相对路径>#大致逻辑>`**，便于评审与回归。
+- **Office 加载项**（[office-addin/](office-addin/)）当前不作为对齐对象；不要为与 Office 一致而偏离 Chrome 规范。
 

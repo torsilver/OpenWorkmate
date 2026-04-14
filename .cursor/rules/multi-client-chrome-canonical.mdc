@@ -1,5 +1,5 @@
 ---
-description: 所有功能与产品行为以 Chrome 扩展为规范源；Office/WPS 尚未细究，禁止以其它端为参考改 Chrome 或互相抄错样板
+description: 规范源永远是 Chrome；WPS 正按专项向 Chrome 对齐；Office 仍非权威、不主动对齐
 alwaysApply: true
 ---
 
@@ -8,17 +8,19 @@ alwaysApply: true
 ## 原则
 
 - **所有功能**（UI、交互、WebSocket 协议与字段、错误提示、HITL、设置页逻辑、侧栏行为等）的 **规范实现与「应该怎样」的定义**，均以 [chrome-extension/](chrome-extension/) 为 **唯一权威**。
-- **Office**（[office-addin/](office-addin/)）与 **WPS**（[wps-addin-new/](wps-addin-new/)，含 Vue 与 `public` 遗留栈）当前 **尚未逐一细究、对齐**；实现上可能滞后或不完整，**不得**当作正确样板。
+- **WPS**（[wps-addin-new/](wps-addin-new/)，含 Vue 与 `public` 遗留栈）：当前有 **专项目标——行为与协议向 Chrome 对齐**；改 WPS 时仍以 Chrome 为对照，**不得**把 WPS 旧实现当作产品定义。
+- **Office**（[office-addin/](office-addin/)）：**暂不纳入对齐排期**；仍视为可能滞后或不完整，**不得**当作正确样板，也**不要**为对齐 Office 而改 Chrome 或改 WPS 的「应有行为」。
 
 ## 开发时怎么做
 
-1. **新功能或改行为**：先在 Chrome 扩展里实现并验证；需要多端一致时，再按 Chrome 行为迁到 Office / WPS。
-2. **发现多端不一致**：**以 Chrome 为准** 纠偏其它端；不要为「和 Office/WPS 一致」而改 Chrome。
+1. **新功能或改产品定义**：先在 Chrome 扩展里实现并验收；定义稳定后，**WPS 侧在专项内**按 Chrome 迁齐；Office 仅在用户明确要求时再动。
+2. **发现多端不一致**：**以 Chrome 为准** 纠偏 WPS（及将来的 Office）；不要为「和 WPS/Office 一致」而改 Chrome。
 3. **禁止反向参考**：不要以 WPS 或 Office 的实现去推断「产品就该这样」，也不要用其它端代码当主依据去改 Chrome。
 
 ## 实现形态
 
-- 其它端可用不同技术栈（如 Vue + ref、Office 宿主脚本），但 **对用户可见的行为、协议与数据字段** 应与 Chrome 侧一致；非 Chrome 代码中宜注释说明对齐 `chrome-extension/` 中对应逻辑。
+- WPS 可用不同技术栈（如 Vue + ref、宿主脚本），但 **对用户可见的行为、协议与数据字段** 应与 Chrome 一致；改动处宜注释说明对齐 `chrome-extension/` 中对应文件/逻辑。
+- Office 仍同「非规范源」原则；与 WPS 对齐工作 **解耦**：不要求 Office 与 WPS 同期改完。
 
 ## 反例
 
@@ -27,4 +29,4 @@ alwaysApply: true
 
 ## 正例
 
-- 先读/改 `sidepanel.js`、`sidepanel.html` 等，再按需同步 Office / WPS，并注明「对齐 Chrome」。
+- 对齐 WPS：先读 Chrome 的 `sidepanel.js`、`sidepanel.html` 等，再在 `wps-addin-new/` 实现同等行为/协议，并注明「对齐 Chrome」。

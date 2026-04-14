@@ -1,25 +1,28 @@
 ---
-description: 功能迭代与交付优先级：一律先做 Chrome 扩展；Office/WPS 非紧急，不纳入同期必交付
+description: 新能力仍 Chrome 优先；WPS 可在专项内向 Chrome 对齐；Office 默认不动
 alwaysApply: true
 ---
 
-# 产品节奏：Chrome 优先，Office/WPS 靠后
+# 产品节奏：Chrome 优先；WPS 专项对齐；Office 靠后
 
 ## 原则
 
-- **一切新功能、交互与协议演进，默认只在 [chrome-extension/](chrome-extension/) 落地并验收**；除非用户明确要求，**不要把 Office / WPS 当作同一迭代的必做项**。
-- **Office**（[office-addin/](office-addin/)）与 **WPS**（[wps-addin-new/](wps-addin-new/)）**不着急对齐**：可 backlog、可延后多轮；不要为了「多端同时上线」而拖慢 Chrome 侧或牺牲质量。
+- **一切新功能、交互与协议演进，默认只在 [chrome-extension/](chrome-extension/) 落地并验收**；不要在 Chrome 未定义清楚时，用 WPS/Office 试定义产品。
+- **WPS**（[wps-addin-new/](wps-addin-new/)）：仓库当前有 **「WPS 与 Chrome 对齐」专项**（如分支 `feature/wps-align-chrome`）时，**应**在该目标下改 `wps-addin-new/`，使行为与协议与 Chrome 一致；仍不要求与 Office 同期、不要求「三端一起上线」。
+- **Office**（[office-addin/](office-addin/)）：**默认不排入对齐工作**；除非用户明确要求，Agent **不主动** 大改 Office；可长期 backlog。
 
 ## 与「以 Chrome 为准」的关系
 
 - **规范源**（什么叫正确）见 [multi-client-chrome-canonical.mdc](multi-client-chrome-canonical.mdc)。
-- 本条强调 **排期与范围**：Agent 默认 **不主动** 大改 Office/WPS；仅在用户点名或专项任务时再动。
+- 本条强调 **排期与范围**：新迭代仍以 Chrome 为主；WPS 对齐是 **专项内** 的明确交付；Office 不在默认范围内。
 
 ## 反例
 
-- Chrome 未完成就分散精力去改 WPS `taskpane`「保持一致」。
+- Chrome 上需求还没定稿，就先大改 WPS「猜着对齐」。
 - PR 要求「必须三端一起改完才能合并」（除非用户明确如此要求）。
+- 为赶 WPS 进度把 Chrome 行为改掉以「凑合一致」。
 
 ## 正例
 
-- 同一需求：Chrome 做完、测完、合并；Office/WPS 另开后续项或等用户安排。
+- 新需求：Chrome 做完、测完、合并；WPS 在专项分支/后续 PR 按 Chrome 逐项迁齐。
+- 专项回合：只动 `wps-addin-new/`（及必要共享/后端契约），**不动** `office-addin/`，除非用户单点 Office。

@@ -6,6 +6,17 @@
         <h1>Office Copilot</h1>
       </div>
       <div class="header-controls">
+        <label for="wps-agent-profile" class="visually-hidden">当前 Agent</label>
+        <select
+          id="wps-agent-profile"
+          class="agent-profile-select"
+          title="切换 Agent 将新开会话并重连（对齐 Chrome）"
+          :value="activeAgentProfileId"
+          @change="applyAgentProfileChange($event.target.value)"
+        >
+          <option v-for="p in agentProfileOptions" :key="p.id" :value="p.id">{{ p.displayName }}</option>
+        </select>
+        <button type="button" class="header-btn" title="历史对话" @click="openHistoryOverlay">📜</button>
         <button type="button" class="header-btn" title="新建对话" @click="resetConversation">
           💬
         </button>
@@ -236,14 +247,14 @@
           @input="onChatInput"
         ></textarea>
         <button
-          v-show="!inputEnabled"
+          v-show="!inputEnabled && !askOptionsVisible"
           type="button"
           class="stop-btn"
           title="停止生成"
           @click="stopStream"
         >■</button>
         <button
-          v-show="inputEnabled"
+          v-show="inputEnabled && !askOptionsVisible"
           type="button"
           class="send-btn"
           title="发送"
@@ -300,6 +311,80 @@
         </div>
       </div>
     </div>
+
+    <div
+      v-show="askOptionsVisible"
+      class="ask-options-overlay"
+      aria-hidden="false"
+    >
+      <div class="ask-options-card">
+        <p class="ask-options-title">{{ askOptionsTitle || '请选择一个选项' }}</p>
+        <p class="ask-options-prompt">{{ askOptionsPrompt }}</p>
+        <div class="ask-options-step-indicator">{{ askOptionsStepLabel }}</div>
+        <div v-if="askOptionsCurrentStep" class="ask-options-question">{{ askOptionsCurrentStep.question }}</div>
+        <div class="ask-options-options" role="listbox" aria-label="候选项列表">
+          <div
+            v-for="o in (askOptionsCurrentStep && askOptionsCurrentStep.options) || []"
+            :key="String(o.optionId)"
+            class="ask-option-item"
+            :class="{ 'ask-option-item--active': askOptionsSelectedOptionId === String(o.optionId) }"
+            role="option"
+            :aria-selected="askOptionsSelectedOptionId === String(o.optionId) ? 'true' : 'false'"
+            @click="setAskOptionsActiveOption(o.optionId)"
+          >
+            <div class="ask-option-label">{{ o.label || o.optionId }}</div>
+          </div>
+        </div>
+        <div class="ask-options-actions">
+          <button type="button" class="ask-options-confirm-btn" @click="confirmAskOptionsStep">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-show="historyOverlayVisible"
+      class="history-overlay"
+      aria-hidden="false"
+    >
+      <div class="history-card">
+        <div class="history-header">
+          <span class="history-title">历史对话</span>
+          <button type="button" class="history-close" title="关闭" @click="closeHistoryOverlay">✕</button>
+        </div>
+        <p v-show="historyError" class="history-error">{{ historyError }}</p>
+        <ul class="history-list">
+          <li
+            v-for="it in historyItems"
+            :key="it.sessionId"
+            class="history-list-item"
+            :class="{ 'history-list-item--current': it.sessionId === getCopilotSessionId() }"
+            @click="switchToHistorySession(it.sessionId, it.agentProfileId)"
+          >
+            <div class="history-list-item-main">
+              <div class="history-list-item-title">
+                {{ (it.titlePreview && String(it.titlePreview).trim()) || it.sessionId || '（无标题）' }}
+              </div>
+              <div v-if="it.updatedAtUtc" class="history-list-item-meta">
+                {{ formatHistoryTime(it.updatedAtUtc) }}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="history-list-item-delete"
+              @click.stop="deleteHistorySession(it.sessionId)"
+            >删除</button>
+          </li>
+        </ul>
+        <button
+          type="button"
+          class="history-load-more"
+          :disabled="historyLoading || !historyHasMore"
+          @click="loadMoreHistory"
+        >
+          {{ historyLoading ? '加载中…' : historyHasMore ? '加载更多' : '没有更多了' }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -347,6 +432,15 @@ export default {
       const raw = copilot.planContent.value || ''
       return typeof copilot.marked?.parse === 'function' ? copilot.marked.parse(raw) : copilot.escapeHtml(raw)
     })
+
+    function formatHistoryTime(utc) {
+      try {
+        return new Date(utc).toLocaleString()
+      } catch {
+        return ''
+      }
+    }
+
     function roundNeedsBottomBubble(msg) {
       if (!msg) return false
       const segs = msg.timelineSegments || []
@@ -357,6 +451,7 @@ export default {
     }
     return {
       ...copilot,
+      formatHistoryTime,
       roundNeedsBottomBubble,
       fileInputRef,
       triggerAttach: () => {
@@ -1171,6 +1266,233 @@ export default {
   background: var(--copilot-bg-tertiary, #252525);
   color: var(--copilot-text-primary, #e8e8e8);
   border: 1px solid var(--copilot-border, #333);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.agent-profile-select {
+  max-width: 120px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--copilot-bg-tertiary, #252525);
+  color: var(--copilot-text-primary, #e8e8e8);
+  border: 1px solid var(--copilot-border, #333);
+}
+
+.ask-options-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 16px;
+}
+
+.ask-options-card {
+  background: var(--copilot-bg-secondary, #1a1a1a);
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 440px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.ask-options-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.ask-options-prompt {
+  font-size: 13px;
+  color: var(--copilot-text-secondary, #999);
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+
+.ask-options-step-indicator {
+  font-size: 12px;
+  color: var(--copilot-accent, #6c8cff);
+  margin-bottom: 8px;
+}
+
+.ask-options-question {
+  font-size: 14px;
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
+.ask-options-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ask-option-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--copilot-border, #333);
+  cursor: pointer;
+  background: var(--copilot-bg-primary, #0f0f0f);
+}
+
+.ask-option-item:hover {
+  border-color: var(--copilot-accent, #6c8cff);
+}
+
+.ask-option-item--active {
+  border-color: var(--copilot-accent, #6c8cff);
+  background: rgba(108, 140, 255, 0.12);
+}
+
+.ask-option-label {
+  font-size: 13px;
+}
+
+.ask-options-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ask-options-confirm-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: var(--copilot-accent, #6c8cff);
+  color: #fff;
+  font-size: 13px;
+}
+
+.history-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 16px;
+}
+
+.history-card {
+  background: var(--copilot-bg-secondary, #1a1a1a);
+  border: 1px solid var(--copilot-border, #333);
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.history-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.history-close {
+  background: transparent;
+  border: none;
+  color: var(--copilot-text-secondary, #999);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.history-error {
+  color: var(--copilot-danger, #f87171);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.history-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--copilot-border, #333);
+  cursor: pointer;
+}
+
+.history-list-item--current {
+  background: rgba(108, 140, 255, 0.1);
+}
+
+.history-list-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-list-item-title {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.history-list-item-meta {
+  font-size: 11px;
+  color: var(--copilot-text-secondary, #999);
+  margin-top: 4px;
+}
+
+.history-list-item-delete {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--copilot-border, #333);
+  background: transparent;
+  color: var(--copilot-text-secondary, #999);
+  cursor: pointer;
+}
+
+.history-load-more {
+  margin-top: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--copilot-border, #333);
+  background: var(--copilot-bg-tertiary, #252525);
+  color: var(--copilot-text-primary, #e8e8e8);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.history-load-more:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
 
