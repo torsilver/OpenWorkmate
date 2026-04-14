@@ -218,6 +218,24 @@ public sealed class CurrentDocumentPlugin
         return SendRpcAsync(sessionId!, "word_search_replace", new { searchText, replaceText, replaceAll = replaceAllValue }, cancellationToken);
     }
 
+    [ToolFunction("current_ppt_document_create")]
+    [Description(
+        "新建演示文稿并保存到 filePath（须 .pptx 或 .pptm）。WPS 演示：任务窗格会 Presentations.Add 后 SaveAs。Microsoft PowerPoint 任务窗格：Office.js 无法自动保存到磁盘路径，仅会打开空白演示，需用户在 PowerPoint 中「另存为」到目标路径。仅 PowerPoint 或 WPS 演示 任务窗格连接时可用。")]
+    public Task<string> CurrentPptDocumentCreateAsync(
+        [Description("绝对路径，扩展名须为 .pptx 或 .pptm")] string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmed = (filePath ?? "").Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return Task.FromResult("失败：filePath 不能为空。");
+        var lower = trimmed.ToLowerInvariant();
+        if (!lower.EndsWith(".pptx", StringComparison.OrdinalIgnoreCase) && !lower.EndsWith(".pptm", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult("失败：filePath 须为 .pptx 或 .pptm。");
+        var sessionId = SessionContext.GetSessionId();
+        _logger.LogInformation("[CurrentDocument] current_ppt_document_create sessionId={SessionId} filePath={FilePath}", sessionId ?? "(null)", trimmed);
+        return SendRpcAsync(sessionId!, "ppt_document_create", new { filePath = trimmed }, cancellationToken);
+    }
+
     [ToolFunction("current_ppt_slides_list")]
     [Description("列出当前打开的 PPT 演示文稿中所有幻灯片（按播放顺序）。仅当用户从 PowerPoint 或 WPS 演示 任务窗格连接时可用。回答用户时必须引用并归纳本工具输出中的要点，勿假设用户能看到工具原始返回。")]
     public Task<string> CurrentPptSlidesListAsync(

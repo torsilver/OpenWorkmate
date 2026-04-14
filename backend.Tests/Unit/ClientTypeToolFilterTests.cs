@@ -11,6 +11,7 @@ public class ClientTypeToolFilterTests
     {
         Assert.True(ClientTypeToolFilter.IsAllowed("CLI", "run_command", "chrome"));
         Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "chrome"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_document_create", "chrome"));
     }
 
     [Fact]
@@ -42,6 +43,7 @@ public class ClientTypeToolFilterTests
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "wps"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_excel_read_range", "wps"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_slides_list", "wps"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_document_create", "wps"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_notes_read", "wps"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_slide_duplicate", "wps"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_run_document_script", "wps"));
@@ -52,7 +54,24 @@ public class ClientTypeToolFilterTests
     {
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_hyperlink_add", "office-powerpoint"));
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_table_create", "office-powerpoint"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_document_create", "office-powerpoint"));
         Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_notes_read", "office-word"));
+    }
+
+    [Fact]
+    public void OfficeWord_DoesNotAllowCurrentPptDocumentCreate()
+    {
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_document_create", "office-word"));
+    }
+
+    [Fact]
+    public void WpsAndOffice_AllowPdfPlugin()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("Pdf", "get_pdf_text", "wps"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Pdf", "get_pdf_info", "office-word"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Pdf", "pdf_merge", "office-excel"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Pdf", "pdf_document_create", "office-powerpoint"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Pdf", "get_pdf_text", "chrome"));
     }
 
     [Fact]

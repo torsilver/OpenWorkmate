@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
@@ -1297,17 +1298,31 @@ static async Task HandleSessionAsync(
     {
         WebSocketReceiveResult result;
         using var ms = new MemoryStream();
-        do
+        try
         {
-            result = await ws.ReceiveAsync(buffer, CancellationToken.None);
-            if (result.MessageType == WebSocketMessageType.Close)
+            do
             {
-                await ws.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure, "Bye", CancellationToken.None);
-                return;
-            }
-            await ms.WriteAsync(buffer.AsMemory(0, result.Count), CancellationToken.None);
-        } while (!result.EndOfMessage);
+                result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await ws.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure, "Bye", CancellationToken.None);
+                    return;
+                }
+                await ms.WriteAsync(buffer.AsMemory(0, result.Count), CancellationToken.None);
+            } while (!result.EndOfMessage);
+        }
+        catch (WebSocketException ex)
+        {
+            // 客户端直接关窗口/杀进程时常见：未发送 close 帧即 RST，不应当作未处理异常刷屏。
+            logger.LogDebug("[{SessionId}] WebSocket receive ended: {Message}", sessionId, ex.Message);
+            return;
+        }
+        catch (IOException ex)
+        {
+            logger.LogDebug(ex, "[{SessionId}] WebSocket receive IO error (client may have closed)", sessionId);
+            return;
+        }
 
         var raw = Encoding.UTF8.GetString(ms.ToArray());
         var msgType = GetMessageType(raw);

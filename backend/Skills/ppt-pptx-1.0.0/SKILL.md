@@ -1,7 +1,7 @@
 ---
 name: PPT / Pptx
 slug: ppt-pptx
-version: 1.2.0
+version: 1.3.0
 description: Create and edit PowerPoint (.pptx/.pptm) via Open XML on disk (Chrome) or current deck via task pane. Includes document create, structured read/write, images, notes, reorder, tables, hyperlinks, duplicate slide.
 metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 ---
@@ -10,8 +10,10 @@ metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 
 User needs to **create** a new deck or **read/write** slides in a file path (.pptx, .pptm) from **Chrome** (backend OpenXml), or work on the **current** presentation from **Office PowerPoint / WPS 演示** task pane (`current_ppt_*`).
 
-- **New file on disk**: always call **`ppt_document_create`** first. Do **not** use `run_command` or shell redirection to create `.pptx` (invalid OOXML).
-- **Edit existing file**: `ppt_slide_read` with shape list → `ppt_slide_write` with `shapeIndex` or `placeholderType`.
+- **New file on disk (Chrome)**: always call **`ppt_document_create`** ( **`Ppt`** plugin) first. Do **not** use `run_command` or shell redirection to create `.pptx` (invalid OOXML).
+- **New deck from task pane (PowerPoint / WPS 演示)**: call **`current_ppt_document_create`** with `filePath` (`.pptx`/`.pptm`). WPS saves via `SaveAs`; PowerPoint opens a new deck only—user must Save As to the desired path.
+- **Edit existing file (Chrome path)**: `ppt_slide_read` with shape list → `ppt_slide_write` with `shapeIndex` or `placeholderType`.
+- **Edit current deck (task pane)**: `current_ppt_slide_read` / `current_ppt_slide_write` / etc.
 
 ## Structure
 
@@ -24,8 +26,8 @@ User needs to **create** a new deck or **read/write** slides in a file path (.pp
 | Client | File path (backend) | Task pane |
 |--------|---------------------|-----------|
 | Chrome | Full **`Ppt`** plugin: `ppt_document_create`, list/read/write/insert/delete, image, notes, reorder, table, hyperlink, duplicate | N/A |
-| Office PPT | Not exposed | `current_ppt_*` → `ppt_*` RPC：幻灯片列表/读写/插入/删、插图、重排、表格、超链、复制；**演讲者备注**在 PowerPoint 任务窗格不可用（Office.js 限制），用 Chrome+文件路径或 WPS |
-| WPS 演示 | Not exposed | 同上；**备注读写**可用；`ppt_document_create` 可 `SaveAs` 到路径 |
+| Office PPT | Not exposed | **`current_ppt_document_create`** → `ppt_document_create` RPC（新建后需用户另存为到 `filePath`）；其余 `current_ppt_*` → `ppt_*`：列表/读写/插入/删、插图、重排、表格、超链、复制；**演讲者备注**不可用（Office.js），用 Chrome+文件路径或 WPS |
+| WPS 演示 | Not exposed | **`current_ppt_document_create`** → `ppt_document_create`（`SaveAs`）；其余同上；**备注读写**可用 |
 
 ## Tool summary (file path)
 

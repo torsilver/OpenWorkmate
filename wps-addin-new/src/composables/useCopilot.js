@@ -6,6 +6,9 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mermaid from 'mermaid'
 import { tasklyResolveLocalServiceBase, tasklyHttpWsFromBase } from '../utils/tasklyLocalService.js'
+import { getWpsHostKind, assertWpsHost } from '../wps-rpc/hostKind.js'
+import { runWpsExcelRpc } from '../wps-rpc/excelRpc.js'
+import { wordInsertTableWps } from '../wps-rpc/wordTableRpc.js'
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -89,7 +92,37 @@ function refreshMermaidConfig() {
   }
 }
 
-refreshMermaidConfig()
+/** 对齐 chrome-extension/sidepanel.js：hljs 外链 + Mermaid theme */
+function tasklyRefreshEmbedThemes() {
+  if (typeof document === 'undefined') return
+  const t = document.documentElement.getAttribute('data-theme') || 'dark'
+  const link = document.getElementById('taskly-hljs-theme')
+  if (link && typeof window !== 'undefined' && typeof window.TasklyTheme !== 'undefined') {
+    const rel = window.TasklyTheme.getHljsStylesheetHref(t)
+    try {
+      link.href = new URL(rel, window.location.href).href
+    } catch {
+      link.href = rel
+    }
+  }
+  refreshMermaidConfig()
+}
+
+tasklyRefreshEmbedThemes()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'tasklyUiTheme') return
+    if (typeof window.TasklyTheme === 'undefined') return
+    const v = e.newValue != null && e.newValue !== '' ? e.newValue : 'dark'
+    try {
+      window.TasklyTheme.applyThemeDomOnly(v)
+      tasklyRefreshEmbedThemes()
+    } catch {
+      /* ignore */
+    }
+  })
+}
 
 let mermaidRunScheduled = false
 function scheduleMermaidRun() {
@@ -487,10 +520,29 @@ export function useCopilot() {
     const tid = (msg && msg.uiThemeId && String(msg.uiThemeId).trim()) || ''
     if (!tid || typeof window === 'undefined' || typeof window.TasklyTheme === 'undefined') return
     try {
-      window.TasklyTheme.applyThemeDomOnly(tid)
-      refreshMermaidConfig()
+      window.TasklyTheme.setTheme(tid)
+      tasklyRefreshEmbedThemes()
+      scheduleMermaidRun()
     } catch {
       /* ignore */
+    }
+  }
+
+  /** 在系统浏览器中打开 Chrome 扩展选项页（需配置 VITE_CHROME_EXTENSION_ID）。 */
+  function openOfficeCopilotSettingsInChrome() {
+    const id = (import.meta.env.VITE_CHROME_EXTENSION_ID || '').trim()
+    const url = id ? `chrome-extension://${id}/options.html` : ''
+    if (!url) {
+      alert(
+        '未配置 Chrome 扩展 ID，无法拼出选项页地址。\n\n请在 wps-addin-new 目录创建 .env.development.local（或 .env.local），添加：\n' +
+          'VITE_CHROME_EXTENSION_ID=你的扩展ID\n\n' +
+          '扩展 ID：Chrome → 扩展程序 → 开启「开发者模式」→ Office Copilot 卡片上的「ID」字段。'
+      )
+      return
+    }
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) {
+      alert('无法自动打开新窗口（可能被拦截）。请在 Chrome 地址栏粘贴并访问：\n\n' + url)
     }
   }
 
@@ -643,6 +695,18 @@ export function useCopilot() {
     if (!normalized.some((p) => p.id === cur)) cur = serverDefault
     if (!normalized.some((p) => p.id === cur)) cur = normalized[0].id
     persistActiveAgentProfileId(cur)
+    const themeFromServer =
+      (data.uiThemeId && String(data.uiThemeId).trim()) ||
+      (data.UiThemeId && String(data.UiThemeId).trim()) ||
+      ''
+    if (themeFromServer && typeof window !== 'undefined' && typeof window.TasklyTheme !== 'undefined') {
+      try {
+        window.TasklyTheme.setTheme(themeFromServer)
+        tasklyRefreshEmbedThemes()
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   function applyAgentProfileChange(newId) {
@@ -1648,6 +1712,29 @@ export function useCopilot() {
     }
 
     try {
+      const hostKind = getWpsHostKind(window.wps)
+      if (method.startsWith('word_')) {
+        const ge = assertWpsHost('word', hostKind, method)
+        if (ge) {
+          sendRes(null, ge)
+          return
+        }
+      }
+      if (method.startsWith('excel_')) {
+        const ge = assertWpsHost('et', hostKind, method)
+        if (ge) {
+          sendRes(null, ge)
+          return
+        }
+      }
+      if (method.startsWith('ppt_')) {
+        const ge = assertWpsHost('wpp', hostKind, method)
+        if (ge) {
+          sendRes(null, ge)
+          return
+        }
+      }
+
       if (method === 'word_insert_text') {
         const text = params.text != null ? String(params.text) : ''
         if (window.wps.Enum && window.wps.Enum.wdStory) {
@@ -1680,7 +1767,11 @@ export function useCopilot() {
           sendRes(null, 'WPS 暂不支持读取选区，请参考 WPS 开放平台 Selection API。')
         }
       } else if (method === 'word_insert_table') {
-        sendRes(null, 'WPS 暂不支持插入表格，请根据 WPS 开放平台 API 实现。')
+        try {
+          sendRes(wordInsertTableWps(window.wps, params), null)
+        } catch (e) {
+          sendRes(null, 'word_insert_table 失败：' + (e && e.message ? e.message : String(e)))
+        }
       } else if (method === 'word_search_replace') {
         const searchText = params.searchText != null ? String(params.searchText) : ''
         const replaceText = params.replaceText != null ? String(params.replaceText) : ''
@@ -1698,8 +1789,19 @@ export function useCopilot() {
         } else {
           sendRes(null, '无法获取当前文档内容。')
         }
-      } else if (method === 'excel_read_range' || method === 'excel_write_range' || method === 'excel_list_sheets' || method === 'excel_get_used_range' || method === 'excel_read_formulas' || method === 'excel_write_formulas') {
-        sendRes(null, 'WPS 表格 RPC 需根据 WPS 开放平台 API 实现。')
+      } else if (
+        method === 'excel_read_range' ||
+        method === 'excel_write_range' ||
+        method === 'excel_list_sheets' ||
+        method === 'excel_get_used_range' ||
+        method === 'excel_read_formulas' ||
+        method === 'excel_write_formulas'
+      ) {
+        try {
+          sendRes(runWpsExcelRpc(method, params, window.wps), null)
+        } catch (e) {
+          sendRes(null, (e && e.message ? e.message : String(e)) || 'WPS 表格 RPC 执行失败。')
+        }
       } else if (method === 'ppt_slides_list') {
         try {
           const app = window.wps.Application || window.wps
@@ -2695,6 +2797,7 @@ export function useCopilot() {
     onChatKeydown,
     onChatKeyup,
     onChatInput,
-    getCopilotSessionId: getSessionId
+    getCopilotSessionId: getSessionId,
+    openOfficeCopilotSettingsInChrome
   }
 }

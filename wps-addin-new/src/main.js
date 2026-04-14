@@ -1,5 +1,5 @@
+import './assets/taskly-copilot-theme-bridge.css'
 import './assets/main.css'
-import 'highlight.js/styles/github-dark.css'
 
 import { createApp } from 'vue'
 import App from './App.vue'

@@ -1,9 +1,12 @@
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 只暴露 CurrentDocument + 通用插件，不暴露 Browser/File/CLI/Word/Excel。</summary>
+/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 暴露 CurrentDocument + 通用插件 + Pdf（路径须为后端进程可读）；不暴露 Browser/File/CLI、以及磁盘型 Word/Excel/Ppt 插件。</summary>
 public static class ClientTypeToolFilter
 {
     private static readonly StringComparer PluginComparer = StringComparer.OrdinalIgnoreCase;
+
+    private static bool IsPdfPlugin(string pluginName) =>
+        PluginComparer.Equals(pluginName, "Pdf");
 
     private static bool IsCommonPlugin(string pluginName)
     {
@@ -49,7 +52,8 @@ public static class ClientTypeToolFilter
 
     private static bool IsCurrentDocumentPptFunction(string functionName)
     {
-        return PluginComparer.Equals(functionName, "current_ppt_slides_list")
+        return PluginComparer.Equals(functionName, "current_ppt_document_create")
+            || PluginComparer.Equals(functionName, "current_ppt_slides_list")
             || PluginComparer.Equals(functionName, "current_ppt_slide_read")
             || PluginComparer.Equals(functionName, "current_ppt_slide_write")
             || PluginComparer.Equals(functionName, "current_ppt_slide_insert")
@@ -97,6 +101,7 @@ public static class ClientTypeToolFilter
         if (PluginComparer.Equals(ct, "office-word"))
         {
             if (IsCommonPlugin(pluginName)) return true;
+            if (IsPdfPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
                 return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
             return false;
@@ -105,6 +110,7 @@ public static class ClientTypeToolFilter
         if (PluginComparer.Equals(ct, "office-excel"))
         {
             if (IsCommonPlugin(pluginName)) return true;
+            if (IsPdfPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
                 return IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
             return false;
@@ -113,6 +119,7 @@ public static class ClientTypeToolFilter
         if (PluginComparer.Equals(ct, "office-powerpoint"))
         {
             if (IsCommonPlugin(pluginName)) return true;
+            if (IsPdfPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
                 return IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
             return false;
@@ -121,6 +128,7 @@ public static class ClientTypeToolFilter
         if (PluginComparer.Equals(ct, "wps"))
         {
             if (IsCommonPlugin(pluginName)) return true;
+            if (IsPdfPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
                 return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
             return false;

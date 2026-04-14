@@ -36,7 +36,19 @@ Ribbon 打开任务窗格应指向 **Vue 路由**（`#/taskpane`），勿把 `pu
 | WS `agentProfileId` + `/api/config` 中 profiles | 有 | 有（`localStorage.activeAgentProfileId`） |
 | 历史对话 `GET/DELETE /api/chat-sessions`、切换会话 | 有 | 有 |
 | 会议 ASR、`workspace.html`、浏览器 RPC | Chrome 专属 | **不对齐**（宿主不同） |
-| 完整选项页（模型/密钥等） | `options.html` | **不对齐**：文案引导使用 Chrome 扩展选项页 |
+| 完整选项页（模型/密钥等） | `options.html` | **不对齐**：标题栏 ⚙️ 用 `window.open` 打开 `chrome-extension://<ID>/options.html`（需配置 `VITE_CHROME_EXTENSION_ID`） |
+
+**CurrentDocument（Word/Excel）RPC**：`excel_*` 与 `word_insert_table` 在 **Vue** [`src/wps-rpc/`](src/wps-rpc/) 与 [`useCopilot.js`](src/composables/useCopilot.js) 中维护；[`public/taskpane.js`](public/taskpane.js) 中对应分支**未与 Vue 双写**，以 Vue 为准。PPT 相关仍见仓库 `docs/未完成功能与能力缺口.md` 与 `scripts/sync-public-ppt-rpc.mjs`。
+
+## Chrome 扩展 ID（「设置」按钮）
+
+任务窗格 **⚙️ 设置** 依赖 Vite 环境变量 **`VITE_CHROME_EXTENSION_ID`**（Chrome → 扩展程序 → 开发者模式 → Office Copilot 卡片上的 ID）。在 `wps-addin-new` 下创建 `.env.development.local` 或 `.env.local`，例如：
+
+```env
+VITE_CHROME_EXTENSION_ID=你的扩展ID
+```
+
+未配置时点击设置会弹出说明，避免静默失败。
 
 ## 宿主 RPC 技术债（Backlog）
 

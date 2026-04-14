@@ -16,6 +16,14 @@
         >
           <option v-for="p in agentProfileOptions" :key="p.id" :value="p.id">{{ p.displayName }}</option>
         </select>
+        <button
+          type="button"
+          class="header-btn"
+          title="在 Chrome 中打开扩展选项页（模型、密钥、MCP、界面主题等）"
+          @click="openOfficeCopilotSettingsInChrome"
+        >
+          ⚙️
+        </button>
         <button type="button" class="header-btn" title="历史对话" @click="openHistoryOverlay">📜</button>
         <button type="button" class="header-btn" title="新建对话" @click="resetConversation">
           💬
@@ -30,7 +38,7 @@
       </div>
     </header>
     <p class="config-hint">
-      本机后台与 AI 的<strong>完整设置</strong>请仅在 <strong>Chrome 扩展</strong> 的选项页完成并保存（默认 <span class="config-hint-link">127.0.0.1:8765</span> 起若端口被占用会自动顺延，扩展会自动发现）。访问密钥会在本机首次连接时自动从后台同步到当前源；若仍无法连接，可在控制台手动 <code>localStorage.setItem('tasklyLocalServiceAuthToken','密钥')</code> 后刷新。
+      本机后台与 AI 的<strong>完整设置</strong>请点击标题栏 <strong>⚙️ 设置</strong>，在 <strong>Chrome</strong> 中打开扩展选项页完成并保存（默认 <span class="config-hint-link">127.0.0.1:8765</span> 起若端口被占用会自动顺延，扩展会自动发现）。访问密钥会在本机首次连接时自动从后台同步到当前源；若仍无法连接，可在控制台手动 <code>localStorage.setItem('tasklyLocalServiceAuthToken','密钥')</code> 后刷新。
     </p>
 
     <div v-if="planChecklistSteps && planChecklistSteps.length > 0" class="plan-checklist-wrap">
@@ -82,7 +90,7 @@
     <main ref="messagesRef" class="messages">
       <div v-if="showWelcome" class="welcome">
         <p class="welcome-title">你好，我是 Office Copilot 👋</p>
-        <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。模型与密钥等请在 Chrome 扩展选项页配置。</p>
+        <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。模型与密钥等请点击标题栏 ⚙️ 在 Chrome 扩展选项页配置。</p>
       </div>
       <template v-for="(msg, idx) in messages" :key="idx">
         <div v-if="msg.type === 'system'" class="msg msg--system">{{ msg.content }}</div>

@@ -1,0 +1,17 @@
+/**
+ * 将 public/chat-themes.css 的语义 token 映射到 TaskPane.vue 使用的 --copilot-*。
+ * 须在 chat-themes.css 之后加载（index.html link + main.js import 顺序）。
+ */
+html[data-theme] {
+  --copilot-bg-primary: var(--bg-primary);
+  --copilot-bg-secondary: var(--bg-secondary);
+  --copilot-bg-tertiary: var(--bg-tertiary);
+  --copilot-text-primary: var(--text-primary);
+  --copilot-text-secondary: var(--text-secondary);
+  --copilot-accent: var(--accent);
+  --copilot-border: var(--border);
+  --copilot-success: var(--success);
+  --copilot-danger: var(--danger);
+  --copilot-user-bubble: var(--user-bubble);
+  --copilot-bot-bubble: var(--bot-bubble);
+}
