@@ -138,7 +138,7 @@ public class AgentDebugStatsServiceTests
         var path = NewTempPersistencePath();
         try
         {
-            File.WriteAllText(path, """{"version":3,"toolSelectionTotal":99,"toolInvocations":[]}""");
+            File.WriteAllText(path, """{"version":4,"toolingPhaseTotal":99,"toolInvocations":[]}""");
             var s = CreateService(path);
             var snap = s.GetSnapshot();
             Assert.Equal(0, snap.ToolSelection.TotalNonPlanSelections);

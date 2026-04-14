@@ -117,7 +117,7 @@ public class BrowserPlugin
     /// <summary>在当前标签页执行扩展预置脚本（白名单 scriptId）。与 <see cref="RunCustomJavaScriptInPageAsync"/> 分离命名，避免模型把「工具名」误填进 scriptId。</summary>
     [ToolFunction("run_builtin_page_script")]
     [Description(
-        "【内置白名单脚本】运行位置：Chrome 当前标签页（DOM 由扩展注入；tab_* 在扩展内用 chrome.tabs）。仅允许扩展白名单中的 scriptId（如 get_visible_text、extract_links），paramsJson 为 JSON 对象字符串。\n" +
+        "【Chrome 侧栏 / 网页 / 浏览器】内置白名单脚本。运行位置：Chrome 当前标签页（DOM 由扩展注入；tab_* 在扩展内用 chrome.tabs）。仅允许扩展白名单中的 scriptId（如 get_visible_text、extract_links），paramsJson 为 JSON 对象字符串。\n" +
         "禁止：不要把其它工具的函数名（如 run_custom_javascript_in_page、run_custom_page_script）填进 scriptId；需要整段自定义 JS 时请改用工具 run_custom_javascript_in_page（参数 scriptCode）。\n" +
         "读页：get_visible_text{maxLength?,truncateMode?} — 未传 maxLength 时默认约 50 万字符（与扩展硬上限一致），一般整页可见文本一次返回；更长页面仍会截断。truncateMode：head（超长保留开头，默认）|tail（保留末尾）|both（首尾各半+省略中间）。get_page_title；chat_page_tail_glance{maxTailChars?} — 泛化 AI 对话页末尾摘录（不绑某家产品；尽力用常见 role/data 选择器，失败则用 get_visible_text+tail）；get_page_outline{maxHeadingLevel,maxHeadings,includeTextPrefix,maxLength}；extract_links{maxLinks,sameOriginOnly}；extract_tables{selector,maxTables,maxRows,maxCols}。\n" +
         "滚动：scroll_to_top/bottom；scroll_by{deltaY,smooth}；scroll_into_view{selector,block,inline}。\n" +

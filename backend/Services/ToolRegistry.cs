@@ -150,4 +150,27 @@ public sealed class ToolRegistry
         pluginName = "";
         return false;
     }
+
+    /// <summary>同一裸函数名出现在多个插件时，<c>tool_calls</c> 仅用裸名可能歧义；供检索提示与测试。</summary>
+    public IReadOnlyList<(string FunctionName, IReadOnlyList<string> PluginNames)> GetBareFunctionNameCollisions()
+    {
+        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (plugin, func, _) in GetAllWithMetadata())
+        {
+            if (!map.TryGetValue(func, out var list))
+            {
+                list = new List<string>();
+                map[func] = list;
+            }
+
+            if (!list.Exists(p => string.Equals(p, plugin, StringComparison.OrdinalIgnoreCase)))
+                list.Add(plugin);
+        }
+
+        return map
+            .Where(kv => kv.Value.Count > 1)
+            .Select(kv => (kv.Key, (IReadOnlyList<string>)kv.Value.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList()))
+            .OrderBy(t => t.Item1, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 }

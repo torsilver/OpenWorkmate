@@ -404,7 +404,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [ToolFunction("current_run_document_script")]
-    [Description("运行位置：当前打开的 Office/WPS 文档环境中（任务窗格注入到文档的脚本）。执行预定义脚本，仅支持白名单内 scriptId，用于长尾或组合操作，仅 Office/WPS 任务窗格连接时可用。")]
+    [Description("当前 Office/WPS 宿主文档内脚本（任务窗格注入）。检索词：宿主、Word、Excel、任务窗格、文档自动化。仅白名单 scriptId；仅 Office/WPS 侧栏连接时可用。")]
     public Task<string> CurrentRunDocumentScriptAsync(
         [Description("预定义脚本 ID，必须在前端 DOCUMENT_SCRIPTS 注册表中存在")] string scriptId,
         [Description("可选参数，JSON 对象字符串，如 {} 或 {\"key\":\"value\"}")] string? paramsJson = null,

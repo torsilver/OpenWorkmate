@@ -7,7 +7,8 @@ namespace OfficeCopilot.Server.Services.Plan;
 public static class PlanAuthoringToolDigest
 {
     public const int DefaultMaxTotalChars = 48_000;
-    public const int MaxDescriptionCharsPerTool = 120;
+    /// <summary>单条工具描述上限（含 <see cref="ToolCapabilityRegistry"/> 风险尾标）。</summary>
+    public const int MaxDescriptionCharsPerTool = 280;
 
     /// <summary>每行 <c>Plugin.function: 描述</c>；超长时截断并追加说明行。</summary>
     public static string Build(IReadOnlyList<AITool> tools, ToolRegistry registry, int maxTotalChars = DefaultMaxTotalChars)
@@ -21,9 +22,7 @@ public static class PlanAuthoringToolDigest
         {
             if (!registry.TryGetPluginName(tool.Name, out var plugin))
                 plugin = "?";
-            var desc = (tool.Description ?? "").Trim().Replace('\r', ' ').Replace('\n', ' ');
-            if (desc.Length > MaxDescriptionCharsPerTool)
-                desc = desc[..MaxDescriptionCharsPerTool] + "…";
+            var desc = FormatOneLineDescriptionWithRiskHint(plugin, tool.Name, tool.Description ?? "");
             var line = $"- {plugin}.{tool.Name}: {desc}";
             if (sb.Length + line.Length + 1 > maxTotalChars)
             {
@@ -36,5 +35,30 @@ public static class PlanAuthoringToolDigest
         if (omitted > 0)
             sb.AppendLine().Append("(以上附录因长度限制省略 ").Append(omitted).Append(" 个工具；仍须遵守：步骤只能依赖本端 Office Copilot 已暴露的工具能力，不得假设附录外手段。)");
         return sb.ToString();
+    }
+
+    internal static string FormatOneLineDescriptionWithRiskHint(string plugin, string functionName, string rawDescription)
+    {
+        var desc = rawDescription.Trim().Replace('\r', ' ').Replace('\n', ' ');
+        var cap = ToolCapabilityRegistry.Get(plugin, functionName);
+        string hint = "";
+        if (cap.SuggestHitl)
+            hint = "[需确认/HITL]";
+        else if (cap.Destructive)
+            hint = "[写盘或有副作用]";
+
+        if (hint.Length == 0)
+        {
+            if (desc.Length > MaxDescriptionCharsPerTool)
+                return desc[..MaxDescriptionCharsPerTool] + "…";
+            return desc;
+        }
+
+        var budget = MaxDescriptionCharsPerTool - hint.Length - 1;
+        if (budget < 16)
+            return hint;
+        if (desc.Length > budget)
+            desc = desc[..budget] + "…";
+        return string.IsNullOrEmpty(desc) ? hint : desc + " " + hint;
     }
 }

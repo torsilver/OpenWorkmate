@@ -284,7 +284,7 @@ public sealed class ExcelPlugin
     }
 
     [ToolFunction("excel_range_read")]
-    [Description("读取指定工作表区域的值或公式，返回制表符分隔文本。大文件可设 maxRows 或 endCell 控制内存；includeFormulas 为 true 时返回公式字符串。")]
+    [Description("读取 Excel/xlsx/xlsm 工作表区域（值或公式），制表符分隔。检索词：表格、工作表、单元格、区域、公式。大文件可设 maxRows 或 endCell；includeFormulas 为 true 时返回公式字符串。")]
     public string ExcelRangeRead(
         [Description("Excel 文件完整路径")] string filePath,
         [Description("工作表名称，留空为第一个")] string sheetName = "",

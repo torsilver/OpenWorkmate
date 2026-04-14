@@ -61,6 +61,14 @@ public sealed class AgentToolingPlugin
             i++;
         }
         sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"run_builtin_page_script\"]。");
+        var collisions = _runtime.ToolRegistry.GetBareFunctionNameCollisions();
+        if (collisions.Count > 0)
+        {
+            sb.Append("\n【同名提醒】以下裸函数名对应多个插件；若歧义请用 Plugin.function 调用或在 activate_tools 中传 Plugin.function：\n");
+            foreach (var (fn, plugins) in collisions)
+                sb.Append(" - ").Append(fn).Append(": ").Append(string.Join(", ", plugins)).Append('\n');
+        }
+
         _logger.LogDebug("search_available_tools hits={Count} query={Query}", hits.Count, query);
         return Task.FromResult(sb.ToString());
     }

@@ -101,8 +101,9 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         if (!string.IsNullOrEmpty(resultText))
             content = resultText.Length <= 200 ? resultText : resultText[..200];
 
-        var isSuccess = success && !IsToolResultFailure(content);
-        _debugStats.RecordToolInvocation(pluginName, functionName, isSuccess);
+        var isSuccess = success && !IsToolResultFailure(resultText);
+        var failKind = isSuccess ? null : (ToolInvocationFailureKind?)ToolInvocationFailureClassifier.Classify(resultText);
+        _debugStats.RecordToolInvocation(pluginName, functionName, isSuccess, failKind);
 
         var planStepIndex = (string.Equals(pluginName, "Plan", StringComparison.OrdinalIgnoreCase)
             && string.Equals(functionName, "execute_plan_step", StringComparison.OrdinalIgnoreCase))

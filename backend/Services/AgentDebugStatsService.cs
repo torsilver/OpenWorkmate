@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using OfficeCopilot.Server;
+using OfficeCopilot.Server.Services.ToolInvocation;
 using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server.Services;
@@ -11,7 +12,7 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public sealed class AgentDebugStatsService : IDisposable
 {
-    public const int PersistedFormatVersion = 4;
+    public const int PersistedFormatVersion = 5;
     private readonly object _gate = new();
     private readonly object _persistScheduleLock = new();
     private readonly DateTimeOffset _startedUtc = DateTimeOffset.UtcNow;
@@ -24,6 +25,9 @@ public sealed class AgentDebugStatsService : IDisposable
     private long _toolingPhaseTotal;
     private long _toolSelectionException;
     private long _dynamicToolingBootstrapCount;
+    private long _toolFailureBindingCount;
+    private long _toolFailureMcpCount;
+    private long _toolFailureBusinessCount;
     private readonly Dictionary<string, (long Success, long Fail)> _toolInvocations = new(StringComparer.Ordinal);
 
     /// <summary>生产环境：默认路径为 %LocalAppData%\OfficeCopilot\agent-debug-stats.json。</summary>
@@ -88,6 +92,10 @@ public sealed class AgentDebugStatsService : IDisposable
 
     /// <summary>与 <see cref="ToolStatusFilter"/> 下发给前端的 success 一致（含返回串判失败）。</summary>
     public void RecordToolInvocation(string pluginName, string functionName, bool success)
+        => RecordToolInvocation(pluginName, functionName, success, null);
+
+    /// <param name="failureKindOnFail">仅在最终判定为失败时用于聚合阶段；成功时忽略。</param>
+    public void RecordToolInvocation(string pluginName, string functionName, bool success, ToolInvocationFailureKind? failureKindOnFail)
     {
         var key = $"{pluginName}.{functionName}";
         lock (_gate)
@@ -99,6 +107,22 @@ public sealed class AgentDebugStatsService : IDisposable
             else
                 t.Fail++;
             _toolInvocations[key] = t;
+
+            if (!success && failureKindOnFail.HasValue)
+            {
+                switch (failureKindOnFail.Value)
+                {
+                    case ToolInvocationFailureKind.Binding:
+                        _toolFailureBindingCount++;
+                        break;
+                    case ToolInvocationFailureKind.Mcp:
+                        _toolFailureMcpCount++;
+                        break;
+                    default:
+                        _toolFailureBusinessCount++;
+                        break;
+                }
+            }
         }
         SchedulePersist();
     }
@@ -110,6 +134,9 @@ public sealed class AgentDebugStatsService : IDisposable
             _toolingPhaseTotal = 0;
             _toolSelectionException = 0;
             _dynamicToolingBootstrapCount = 0;
+            _toolFailureBindingCount = 0;
+            _toolFailureMcpCount = 0;
+            _toolFailureBusinessCount = 0;
             _toolInvocations.Clear();
             _accumulatedSinceUtc = null;
         }
@@ -142,7 +169,10 @@ public sealed class AgentDebugStatsService : IDisposable
                     TotalNonPlanSelections = total,
                     SelectionExceptionFallbackCount = _toolSelectionException,
                     DynamicToolingBootstrapCount = _dynamicToolingBootstrapCount,
-                    DynamicBootstrapRateAmongToolingPhases = total > 0 ? (double)_dynamicToolingBootstrapCount / total : null
+                    DynamicBootstrapRateAmongToolingPhases = total > 0 ? (double)_dynamicToolingBootstrapCount / total : null,
+                    ToolFailureBindingCount = _toolFailureBindingCount,
+                    ToolFailureMcpCount = _toolFailureMcpCount,
+                    ToolFailureBusinessCount = _toolFailureBusinessCount,
                 },
                 ToolInvocations = list
             };
@@ -214,6 +244,8 @@ public sealed class AgentDebugStatsService : IDisposable
             return true;
         if (_toolingPhaseTotal != 0 || _toolSelectionException != 0 || _dynamicToolingBootstrapCount != 0)
             return true;
+        if (_toolFailureBindingCount != 0 || _toolFailureMcpCount != 0 || _toolFailureBusinessCount != 0)
+            return true;
         return false;
     }
 
@@ -225,6 +257,9 @@ public sealed class AgentDebugStatsService : IDisposable
             ToolingPhaseTotal = _toolingPhaseTotal,
             SelectionExceptionFallbackCount = _toolSelectionException,
             DynamicToolingBootstrapCount = _dynamicToolingBootstrapCount,
+            ToolFailureBindingCount = _toolFailureBindingCount,
+            ToolFailureMcpCount = _toolFailureMcpCount,
+            ToolFailureBusinessCount = _toolFailureBusinessCount,
             ToolInvocations = _toolInvocations
                 .Select(kv => new PersistedToolInvocationEntry { ToolId = kv.Key, SuccessCount = kv.Value.Success, FailCount = kv.Value.Fail })
                 .ToList()
@@ -293,6 +328,9 @@ public sealed class AgentDebugStatsService : IDisposable
             _toolingPhaseTotal = m.ToolingPhaseTotal;
             _toolSelectionException = m.SelectionExceptionFallbackCount;
             _dynamicToolingBootstrapCount = m.DynamicToolingBootstrapCount;
+            _toolFailureBindingCount = m.ToolFailureBindingCount;
+            _toolFailureMcpCount = m.ToolFailureMcpCount;
+            _toolFailureBusinessCount = m.ToolFailureBusinessCount;
             _toolInvocations.Clear();
             foreach (var e in m.ToolInvocations ?? Enumerable.Empty<PersistedToolInvocationEntry>())
             {
@@ -310,6 +348,9 @@ internal sealed class AgentDebugStatsPersistedModel
     public long ToolingPhaseTotal { get; set; }
     public long SelectionExceptionFallbackCount { get; set; }
     public long DynamicToolingBootstrapCount { get; set; }
+    public long ToolFailureBindingCount { get; set; }
+    public long ToolFailureMcpCount { get; set; }
+    public long ToolFailureBusinessCount { get; set; }
     public List<PersistedToolInvocationEntry> ToolInvocations { get; set; } = new();
 }
 
@@ -336,6 +377,15 @@ public sealed class ToolSelectionDebugStatsDto
     public long DynamicToolingBootstrapCount { get; init; }
     /// <summary>动态工具首轮 bootstrap 次数 / 工具阶段总次数；分母为 0 时为 null。</summary>
     public double? DynamicBootstrapRateAmongToolingPhases { get; init; }
+
+    /// <summary>工具调用失败且判定为参数绑定阶段的累计次数。</summary>
+    public long ToolFailureBindingCount { get; init; }
+
+    /// <summary>工具调用失败且判定为 MCP 阶段的累计次数。</summary>
+    public long ToolFailureMcpCount { get; init; }
+
+    /// <summary>工具调用失败且判定为业务/其它阶段的累计次数。</summary>
+    public long ToolFailureBusinessCount { get; init; }
 }
 
 public sealed class ToolInvocationDebugStatDto

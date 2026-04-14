@@ -43,7 +43,7 @@ public sealed class WordPlugin
     }
 
     [ToolFunction("word_body_read")]
-    [Description("读取 Word 文档正文：段落（可选含表格）。支持段落范围与长度截断。")]
+    [Description("读取 Word/DOCX 正文（段落、可选表格）。检索词：Word、文档、docx、段落、全文。")]
     public string WordBodyRead(
         [Description("Word 文件完整路径，支持环境变量与相对路径")] string filePath,
         [Description("起始段落号，从 1 开始，0 表示从头")] int startParagraph = 0,

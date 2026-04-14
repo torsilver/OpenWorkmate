@@ -7,6 +7,7 @@ namespace OfficeCopilot.Server.Mcp;
 
 /// <summary>
 /// 将 MCP 服务器工具暴露为 MEAI <see cref="AITool"/> 列表。
+/// MEAI 10.4 的 <see cref="AIFunctionFactoryOptions"/> 无法挂载 MCP inputSchema，故由 <see cref="McpToolSchemaDescriptionFormatter"/> 将 schema 附加到 Description。
 /// </summary>
 public sealed class McpKernelPlugin
 {
@@ -30,13 +31,14 @@ public sealed class McpKernelPlugin
         {
             var fnName = SanitizeFunctionName(tool.Name);
             var mcpName = tool.Name;
+            var desc = McpToolSchemaDescriptionFormatter.CombineDescriptionWithInputSchema(tool.Description, tool.InputSchema);
             var fn = AIFunctionFactory.Create(
                 async (JsonElement arguments, CancellationToken cancellationToken) =>
                     await InvokeMcpToolFromJsonAsync(mcpName, arguments, cancellationToken).ConfigureAwait(false),
                 new AIFunctionFactoryOptions
                 {
                     Name = fnName,
-                    Description = tool.Description ?? "",
+                    Description = desc,
                 });
             list.Add(fn);
         }
