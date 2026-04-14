@@ -126,7 +126,7 @@
 | ScheduledTask | 5 | 见上表 |
 | UserSkillProgressive | 3 | `search_available_skills`, `select_skill_for_turn`, `load_user_skill_instructions` |
 
-**Word · `word_document_create` 补充**：除 `filePath`、`title`、`paragraphs` 外，另有可选参数 **`documentPreset`**（默认 `default`）：通用 Office 版式（Calibri/雅黑 10.5pt、彩色标题、常见页边距）。`cnGovGbt9704` 为中文正式稿默认版式（GB/T 9704—2012 **常用归纳**：仿宋三号、固定 28 磅行距、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装字体。若正文疑似 JSON 字符串数组整段粘贴，工具会**拒绝写盘**并返回说明。中文正式稿写作须先 **`load_user_skill_instructions`**（如 `word_cn_default_formal`），`search_available_skills` 不可替代正文加载。
+**Word · `word_document_create` 补充**：除 `filePath`、`title` 外，**`paragraphs` 为 `string[]`（字符串数组）**：每项是一段 Markdown 正文，多项之间等价于旧版用竖线 `|` 分段；项内仍可用 `#`、空行、换行、`|`。另有可选参数 **`documentPreset`**（默认 `default`）：通用 Office 版式（Calibri/雅黑 10.5pt、彩色标题、常见页边距）。`cnGovGbt9704` 为中文正式稿默认版式（GB/T 9704—2012 **常用归纳**：仿宋三号、固定 28 磅行距、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装字体。若某项或合并结果仍疑似整段 JSON/调试转储，工具会**拒绝写盘**并返回说明。中文正式稿写作须先 **`load_user_skill_instructions`**（如 `word_cn_default_formal`），`search_available_skills` 不可替代正文加载。
 
 ---
 

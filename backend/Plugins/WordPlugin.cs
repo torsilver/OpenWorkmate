@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using A = DocumentFormat.OpenXml.Drawing;
@@ -151,13 +152,13 @@ public sealed class WordPlugin
     [ToolFunction("word_document_create")]
     [Description(
         "创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 须为 .docx（推荐）或 .docm，勿用 .md/.txt/.doc。"
-        + " paragraphs 用 Markdown（# / ## / ###、- 列表）并用 | 或空行分段；禁止将 JSON 数组、API 调试输出或未转义抓取文本整块传入。"
+        + " paragraphs 为字符串数组：每一项是一段 Markdown 正文（# / ## / ###、- 列表、项内仍可用 | 或空行拆段）；多项之间等价于历史版用 | 分段。禁止把整页 HTML、API 调试输出或未转义抓取文本整块塞进单项。"
         + " documentPreset：default=历史通用 Office 版式（Calibri/微软雅黑 10.5pt、彩色标题、常见页边距）；cnGovGbt9704=中文正式稿默认版式（GB/T 9704—2012 常用归纳：仿宋三号、固定 28 磅、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装仿宋/宋体等字体。"
         + " 按中文正式稿规则写作前请先 load_user_skill_instructions（skillId 如 word_cn_default_formal）。路径须对应当前登录用户。")]
     public string WordDocumentCreate(
         [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题；可省略，省略时用目标文件名（无扩展名）")] string title = "",
-        [Description("正文：推荐用 | 分段；也可仅用空行或换行分段（服务端自动拆段）。行首 # / ## / ### 为标题，- 或 * 为列表；可省略则仅标题")] string paragraphs = "",
+        [Description("正文：字符串数组，每项为 Markdown 片段；多项并列等价于旧版用 | 分段。项内仍可用 |、空行、换行拆段。可省略或空数组则仅输出标题。")] string[]? paragraphs = null,
         [Description("版式预设：default 或 cnGovGbt9704，默认 default")] string documentPreset = "default")
     {
         filePath = OpenXmlHelpers.ResolvePath(filePath);
@@ -168,8 +169,17 @@ public sealed class WordPlugin
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         if (!WordDocumentCreatePresetParser.TryParse(documentPreset, out var preset, out var presetErr))
             return presetErr!;
-        if (WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(paragraphs))
+        var paragraphsJoined = NormalizeWordDocumentCreateParagraphsArray(paragraphs);
+        if (WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(paragraphsJoined))
+        {
+            _logger?.LogInformation(
+                "[Word] word_document_create rejected by ParagraphGuard (json-like paragraphs dump). path={Path} arrayLength={ArrayLength} normalizedLength={Length} paragraphPreview={Preview}",
+                filePath,
+                paragraphs?.Length ?? 0,
+                paragraphsJoined.Length,
+                BuildParagraphsGuardLogPreview(paragraphsJoined));
             return WordDocumentCreateParagraphGuard.RejectionMessage;
+        }
         if (string.IsNullOrWhiteSpace(title))
         {
             var stem = Path.GetFileNameWithoutExtension(filePath);
@@ -196,8 +206,8 @@ public sealed class WordPlugin
                 new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }),
                 new Run(new Text(title))));
 
-            // Parse each logical line with Markdown conventions (|、空行、换行均会拆段)
-            foreach (var line in WordParagraphSplitter.ExpandWordDocumentParagraphs(paragraphs))
+            // Parse each logical line with Markdown conventions（数组先 Join 为 | 再与历史 string 路径一致）
+            foreach (var line in WordParagraphSplitter.ExpandWordDocumentParagraphs(paragraphsJoined))
                 body.Append(ParseMarkdownParagraph(line, preset));
 
             body.Append(WordDocumentCreateStyles.CreateFinalSectionProperties(preset));
@@ -213,6 +223,21 @@ public sealed class WordPlugin
             _logger?.LogWarning(ex, "[Word] word_document_create failed path={Path}", filePath);
             return $"[错误] 创建失败: {ex.Message}";
         }
+    }
+
+    /// <summary>将 <c>paragraphs</c> 字符串数组合并为与历史单 string 一致的 <c>|</c> 分隔串（跳过空白项）。</summary>
+    private static string NormalizeWordDocumentCreateParagraphsArray(string[]? paragraphs)
+    {
+        if (paragraphs is null || paragraphs.Length == 0) return "";
+        return string.Join("|", paragraphs.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
+    }
+
+    /// <summary>单行截断，仅用于拒绝写盘时的诊断日志，避免整段抓取文本刷屏。</summary>
+    private static string BuildParagraphsGuardLogPreview(string paragraphs)
+    {
+        var s = paragraphs.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (s.Length > 200) return s[..200] + "…";
+        return s;
     }
 
     private static Paragraph ParseMarkdownParagraph(string text, WordDocumentCreatePreset preset)

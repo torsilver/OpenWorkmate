@@ -1,3 +1,4 @@
+using System.Linq;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -52,7 +53,7 @@ public class WordDocumentCreateTests
         var path = Path.Combine(Path.GetTempPath(), "taskly_word_guard_" + Guid.NewGuid().ToString("N") + ".docx");
         var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
         var raw = "[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\",\"j\",\"k\",\"l\",\"m\",\"n\",\"o\",\"p\"]" + new string('x', 120);
-        var msg = plugin.WordDocumentCreate(path, "T", raw, "default");
+        var msg = plugin.WordDocumentCreate(path, "T", new[] { raw }, "default");
         Assert.Contains("paragraphs", msg, StringComparison.Ordinal);
         Assert.False(File.Exists(path), "不应在拦截后创建文件");
     }
@@ -64,8 +65,8 @@ public class WordDocumentCreateTests
         var pathDef = Path.Combine(Path.GetTempPath(), $"taskly_wm_def_{id}.docx");
         var pathGov = Path.Combine(Path.GetTempPath(), $"taskly_wm_gov_{id}.docx");
         var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
-        Assert.Contains("已创建", plugin.WordDocumentCreate(pathDef, "T", "|a", "default"));
-        Assert.Contains("已创建", plugin.WordDocumentCreate(pathGov, "T", "|a", "cnGovGbt9704"));
+        Assert.Contains("已创建", plugin.WordDocumentCreate(pathDef, "T", new[] { "|a" }, "default"));
+        Assert.Contains("已创建", plugin.WordDocumentCreate(pathGov, "T", new[] { "|a" }, "cnGovGbt9704"));
         try
         {
             var topDef = ReadLastSectionTopTwips(pathDef);
@@ -78,6 +79,54 @@ public class WordDocumentCreateTests
         {
             TryDelete(pathDef);
             TryDelete(pathGov);
+        }
+    }
+
+    [Fact]
+    public void WordDocumentCreate_ArrayParagraphs_MultipleBlocks()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "taskly_word_arr_" + Guid.NewGuid().ToString("N") + ".docx");
+        var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
+        try
+        {
+            Assert.Contains("已创建", plugin.WordDocumentCreate(path, "T", new[] { "# 标题", "正文一段", "- 列表项" }, "default"));
+            using var doc = WordprocessingDocument.Open(path, false);
+            var body = doc.MainDocumentPart?.Document?.Body;
+            Assert.NotNull(body);
+            var paras = body.Elements<Paragraph>().ToList();
+            Assert.True(paras.Count >= 4, "标题 + 至少三段正文");
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact]
+    public void WordDocumentCreate_NullOrEmptyParagraphs_OnlyTitle()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var pathNull = Path.Combine(Path.GetTempPath(), $"taskly_word_empty_null_{id}.docx");
+        var pathEmpty = Path.Combine(Path.GetTempPath(), $"taskly_word_empty_arr_{id}.docx");
+        var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
+        try
+        {
+            Assert.Contains("已创建", plugin.WordDocumentCreate(pathNull, "仅标题", null, "default"));
+            Assert.Contains("已创建", plugin.WordDocumentCreate(pathEmpty, "仅标题", Array.Empty<string>(), "default"));
+            foreach (var p in new[] { pathNull, pathEmpty })
+            {
+                using var doc = WordprocessingDocument.Open(p, false);
+                var body = doc.MainDocumentPart?.Document?.Body;
+                Assert.NotNull(body);
+                var paras = body.Elements<Paragraph>().ToList();
+                Assert.True(paras.Count >= 1);
+                Assert.Contains("仅标题", paras[0].InnerText, StringComparison.Ordinal);
+            }
+        }
+        finally
+        {
+            TryDelete(pathNull);
+            TryDelete(pathEmpty);
         }
     }
 

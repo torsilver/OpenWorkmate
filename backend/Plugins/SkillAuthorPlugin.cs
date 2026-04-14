@@ -147,7 +147,7 @@ public sealed class SkillAuthorPlugin
 4. **只输出 SKILL.md 原文**，不要输出「好的」「以下是」等前缀，不要用 markdown 代码块包裹全文。
 
 ## 内容质量要求
-- 正文中应 **显式列出推荐使用的内置插件名**（须与系统中实际名称一致），例如 Excel、Word、Ppt、Browser、File、Memory、Plan、MCP_OCR、CurrentDocument、ClawhubSkill 等；需要时用 `插件名-函数名` 或说明可插入 `[TOOL:插件名]` 以便后续对话中工具选择命中。**不要编造不存在的插件名。** 实时网页资讯依赖用户在模型设置中为百炼模型开启「联网搜索 enable_search」，勿再推荐已移除的独立搜索插件名。维护时插件名应与后端工具选择字典及 Program 注册的插件类名一致（见仓库 docs/architecture-dimensions.md「Harness 与工具契约」）。
+- 正文中应 **显式列出推荐使用的内置插件名**（须与系统中实际名称一致），例如 Excel、Word、Ppt、Browser、File、Memory、Plan、MCP_OCR、CurrentDocument、ClawhubSkill 等；需要时用 `插件名-函数名` 或说明可插入 `[TOOL:插件名]` 以便后续对话中工具选择命中。**不要编造不存在的插件名。** 实时网页资讯依赖用户在模型设置中为百炼模型开启「联网搜索 enable_search」，可提示按需加载内置技能 `web_search_builtin_first` 强化「优先内置检索、少用 curl/浏览器抠 SERP」；勿再推荐已移除的独立搜索插件名。维护时插件名应与后端工具选择字典及 Program 注册的插件类名一致（见仓库 docs/architecture-dimensions.md「Harness 与工具契约」）。
 - 若上下文不足以确定工具名，写清「由用户或模型按任务选择」即可，勿臆造。
 
 ## YAML 注意

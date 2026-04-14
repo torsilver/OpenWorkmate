@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace OfficeCopilot.Server.Plugins;
 
 /// <summary>
-/// 将 <see cref="WordPlugin.WordDocumentCreate"/> 的 paragraphs 参数展开为多条逻辑行：
+/// 将 <see cref="WordPlugin.WordDocumentCreate"/> 的 paragraphs（由 <c>string[]</c> 归并得到的单串）展开为多条逻辑行：
 /// 先按 <c>|</c> 分段，再在每段内按空行与换行拆分，减轻模型少用 <c>|</c> 时出现单段「挤成一坨」的问题。
 /// </summary>
 public static class WordParagraphSplitter

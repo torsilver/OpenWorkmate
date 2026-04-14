@@ -35,7 +35,7 @@ metadata: {"clawdbot":{"emoji":"📝","os":["linux","darwin","win32"]}}
 ## 可选后续（非读页核心）
 
 - **`save_memory`**：用户要求长期记住本总结且已配置 Embedding 时；失败须转述原因。
-- **`word_document_create`**：用户要可分享稿时落盘；正式中文排版可叠加 **`word_cn_default_formal`**。
+- **`word_document_create`**：用户要可分享稿时落盘（`paragraphs` 为 **`string[]`**）；正式中文排版可叠加 **`word_cn_default_formal`**。
 - **`compact_conversation`**：仅用于 **Taskly 本会话**上下文过长、且用户已拿到总结后要换话题时；**不能**代替从网页读外站对话。
 - **`generate_user_skill`**：用户想把「我常要的读页+总结结构」固化时。
 

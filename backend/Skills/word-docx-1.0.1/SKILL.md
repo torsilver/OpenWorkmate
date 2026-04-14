@@ -1,8 +1,8 @@
 ---
 name: Word / Docx
-version: 1.0.4
+version: 1.0.5
 description: Open XML / DOCX structure (runs, styles, sections, fields). Use with Taskly Word kernel tools for create-edit; load word_cn_default_formal for Chinese formal layout defaults (GB/T 9704 preset). For legacy .doc/.dot inputs before Open XML tools, load office_legacy_to_openxml. PDF 抽取/合并见技能 Pdf / Pdf（get_pdf_text、pdf_merge），勿用 office_legacy 处理 .pdf。
-changelog: Cross-link PDF skill for attachments.
+changelog: word_document_create paragraphs is string[].
 metadata: {"clawdbot":{"emoji":"📘","os":["linux","darwin","win32"]}}
 ---
 
@@ -11,7 +11,10 @@ metadata: {"clawdbot":{"emoji":"📘","os":["linux","darwin","win32"]}}
 - **PDF 附件**：抽取文本、合并多份 PDF、简单纯文本生成 PDF → 按需加载技能 **`Pdf / Pdf`**（`get_attachment_path` → **`get_pdf_info`** / **`get_pdf_text`** / **`pdf_merge`** / **`pdf_document_create`**）。**.pdf 不要**走 `office_legacy_*`。
 - **旧版 Word 二进制（`.doc` / `.dot`）**：Open XML 工具（如 `word_body_read`）**不会**直接读这些扩展名。须先按需 **`load_user_skill_instructions`**（`skillId` 填 **`office_legacy_to_openxml`**），按该技能调用 **`office_legacy_save_as_open_xml`** 得到 `.docx` 后，再使用下文所述 **`word_*`** 与 OOXML 知识；Excel `.xls`、PPT `.ppt` 同理见该技能。
 - **落盘与改稿**：优先用服务端 **Word 插件** 工具（如 `word_document_create`、CurrentDocument 系列），而不是手改 ZIP 内的 `document.xml`，除非你是在做互通性排查或离线批处理。
-- **`word_document_create`**：`paragraphs` 用 Markdown（`|` / 空行 / `#` / 列表）；可选 `documentPreset`（`default` 与 `cnGovGbt9704`）；不要把 JSON 数组字面量或抓取到的转义串整块当正文（会被拒绝写盘）。
+- **`word_document_create`**
+  - **`paragraphs`（硬约束）**：**`string[]`**。每项为 Markdown 片段（`|`、空行、`#` / `##` / `###`、`- `）；多项并列等价于旧版单字符串里用 `|` 分段。**禁止**在**单个数组元素**内整段粘贴 JSON 字符串数组字面量或含大量 `\"` / `\",\"` 的抓取转储；服务端会拒绝写盘并返回 `[错误] paragraphs 疑似 JSON…`（日志 `[Word] … ParagraphGuard`）。
+  - **推荐形态示例**：`["# 标题\n摘要一段。", "## 第二节\n- 要点甲\n- 要点乙"]`（或一项内仍用 `|` 细分）。
+  - **`documentPreset`**：`default` 或 `cnGovGbt9704`（中文正式稿须配合技能 `word_cn_default_formal`）。
 - **中文正式稿版式**（页边距、仿宋/层次、行距等操作约定）：用内置技能 **`word_cn_default_formal`**（`load_user_skill_instructions`）与本技能的 **OOXML 结构知识** 互补——本段不写国标细则，避免与那边重复。
 
 以下正文侧重 **Open XML 结构与常见坑**，英文表述便于对照官方与第三方文档。
