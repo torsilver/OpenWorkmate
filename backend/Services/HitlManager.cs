@@ -96,7 +96,7 @@ public sealed class HitlManager
         {
             if (string.Equals(pending.Kind, "run_command", StringComparison.OrdinalIgnoreCase))
                 _configService.AddAllowedCliCommandForEnd(pending.EndKey, pending.AddKey);
-            else if (string.Equals(pending.Kind, "run_page_script", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(pending.Kind, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase))
                 _configService.AddAllowedPageScriptIdForEnd(pending.EndKey, pending.AddKey);
         }
 

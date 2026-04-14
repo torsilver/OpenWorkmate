@@ -29,7 +29,7 @@ public sealed class AgentToolingPlugin
     [Description(
         "在「当前客户端允许」的工具列表中按关键词检索。每行以 OpenAPI/工具协议中的裸函数名为准，括号内为插件 Id。"
         + "发起 tool_calls 时必须使用裸函数名（与 schema 中 name 一致），勿使用 Plugin.function 形式。"
-        + "请根据用户任务填写关键词；须先检索再 activate_tools，再调用业务工具。")]
+        + "若 system 列出已启用用户技能且任务可能依赖规范/文风/流程，建议先按需完成技能链（search_available_skills 等）再调用本工具；否则可直接检索。须 activate_tools 后再以裸名调用业务工具。")]
     public Task<string> SearchAvailableToolsAsync(
         [Description("检索关键词，可多个词；应尽量具体（空串时仍会返回若干项，含本轮引导工具优先）")] string query,
         [Description("最多返回条数，默认 8")] int topK = 8,
@@ -60,7 +60,7 @@ public sealed class AgentToolingPlugin
             sb.Append('\n');
             i++;
         }
-        sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"run_page_script\"]。");
+        sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"run_builtin_page_script\"]。");
         _logger.LogDebug("search_available_tools hits={Count} query={Query}", hits.Count, query);
         return Task.FromResult(sb.ToString());
     }
@@ -68,8 +68,9 @@ public sealed class AgentToolingPlugin
     [ToolFunction(DynamicToolingConstants.ActivateFunctionName)]
     [Description(
         "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。可传裸函数名或 Plugin.function。"
+        + " 推荐在首次 search_available_tools 之前已按需走通技能链（见 system「动态工具」）。"
         + " 固定协议：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
-        + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_page_script\"]。")]
+        + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_builtin_page_script\"]。")]
     public Task<string> ActivateToolsAsync(
         [Description("要激活的工具函数名列表（裸函数名或 Plugin.function）")] string[] toolNames,
         CancellationToken ct = default)

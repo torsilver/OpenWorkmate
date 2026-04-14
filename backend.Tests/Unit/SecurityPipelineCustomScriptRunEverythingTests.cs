@@ -28,7 +28,7 @@ public class SecurityPipelineCustomScriptRunEverythingTests
         try
         {
             var args = new Dictionary<string, object?> { ["scriptCode"] = "return 1;" };
-            var result = await pipeline.EvaluateAsync("Browser", "run_custom_page_script", args, default);
+            var result = await pipeline.EvaluateAsync("Browser", "run_custom_javascript_in_page", args, default);
             Assert.Null(result);
         }
         finally
@@ -52,7 +52,7 @@ public class SecurityPipelineCustomScriptRunEverythingTests
 
         SessionContext.SetSessionId(null);
         var args = new Dictionary<string, object?> { ["scriptCode"] = "return 1;" };
-        var result = await pipeline.EvaluateAsync("Browser", "run_custom_page_script", args, default);
+        var result = await pipeline.EvaluateAsync("Browser", "run_custom_javascript_in_page", args, default);
         Assert.NotNull(result);
         Assert.Contains("会话", result, StringComparison.Ordinal);
     }

@@ -2554,7 +2554,7 @@ async function executeCustomPageScriptViaUserScripts(scriptCode) {
   return JSON.stringify(v);
 }
 
-/** run_page_script 中在扩展上下文执行（chrome.tabs），非页面注入 */
+/** run_builtin_page_script 中在扩展上下文执行（chrome.tabs），非页面注入 */
 const EXTENSION_PAGE_SCRIPT_IDS = new Set([
   "tab_list",
   "tab_list_all_windows",
@@ -2667,7 +2667,7 @@ async function handleRpcRequest(msg) {
       result = await executeInActiveTab(highlightTextInPage, params.text, params.color);
     } else if (method === "add_floating_note") {
       result = await executeInActiveTab(addFloatingNoteInPage, params.message, params.title, params.anchorText);
-    } else if (method === "run_page_script") {
+    } else if (method === "run_builtin_page_script") {
       const scriptId = params?.scriptId;
       if (!scriptId || typeof scriptId !== "string") {
         throw new Error("未知脚本 ID: " + (scriptId || ""));
@@ -2688,10 +2688,10 @@ async function handleRpcRequest(msg) {
       } else {
         throw new Error("未知脚本 ID: " + scriptId);
       }
-    } else if (method === "run_custom_page_script") {
+    } else if (method === "run_custom_javascript_in_page") {
       const scriptCode = params?.scriptCode;
       if (typeof scriptCode !== "string" || !scriptCode.trim()) {
-        throw new Error("run_custom_page_script 需要非空的 scriptCode 参数。");
+        throw new Error("run_custom_javascript_in_page 需要非空的 scriptCode 参数。");
       }
       if (!isUserScriptsAvailable()) {
         const link = getExtensionsPageLink();
@@ -2791,7 +2791,7 @@ function handleConfirmRequest(msg) {
   }
   if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
   if ($hitlAction) $hitlAction.textContent = action;
-  const showAddToList = hitlKind === "run_command" || hitlKind === "run_page_script";
+  const showAddToList = hitlKind === "run_command" || hitlKind === "run_builtin_page_script";
   if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = showAddToList ? "" : "none";
   if ($hitlOverlay) {
     $hitlOverlay.style.display = "flex";
@@ -3087,7 +3087,7 @@ async function captureFullPage() {
   return { viewportHeight, images };
 }
 
-// MCP 工具 run_page_script：预定义脚本注册表，仅执行白名单内 scriptId（函数在页面隔离世界执行，须自包含）
+// MCP 工具 run_builtin_page_script：预定义脚本注册表，仅执行白名单内 scriptId（函数在页面隔离世界执行，须自包含）
 const PAGE_SCRIPTS = {
   scroll_to_top: function () {
     window.scrollTo(0, 0);
@@ -3188,7 +3188,7 @@ const PAGE_SCRIPTS = {
 
     if (!pick.text || !pick.text.trim()) {
       return (
-        "泛化对话摘录：未取到足够文本。请先 scroll_to_bottom，再试 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"；或在设置中允许 run_custom_page_script 写页面专属选择器。"
+        "泛化对话摘录：未取到足够文本。请先 scroll_to_bottom，再试 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"；或在设置中允许 run_custom_javascript_in_page 写页面专属选择器。"
       );
     }
 

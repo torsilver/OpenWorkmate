@@ -26,8 +26,8 @@ public static class ToolCapabilityRegistry
         {
             ["CLI:run_command"] = new(false, true, true, false),
             ["OfficeLegacy:office_legacy_save_as_open_xml"] = new(false, true, true, false),
-            ["Browser:run_page_script"] = new(false, true, true, false),
-            ["Browser:run_custom_page_script"] = new(false, true, true, false),
+            ["Browser:run_builtin_page_script"] = new(false, true, true, false),
+            ["Browser:run_custom_javascript_in_page"] = new(false, true, true, false),
             ["CurrentDocument:current_run_document_script"] = new(false, true, true, false),
             ["CurrentDocument:current_run_custom_document_script"] = new(false, true, true, false),
             ["Subagent:run_subtask"] = new(false, false, false, false),

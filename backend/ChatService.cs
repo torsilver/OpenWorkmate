@@ -347,7 +347,7 @@ public sealed partial class ChatService : IDisposable
 
         var sb = new StringBuilder();
         sb.AppendLine("[渐进式用户技能 · 元数据]");
-        sb.AppendLine("下列条目仅含发现信息；完整说明未载入上下文。技能较多或不确定 Id 时，请先 search_available_skills → select_skill_for_turn，再 load_user_skill_instructions（参数 skillId 填下列 Id 或检索结果中的 Id），最后按需 search_available_tools / activate_tools 调用 Word/Excel 等业务工具。");
+        sb.AppendLine("下列条目仅含发现信息；完整说明未载入上下文。只要本轮可能需要业务写盘或严格版式/流程，默认请先完成技能链：search_available_skills → select_skill_for_turn →（按需）load_user_skill_instructions（skillId 用下列 Id 或检索结果中的 Id），再 search_available_tools / activate_tools。纯情感闲聊等无须技能与业务工具时，不必强行检索。");
         sb.AppendLine("search_available_skills 的返回不是技能正文：在按某技能规则写 Word/改格式前，必须再调用 load_user_skill_instructions，否则模型并未看到 SKILL 细则。");
         sb.AppendLine("技能正文与 references/ 等附属文件仅通过 load_user_skill_instructions 按需读取；勿依赖 search_available_tools 发现技能。");
         foreach (var s in skills)
@@ -1005,7 +1005,7 @@ public sealed partial class ChatService : IDisposable
     private const string EnableSearchSuppressionInstruction =
         "[联网检索] 当前对话模型已在设置中开启百炼「联网搜索」（enable_search）。"
         + "用户只要网络资讯、新闻、实时事实或「去网上查/搜一下」类需求时，优先直接作答，由服务端检索能力提供时效信息；"
-        + "不要轻易使用 run_command 打开默认浏览器、run_custom_page_script（如 window.open 搜索页）或依赖 get_visible_text 抓取搜索结果页来替代检索。"
+        + "不要轻易使用 run_command 打开默认浏览器、run_custom_javascript_in_page（如 window.open 搜索页）或依赖 get_visible_text 抓取搜索结果页来替代检索。"
         + "例外：用户明确要求操作其正在浏览的**当前网页**（高亮、读可见内容、截图等）或内置检索明显不足以完成该任务时，再用 Browser 等工具。";
 
     private static bool ShouldInvokeBuiltinCompletionVerifier(StreamChatTurnContext turn, string visibleAssistantTrimmed)
@@ -1085,7 +1085,7 @@ public sealed partial class ChatService : IDisposable
         if (string.IsNullOrEmpty(ct)) return "";
         if (string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase))
             return "你是浏览器侧边栏助手：可对「本机路径上的」Word/Excel/PPT 使用 Word/Excel/Ppt 插件读写（与任务窗格互补；本端无 CurrentDocument 当前文档 API，须用文件路径调用文档工具）。另支持网页整页截图与读页脚本、页内 DOM 操作、浏览器标签操作、附件与文件工具、命令行等。用户已提供 docx/xlsx 等路径时，应直接用相应文档工具完成编辑与批注，不得以「浏览器端不能改 Word」为由拒绝或要求用户必须切到任务窗格。"
-                + " Browser 类读页/截图/run_page_script 仅作用于「当前活动标签页」（用户需先切到要总结的对话或网页所在标签并置于前台）。若要总结页面底部/最近一轮对话长文，可先 scroll_to_bottom，再用 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"（或 both）；超长文本受 maxLength 截断。"
+                + " Browser 类读页/截图/run_builtin_page_script（内置 scriptId 如 get_visible_text）仅作用于「当前活动标签页」（用户需先切到要总结的对话或网页所在标签并置于前台）。若要总结页面底部/最近一轮对话长文，可先 scroll_to_bottom，再用 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"（或 both）；超长文本受 maxLength 截断。"
                 + " 总结网页上 AI 对话的「靠后内容」时可先试 scriptId=chat_page_tail_glance（泛化、不绑某家产品），不准则 scroll_to_bottom 后用 get_visible_text 且 truncateMode:\"tail\"。";
         if (string.Equals(ct, "office-word", StringComparison.OrdinalIgnoreCase))
             return "你是 Word 侧助手，负责当前打开的 Word 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";

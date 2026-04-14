@@ -4,8 +4,8 @@ using OfficeCopilot.Server.Services;
 namespace OfficeCopilot.Server.Services.ToolInvocation;
 
 /// <summary>
-/// HITL / 白名单安全检查：run_command、run_page_script、current_run_document_script、
-/// run_custom_page_script、current_run_custom_document_script。
+/// HITL / 白名单安全检查：run_command、run_builtin_page_script（扩展 RPC 与 HITL hitlKind 同名）、current_run_document_script、
+/// run_custom_javascript_in_page、current_run_custom_document_script。
 /// 从已删除的 SK <c>SecurityFilter</c> 迁入，接口为 <see cref="ISecurityPipeline"/>。
 /// </summary>
 public sealed class SecurityPipeline : ISecurityPipeline
@@ -40,13 +40,15 @@ public sealed class SecurityPipeline : ISecurityPipeline
         if (functionName == "run_command" && arguments.TryGetValue("command", out var cmdObj))
             return await EvaluateRunCommandAsync(cmdObj, ruleEffect, ct).ConfigureAwait(false);
 
-        if (functionName == "run_page_script" && arguments.TryGetValue("scriptId", out var scriptIdObj))
+        if (string.Equals(functionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("scriptId", out var scriptIdObj))
             return await EvaluateRunPageScriptAsync(scriptIdObj, ruleEffect, ct).ConfigureAwait(false);
 
         if (functionName == "current_run_document_script" && arguments.TryGetValue("scriptId", out var docScriptIdObj))
             return await EvaluateDocumentScriptAsync(docScriptIdObj, ruleEffect, ct).ConfigureAwait(false);
 
-        if (functionName == "run_custom_page_script" && arguments.TryGetValue("scriptCode", out var scriptCodeObj))
+        if (string.Equals(functionName, "run_custom_javascript_in_page", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("scriptCode", out var scriptCodeObj))
             return await EvaluateCustomPageScriptAsync(scriptCodeObj, ruleEffect, ct).ConfigureAwait(false);
 
         if (functionName == "current_run_custom_document_script" && arguments.TryGetValue("scriptCode", out var docCodeObj))
@@ -103,7 +105,7 @@ public sealed class SecurityPipeline : ISecurityPipeline
         return null;
     }
 
-    // ─── run_page_script ────────────────────────────────────────────────
+    // ─── run_builtin_page_script（Chrome 扩展 RPC 同名）──────────────────
 
     private async Task<string?> EvaluateRunPageScriptAsync(object? scriptIdObj, ToolPermissionRuleEffect ruleEffect, CancellationToken ct)
     {
@@ -138,7 +140,7 @@ public sealed class SecurityPipeline : ISecurityPipeline
         {
             if (string.IsNullOrEmpty(sessionId))
                 return "[系统拦截] 安全策略禁止执行该页面脚本，且当前无会话无法进行人工确认。";
-            var result = await RequestHitlWithPlainSummaryAsync(sessionId, scriptId ?? "", "run_page_script", scriptId ?? "", ct);
+            var result = await RequestHitlWithPlainSummaryAsync(sessionId, scriptId ?? "", "run_builtin_page_script", scriptId ?? "", ct);
             if (!result.Allowed)
                 return "用户拒绝执行或未在限定时间内确认，已取消执行。";
             _logger.LogInformation("用户已允许执行页面脚本: {ScriptId}", scriptId);
@@ -188,7 +190,7 @@ public sealed class SecurityPipeline : ISecurityPipeline
         return null;
     }
 
-    // ─── run_custom_page_script ─────────────────────────────────────────
+    // ─── run_custom_javascript_in_page（Chrome 扩展 RPC 同名）───────────
 
     private async Task<string?> EvaluateCustomPageScriptAsync(object? scriptCodeObj, ToolPermissionRuleEffect ruleEffect, CancellationToken ct)
     {
@@ -212,7 +214,7 @@ public sealed class SecurityPipeline : ISecurityPipeline
         if (string.IsNullOrEmpty(sessionId))
             return "[系统拦截] 执行自定义页面脚本需在会话中由用户确认，当前无会话。";
         var code = scriptCodeObj?.ToString()?.Trim() ?? "";
-        var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_page_script", null, ct);
+        var result = await RequestHitlWithPlainSummaryAsync(sessionId, code, "run_custom_javascript_in_page", null, ct);
         if (!result.Allowed)
             return "用户拒绝执行或未在限定时间内确认，已取消执行。";
         _logger.LogInformation("用户已允许执行自定义页面脚本");

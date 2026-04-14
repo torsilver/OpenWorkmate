@@ -90,8 +90,8 @@
 | TL1 | 时间线块类型齐全 | 发一条会触发 **至少一次工具** 的请求（如 §3.1 B03 或「总结当前页并生成 Word 到下载目录」） | 在同一轮 `msg--round` 内出现可折叠块：**推理**（模型开启 thinking 时）、可选 **工具参数（生成中）**、**计划 / 意图**（`Plugin.tool` 文案）、**准备 / 状态**（慢 IO 等 `agent_status`）、绿色 **工具执行** 块、**处理工具结果**；随后若有下一轮模型输出则再出现 **推理** / **助手回复** 等 |
 | TL2 | 推理与工具顺序  | 同上，展开各段扫一眼                                               | **推理**应在对应 **计划/意图** 与 **正在执行的工具块** 的上下文中可读；推理段不应被错误地只画在整轮最底部（已修复：新建推理段会插在「执行中」工具块之前）                                                                                                            |
 | TL3 | 无整轮读秒条   | 流式进行中看侧栏 **header 下方、计划进度条上方**                           | **不应**再出现「处理中 · 已进行 N 秒」横条（已移除，避免焦虑）；进度感依赖时间线块与工具块状态即可                                                                                                                                           |
-| TL4 | 工具块耗时    | 执行耗时 >1s 的工具（如 `run_page_script`）                        | 绿色工具块 summary 上可出现 **「已执行 Ns」** 或输出区「已耗时 Ns」（单工具粒度，保留）                                                                                                                                           |
-| TL5 | HITL 确认  | 触发需确认的 `run_page_script` / `run_command` 等               | 出现 **顶栏遮罩**；遮罩内可有 **「等待确认 · 已 N 秒…」** 与超时说明。**不**要求时间线内出现「待确认」行（当前为刻意设计；若产品改为写入时间线需另改代码与本文）                                                                                                      |
+| TL4 | 工具块耗时    | 执行耗时 >1s 的工具（如 `run_builtin_page_script`）                        | 绿色工具块 summary 上可出现 **「已执行 Ns」** 或输出区「已耗时 Ns」（单工具粒度，保留）                                                                                                                                           |
+| TL5 | HITL 确认  | 触发需确认的 `run_builtin_page_script` / `run_command` 等               | 出现 **顶栏遮罩**；遮罩内可有 **「等待确认 · 已 N 秒…」** 与超时说明。**不**要求时间线内出现「待确认」行（当前为刻意设计；若产品改为写入时间线需另改代码与本文）                                                                                                      |
 | TL6 | 服务端提示    | 若某轮触发 `stream_warning`（如记忆/知识库类告警，依赖后端策略）                | 时间线内出现 **「服务端提示」** 折叠段（黄系样式），且相对前后推理/正文顺序与 WS 到达顺序一致                                                                                                                                             |
 | TL7 | 最终正文     | 流结束                                                      | **助手回复**段含流式 Markdown；`stream_end` 后整轮折叠，最后一条助手结论仍可阅读                                                                                                                                            |
 
@@ -147,16 +147,16 @@
 | --- | ------------------------ | ------------ | ------------------------------------------------------------- | ------------------------ | -------------- |
 | B01 | `highlight_webpage_text` | 普通网页有一段可见正文  | 「请用 highlight_webpage_text 高亮词语【测试】，颜色 yellow。」               | `highlight_webpage_text` | 页面高亮           |
 | B02 | `add_floating_note`      | 同上           | 「请 add_floating_note：标题【手工测试】，内容【Browser 便签】，anchorText【测试】。」 | `add_floating_note`      | 便签可拖动          |
-| B03 | `run_page_script`        | 同上           | 「请 run_page_script：scriptId=get_page_title，paramsJson={}。」    | `run_page_script`        | 返回标题等          |
-| B04 | `run_custom_page_script` | WebSocket 正常 | 「请 run_custom_page_script：`return document.title`（需确认则先说明）。」  | `run_custom_page_script` | 标题或确认流         |
+| B03 | `run_builtin_page_script`        | 同上           | 「请 run_builtin_page_script：scriptId=get_page_title，paramsJson={}。」    | `run_builtin_page_script`        | 返回标题等          |
+| B04 | `run_custom_javascript_in_page` | WebSocket 正常 | 「请 run_custom_javascript_in_page：`return document.title`（需确认则先说明）。」  | `run_custom_javascript_in_page` | 标题或确认流         |
 | B05 | `capture_full_page`      | 同上           | 「请 capture_full_page，回复里写出 screenshot 引用。」                    | `capture_full_page`      | `screenshot:…` |
-| B06 | `run_page_script`        | 同上           | 「请 run_page_script：scriptId=get_page_outline，paramsJson 含 includeTextPrefix true、maxLength 400。」 | `run_page_script`        | 返回 url、title、headings、可选 text_prefix |
-| B07 | `run_page_script`        | 含表格的网页      | 「请 run_page_script：scriptId=extract_tables，paramsJson 含 maxTables 2、maxRows 10。」              | `run_page_script`        | Markdown 表格片段或「未找到」说明        |
-| B08 | `run_page_script`        | 当前窗口至少两个标签  | 「请 run_page_script：scriptId=tab_list，paramsJson 含 maxTabs 20。」                          | `run_page_script`        | JSON 含 tabId、active 等           |
-| B09 | `run_page_script`        | 同上           | 「请 run_page_script：scriptId=wait_for_selector，paramsJson 含 selector 为 body、timeoutMs 3000。」   | `run_page_script`        | 成功找到元素或超时原因明确             |
-| B10 | `run_page_script`        | 任选正文很长的网页（或本地长 HTML） | 「请 run_page_script：scriptId=get_visible_text，paramsJson 含 maxLength 2000、truncateMode tail。」 | `run_page_script`        | 返回中含「末尾」或省略提示，且为页底附近文本而非仅页头 |
-| B11 | `run_page_script`        | 任意常见 AI 对话网页（或普通长文页） | 「请 run_page_script：scriptId=chat_page_tail_glance，paramsJson 可含 maxTailChars 8000。」 | `run_page_script`        | 返回含「泛化」「来源：」说明 + 偏末尾正文；无内容时提示改用 get_visible_text+tail |
-| B12 | `run_custom_page_script` | WebSocket 正常、已开 Allow User Scripts | 「请 run_custom_page_script：`1+1`（无 return，需确认则先说明）。」 | `run_custom_page_script` | 工具返回须说明「空」或「需 return」，**不得**仅为泛化「已成功执行」而无原因 |
+| B06 | `run_builtin_page_script`        | 同上           | 「请 run_builtin_page_script：scriptId=get_page_outline，paramsJson 含 includeTextPrefix true、maxLength 400。」 | `run_builtin_page_script`        | 返回 url、title、headings、可选 text_prefix |
+| B07 | `run_builtin_page_script`        | 含表格的网页      | 「请 run_builtin_page_script：scriptId=extract_tables，paramsJson 含 maxTables 2、maxRows 10。」              | `run_builtin_page_script`        | Markdown 表格片段或「未找到」说明        |
+| B08 | `run_builtin_page_script`        | 当前窗口至少两个标签  | 「请 run_builtin_page_script：scriptId=tab_list，paramsJson 含 maxTabs 20。」                          | `run_builtin_page_script`        | JSON 含 tabId、active 等           |
+| B09 | `run_builtin_page_script`        | 同上           | 「请 run_builtin_page_script：scriptId=wait_for_selector，paramsJson 含 selector 为 body、timeoutMs 3000。」   | `run_builtin_page_script`        | 成功找到元素或超时原因明确             |
+| B10 | `run_builtin_page_script`        | 任选正文很长的网页（或本地长 HTML） | 「请 run_builtin_page_script：scriptId=get_visible_text，paramsJson 含 maxLength 2000、truncateMode tail。」 | `run_builtin_page_script`        | 返回中含「末尾」或省略提示，且为页底附近文本而非仅页头 |
+| B11 | `run_builtin_page_script`        | 任意常见 AI 对话网页（或普通长文页） | 「请 run_builtin_page_script：scriptId=chat_page_tail_glance，paramsJson 可含 maxTailChars 8000。」 | `run_builtin_page_script`        | 返回含「泛化」「来源：」说明 + 偏末尾正文；无内容时提示改用 get_visible_text+tail |
+| B12 | `run_custom_javascript_in_page` | WebSocket 正常、已开 Allow User Scripts | 「请 run_custom_javascript_in_page：`1+1`（无 return，需确认则先说明）。」 | `run_custom_javascript_in_page` | 工具返回须说明「空」或「需 return」，**不得**仅为泛化「已成功执行」而无原因 |
 
 **说明（白名单）**：设置「安全与确认 → Chrome → 页面脚本」默认勾选与后端 `DefaultAllowedScriptIds` 对齐；**`tab_open` 不在默认列表**（可打开任意 URL），需手动添加 scriptId `tab_open` 后再测新开标签。`tab_close` 须传非当前活动标签的 `tabId`。
 
@@ -480,7 +480,7 @@
 
 | 插件                | 工具函数名（`ToolFunction`）                                                                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Browser           | `highlight_webpage_text`, `add_floating_note`, `run_page_script`, `run_custom_page_script`, `capture_full_page`         |
+| Browser           | `highlight_webpage_text`, `add_floating_note`, `run_builtin_page_script`, `run_custom_javascript_in_page`, `capture_full_page`         |
 | File              | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`, `text_file_read`, `text_file_write`               |
 | Pdf               | `get_pdf_text`, `get_pdf_info`, `pdf_document_create`, `pdf_merge`                                                      |
 | System            | `get_current_time`                                                                                                      |

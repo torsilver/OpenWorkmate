@@ -232,7 +232,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             var cmd = cmdObj?.ToString()?.Trim();
             return string.IsNullOrEmpty(cmd) ? null : $"命令 «{LogPreview.HeadTail(cmd, 48, 48)}»";
         }
-        if (functionName == "run_page_script" && arguments.TryGetValue("scriptId", out var scriptObj))
+        if (string.Equals(functionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("scriptId", out var scriptObj))
         {
             var scriptId = scriptObj?.ToString()?.Trim();
             if (string.IsNullOrEmpty(scriptId)) return null;
@@ -240,7 +241,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
                 return $"页面脚本 «{scriptId}» 参数: {LogPreview.HeadTail(paramsStr, 64, 64)}";
             return $"页面脚本 «{scriptId}»";
         }
-        if (functionName == "run_custom_page_script" && arguments.TryGetValue("scriptCode", out var customCodeObj))
+        if (string.Equals(functionName, "run_custom_javascript_in_page", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("scriptCode", out var customCodeObj))
         {
             var code = customCodeObj?.ToString()?.Trim() ?? "";
             return code.Length <= 80 ? $"自定义页面脚本: {code}" : $"自定义页面脚本: {code[..80]}...";

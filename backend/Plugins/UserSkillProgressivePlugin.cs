@@ -26,7 +26,7 @@ public sealed class UserSkillProgressivePlugin
     [ToolFunction(DynamicToolingConstants.SearchAvailableSkillsFunctionName)]
     [Description(
         "在已启用的用户技能中按关键词检索（与 search_available_tools 无关）。返回技能 Id 与简介；"
-        + "典型流程：search_available_skills → select_skill_for_turn → load_user_skill_instructions → 再 search_available_tools 激活业务工具。"
+        + "默认先于业务工具检索：search_available_skills → select_skill_for_turn → load_user_skill_instructions → 再 search_available_tools / activate_tools（纯闲聊且无须技能时可跳过本链）。"
         + " 空 query 时仍返回若干项（已选中技能优先）。")]
     public Task<string> SearchAvailableSkillsAsync(
         [Description("检索关键词；尽量具体")] string query,

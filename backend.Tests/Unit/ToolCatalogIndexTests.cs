@@ -41,11 +41,11 @@ public class ToolCatalogIndexTests
             reg.Register("X", name, AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = name, Description = "d" }));
         }
 
-        reg.Register("Browser", "run_page_script", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "run_page_script", Description = "tabs" }));
+        reg.Register("Browser", "run_builtin_page_script", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "run_builtin_page_script", Description = "tabs" }));
         var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
-        var pinned = new[] { "run_page_script" };
+        var pinned = new[] { "run_builtin_page_script" };
         var hits = idx.Search("", 8, pinned);
-        Assert.Contains(hits, e => string.Equals(e.FunctionName, "run_page_script", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(hits, e => string.Equals(e.FunctionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

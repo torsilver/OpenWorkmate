@@ -2716,10 +2716,10 @@ function renderCliScriptUnifiedConfig() {
 
   html += '<hr style="margin:24px 0;border:0;border-top:1px solid var(--border);">';
   html += '<div class="cli-location-section">';
-  html += '<h3 style="margin:0 0 8px;font-size:16px;">Chrome（浏览器内 · run_page_script）</h3>';
+  html += '<h3 style="margin:0 0 8px;font-size:16px;">Chrome（浏览器内 · run_builtin_page_script / run_custom_javascript_in_page）</h3>';
   html += '<p class="help-text" style="margin-bottom:8px;font-size:13px;">执行位置：当前浏览器标签页（扩展注入）。仅页面脚本白名单，不包含 CMD。</p>';
   html += '<div class="cli-end-block" data-end="chrome" data-chrome-part="pageScripts">';
-  html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（run_page_script）</p>';
+  html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（WebSocket RPC 与工具名一致：run_builtin_page_script）</p>';
   html += renderScriptRows(chromeScripts, chromeScriptEmpty, chromeScriptSet);
   html += '</div></div>';
 

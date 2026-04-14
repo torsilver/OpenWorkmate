@@ -9,7 +9,7 @@ namespace OfficeCopilot.Server.Services;
 /// </summary>
 public static class SessionToolResolver
 {
-    /// <summary>按 clientType 解析本轮暴露给模型的工具：使用 selectedPairs，或该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script 与 current_run_custom_document_script；Chrome 追加 run_page_script 与 run_custom_page_script；所有端追加 run_command。</summary>
+    /// <summary>按 clientType 解析本轮暴露给模型的工具：使用 selectedPairs，或该端全量允许的函数。保底追加：Office/WPS 追加 current_run_document_script 与 current_run_custom_document_script；Chrome 追加 run_builtin_page_script 与 run_custom_javascript_in_page；所有端追加 run_command。</summary>
     public static IReadOnlyList<AITool>? ResolveToolsByClientType(
         ToolRegistry toolRegistry,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
@@ -41,8 +41,8 @@ public static class SessionToolResolver
             }
             if (IsChromeClient(clientType))
             {
-                EnsureTool("Browser", "run_page_script");
-                EnsureTool("Browser", "run_custom_page_script");
+                EnsureTool("Browser", "run_builtin_page_script");
+                EnsureTool("Browser", "run_custom_javascript_in_page");
             }
             EnsureTool("CLI", "run_command");
         }
@@ -102,7 +102,7 @@ public static class SessionToolResolver
             skills.Count);
     }
 
-    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；可选配置的 UserSkill；Chrome 含 run_page_script 与 run_custom_page_script；可选合并 Plan 四函数。</summary>
+    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；可选配置的 UserSkill；Chrome 含 run_builtin_page_script 与 run_custom_javascript_in_page；可选合并 Plan 四函数。</summary>
     public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
         ToolRegistry toolRegistry,
         string? clientType,
@@ -129,8 +129,8 @@ public static class SessionToolResolver
         }
         if (IsChromeClient(clientType))
         {
-            AddIf("Browser", "run_page_script");
-            AddIf("Browser", "run_custom_page_script");
+            AddIf("Browser", "run_builtin_page_script");
+            AddIf("Browser", "run_custom_javascript_in_page");
         }
         AddIf("CLI", "run_command");
         AddIf("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName);

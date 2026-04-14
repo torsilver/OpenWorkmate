@@ -339,8 +339,8 @@ public class AppConfig
     /// </summary>
     public Dictionary<string, List<string>> AllowedCliCommandsByClient { get; set; } = new();
     /// <summary>
-    /// 按端 <c>run_page_script</c> 的 scriptId 白名单；空则使用默认列表。
-    /// 键同上。仅在会话会调用 Browser 插件时参与校验（主要为 <c>chrome</c>；Office/WPS 不向模型暴露 <c>run_page_script</c>，对应键多为保留项）。
+    /// 按端 Chrome 扩展 RPC <c>run_builtin_page_script</c> 的 scriptId 白名单（与模型工具名一致）；空则使用默认列表。
+    /// 键同上。仅在会话会调用 Browser 插件时参与校验（主要为 <c>chrome</c>；Office/WPS 不向模型暴露页内脚本工具，对应键多为保留项）。
     /// </summary>
     public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
     /// <summary>
@@ -412,7 +412,7 @@ public static class CliScriptEndKeys
 
     public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
 
-    /// <summary>Chrome <c>run_page_script</c> 默认白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_SCRIPTS</c> 一致）。<c>tab_open</c> 可导航至任意 URL，默认不包含，由用户在设置中手动加入。</summary>
+    /// <summary>Chrome 扩展内置脚本 Id 默认白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_SCRIPTS</c> 一致；经工具 <c>run_builtin_page_script</c> 下发）。<c>tab_open</c> 可导航至任意 URL，默认不包含，由用户在设置中手动加入。</summary>
     public static readonly string[] DefaultAllowedScriptIds =
     {
         "get_visible_text", "get_page_title", "chat_page_tail_glance", "get_page_outline", "extract_links", "extract_tables",

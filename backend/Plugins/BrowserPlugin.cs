@@ -114,33 +114,40 @@ public class BrowserPlugin
         }
     }
 
-    /// <summary>MCP 风格工具：在当前标签页执行预定义页面脚本，仅支持白名单内的 scriptId。</summary>
-    [ToolFunction("run_page_script")]
+    /// <summary>在当前标签页执行扩展预置脚本（白名单 scriptId）。与 <see cref="RunCustomJavaScriptInPageAsync"/> 分离命名，避免模型把「工具名」误填进 scriptId。</summary>
+    [ToolFunction("run_builtin_page_script")]
     [Description(
-        "运行位置：Chrome 当前标签页（DOM 脚本由扩展注入；tab_* 在扩展内用 chrome.tabs 执行）。仅白名单内 scriptId。paramsJson 为 JSON 对象字符串。\n" +
+        "【内置白名单脚本】运行位置：Chrome 当前标签页（DOM 由扩展注入；tab_* 在扩展内用 chrome.tabs）。仅允许扩展白名单中的 scriptId（如 get_visible_text、extract_links），paramsJson 为 JSON 对象字符串。\n" +
+        "禁止：不要把其它工具的函数名（如 run_custom_javascript_in_page、run_custom_page_script）填进 scriptId；需要整段自定义 JS 时请改用工具 run_custom_javascript_in_page（参数 scriptCode）。\n" +
         "读页：get_visible_text{maxLength?,truncateMode?} — 未传 maxLength 时默认约 50 万字符（与扩展硬上限一致），一般整页可见文本一次返回；更长页面仍会截断。truncateMode：head（超长保留开头，默认）|tail（保留末尾）|both（首尾各半+省略中间）。get_page_title；chat_page_tail_glance{maxTailChars?} — 泛化 AI 对话页末尾摘录（不绑某家产品；尽力用常见 role/data 选择器，失败则用 get_visible_text+tail）；get_page_outline{maxHeadingLevel,maxHeadings,includeTextPrefix,maxLength}；extract_links{maxLinks,sameOriginOnly}；extract_tables{selector,maxTables,maxRows,maxCols}。\n" +
         "滚动：scroll_to_top/bottom；scroll_by{deltaY,smooth}；scroll_into_view{selector,block,inline}。\n" +
         "等待：wait_for_selector{selector,timeoutMs,requireVisible}。\n" +
         "交互：click_selector{selector,doubleClick}；fill_input{selector,value}；select_option{selector,value}；set_checked{selector,checked}；hover_selector/focus_selector{selector}；press_key{key,code?,selector?,ctrlKey?...}（合成事件，部分站点不响应）。\n" +
         "标签：tab_list{maxTabs,scope?,urlMaxLength?} — 默认仅当前窗口；scope 为 browser 时列出本浏览器所有窗口的标签（条数受 maxTabs 限制，url 会截断）。tab_list_all_windows{maxTabs,urlMaxLength?} 等同于 tab_list 且 scope=browser。tab_activate{tabId}；tab_reload{tabId?}；tab_go_back/forward{tabId?}；tab_close{tabId}（须非当前活动页）；tab_open{url?} 默认不在白名单（打开任意链接须在设置中勾选 scriptId）。")]
-    public async Task<string> RunPageScriptAsync(
-        [Description("scriptId：见工具 Description 列表；须在允许白名单内。")] string scriptId,
+    public async Task<string> RunBuiltinPageScriptAsync(
+        [Description("scriptId：仅扩展内置 id（如 get_visible_text）；须在允许白名单内。禁止填工具名。")] string scriptId,
         [Description("JSON 参数字符串，如 {} 或 {\"selector\":\"#x\",\"timeoutMs\":8000}。默认 {}。")] string paramsJson = "{}")
     {
         var sessionId = SessionContext.GetSessionId();
-        _logger.LogInformation("[Browser] run_page_script scriptId={ScriptId} sessionId={SessionId}", scriptId, sessionId ?? "(null)");
+        _logger.LogInformation("[Browser] run_builtin_page_script scriptId={ScriptId} sessionId={SessionId}", scriptId, sessionId ?? "(null)");
         if (string.IsNullOrEmpty(sessionId))
             return "Error: Session ID is missing (no active chat context).";
 
         if (_sessionManager.Get(sessionId) == null)
             return "Error: WebSocket connection not found for this session.";
 
+        var sid = scriptId?.Trim() ?? "";
+        if (LooksLikeToolNameInsteadOfScriptId(sid))
+        {
+            return "失败：scriptId 填写错误。你传入的是「工具/函数名」或旧名，不是扩展内置脚本的 Id。若要在当前页执行整段自定义 JavaScript，请调用 run_custom_javascript_in_page，使用参数 scriptCode；若要用预置读页/链接/标签等能力，scriptId 须为 Description 中的英文 id（如 get_visible_text、extract_links），禁止填工具名。";
+        }
+
         var reqId = _rpcManager.RegisterRequest(out var responseTask);
         var msg = new WsMessage
         {
             Type = "rpc_request",
             Id = reqId,
-            Method = "run_page_script",
+            Method = "run_builtin_page_script",
             Params = JsonSerializer.SerializeToElement(new { scriptId, scriptParams = paramsJson })
         };
         var payload = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
@@ -153,7 +160,7 @@ public class BrowserPlugin
             var resultStr = BrowserPluginRpcText.TryParseResultString(result);
             if (BrowserPluginRpcText.IsEffectivelyEmpty(resultStr))
             {
-                _logger.LogDebug("[Browser] run_page_script scriptId={ScriptId} empty RPC result ValueKind={Kind}", scriptId, kind);
+                _logger.LogDebug("[Browser] run_builtin_page_script scriptId={ScriptId} empty RPC result ValueKind={Kind}", scriptId, kind);
                 return BrowserPluginRpcText.PageScriptEmptyNotice(kind);
             }
 
@@ -165,11 +172,14 @@ public class BrowserPlugin
         }
     }
 
-    /// <summary>在当前标签页执行 AI 提供的 JavaScript 代码并返回结果；仅用于无预定义脚本时的兜底。需用户 HITL 确认后执行。</summary>
-    [ToolFunction("run_custom_page_script")]
-    [Description("运行位置：用户当前浏览器标签页的页面上下文中。执行 AI 提供的一段 JavaScript 代码字符串并返回执行结果（如 return document.title）。仅当没有合适预定义脚本时使用此兜底能力。执行前需用户确认。")]
-    public async Task<string> RunCustomPageScriptAsync(
-        [Description("要在页面上下文中执行的 JavaScript 代码，应包含 return 语句返回结果（如 return JSON.stringify([...document.images].map(i => i.src));）。")] string scriptCode)
+    /// <summary>在当前标签页执行 AI 提供的 JavaScript；与 <see cref="RunBuiltinPageScriptAsync"/> 分离命名，参数为 scriptCode 而非 scriptId。</summary>
+    [ToolFunction("run_custom_javascript_in_page")]
+    [Description(
+        "【自定义页内 JS】运行位置：用户当前浏览器标签页的页面上下文。传入一整段 JavaScript（参数名 scriptCode），应包含 return 以返回结果（如 return document.title）。\n" +
+        "禁止：不要用本工具去替代 run_builtin_page_script；读可见文本、提取链接等优先用 run_builtin_page_script + 对应 scriptId。\n" +
+        "仅当没有合适预置脚本时使用；执行前可能需用户确认（视安全设置）。")]
+    public async Task<string> RunCustomJavaScriptInPageAsync(
+        [Description("在页面中执行的 JavaScript 源码；应包含 return（如 return JSON.stringify([...document.images].map(i => i.src));）。")] string scriptCode)
     {
         const int MaxScriptCodeLength = 32 * 1024;
         if (string.IsNullOrWhiteSpace(scriptCode))
@@ -178,7 +188,7 @@ public class BrowserPlugin
             return $"失败：脚本长度超过限制（最大 {MaxScriptCodeLength} 字符）。";
 
         var sessionId = SessionContext.GetSessionId();
-        _logger.LogInformation("[Browser] run_custom_page_script sessionId={SessionId} codeLen={Len}", sessionId ?? "(null)", scriptCode.Length);
+        _logger.LogInformation("[Browser] run_custom_javascript_in_page sessionId={SessionId} codeLen={Len}", sessionId ?? "(null)", scriptCode.Length);
         if (string.IsNullOrEmpty(sessionId))
             return "Error: Session ID is missing (no active chat context).";
 
@@ -190,7 +200,7 @@ public class BrowserPlugin
         {
             Type = "rpc_request",
             Id = reqId,
-            Method = "run_custom_page_script",
+            Method = "run_custom_javascript_in_page",
             Params = JsonSerializer.SerializeToElement(new { scriptCode })
         };
         var payload = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
@@ -203,7 +213,7 @@ public class BrowserPlugin
             var resultStr = BrowserPluginRpcText.TryParseResultString(result);
             if (BrowserPluginRpcText.IsEffectivelyEmpty(resultStr))
             {
-                _logger.LogDebug("[Browser] run_custom_page_script empty RPC result ValueKind={Kind}", kind);
+                _logger.LogDebug("[Browser] run_custom_javascript_in_page empty RPC result ValueKind={Kind}", kind);
                 return BrowserPluginRpcText.CustomScriptEmptyNotice(kind);
             }
 
@@ -306,5 +316,15 @@ public class BrowserPlugin
             _logger.LogWarning(ex, "[Browser] capture_full_page failed");
             return "失败：整页截图处理出错（" + ex.Message + "）。";
         }
+    }
+
+    /// <summary>模型常误把另一工具名填进 scriptId；此类值永不可能是合法白名单 id。</summary>
+    private static bool LooksLikeToolNameInsteadOfScriptId(string scriptIdTrimmed)
+    {
+        if (string.IsNullOrEmpty(scriptIdTrimmed)) return false;
+        return string.Equals(scriptIdTrimmed, "run_custom_page_script", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(scriptIdTrimmed, "run_custom_javascript_in_page", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(scriptIdTrimmed, "run_page_script", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(scriptIdTrimmed, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase);
     }
 }
