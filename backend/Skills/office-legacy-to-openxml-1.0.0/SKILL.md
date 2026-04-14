@@ -13,6 +13,7 @@ metadata: {"clawdbot":{"emoji":"📄","os":["win32"]}}
 
 - 用户或附件路径为 **`.doc`、`.dot`、`.xls`、`.ppt`**（Office 97–2003 二进制），且后续要用 **`word_*` / `excel_*` / `ppt_*`** 等 **仅支持 Open XML** 的内核工具时。
 - **不要**对 `.docx` / `.xlsx` / `.pptx` 调用 `office_legacy_save_as_open_xml`（工具会报错）；直接走对应 Open XML 工具即可。
+- **`.pdf`** 不是本技能范围：不要用 `office_legacy_save_as_open_xml`。PDF 读写见技能 **`Pdf / Pdf`**（`get_pdf_text`、`pdf_merge` 等）。
 
 ### 推荐顺序
 
