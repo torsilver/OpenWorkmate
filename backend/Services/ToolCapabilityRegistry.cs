@@ -25,6 +25,7 @@ public static class ToolCapabilityRegistry
         var d = new Dictionary<string, ToolCapability>(StringComparer.OrdinalIgnoreCase)
         {
             ["CLI:run_command"] = new(false, true, true, false),
+            ["OfficeLegacy:office_legacy_save_as_open_xml"] = new(false, true, true, false),
             ["Browser:run_page_script"] = new(false, true, true, false),
             ["Browser:run_custom_page_script"] = new(false, true, true, false),
             ["CurrentDocument:current_run_document_script"] = new(false, true, true, false),

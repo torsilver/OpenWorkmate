@@ -184,6 +184,7 @@ public sealed partial class ChatService : IDisposable
         TryAddBuiltInPlugin(new ExcelPlugin(_loggerFactory.CreateLogger<ExcelPlugin>()));
         TryAddBuiltInPlugin(new WordPlugin(_loggerFactory.CreateLogger<WordPlugin>()));
         TryAddBuiltInPlugin(new PptPlugin(_loggerFactory.CreateLogger<PptPlugin>()));
+        TryAddBuiltInPlugin(new OfficeLegacyConvertPlugin(_loggerFactory.CreateLogger<OfficeLegacyConvertPlugin>()));
 
         var rpcManager = _serviceProvider.GetRequiredService<RpcManager>();
         var screenshotCache = _serviceProvider.GetRequiredService<ScreenshotCacheService>();

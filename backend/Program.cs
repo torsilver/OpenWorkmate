@@ -748,6 +748,7 @@ app.MapGet("/api/tools/builtin", () =>
         new() { Id = "CLI", Name = "CLI", Description = "执行白名单内系统命令" },
         new() { Id = "Excel", Name = "Excel", Description = "读写 Excel 文档" },
         new() { Id = "Word", Name = "Word", Description = "读写 Word 文档" },
+        new() { Id = "OfficeLegacy", Name = "OfficeLegacy", Description = "旧版 Office 二进制（.doc/.dot/.xls/.ppt）通过本机 Microsoft Office 另存为 Open XML（.docx/.xlsx/.pptx），供 Word/Excel/Ppt 工具链使用" },
         new() { Id = "Ppt", Name = "Ppt", Description = "读写 PPT 演示文稿" },
         new() { Id = "CurrentDocument", Name = "CurrentDocument", Description = "当前打开的 Word/Excel/PPT 文档（任务窗格连接时）：正文/选区/表格/查找替换、Excel 区域/公式/工作表、PPT 幻灯片、预定义脚本" },
         new() { Id = "ClawhubSkill", Name = "ClawhubSkill", Description = "运行 Clawhub 可执行技能中的 node 脚本（无原生适配器时使用）" },
