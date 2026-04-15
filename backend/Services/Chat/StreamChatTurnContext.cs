@@ -35,7 +35,10 @@ public sealed class StreamChatTurnContext
     /// <summary>本轮绑定到 MAF 主会话的工具列表（含空列表 = 不向模型注册任何工具）。工具阶段末尾赋值；为 null 时 <see cref="MafMainSessionStreamRunner"/> 回退为全量允许工具（非动态模式）。</summary>
     public IReadOnlyList<AITool>? ToolsForAgentRound { get; set; }
 
-    /// <summary>动态工具模式单轮状态；非空时主会话 Runner 使用外层扩容循环。</summary>
+    /// <summary>
+    /// 动态工具模式单轮状态；非空时主会话 Runner 使用外层扩容循环。
+    /// 在 tooling 阶段为每条用户消息新建；与内置 completion verifier 续跑共用同一实例（续跑前不清空已激活列表）。
+    /// </summary>
     public DynamicToolingTurnState? DynamicToolingState { get; set; }
 
     /// <summary>当前活动模型开启百炼 <c>enable_search</c> 时，由主会话 <c>BuildHistoryForStreamingTurn</c> 拼入 system 的短提示（抑制「开浏览器页再搜」）；未开启时为 null。</summary>

@@ -47,6 +47,7 @@ public static class MafMainSessionStreamRunner
 
         if (dynamicTooling is { Config.Enabled: true } dts)
         {
+            var dynFallbackLog = loggerFactory.CreateLogger(typeof(MafMainSessionStreamRunner).FullName!);
             using (DynamicToolingTurnScope.Push(dts))
             {
                 for (var outer = 0; outer < dts.Config.MaxOuterLoops; outer++)
@@ -64,7 +65,7 @@ public static class MafMainSessionStreamRunner
                         break;
                 }
 
-                if (dts.Config.FallbackToFullAllowlistWhenNoActivation && !dts.HasActivatedAnyBusinessTool())
+                if (DynamicToolingFallbackEvaluator.ShouldFallbackToFullAllowlist(dts))
                 {
                     var full = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId, wpsHostKindForSession));
                     await foreach (var item in RunSinglePassStreamingAsync(
@@ -72,6 +73,14 @@ public static class MafMainSessionStreamRunner
                                        sessionId, state, ctxConfig, outcome, contextAttemptIndex,
                                        requireToolInvocation, contextProviders, full, ct).ConfigureAwait(false))
                         yield return item;
+                }
+                else if (dts.Config.FallbackToFullAllowlistWhenNoActivation
+                         && !dts.HasActivatedAnyBusinessTool()
+                         && dts.EffectfulNonMetaToolInvokedThisTurn)
+                {
+                    dynFallbackLog.LogInformation(
+                        "[{SessionId}] DynamicTools: skipping full-allowlist fallback (effectful non-meta tool already invoked this turn).",
+                        sessionId);
                 }
             }
 

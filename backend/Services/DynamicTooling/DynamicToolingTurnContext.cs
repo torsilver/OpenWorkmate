@@ -2,7 +2,11 @@ using Microsoft.Extensions.AI;
 
 namespace OfficeCopilot.Server.Services.DynamicTooling;
 
-/// <summary>主会话单轮动态工具状态：由外层 MAF 循环写入；<see cref="AgentToolingPlugin"/> 经 AsyncLocal 读取。</summary>
+/// <summary>
+/// 主会话单轮动态工具状态：由外层 MAF 循环写入；<see cref="AgentToolingPlugin"/> 经 AsyncLocal 读取。
+/// 生命周期为「单条用户消息」触发的本轮流式编排（<see cref="OfficeCopilot.Server.Services.Chat.StreamChatTurnContext"/> 在 tooling 阶段新建本类型）；
+/// 内置 completion verifier 的续跑与首轮共用同一 <see cref="OfficeCopilot.Server.Services.Chat.StreamChatTurnContext"/>，故共用同一实例、不在续跑前清空。
+/// </summary>
 public sealed class DynamicToolingTurnState
 {
     public DynamicToolingTurnState(
@@ -80,6 +84,24 @@ public sealed class DynamicToolingTurnState
     public void MarkExpansion() => ExpansionOccurredInLastPass = true;
 
     public void ClearExpansionFlag() => ExpansionOccurredInLastPass = false;
+
+    /// <summary>
+    /// 本轮是否已执行过至少一次非引导（<see cref="DynamicToolingConstants.MetaFunctionNames"/>）工具；
+    /// 用于抑制「未 activate 则全量兜底」的第二 pass，避免脚本等业务工具已成功后再开全量表导致重复操作。
+    /// </summary>
+    public bool EffectfulNonMetaToolInvokedThisTurn { get; private set; }
+
+    /// <summary>
+    /// 在插件已实际执行后调用：meta 工具（检索/激活/技能链引导）不置位。
+    /// </summary>
+    public void MarkEffectfulNonMetaInvocation(string? bareFunctionName)
+    {
+        if (string.IsNullOrWhiteSpace(bareFunctionName))
+            return;
+        if (DynamicToolingConstants.MetaFunctionNames.Contains(bareFunctionName))
+            return;
+        EffectfulNonMetaToolInvokedThisTurn = true;
+    }
 
     public bool HasActivatedAnyBusinessTool()
     {

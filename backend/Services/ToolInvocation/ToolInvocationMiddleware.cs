@@ -83,6 +83,9 @@ public static class ToolInvocationMiddleware
 
                 TryRefreshDynamicToolingToolsAfterActivate(toolRegistry, funcName, pipelineServices.Logger);
 
+                // 插件已执行：非 meta 工具（含 envelope 失败）均抑制「未 activate 则全量兜底」，避免二次写文档等。
+                DynamicToolingTurnScope.Current?.MarkEffectfulNonMetaInvocation(funcName);
+
                 // MEAI FunctionInvokingChatClient：工具内异常可能不抛，而以 FunctionInvocationResult 封装。
                 if (ToolInvocationMeaiResultInspector.TryGetEnvelopeFailureMessage(
                         result, pluginName, funcName, out var envelopeMsg))
