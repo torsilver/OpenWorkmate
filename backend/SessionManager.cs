@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>WebSocket 会话：clientType、Agent 身份（来自配置 + WS query）、页签标题（仅页面上下文）。</summary>
+/// <summary>WebSocket 会话：clientType、Agent 身份（来自配置 + WS query）、set_context 的页签/展示名与 WPS 宿主类型。</summary>
 public sealed class SessionManager
 {
     private readonly ILogger<SessionManager> _logger;
@@ -25,7 +25,7 @@ public sealed class SessionManager
 
         var pid = (agentProfileId ?? "").Trim();
         var dn = (agentDisplayName ?? "").Trim();
-        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, new SemaphoreSlim(1, 1));
+        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, new SemaphoreSlim(1, 1));
     }
 
     public void Remove(string sessionId)
@@ -60,16 +60,22 @@ public sealed class SessionManager
             ? (string.IsNullOrEmpty(entry.AgentDisplayName) ? null : entry.AgentDisplayName)
             : null;
 
-    /// <summary>set_context 更新的当前页标题（日志/调试）。</summary>
-    public void SetPageContextTitle(string sessionId, string? pageTitle)
+    /// <summary>set_context：按字段合并更新（null 且对应 update 为 false 时保留原值）。</summary>
+    public void MergeClientPageContext(string sessionId, string? pageTitle, string? wpsHostKind, bool updatePageTitle, bool updateWpsHostKind)
     {
-        if (_connections.TryGetValue(sessionId, out var entry))
-            _connections[sessionId] = entry with { PageContextTitle = pageTitle };
+        if (!_connections.TryGetValue(sessionId, out var entry)) return;
+        var pt = updatePageTitle ? pageTitle : entry.PageContextTitle;
+        var hk = updateWpsHostKind ? wpsHostKind : entry.WpsHostKind;
+        _connections[sessionId] = entry with { PageContextTitle = pt, WpsHostKind = hk };
     }
 
-    /// <summary>当前页标题（若有）。</summary>
+    /// <summary>当前页标题或 WPS 展示名（若有）。</summary>
     public string? GetPageContextTitle(string sessionId) =>
         _connections.TryGetValue(sessionId, out var entry) ? entry.PageContextTitle : null;
+
+    /// <summary>set_context 时 WPS 上报的宿主类型（规范化小写：word|et|wpp|unknown|none）。</summary>
+    public string? GetWpsHostKind(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var entry) ? entry.WpsHostKind : null;
 
     public int Count => _connections.Count;
 
@@ -160,5 +166,6 @@ public sealed class SessionManager
         string AgentProfileId,
         string AgentDisplayName,
         string? PageContextTitle,
+        string? WpsHostKind,
         SemaphoreSlim SendLock);
 }

@@ -1376,14 +1376,31 @@ static async Task HandleSessionAsync(
         switch (incoming.Type)
         {
             case "set_context":
-                if (!string.IsNullOrEmpty(incoming.PageTitle))
+            {
+                var updateTitle = !string.IsNullOrWhiteSpace(incoming.PageTitle);
+                var updateHost = !string.IsNullOrWhiteSpace(incoming.WpsHostKind);
+                if (!updateTitle && !updateHost)
+                    break;
+
+                string? pt = null;
+                if (updateTitle)
                 {
-                    var pt = incoming.PageTitle.Trim();
+                    pt = incoming.PageTitle!.Trim();
                     if (pt.Length > 200) pt = pt[..200];
-                    sessions.SetPageContextTitle(sessionId, pt);
-                    logger.LogDebug("[{SessionId}] set_context pageTitle={PageTitle}", sessionId, LogPreview.HeadTail(pt, 50, 50));
                 }
+
+                string? hk = null;
+                if (updateHost)
+                {
+                    hk = ClientPageContextSuffixBuilder.NormalizeWpsHostKind(incoming.WpsHostKind);
+                    if (hk == null)
+                        logger.LogDebug("[{SessionId}] set_context ignored invalid wpsHostKind={Raw}", sessionId, LogPreview.HeadTail(incoming.WpsHostKind!.Trim(), 40, 40));
+                }
+
+                sessions.MergeClientPageContext(sessionId, pt, hk, updateTitle, updateHost && hk != null);
+                logger.LogDebug("[{SessionId}] set_context wpsHostKind={Host} pageTitle={PageTitle}", sessionId, hk ?? "-", updateTitle ? LogPreview.HeadTail(pt!, 50, 50) : "-");
                 break;
+            }
             case "ping":
                 await sessions.SendWsMessageAsync(sessionId, new WsMessage { Type = "pong", Content = "pong" });
                 break;

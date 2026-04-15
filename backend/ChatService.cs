@@ -1143,7 +1143,11 @@ public sealed partial class ChatService : IDisposable
         if (string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase))
             return "你是 Excel 侧助手，负责当前打开的 Excel 工作簿；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "wps", StringComparison.OrdinalIgnoreCase))
-            return "你是 WPS 侧助手，负责当前打开的 WPS 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
+            return "你是 WPS 侧助手：通过 CurrentDocument 工具操作**当前活动**的 WPS 文字/表格/演示（以用户前台打开的窗口为准）；本端**没有**浏览器页内脚本与活动标签页能力，读网页、高亮页内内容请用户在 Chrome 侧边栏完成。"
+                + " 工具选择顺序（与浏览器端「先内置 scriptId、再兜底」同理）：① 能完成任务时**优先**使用 CurrentDocument **具名工具**——表格用 current_excel_get_used_range、current_excel_read_range、current_excel_write_range、current_excel_list_sheets、current_excel_read_formulas、current_excel_write_formulas；文字用 current_word_*；演示用 current_ppt_*。② 确需脚本时**先** current_run_document_script（白名单 scriptId，须在前端注册表存在）。③ **最后**才用 current_run_custom_document_script；禁止把任意脚本当作首选。"
+                + " current_excel_write_range：参数 data 必须是 **JSON 二维数组**（如 [[\"姓名\",\"部门\"],[\"张三\",\"技术部\"]]），不要用单个长字符串代替整张表；address 为左上角时应与数组行列一致，或写完整区域如 A1:E5。"
+                + " WPS 宿主**不是** Office.js：不要使用 Excel 等 Office Add-in 全局；应使用 WPS 注入的 Application/文档对象模型（与任务窗格 RPC 实现一致）。"
+                + " 若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-powerpoint", StringComparison.OrdinalIgnoreCase))
             return "你是 PowerPoint 侧助手，负责当前打开的 PowerPoint 演示文稿；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         return "";

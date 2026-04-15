@@ -241,6 +241,14 @@ public sealed partial class ChatService
                 dyn += "\n\n" + DynamicToolingInstruction.BootstrapDirectToolsHint;
             id = string.IsNullOrEmpty(id) ? dyn : id + "\n\n" + dyn;
         }
+
+        var pageCtx = ClientPageContextSuffixBuilder.Build(
+            clientType,
+            turn.SessionManager.GetWpsHostKind(sessionId),
+            turn.SessionManager.GetPageContextTitle(sessionId));
+        if (!string.IsNullOrEmpty(pageCtx))
+            id = string.IsNullOrEmpty(id) ? pageCtx : id + "\n\n" + pageCtx;
+
         turn.IdentitySuffix = id;
         turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
     }

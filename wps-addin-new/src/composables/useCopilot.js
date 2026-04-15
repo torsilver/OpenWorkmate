@@ -330,6 +330,9 @@ function wpsPptPickTextShape(slide, shapeIndex, shapeName) {
 }
 
 export function useCopilot() {
+  /** set_context 去重：wpsHostKind + pageTitle 与上次一致则跳过 */
+  let lastSetContextSig = ''
+
   const connected = ref(false)
   const messages = ref([])
   const currentRound = ref(null) // { streamContent, timelineSegments, isStreaming, ... }
@@ -529,7 +532,7 @@ export function useCopilot() {
     }
   }
 
-  /** 对齐 Chrome set_context：供后端注入页面/文档上下文（复用 pageTitle 字段）。 */
+  /** 对齐 Chrome set_context 的 pageTitle：展示用（应用名 + 文档名）；宿主类型见 wpsHostKind 字段。 */
   function getWpsDocumentContextLabel() {
     try {
       const wpsGlobal = typeof window !== 'undefined' ? window.wps : null
@@ -560,12 +563,19 @@ export function useCopilot() {
     }
   }
 
+  /** 对齐 Chrome set_context；WPS 扩展 wpsHostKind（与 wps-rpc/hostKind 同源），供后端注入 system。 */
   function sendSetContext() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const w = typeof window !== 'undefined' ? window.wps : null
+    const wpsHostKind = getWpsHostKind(w)
     const pageTitle = getWpsDocumentContextLabel()
-    if (!pageTitle) return
+    const sig = wpsHostKind + '\0' + pageTitle
+    if (sig === lastSetContextSig) return
+    const payload = { type: 'set_context', wpsHostKind }
+    if (pageTitle) payload.pageTitle = pageTitle
     try {
-      ws.send(JSON.stringify({ type: 'set_context', pageTitle }))
+      ws.send(JSON.stringify(payload))
+      lastSetContextSig = sig
     } catch {
       /* ignore */
     }
@@ -1218,7 +1228,8 @@ export function useCopilot() {
       round.isStreaming = false
       round.parsedHtml = typeof marked.parse === 'function' ? marked.parse(round.streamContent) : round.streamContent
       removeWelcome()
-      const segs = round.timelineSegments.map((s) => ({ ...s, open: false }))
+      // 保留各段的 open（尤其最后一条「助手回复」应为展开），勿在入列时一律 false —— 否则历史轮总结永远折叠。
+      const segs = round.timelineSegments.map((s) => ({ ...s }))
       messages.value.push({
         type: 'round',
         streamContent: round.streamContent,
@@ -1267,6 +1278,7 @@ export function useCopilot() {
       reconnectDelay = RECONNECT_BASE_MS
       connected.value = true
       addSystemMessage('已连接到本地服务')
+      lastSetContextSig = ''
       sendSetContext()
       while (pendingMessages.length > 0) {
         const m = pendingMessages.shift()
@@ -1306,6 +1318,7 @@ export function useCopilot() {
       addBotMessage('连接已断开，消息未发送。请检查后台是否启动，并在 Chrome 扩展中配置。', true)
       return
     }
+    sendSetContext()
     const skipPlan = sendOpts && sendOpts.skipPlan === true
     const payload = { type: 'text', content: text || '' }
     if (!skipPlan && planId.value) {

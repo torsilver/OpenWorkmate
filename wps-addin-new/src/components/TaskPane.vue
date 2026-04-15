@@ -102,7 +102,7 @@
                 v-if="seg.kind !== 'tool'"
                 class="timeline-seg"
                 :class="'timeline-seg--' + seg.kind"
-                :open="false"
+                :open="!!seg.open"
               >
                 <summary>
                   <span class="timeline-seg__label">{{ seg.title }}</span>
@@ -118,7 +118,7 @@
               <details
                 v-else
                 :class="['tool-call-block', 'tool-call--' + seg.status]"
-                :open="false"
+                :open="!!seg.open"
               >
                 <summary>
                   <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
@@ -394,7 +394,7 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCopilot } from '../composables/useCopilot'
 
 export default {
@@ -402,6 +402,20 @@ export default {
   setup() {
     const copilot = useCopilot()
     const fileInputRef = ref(null)
+    const messagesRef = ref(null)
+
+    function scrollMessagesToBottom() {
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          const el = messagesRef.value
+          if (!el) return
+          el.scrollTop = el.scrollHeight
+        })
+      })
+    }
+
+    watch(copilot.messages, scrollMessagesToBottom, { deep: true })
+    watch(copilot.currentRound, scrollMessagesToBottom, { deep: true })
 
     // TaskPane 在 WPS 内通常被 iframe 承载。
     // iframe 的可视高度往往小于宿主窗口高度，若组件依赖 100vh/min-height:100vh 会导致右侧溢出出现滚动条。
@@ -417,6 +431,7 @@ export default {
       document.documentElement.style.height = '100%'
       document.body.style.height = '100%'
       document.body.style.minHeight = '0'
+      scrollMessagesToBottom()
     })
 
     onUnmounted(() => {
@@ -456,6 +471,7 @@ export default {
     }
     return {
       ...copilot,
+      messagesRef,
       formatHistoryTime,
       roundNeedsBottomBubble,
       fileInputRef,

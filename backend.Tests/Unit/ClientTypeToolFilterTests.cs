@@ -12,6 +12,8 @@ public class ClientTypeToolFilterTests
         Assert.True(ClientTypeToolFilter.IsAllowed("CLI", "run_command", "chrome"));
         Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "chrome"));
         Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_document_create", "chrome"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("AgentTooling", DynamicToolingConstants.SearchFunctionName, "chrome"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("AgentTooling", DynamicToolingConstants.ActivateFunctionName, "chrome"));
     }
 
     [Fact]
@@ -93,6 +95,16 @@ public class ClientTypeToolFilterTests
                 ClientTypeToolFilter.IsAllowed("UserSkillProgressive", "load_user_skill_instructions", ct),
                 $"UserSkillProgressive should be allowed for {ct}");
             Assert.True(ClientTypeToolFilter.IsAllowed("MCP_xyz", "tool", ct), $"MCP_* should be allowed for {ct}");
+            Assert.True(
+                ClientTypeToolFilter.IsAllowed("AgentTooling", DynamicToolingConstants.SearchFunctionName, ct),
+                $"AgentTooling search should be allowed for {ct}");
+            Assert.True(
+                ClientTypeToolFilter.IsAllowed("AgentTooling", DynamicToolingConstants.ActivateFunctionName, ct),
+                $"AgentTooling activate should be allowed for {ct}");
+            Assert.True(ClientTypeToolFilter.IsAllowed("CLI", "run_command", ct), $"CLI run_command should be allowed for {ct}");
+            Assert.True(ClientTypeToolFilter.IsAllowed("File", "text_file_read", ct), $"File should be allowed for {ct}");
+            Assert.True(ClientTypeToolFilter.IsAllowed("System", "get_current_time", ct), $"System should be allowed for {ct}");
+            Assert.True(ClientTypeToolFilter.IsAllowed("UserOptions", "ask_options", ct), $"UserOptions should be allowed for {ct}");
         }
     }
 
@@ -142,8 +154,10 @@ public class ClientTypeToolFilterTests
     public void Subagent_RunCliSubtask_FollowsCliRunCommandVisibility()
     {
         Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "chrome"));
-        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-word"));
-        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-excel"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-word"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-excel"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-powerpoint"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "wps"));
     }
 
     [Fact]

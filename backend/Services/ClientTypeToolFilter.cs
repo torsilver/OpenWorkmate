@@ -1,6 +1,6 @@
 namespace OfficeCopilot.Server.Services;
 
-/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 暴露 CurrentDocument + 通用插件 + Pdf（路径须为后端进程可读）；不暴露 Browser/File/CLI、以及磁盘型 Word/Excel/Ppt 插件。</summary>
+/// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 暴露 CurrentDocument + 通用插件 + Pdf（路径须为后端进程可读）。通用插件含 <c>AgentTooling</c>（动态工具引导）、与本机能力对齐的 <c>CLI</c>、<c>File</c>、<c>System</c>、<c>UserOptions</c> 等。仍不暴露 <c>Browser</c>（仅 Chrome 任务上下文）及磁盘型 Word/Excel/Ppt/OfficeLegacy 插件（与 <c>CurrentDocument</c> RPC 区分）。</summary>
 public static class ClientTypeToolFilter
 {
     private static readonly StringComparer PluginComparer = StringComparer.OrdinalIgnoreCase;
@@ -13,6 +13,11 @@ public static class ClientTypeToolFilter
         if (string.IsNullOrEmpty(pluginName)) return false;
         return PluginComparer.Equals(pluginName, "Memory")
             || PluginComparer.Equals(pluginName, "Context")
+            || PluginComparer.Equals(pluginName, "CLI")
+            || PluginComparer.Equals(pluginName, "File")
+            || PluginComparer.Equals(pluginName, "System")
+            || PluginComparer.Equals(pluginName, "UserOptions")
+            || PluginComparer.Equals(pluginName, "AgentTooling")
             || PluginComparer.Equals(pluginName, "Subagent")
             || PluginComparer.Equals(pluginName, "CrossAgentTask")
             || PluginComparer.Equals(pluginName, "ClawhubSkill")

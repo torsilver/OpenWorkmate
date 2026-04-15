@@ -106,6 +106,11 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PageTitle { get; set; }
 
+    /// <summary>set_context 时（WPS）：当前宿主类型，与前端 getWpsHostKind 一致：word | et | wpp | unknown | none。</summary>
+    [JsonPropertyName("wpsHostKind")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WpsHostKind { get; set; }
+
     /// <summary>tool_invocation_start/end 时：Plan.execute_plan_step 的步骤索引（从 1 开始），供前端 checklist 更新。</summary>
     [JsonPropertyName("planStepIndex")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

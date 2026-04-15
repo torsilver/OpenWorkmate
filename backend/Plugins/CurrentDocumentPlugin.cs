@@ -80,14 +80,17 @@ public sealed class CurrentDocumentPlugin
 
     [ToolFunction("current_excel_read_range")]
     [Description("读取当前打开的 Excel 工作表中指定区域的数据。仅当用户从 Excel 任务窗格连接时可用。")]
-    public Task<string> CurrentExcelReadRangeAsync(
+    public async Task<string> CurrentExcelReadRangeAsync(
         [Description("区域地址，如 A1 或 A1:C5")] string address = "A1",
         [Description("工作表名称，不填则使用当前活动表")] string? sheetName = null,
         CancellationToken cancellationToken = default)
     {
         var sessionId = SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_excel_read_range sessionId={SessionId} address={Address}", sessionId ?? "(null)", address);
-        return SendRpcAsync(sessionId!, "excel_read_range", new { address, sheetName }, cancellationToken);
+        var result = await SendRpcAsync(sessionId!, "excel_read_range", new { address, sheetName }, cancellationToken).ConfigureAwait(false);
+        var len = result?.Length ?? 0;
+        _logger.LogDebug("[CurrentDocument] current_excel_read_range responseChars={Chars} preview={Preview}", len, TruncateForLog(result, 120));
+        return result ?? "";
     }
 
     [ToolFunction("current_excel_write_range")]
@@ -108,8 +111,39 @@ public sealed class CurrentDocumentPlugin
         {
             return Task.FromResult("失败：data 不是合法 JSON，请使用二维数组格式如 [[1,2],[3,4]]。");
         }
-        _logger.LogInformation("[CurrentDocument] current_excel_write_range sessionId={SessionId} address={Address}", sessionId ?? "(null)", address);
+
+        var dataLength = data.Length;
+        if (!ExcelWriteRangeDataShape.TryGetJaggedShape(values, out var rows, out var firstRowCols, out var maxCols, out var uniformRectangle))
+        {
+            _logger.LogInformation(
+                "[CurrentDocument] current_excel_write_range sessionId={SessionId} address={Address} dataLength={DataLength} shape={Shape}",
+                sessionId ?? "(null)", address, dataLength, "invalid_not_2d_json_array");
+        }
+        else
+        {
+            _logger.LogInformation(
+                "[CurrentDocument] current_excel_write_range sessionId={SessionId} address={Address} dataLength={DataLength} rows={Rows} firstRowCols={FirstRowCols} maxCols={MaxCols} uniformRectangle={Uniform}",
+                sessionId ?? "(null)", address, dataLength, rows, firstRowCols, maxCols, uniformRectangle);
+
+            if ((rows > 1 || maxCols > 1) && ExcelWriteRangeDataShape.LooksLikeSingleCellAddress(address))
+            {
+                _logger.LogWarning(
+                    "[CurrentDocument] current_excel_write_range singleCellAddressWithMultiCellData sessionId={SessionId} address={Address} rows={Rows} maxCols={MaxCols} hint=WPS_may_only_fill_top_left_use_explicit_range",
+                    sessionId ?? "(null)", address, rows, maxCols);
+            }
+        }
+
         return SendRpcAsync(sessionId!, "excel_write_range", new { address, values, sheetName }, cancellationToken);
+    }
+
+    private static string TruncateForLog(string? text, int maxChars)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+        var t = text.Replace('\r', ' ').Replace('\n', ' ');
+        if (t.Length <= maxChars)
+            return t;
+        return t[..maxChars] + "…";
     }
 
     [ToolFunction("current_word_read_selection")]
@@ -442,6 +476,9 @@ public sealed class CurrentDocumentPlugin
 
         var sessionId = SessionContext.GetSessionId();
         _logger.LogInformation("[CurrentDocument] current_run_custom_document_script sessionId={SessionId} codeLen={Len}", sessionId ?? "(null)", scriptCode.Length);
+        _logger.LogDebug(
+            "[CurrentDocument] current_run_custom_document_script codePreview={Preview}",
+            TruncateForLog(scriptCode.Trim(), 80));
         return SendRpcAsync(sessionId!, "run_custom_document_script", new { scriptCode = scriptCode.Trim() }, cancellationToken);
     }
 }
