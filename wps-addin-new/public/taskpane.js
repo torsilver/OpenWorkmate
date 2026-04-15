@@ -492,9 +492,10 @@
     appendAgentStatusLine(block);
   }
 
-  function appendReasoningChunk(text, blockSeq, blockKind) {
+  function appendReasoningChunk(text, blockSeq, blockKind, isSubtask) {
     var t = text != null ? String(text) : "";
     if (!t) return;
+    if (isSubtask === true) return;
     if (!currentRoundWrapper) beginStream();
     var useBlock =
       typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
@@ -830,7 +831,9 @@
       case "agent_trace":
         appendAgentTrace(msg);
         break;
-      case "reasoning_chunk": appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind); break;
+      case "reasoning_chunk":
+        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind, msg.isSubtask === true);
+        break;
       case "agent_phase": {
         var phase = (msg.phase && String(msg.phase)) || "";
         var c = (msg.content && String(msg.content).trim()) || "";
@@ -875,6 +878,8 @@
         var block = document.createElement("details");
         block.className = "tool-call-block tool-call--running";
         block.dataset.label = label;
+        var invS = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+        if (invS) block.dataset.invocationId = invS;
         var sum = document.createElement("summary");
         sum.innerHTML = "<span class=\"tool-status-icon\">⏳</span> " + escapeHtml(label);
         block.appendChild(sum);
@@ -887,7 +892,16 @@
         updateExecutionLogCount();
         break;
       case "tool_invocation_end": {
-        var block = currentRoundToolBlocks[currentToolEndIndex];
+        var invE = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+        var block = null;
+        if (invE && timelineRoot) {
+          var esc =
+            typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function"
+              ? CSS.escape(invE)
+              : invE.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          block = timelineRoot.querySelector('[data-invocation-id="' + esc + '"]');
+        }
+        if (!block) block = currentRoundToolBlocks[currentToolEndIndex];
         if (block) {
           var ok = msg.success === true;
           var name = (msg.plugin || "") + "." + (msg.function || "");

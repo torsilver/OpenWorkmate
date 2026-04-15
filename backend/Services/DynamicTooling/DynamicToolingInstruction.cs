@@ -8,7 +8,8 @@ public static class DynamicToolingInstruction
         + "默认推荐顺序：若 system 中存在「渐进式用户技能」且任务可能受规范/文风/领域流程影响，请先按需完成技能链 search_available_skills（可空 query）→ select_skill_for_turn → load_user_skill_instructions，再调用 search_available_tools 按任务关键词检索（尽量具体，勿无故空 query），然后 activate_tools，最后以裸函数名发起业务 tool_calls。"
         + "纯闲聊、明确不依赖任何用户技能、且不需要业务写盘工具时，可跳过技能链，直接 search_available_tools。"
         + "硬性规则：若已调用过 search_available_tools 且仍有已启用用户技能，则在 activate_tools 之前必须至少再调用一次 search_available_skills（空 query 亦可）。"
-        + "发起 tool_calls 时名称必须与 OpenAPI 工具 schema 中的裸函数名一致，勿使用 Plugin.function。不要编造未出现在工具列表中的函数名。";
+        + "发起 tool_calls 时名称必须与 OpenAPI 工具 schema 中的裸函数名一致，勿使用 Plugin.function。不要编造未出现在工具列表中的函数名。"
+        + "每次调用的 arguments 中 JSON 键名也须与该工具 schema 的 properties 完全一致（含大小写），勿用 data/content/values 等别名替代正式字段名。";
 
     /// <summary>首轮已含非检索类工具（脚本、run_command、渐进式技能加载 load_user_skill_instructions 等）时追加，避免模型误以为必须先 activate 才能调用。</summary>
     public const string BootstrapDirectToolsHint =

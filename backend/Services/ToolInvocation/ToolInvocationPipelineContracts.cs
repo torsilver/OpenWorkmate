@@ -29,6 +29,9 @@ public sealed class ToolStatusContext
 
     /// <summary>工具参数快照（供 AfterInvocation 推送 plan_updated 等，避免依赖返回值解析）。</summary>
     public IReadOnlyDictionary<string, object?>? Arguments { get; init; }
+
+    /// <summary>与 WS <c>tool_invocation_start</c>/<c>end</c> 的 <c>invocationId</c> 一致。</summary>
+    public string? InvocationId { get; init; }
 }
 
 /// <summary>工具调用前后状态推送；由 <see cref="ToolStatusNotifier"/> 实现。</summary>

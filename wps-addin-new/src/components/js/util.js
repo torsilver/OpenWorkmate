@@ -12,10 +12,13 @@ function GetUrlPath() {
     return path.substring(0, path.lastIndexOf('/'));
   }
 
-  // 在非本地网页的情况下获取根路径
-  const { protocol, hostname, port } = window.location;
-  const portPart = port ? `:${port}` : '';
-  return `${protocol}//${hostname}${portPart}`;
+  // 在非本地网页的情况下获取根路径（含 wpsjs 多组件调试时的 /wps-addon-scope/{wps|et|wpp}/ 前缀）
+  const { protocol, hostname, port, pathname } = window.location
+  const portPart = port ? `:${port}` : ''
+  let base = `${protocol}//${hostname}${portPart}`
+  const scope = pathname.match(/^(\/wps-addon-scope\/(?:wps|et|wpp))(?:\/|$)/i)
+  if (scope) base += scope[1]
+  return base
 }
 
 function GetRouterHash() {

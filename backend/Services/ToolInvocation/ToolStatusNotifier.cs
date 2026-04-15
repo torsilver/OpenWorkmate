@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using OfficeCopilot.Server.Logging;
@@ -15,12 +16,16 @@ namespace OfficeCopilot.Server.Services.ToolInvocation;
 /// </summary>
 public sealed class ToolStatusNotifier : IToolStatusNotifier
 {
+    /// <summary>WS <c>tool_invocation_end</c> 中结果预览最大字符数（完整结果仍进入模型与 audit）。</summary>
+    internal const int ToolInvocationResultPreviewMaxChars = 8192;
+
     private readonly SessionManager _sessionManager;
     private readonly ConfigService _configService;
     private readonly IPlanStore _planStore;
     private readonly ILogger<ToolStatusNotifier> _logger;
     private readonly AgentDebugStatsService _debugStats;
     private readonly TimelineBlockStreamCoordinator _timelineBlocks;
+    private readonly SubtaskTimelineBlockCoordinator _subtaskTimelineBlocks;
 
     public ToolStatusNotifier(
         SessionManager sessionManager,
@@ -28,7 +33,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         IPlanStore planStore,
         ILogger<ToolStatusNotifier> logger,
         AgentDebugStatsService debugStats,
-        TimelineBlockStreamCoordinator timelineBlocks)
+        TimelineBlockStreamCoordinator timelineBlocks,
+        SubtaskTimelineBlockCoordinator subtaskTimelineBlocks)
     {
         _sessionManager = sessionManager;
         _configService = configService;
@@ -36,6 +42,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         _logger = logger;
         _debugStats = debugStats;
         _timelineBlocks = timelineBlocks;
+        _subtaskTimelineBlocks = subtaskTimelineBlocks;
     }
 
     public async Task<ToolStatusContext> BeforeInvocationAsync(
@@ -55,6 +62,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             return new ToolStatusContext { SessionId = null, PluginName = pluginName, FunctionName = functionName };
         }
 
+        var invocationId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         var startDetail = GetRunningDetail(functionName, arguments);
         var planStepIndex = GetPlanStepIndex(pluginName, functionName, arguments);
 
@@ -66,8 +74,11 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         if (!string.IsNullOrEmpty(agentStatusJson))
             await _sessionManager.SendToAsync(sessionId, agentStatusJson, ct).ConfigureAwait(false);
 
-        _timelineBlocks.OnToolInvocationStart(sessionId);
-        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix, ct).ConfigureAwait(false);
+        if (SubtaskContext.GetIsActive())
+            _subtaskTimelineBlocks.OnToolInvocationStart(sessionId);
+        else
+            _timelineBlocks.OnToolInvocationStart(sessionId);
+        await SendToolStatusAsync(sessionId, "tool_invocation_start", pluginName, functionName, null, null, startDetail, planStepIndex, slowSummarySuffix, invocationId, ct).ConfigureAwait(false);
         _logger.LogDebug(
             "[ToolStatus] session={SessionId} pushed tool_invocation_start {Plugin}.{Function}",
             sessionId, pluginName, functionName);
@@ -84,7 +95,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             SessionId = sessionId,
             PluginName = pluginName,
             FunctionName = functionName,
-            Arguments = argSnap
+            Arguments = argSnap,
+            InvocationId = invocationId
         };
     }
 
@@ -99,7 +111,9 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         var resultText = NormalizeToolResultToString(result);
         var content = "";
         if (!string.IsNullOrEmpty(resultText))
-            content = resultText.Length <= 200 ? resultText : resultText[..200];
+            content = resultText.Length <= ToolInvocationResultPreviewMaxChars
+                ? resultText
+                : resultText[..ToolInvocationResultPreviewMaxChars];
 
         var isSuccess = success && !IsToolResultFailure(resultText);
         var failKind = isSuccess ? null : (ToolInvocationFailureKind?)ToolInvocationFailureClassifier.Classify(resultText);
@@ -109,7 +123,7 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             && string.Equals(functionName, "execute_plan_step", StringComparison.OrdinalIgnoreCase))
             ? null : (int?)null; // plan step index not available post-invocation without args; kept null
 
-        await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, isSuccess, content, null, null, null, ct).ConfigureAwait(false);
+        await SendToolStatusAsync(sessionId, "tool_invocation_end", pluginName, functionName, isSuccess, content, null, null, null, ctx.InvocationId, ct).ConfigureAwait(false);
         var ctxWin = _configService.Current.ContextWindow ?? new ContextWindowConfig();
         SessionAuditLog.TryAppend(ctxWin, sessionId, "tool_invocation_end",
             new { plugin = pluginName, function = functionName, success = isSuccess, resultPreview = SessionAuditLog.SanitizeForAudit(content, 500) });
@@ -292,25 +306,14 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
         return null;
     }
 
-    private static bool IsToolResultFailure(string? content)
-    {
-        if (string.IsNullOrWhiteSpace(content)) return false;
-        if (content.StartsWith("[MCP ", StringComparison.Ordinal)) return true;
-        if (!content.StartsWith("[", StringComparison.Ordinal)) return false;
-        return content.Contains("失败", StringComparison.Ordinal)
-            || content.Contains("错误", StringComparison.Ordinal)
-            || content.Contains("未启用", StringComparison.Ordinal)
-            || content.Contains("无效", StringComparison.Ordinal)
-            || content.Contains("Error", StringComparison.OrdinalIgnoreCase)
-            || content.Contains("Exception", StringComparison.OrdinalIgnoreCase)
-            || content.Contains("系统拦截", StringComparison.Ordinal)
-            || content.Contains("用户拒绝", StringComparison.Ordinal);
-    }
+    private static bool IsToolResultFailure(string? content) =>
+        ToolSemanticFailureMarkers.LooksLikeSemanticFailure(content);
 
     private async Task SendToolStatusAsync(
         string sessionId, string type, string plugin, string function,
         bool? success, string? content,
         string? startDetail = null, int? planStepIndex = null, string? slowIoSummarySuffix = null,
+        string? invocationId = null,
         CancellationToken cancellationToken = default)
     {
         var summary = type == "tool_invocation_start"
@@ -327,7 +330,8 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             Summary = summary,
             Content = content ?? "",
             PlanStepIndex = planStepIndex,
-            IsSubtask = SubtaskContext.GetIsActive() ? true : null
+            IsSubtask = SubtaskContext.GetIsActive() ? true : null,
+            InvocationId = string.IsNullOrEmpty(invocationId) ? null : invocationId
         };
         var json = JsonSerializer.Serialize(msg, JsonCtx.Default.WsMessage);
         await _sessionManager.SendToAsync(sessionId, json, cancellationToken).ConfigureAwait(false);

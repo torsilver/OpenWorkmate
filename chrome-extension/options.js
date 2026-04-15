@@ -1853,6 +1853,27 @@ async function loadConfig() {
       themeEl.value = 'dark';
     }
     applySemanticKernelToForm(data.semanticKernel ?? data.SemanticKernel);
+    try {
+      var runId = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
+      var cfgId = String((data.chromeExtensionId ?? data.ChromeExtensionId ?? '')).trim();
+      if (runId && cfgId !== runId) {
+        var syncUrl = API_URL.replace('/api/config', '') + '/api/config/sync-chrome-extension-id';
+        var syncRes = await tasklyFetch(syncUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chromeExtensionId: runId })
+        });
+        if (syncRes.ok) {
+          fullConfig.chromeExtensionId = runId;
+          data.chromeExtensionId = runId;
+        } else {
+          var se = await syncRes.json().catch(function () { return {}; });
+          console.warn('同步 chromeExtensionId 失败:', se && se.message ? se.message : syncRes.status);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('同步 chromeExtensionId 异常:', syncErr);
+    }
   } catch (err) {
     var friendly = messageForBackendUnreachable(err);
     if (friendly) console.warn(friendly);
@@ -2156,7 +2177,11 @@ async function saveConfig() {
         var el = document.getElementById('localServiceAuthToken');
         return el ? String(el.value || '').trim() : '';
       })(),
-      semanticKernel: collectSemanticKernelPayload()
+      semanticKernel: collectSemanticKernelPayload(),
+      chromeExtensionId: (function () {
+        var rid = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
+        return rid || undefined;
+      })()
     };
     const response = await tasklyFetch(API_URL, {
       method: 'POST',
@@ -2167,7 +2192,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';

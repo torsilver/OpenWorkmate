@@ -6,6 +6,8 @@ Office Copilot 的 **WPS 任务窗格** 客户端，与本地 `OfficeCopilot.Ser
 
 - **WPS 内验证**：使用 `wpsjs debug`（见仓库 [.cursor/rules/wps-plugin-dev.mdc](../.cursor/rules/wps-plugin-dev.mdc)）。
 - **仅 Web 构建**：`npm run dev` / `npm run build` 不等于 WPS 宿主内可运行状态。
+- **文字 / 表格 / 演示**：`wpsjs` 默认只按单个 `addonType` 注册。本项目在 `package.json` 中配置了 `wpsAddonTypes`（`wps`、`et`、`wpp`），并通过 **`patch-package`** 修补的 `wpsjs@2.2.3`（[`patches/wpsjs+2.2.3.patch`](patches/wpsjs+2.2.3.patch) + `postinstall`）写入多条 `publish.xml` / jsplugins 记录；Vite 将 `/wps-addon-scope/{wps|et|wpp}/` 前缀映射到站点根。**clone 或改依赖后请执行 `npm install` 以应用补丁。**  
+- **PDF**：WPS 的 PDF 阅读窗口通常不提供与文字/表格/演示相同的 JS 加载项宿主，**加载项不会出现在 PDF 中**，属产品限制而非本仓库配置遗漏。
 
 ```sh
 npm install

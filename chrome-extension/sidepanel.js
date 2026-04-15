@@ -1282,6 +1282,14 @@ let currentSubtaskStreamEl = null;
 let currentSubtaskToolsEl = null;
 let currentSubtaskToolBlocks = [];
 let currentSubtaskToolEndIndex = 0;
+/** 子任务内推理段挂载根 .subtask-reasoning-stack，与主 timelineRoot 隔离 */
+let currentSubtaskReasoningRoot = null;
+let subtaskThinkCells = new Map();
+let openSubtaskThinkSeg = null;
+let _subtaskReasoningPendingText = "";
+let _subtaskReasoningPendingSeq = null;
+let _subtaskReasoningFlushPending = false;
+let _subtaskReasoningRafId = null;
 
 /** 与服务端 blockSeq 对齐的推理/正文段（Map: seq -> { details, pre|body, tail, rawMd? }） */
 let timelineThinkCells = new Map();
@@ -1314,6 +1322,88 @@ function collapseThinkSegmentsWithSeqLessThan(answerSeq) {
     const s = parseInt(raw, 10);
     if (Number.isFinite(s) && s < answerSeq) el.open = false;
   });
+}
+
+function insertSubtaskThinkBlockInOrder(detailsEl, blockSeq) {
+  if (!currentSubtaskReasoningRoot) return;
+  detailsEl.dataset.blockSeq = String(blockSeq);
+  const nodes = currentSubtaskReasoningRoot.children;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const raw = node.dataset && node.dataset.blockSeq;
+    if (raw == null || raw === "") continue;
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > blockSeq) {
+      currentSubtaskReasoningRoot.insertBefore(detailsEl, node);
+      return;
+    }
+  }
+  currentSubtaskReasoningRoot.appendChild(detailsEl);
+}
+
+function ensureSubtaskThinkTimelineBlock(blockSeq) {
+  let cell = subtaskThinkCells.get(blockSeq);
+  if (cell) return cell;
+  if (!currentSubtaskReasoningRoot) return null;
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--think timeline-seg--subtask-nested";
+  d.dataset.kind = "think";
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = "推理";
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const pre = document.createElement("pre");
+  pre.className = "timeline-seg__body";
+  d.appendChild(sum);
+  d.appendChild(pre);
+  insertSubtaskThinkBlockInOrder(d, blockSeq);
+  cell = { details: d, pre, tail };
+  subtaskThinkCells.set(blockSeq, cell);
+  return cell;
+}
+
+function cancelSubtaskReasoningRaf() {
+  if (_subtaskReasoningRafId != null) {
+    cancelAnimationFrame(_subtaskReasoningRafId);
+    _subtaskReasoningRafId = null;
+  }
+  _subtaskReasoningFlushPending = false;
+}
+
+function flushSubtaskReasoningPendingToDom() {
+  _subtaskReasoningFlushPending = false;
+  _subtaskReasoningRafId = null;
+  const buf = _subtaskReasoningPendingText;
+  _subtaskReasoningPendingText = "";
+  if (!buf || !openSubtaskThinkSeg) return;
+  openSubtaskThinkSeg.pre.textContent += buf;
+  openSubtaskThinkSeg.tail.textContent = timelineTail(openSubtaskThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+  openSubtaskThinkSeg.details.title = openSubtaskThinkSeg.pre.textContent;
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
+
+function scheduleSubtaskReasoningFlush() {
+  if (_subtaskReasoningFlushPending) return;
+  _subtaskReasoningFlushPending = true;
+  _subtaskReasoningRafId = requestAnimationFrame(flushSubtaskReasoningPendingToDom);
+}
+
+function flushSubtaskReasoningPendingSync() {
+  cancelSubtaskReasoningRaf();
+  if (_subtaskReasoningPendingText && openSubtaskThinkSeg) {
+    openSubtaskThinkSeg.pre.textContent += _subtaskReasoningPendingText;
+    _subtaskReasoningPendingText = "";
+    openSubtaskThinkSeg.tail.textContent = timelineTail(openSubtaskThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+    openSubtaskThinkSeg.details.title = openSubtaskThinkSeg.pre.textContent;
+  } else {
+    _subtaskReasoningPendingText = "";
+  }
 }
 
 function ensureThinkTimelineBlock(blockSeq) {
@@ -1690,10 +1780,51 @@ function getTimelineInsertBeforeForNewThinkSeg() {
   return null;
 }
 
-function appendReasoningChunk(text, blockSeq, blockKind) {
+function appendReasoningChunk(text, blockSeq, blockKind, isSubtask) {
   const t = text != null ? String(text) : "";
   if (!t) return;
   if (!currentRoundWrapper) beginStream();
+  if (isSubtask === true) {
+    if (!currentSubtaskReasoningRoot) return;
+    const useBlock =
+      typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
+    if (useBlock) {
+      if (_subtaskReasoningPendingSeq !== null && _subtaskReasoningPendingSeq !== blockSeq)
+        flushSubtaskReasoningPendingSync();
+      const cell = ensureSubtaskThinkTimelineBlock(blockSeq);
+      if (!cell) return;
+      openSubtaskThinkSeg = cell;
+      _subtaskReasoningPendingSeq = blockSeq;
+      _subtaskReasoningPendingText += t;
+      scheduleSubtaskReasoningFlush();
+      return;
+    }
+    _subtaskReasoningPendingSeq = null;
+    if (!openSubtaskThinkSeg) {
+      const d = document.createElement("details");
+      d.className = "timeline-seg timeline-seg--think timeline-seg--subtask-nested";
+      d.dataset.kind = "think";
+      d.open = true;
+      const sum = document.createElement("summary");
+      const lab = document.createElement("span");
+      lab.className = "timeline-seg__label";
+      lab.textContent = "推理";
+      const tail = document.createElement("span");
+      tail.className = "timeline-seg__tail";
+      sum.appendChild(lab);
+      sum.appendChild(document.createTextNode(" "));
+      sum.appendChild(tail);
+      const pre = document.createElement("pre");
+      pre.className = "timeline-seg__body";
+      d.appendChild(sum);
+      d.appendChild(pre);
+      currentSubtaskReasoningRoot.appendChild(d);
+      openSubtaskThinkSeg = { details: d, pre, tail };
+    }
+    _subtaskReasoningPendingText += t;
+    scheduleSubtaskReasoningFlush();
+    return;
+  }
   const useBlock =
     typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
   if (useBlock) {
@@ -1734,6 +1865,12 @@ function beginStream() {
   timelineThinkCells = new Map();
   timelineAnswerCells = new Map();
   _reasoningPendingSeq = null;
+  cancelSubtaskReasoningRaf();
+  _subtaskReasoningPendingText = "";
+  _subtaskReasoningPendingSeq = null;
+  openSubtaskThinkSeg = null;
+  subtaskThinkCells = new Map();
+  currentSubtaskReasoningRoot = null;
 
   $messages.appendChild(currentRoundWrapper);
   currentBotMessageRaw = "";
@@ -1854,6 +1991,11 @@ function finalizeStream() {
   const wrap = currentRoundWrapper;
   clearToolDraftTimeline();
   clearSubtaskToolDraft();
+  flushSubtaskReasoningPendingSync();
+  cancelSubtaskReasoningRaf();
+  openSubtaskThinkSeg = null;
+  subtaskThinkCells = new Map();
+  currentSubtaskReasoningRoot = null;
   clearAllRunningToolTimers();
   collapseAllOpenPhases();
   openAnswerSeg = null;
@@ -1903,6 +2045,7 @@ function finalizeStream() {
   currentSubtaskToolsEl = null;
   currentSubtaskToolBlocks = [];
   currentSubtaskToolEndIndex = 0;
+  currentSubtaskReasoningRoot = null;
   setInputEnabled(true);
   if (crossAgentAutoRunLock) {
     crossAgentAutoRunLock = false;
@@ -2219,7 +2362,7 @@ function handleMessage(raw) {
       break;
 
     case "reasoning_chunk":
-      appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind);
+      appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind, msg.isSubtask === true);
       break;
 
     case "agent_phase": {
@@ -2262,6 +2405,11 @@ function handleMessage(raw) {
       clearSubtaskToolDraft();
       ensureTimeline();
       if (!timelineRoot) break;
+      cancelSubtaskReasoningRaf();
+      _subtaskReasoningPendingText = "";
+      _subtaskReasoningPendingSeq = null;
+      openSubtaskThinkSeg = null;
+      subtaskThinkCells = new Map();
       const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
       const titleLen = 48;
       const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
@@ -2274,27 +2422,41 @@ function handleMessage(raw) {
       block.appendChild(sum);
       const inner = document.createElement("div");
       inner.className = "subtask-inner";
+      const thread = document.createElement("div");
+      thread.className = "subtask-thread";
+      const rail = document.createElement("div");
+      rail.className = "subtask-thread__rail";
+      rail.setAttribute("aria-hidden", "true");
+      const threadBody = document.createElement("div");
+      threadBody.className = "subtask-thread__body";
+      const reasoningStack = document.createElement("div");
+      reasoningStack.className = "subtask-reasoning-stack";
+      threadBody.appendChild(reasoningStack);
       if (msg.taskDescription) {
         const taskEl = document.createElement("div");
         taskEl.className = "subtask-task";
         taskEl.textContent = "任务：" + (msg.taskDescription || "").trim();
-        inner.appendChild(taskEl);
+        threadBody.appendChild(taskEl);
       }
       if (msg.constraints && String(msg.constraints).trim()) {
         const conEl = document.createElement("div");
         conEl.className = "subtask-constraints";
         conEl.textContent = "约束：" + String(msg.constraints).trim();
-        inner.appendChild(conEl);
+        threadBody.appendChild(conEl);
       }
       const streamEl = document.createElement("pre");
       streamEl.className = "subtask-stream";
-      inner.appendChild(streamEl);
+      threadBody.appendChild(streamEl);
       const toolsWrap = document.createElement("div");
       toolsWrap.className = "subtask-tools";
-      inner.appendChild(toolsWrap);
+      threadBody.appendChild(toolsWrap);
+      thread.appendChild(rail);
+      thread.appendChild(threadBody);
+      inner.appendChild(thread);
       block.appendChild(inner);
       timelineRoot.appendChild(block);
       currentSubtaskBlock = block;
+      currentSubtaskReasoningRoot = reasoningStack;
       currentSubtaskStreamEl = streamEl;
       currentSubtaskToolsEl = toolsWrap;
       currentSubtaskToolBlocks = [];
@@ -2317,6 +2479,11 @@ function handleMessage(raw) {
 
     case "subtask_end": {
       clearSubtaskToolDraft();
+      flushSubtaskReasoningPendingSync();
+      cancelSubtaskReasoningRaf();
+      openSubtaskThinkSeg = null;
+      subtaskThinkCells = new Map();
+      currentSubtaskReasoningRoot = null;
       if (currentSubtaskBlock) {
         const sum = currentSubtaskBlock.querySelector("summary");
         if (sum) sum.innerHTML = `<span class="tool-status-icon">✓</span> 子代理（已完成）`;
@@ -2353,6 +2520,8 @@ function handleMessage(raw) {
       const block = document.createElement("details");
       block.className = "tool-call-block tool-call--running" + (isSubtask ? " subtask-tool-block" : "");
       block.dataset.label = label;
+      const invStart = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+      if (invStart) block.dataset.invocationId = invStart;
       const sum = document.createElement("summary");
       sum.innerHTML = `<span class="tool-status-icon">⏳</span> ${escapeHtml(label)}`;
       block.appendChild(sum);
@@ -2381,7 +2550,21 @@ function handleMessage(raw) {
         }
       }
       const isSubtask = msg.isSubtask === true;
-      const block = isSubtask ? currentSubtaskToolBlocks[currentSubtaskToolEndIndex] : currentRoundToolBlocks[currentToolEndIndex];
+      let block = null;
+      const invEnd = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+      if (invEnd) {
+        const scope = isSubtask ? currentSubtaskToolsEl : timelineRoot;
+        if (scope && typeof scope.querySelector === "function") {
+          const esc =
+            typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function"
+              ? CSS.escape(invEnd)
+              : invEnd.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          block = scope.querySelector('[data-invocation-id="' + esc + '"]');
+        }
+      }
+      if (!block) {
+        block = isSubtask ? currentSubtaskToolBlocks[currentSubtaskToolEndIndex] : currentRoundToolBlocks[currentToolEndIndex];
+      }
       if (block) {
         clearToolElapsedTimer(block);
         const contentRaw = (msg.content && String(msg.content).trim()) || "";

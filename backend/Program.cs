@@ -112,6 +112,7 @@ try
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.SubtaskTimelineBlockCoordinator>();
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.WorkflowHitlBridge>();
     builder.Services.AddSingleton<ContextManager>();
     builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
@@ -380,6 +381,7 @@ app.MapGet("/api/debug/log-tail", (HttpContext ctx, int? lines, string? file) =>
         wsPath, !string.IsNullOrEmpty(cfg0.GetEffectiveWebSocketAuthToken()), isDev, allowedOrigins.Length);
 }
 
+// 本机引导：仅 loopback 可拉取 webSocketAuthToken。安全模型与「本机进程可读 user-config」等价——防远程扫端口与公网暴露，不防本机已能执行代码的攻击者；勿把本服务端口映射到公网。
 app.MapGet("/api/bootstrap/local-service-auth", (HttpContext ctx, ConfigService config) =>
 {
     if (!DebugLogHelper.IsDebugLogLoopback(ctx))
@@ -407,6 +409,24 @@ app.MapPost("/api/config", async (HttpContext ctx, ConfigService config) =>
         return Results.Ok();
     }
     return Results.Json(new { ok = false, message = "请求体解析失败或格式无效，请确认发送的是有效 JSON 配置。" }, statusCode: 400);
+});
+
+app.MapPost("/api/config/sync-chrome-extension-id", async (HttpContext ctx, ILogger<Program> logger, ConfigService config) =>
+{
+    ChromeExtensionIdSyncRequest? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<ChromeExtensionIdSyncRequest>(ctx.Request.Body, JsonCtx.Default.ChromeExtensionIdSyncRequest);
+    }
+    catch (Exception ex)
+    {
+        logger.LogDebug(ex, "sync-chrome-extension-id: deserialize failed");
+        return Results.Json(new { ok = false, message = "请求体解析失败，请发送 JSON：{\"chromeExtensionId\":\"…\"}（camelCase）。" }, statusCode: 400);
+    }
+
+    if (!config.TryPersistChromeExtensionId(body?.ChromeExtensionId, out var err))
+        return Results.Json(new { ok = false, message = err }, statusCode: 400);
+    return Results.Ok();
 });
 
 app.MapPost("/api/config/test-ai", async (HttpContext ctx, ILogger<Program> logger, ConfigService configService) =>

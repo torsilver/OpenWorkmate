@@ -42,6 +42,37 @@ function tasklyFetch(url, init = {}) {
   return fetch(url, { ...init, headers })
 }
 
+/** WPS 内 window.open 常被拦截；尽量把链接写入剪贴板，避免用户手打 chrome-extension URL。 */
+async function copyTextToClipboard(text) {
+  const s = String(text || '')
+  if (!s) return false
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(s)
+      return true
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = s
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    ta.style.top = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    ta.setSelectionRange(0, s.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return !!ok
+  } catch {
+    return false
+  }
+}
+
 /** 本机 loopback：localStorage 尚无密钥时从后台拉取（与 Chrome 选项页写入的 user-config / appsettings 一致） */
 function ensureBootstrapAuthToken() {
   return ensureApiBase().then(() =>
@@ -528,21 +559,47 @@ export function useCopilot() {
     }
   }
 
-  /** 在系统浏览器中打开 Chrome 扩展选项页（需配置 VITE_CHROME_EXTENSION_ID）。 */
-  function openOfficeCopilotSettingsInChrome() {
-    const id = (import.meta.env.VITE_CHROME_EXTENSION_ID || '').trim()
+  /** 在系统浏览器中打开 Chrome 扩展选项页：优先使用本机 user-config 中的 chromeExtensionId（由 Chrome 选项页写入），其次构建期 VITE_CHROME_EXTENSION_ID。 */
+  async function openOfficeCopilotSettingsInChrome() {
+    await ensureApiBase()
+    await ensureBootstrapAuthToken()
+    let id = ''
+    try {
+      const res = await tasklyFetch(API_BASE + '/api/config')
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}))
+        id = String(j.chromeExtensionId || j.ChromeExtensionId || '').trim()
+      }
+    } catch {
+      /* ignore */
+    }
+    if (!id) id = (import.meta.env.VITE_CHROME_EXTENSION_ID || '').trim()
     const url = id ? `chrome-extension://${id}/options.html` : ''
     if (!url) {
       alert(
-        '未配置 Chrome 扩展 ID，无法拼出选项页地址。\n\n请在 wps-addin-new 目录创建 .env.development.local（或 .env.local），添加：\n' +
-          'VITE_CHROME_EXTENSION_ID=你的扩展ID\n\n' +
-          '扩展 ID：Chrome → 扩展程序 → 开启「开发者模式」→ Office Copilot 卡片上的「ID」字段。'
+        '未找到 Chrome 扩展 ID，无法拼出选项页地址。\n\n' +
+          '请先在 Chrome 中打开本扩展的「选项」页一次（扩展会自动把 ID 写入本机配置），或在 wps-addin-new 的 .env.development.local 中设置 VITE_CHROME_EXTENSION_ID。\n\n' +
+          '扩展 ID：Chrome → 扩展程序 → 开启「开发者模式」→ 卡片上的「ID」字段。'
       )
       return
     }
     const opened = window.open(url, '_blank', 'noopener,noreferrer')
     if (!opened) {
-      alert('无法自动打开新窗口（可能被拦截）。请在 Chrome 地址栏粘贴并访问：\n\n' + url)
+      const copied = await copyTextToClipboard(url)
+      if (copied) {
+        alert(
+          '无法自动打开新窗口（可能被拦截）。\n\n' +
+            '选项页链接已复制到剪贴板，请在 Chrome 地址栏按 Ctrl+V 粘贴后回车打开。\n\n' +
+            '若未粘贴成功，请手动复制下面整行：\n' +
+            url
+        )
+      } else {
+        alert(
+          '无法自动打开新窗口（可能被拦截），且当前环境无法写入剪贴板。\n\n' +
+            '请手动全选复制下面整行，粘贴到 Chrome 地址栏：\n\n' +
+            url
+        )
+      }
     }
   }
 
@@ -977,10 +1034,50 @@ export function useCopilot() {
     appendPrepLine(block)
   }
 
-  function appendReasoningChunk(text, blockSeq, blockKind) {
+  /** 将子任务内收集的推理/流式/工具摘要写入主时间线一条段（对齐 Chrome sidepanel.js#subtask_end） */
+  function flushSubtaskUiToTimeline() {
+    const r = currentRound.value
+    if (!r || !r.subtaskUi) return
+    const u = r.subtaskUi
+    const lines = []
+    if (u.looseThink && String(u.looseThink).trim()) lines.push('【推理】\n' + String(u.looseThink).trim())
+    const order = Array.isArray(u.thinkOrder) ? u.thinkOrder.slice().sort((a, b) => a.blockSeq - b.blockSeq) : []
+    for (const p of order) {
+      if (p.body && String(p.body).trim()) lines.push('【推理#' + p.blockSeq + '】\n' + String(p.body).trim())
+    }
+    if (u.stream && String(u.stream).trim()) lines.push('【输出】\n' + String(u.stream).trim())
+    for (const t of u.tools || []) {
+      const st = t.status === 'done' ? '✓' : t.status === 'fail' ? '✗' : '…'
+      lines.push(`【工具 ${st}】${t.displayLabel || t.label || ''}\n${(t.output || '').trim()}`)
+    }
+    const body = lines.filter(Boolean).join('\n\n')
+    const seg = newTimelineSeg('subtask', u.label)
+    seg.body = body || '（子任务结束）'
+    seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+    r.subtaskUi = null
+  }
+
+  function appendReasoningChunk(text, blockSeq, blockKind, isSubtask) {
     const t = text != null ? String(text) : ''
     if (!t) return
     const r = ensureRound()
+    if (isSubtask === true) {
+      if (!r.subtaskUi) return
+      const useBlock =
+        typeof blockSeq === 'number' && Number.isFinite(blockSeq) && blockKind === 'think'
+      if (useBlock) {
+        let part = r.subtaskUi.thinkBySeq[String(blockSeq)]
+        if (!part) {
+          part = { blockSeq, body: '' }
+          r.subtaskUi.thinkBySeq[String(blockSeq)] = part
+          r.subtaskUi.thinkOrder.push(part)
+        }
+        part.body += t
+        return
+      }
+      r.subtaskUi.looseThink = (r.subtaskUi.looseThink || '') + t
+      return
+    }
     const useBlock =
       typeof blockSeq === 'number' && Number.isFinite(blockSeq) && blockKind === 'think'
     if (useBlock) {
@@ -1012,7 +1109,8 @@ export function useCopilot() {
       openDigest: null,
       openIntent: null,
       openAnswer: null,
-      toolSegQueue: []
+      toolSegQueue: [],
+      subtaskUi: null
     }
     currentToolEndIndex = 0
     inputEnabled.value = false
@@ -1085,6 +1183,7 @@ export function useCopilot() {
     }
     if (currentRound.value) {
       const round = currentRound.value
+      flushSubtaskUiToTimeline()
       collapseAllOpenPhases()
       round.openAnswer = null
       round.timelineSegments.forEach((s) => {
@@ -1251,7 +1350,7 @@ export function useCopilot() {
         beginStream()
         break
       case 'reasoning_chunk':
-        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind)
+        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind, msg.isSubtask === true)
         break
       case 'agent_phase': {
         const phase = (msg.phase && String(msg.phase)) || ''
@@ -1302,14 +1401,26 @@ export function useCopilot() {
         const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || '子任务'
         const titleLen = 48
         const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + '…'
-        appendPrepLine('子代理：' + summaryLabel)
+        const rSt = ensureRound()
+        rSt.subtaskUi = {
+          label: '子代理：' + summaryLabel,
+          thinkBySeq: {},
+          thinkOrder: [],
+          looseThink: '',
+          stream: '',
+          tools: []
+        }
         break
       }
-      case 'subtask_chunk':
+      case 'subtask_chunk': {
+        const rCh = currentRound.value
+        if (rCh && rCh.subtaskUi && msg.content != null) rCh.subtaskUi.stream += String(msg.content)
         break
+      }
       case 'subtask_end': {
         const rEnd = currentRound.value
         if (rEnd) clearSubtaskToolDraftSegments(rEnd)
+        flushSubtaskUiToTimeline()
         break
       }
       case 'tool_call_delta':
@@ -1317,15 +1428,33 @@ export function useCopilot() {
         break
       case 'tool_invocation_start': {
         const r = ensureRound()
-        if (msg.isSubtask === true) clearSubtaskToolDraftSegments(r)
-        else clearToolDraftSegments(r)
-        collapsePhasesForToolStart()
         const label = msg.summary || '正在执行: ' + (msg.plugin || '') + '.' + (msg.function || '')
+        const invStart = msg.invocationId != null ? String(msg.invocationId).trim() : ''
+        if (msg.isSubtask === true) {
+          clearSubtaskToolDraftSegments(r)
+          collapsePhasesForToolStart()
+          if (r.subtaskUi) {
+            r.subtaskUi.tools.push({
+              invocationId: invStart,
+              label,
+              displayLabel: label.replace(/^正在执行:\s*/i, ''),
+              status: 'running',
+              output: ''
+            })
+          }
+          if (msg.planStepIndex) {
+            updateChecklistStep(msg.planStepIndex, 'in_progress')
+          }
+          break
+        }
+        clearToolDraftSegments(r)
+        collapsePhasesForToolStart()
         const seg = newTimelineSeg('tool', label)
         seg.status = 'running'
         seg.output = ''
         seg.label = label
         seg.displayLabel = label.replace(/^正在执行:\s*/i, '')
+        if (invStart) seg.invocationId = invStart
         r.toolSegQueue.push(seg)
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, 'in_progress')
@@ -1334,8 +1463,38 @@ export function useCopilot() {
       }
       case 'tool_invocation_end': {
         const r = currentRound.value
-        if (!r || !r.toolSegQueue || !r.toolSegQueue.length) break
-        const block = r.toolSegQueue[currentToolEndIndex]
+        if (!r) break
+        const invEnd = msg.invocationId != null ? String(msg.invocationId).trim() : ''
+        if (msg.isSubtask === true) {
+          let t = null
+          if (invEnd && r.subtaskUi && Array.isArray(r.subtaskUi.tools)) {
+            t = r.subtaskUi.tools.find((x) => x.invocationId === invEnd)
+          }
+          if (!t && r.subtaskUi && Array.isArray(r.subtaskUi.tools)) {
+            const idx = r.subtaskUi.tools.findIndex((x) => x.status === 'running')
+            if (idx >= 0) t = r.subtaskUi.tools[idx]
+          }
+          if (t) {
+            t.status = msg.success === true ? 'done' : 'fail'
+            t.output = (msg.content && String(msg.content).trim()) || ''
+          }
+          if (msg.planStepIndex) {
+            updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
+          }
+          if (
+            msg.plugin === 'Plan' &&
+            msg.function === 'execute_plan_step' &&
+            msg.planStepIndex &&
+            msg.success === true
+          ) {
+            setPlanCurrentStepIndex(msg.planStepIndex + 1)
+          }
+          break
+        }
+        if (!r.toolSegQueue || !r.toolSegQueue.length) break
+        let block = null
+        if (invEnd) block = r.toolSegQueue.find((s) => s.invocationId === invEnd)
+        if (!block) block = r.toolSegQueue[currentToolEndIndex]
         if (block) {
           block.status = msg.success === true ? 'done' : 'fail'
           block.output = (msg.content && String(msg.content).trim()) || ''

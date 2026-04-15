@@ -206,6 +206,15 @@ html, body {
   overflow: hidden;
 }
 
+/* 子任务摘要段：对齐 Chrome sidepanel 嵌套子时间串视觉 */
+.timeline-seg--subtask {
+  font-size: 11px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.timeline-seg--subtask .timeline-seg__body {
+  max-height: min(55vh, 480px);
+}
+
 .timeline-seg summary {
   padding: 6px 10px;
   cursor: pointer;
@@ -337,7 +346,7 @@ html, body {
 .tool-call-block .tool-status-icon { margin-right: 6px; }
 .tool-call-block .tool-call-output {
   margin: 0; padding: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-word;
-  max-height: 200px; overflow-y: auto; border-top: 1px solid var(--border);
+  max-height: min(55vh, 480px); overflow-y: auto; border-top: 1px solid var(--border);
   background: var(--bg-primary); color: var(--text-secondary);
 }
 .tool-call-block.tool-call--running summary { color: var(--accent); }
@@ -443,9 +452,3 @@ html, body {
 .hitl-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; border: none; }
 .hitl-btn--allow { background: var(--accent); color: #fff; }
 .hitl-btn--deny { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
-
-.config-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding: 4px 0;
-}

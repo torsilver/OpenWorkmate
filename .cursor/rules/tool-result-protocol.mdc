@@ -1,0 +1,27 @@
+---
+description: 插件工具返回与「语义失败」判定协议（固定前缀；与 ToolSemanticFailureMarkers 一致）
+alwaysApply: false
+---
+
+# 工具返回与 UI/遥测成功判定协议
+
+## 两层来源
+
+1. **调用是否异常**  
+   以管道为准：`ToolInvocationMiddleware` 捕获异常或绑定失败时 `success=false`，并返回格式化文案。**不要**在正常 return 路径抛异常表示业务失败。
+
+2. **`success==true` 时的语义失败**  
+   若工具执行完毕但要把失败告知模型/用户，返回字符串须以 **固定前缀** 开头，与 [`ToolSemanticFailureMarkers`](backend/Services/ToolInvocation/ToolSemanticFailureMarkers.cs) 中列表一致。当前包括：`[错误]`、`[工具调用失败]`、`[参数绑定失败]`、`[MCP …]`、`[系统拦截]`、`[用户拒绝]`、`[保存失败]`、`[无效]`、`[记忆未启用]`、`[创建失败]`、`[更新失败]`、`[技能生成失败]` 等。
+
+## 禁止
+
+- **禁止**依赖工具返回正文里是否出现「错误」「失败」「无效」等**子串**来判定失败（`search_available_skills` / `search_available_tools` 会拼接技能或工具 `Description`，说明文字常含这些词）。
+- **禁止**在无约定前缀时返回「看似失败」的长文，却期望 UI 标红；应使用 `[错误]` 或专用 `[xxx失败]` 前缀。
+
+## 维护
+
+- 新增一种失败返回样式时：**同时**更新 `ToolSemanticFailureMarkers` 前缀表、本规则、以及 [`backend.Tests/Unit/ToolSemanticFailureMarkersTests.cs`](backend.Tests/Unit/ToolSemanticFailureMarkersTests.cs)（或等价单测）。
+
+## 与 error-visibility 的关系
+
+语义失败仍须在返回串中写清**可转述原因**（见 [error-visibility.mdc](error-visibility.mdc)）；本文件约定的是**如何写**以便 UI/统计不误判。

@@ -136,14 +136,16 @@ public static class MafMainSessionStreamRunner
         {
             await foreach (var update in agent.RunStreamingAsync(history, session, runOpts, ct).ConfigureAwait(false))
             {
+                // 百炼 Tap 在一次 Read 内会处理缓冲区里多条完整 SSE 行并把 reasoning 先入队；若本 update 来自较早的 data 行，
+                // 先 Drain 会把「较晚行」的 reasoning 挪到当前 tool 之前，颠倒与上游 data: 行顺序。故先出 tool，再 Drain。
+                foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolBudget, callState))
+                    yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+
                 foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
                     yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
 
                 foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
                     yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
-
-                foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolBudget, callState))
-                    yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
 
                 var text = update.Text;
                 if (text is { Length: > 0 })

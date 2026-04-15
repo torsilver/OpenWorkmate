@@ -1,0 +1,111 @@
+diff --git a/node_modules/wpsjs/src/lib/debug_publish.js b/node_modules/wpsjs/src/lib/debug_publish.js
+index 77f1019..8192032 100644
+--- a/node_modules/wpsjs/src/lib/debug_publish.js
++++ b/node_modules/wpsjs/src/lib/debug_publish.js
+@@ -361,31 +361,35 @@ async function configPublish(serverHost, port){
+         parseResult.jsplugins = {}
+     }
+     var publishXml =""
+-    const onlinePlugin = {$:{
+-        name:projectCfg.name,
+-        type:projectCfg.addonType ? projectCfg.addonType : "wps",
+-        url:`${serverHost}/`,
+-        debug:'',
+-        enable:'enable_dev',
+-        install:'null',
+-        customDomain:projectCfg.customDomain
+-    }}
++    function tasklyWpsAddonTypeList(cfg) {
++        if (Array.isArray(cfg.wpsAddonTypes) && cfg.wpsAddonTypes.length > 0) return cfg.wpsAddonTypes
++        return [cfg.addonType ? cfg.addonType : "wps"]
++    }
++    const typeList = tasklyWpsAddonTypeList(projectCfg)
++    const namePrefix = projectCfg.name
++    const plugins = typeList.map(function (t) {
++        return {$:{
++            name: namePrefix + "__" + t,
++            type: t,
++            url: `${serverHost}/wps-addon-scope/${t}/`,
++            debug:'',
++            enable:'enable_dev',
++            install:'null',
++            customDomain:projectCfg.customDomain
++        }}
++    })
+     if (parseResult.jsplugins.jspluginonline){
+-        let bFind = false
+-        for (let idx = parseResult.jsplugins.jspluginonline.length - 1; idx >= 0; --idx){
+-            if (parseResult.jsplugins.jspluginonline[idx].$.name == onlinePlugin.$.name){
+-                parseResult.jsplugins.jspluginonline[idx] = onlinePlugin
+-                bFind = true
+-                continue
+-            } else if (parseResult.jsplugins.jspluginonline[idx].$.url == onlinePlugin.$.url){
+-                delete parseResult.jsplugins.jspluginonline[idx]
+-            }
+-        }
+-        if (!bFind){
+-            parseResult.jsplugins.jspluginonline.push(onlinePlugin)
++        let dense = []
++        for (let idx = 0; idx < parseResult.jsplugins.jspluginonline.length; idx++){
++            const cur = parseResult.jsplugins.jspluginonline[idx]
++            if (!cur || !cur.$) continue
++            const n = cur.$.name || ''
++            if (n === namePrefix || n.indexOf(namePrefix + '__') === 0) continue
++            dense.push(cur)
+         }
++        parseResult.jsplugins.jspluginonline = dense.concat(plugins)
+     }else{
+-        parseResult.jsplugins.jspluginonline = [].concat(onlinePlugin)
++        parseResult.jsplugins.jspluginonline = [].concat(plugins)
+     }
+ 
+     publishXml = new xml2js.Builder().buildObject(parseResult)
+diff --git a/node_modules/wpsjs/src/lib/debug_xmlplugin.js b/node_modules/wpsjs/src/lib/debug_xmlplugin.js
+index 56dfbb2..6acba63 100644
+--- a/node_modules/wpsjs/src/lib/debug_xmlplugin.js
++++ b/node_modules/wpsjs/src/lib/debug_xmlplugin.js
+@@ -100,28 +100,25 @@ async function debug(options) {
+ 				return
+ 			}
+ 
+-			//write jsplugins.xml
++			//write jsplugins.xml（Taskly：支持 wpsAddonTypes 多组件；url 需区分以免 publish 去重）
+ 			let pluginRoot = {jsplugins:{
+ 				jspluginonline:[]
+ 			}}
+-			
+-			var addonType = projectCfg.addonType ? projectCfg.addonType : "et"
+-			if (bDebug) {
+-				pluginRoot.jsplugins.jspluginonline.push({$:{
+-					name:projectCfg.name,
+-					type:addonType,
+-					url:`${serverHost}/`,
+-					debug:'code',
+-					customDomain:projectCfg.customDomain
+-				}})
+-				
+-			} else {
+-				pluginRoot.jsplugins.jspluginonline.push({$:{
+-					name:projectCfg.name,
+-					type:addonType,
+-					url:`${serverHost}/`,
+-					customDomain:projectCfg.customDomain
+-				}})
++			function tasklyWpsAddonTypeList(cfg) {
++				if (Array.isArray(cfg.wpsAddonTypes) && cfg.wpsAddonTypes.length > 0) return cfg.wpsAddonTypes
++				return [cfg.addonType ? cfg.addonType : "et"]
++			}
++			var typeList = tasklyWpsAddonTypeList(projectCfg)
++			for (var ti = 0; ti < typeList.length; ti++) {
++				var addonType = typeList[ti]
++				var ent = {$:{
++					name: projectCfg.name + "__" + addonType,
++					type: addonType,
++					url: `${serverHost}/wps-addon-scope/${addonType}/`,
++					customDomain: projectCfg.customDomain
++				}}
++				if (bDebug) ent.$.debug = 'code'
++				pluginRoot.jsplugins.jspluginonline.push(ent)
+ 			}
+ 			let pluginXml = new xml2js.Builder().buildObject(pluginRoot)
+ 			let jspluginsXml = pluginXml.toString({ pretty: true })

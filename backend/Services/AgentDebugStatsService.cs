@@ -90,7 +90,7 @@ public sealed class AgentDebugStatsService : IDisposable
         SchedulePersist();
     }
 
-    /// <summary>与 <see cref="ToolStatusFilter"/> 下发给前端的 success 一致（含返回串判失败）。</summary>
+    /// <summary>与下发给前端的 success 一致（管道 success + <see cref="ToolSemanticFailureMarkers"/> 前缀语义失败）。</summary>
     public void RecordToolInvocation(string pluginName, string functionName, bool success)
         => RecordToolInvocation(pluginName, functionName, success, null);
 

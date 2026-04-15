@@ -543,6 +543,50 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task PostConfig_OmitsChromeExtensionId_KeepsPrevious()
+    {
+        var initBody = new { ai = new { }, chromeExtensionId = "12345678901234567890123456789012" };
+        var initContent = new StringContent(JsonSerializer.Serialize(initBody), Encoding.UTF8, "application/json");
+        (await _client.PostAsync("/api/config", initContent)).EnsureSuccessStatusCode();
+
+        var secondBody = new { ai = new { } };
+        var secondContent = new StringContent(JsonSerializer.Serialize(secondBody), Encoding.UTF8, "application/json");
+        (await _client.PostAsync("/api/config", secondContent)).EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var root = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(root.TryGetProperty("chromeExtensionId", out var idProp));
+        Assert.Equal("12345678901234567890123456789012", idProp.GetString());
+    }
+
+    [Fact]
+    public async Task PostSyncChromeExtensionId_Valid_Returns200_AndGetConfig_HasId()
+    {
+        var body = new { chromeExtensionId = "abcdef0123456789abcdef0123456789" };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var res = await _client.PostAsync("/api/config/sync-chrome-extension-id", content);
+        res.EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync("/api/config");
+        getResponse.EnsureSuccessStatusCode();
+        var root = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(root.TryGetProperty("chromeExtensionId", out var idProp));
+        Assert.Equal("abcdef0123456789abcdef0123456789", idProp.GetString());
+    }
+
+    [Fact]
+    public async Task PostSyncChromeExtensionId_InvalidLength_Returns400()
+    {
+        var body = new { chromeExtensionId = "short" };
+        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var res = await _client.PostAsync("/api/config/sync-chrome-extension-id", content);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+        Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
     public async Task GetSkills_Returns200_WithArray()
     {
         var response = await _client.GetAsync("/api/skills");

@@ -40,9 +40,10 @@ public sealed partial class ChatService : IDisposable
     private readonly AgentDebugStatsService _agentDebugStats;
     private readonly IChatSessionStore _chatSessionStore;
     private readonly IBuiltinTurnCompletionVerifier _builtinTurnCompletionVerifier;
+    private readonly SubtaskTimelineBlockCoordinator _subtaskTimelineBlocks;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -56,6 +57,7 @@ public sealed partial class ChatService : IDisposable
         _agentDebugStats = agentDebugStats;
         _chatSessionStore = chatSessionStore;
         _builtinTurnCompletionVerifier = builtinTurnCompletionVerifier;
+        _subtaskTimelineBlocks = subtaskTimelineBlocks;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -792,6 +794,7 @@ public sealed partial class ChatService : IDisposable
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
         SubtaskContext.SetActive(true);
+        var subtaskTimelineBegun = false;
         Task SendSubtaskToolDeltaAsync(ToolCallStreamDelta d) =>
             SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
             {
@@ -801,6 +804,20 @@ public sealed partial class ChatService : IDisposable
                 ArgumentsDelta = string.IsNullOrEmpty(d.ArgumentsDelta) ? null : d.ArgumentsDelta,
                 IsSubtask = true
             });
+        async Task SendSubtaskReasoningChunkAsync(string delta)
+        {
+            if (string.IsNullOrEmpty(delta)) return;
+            var (bs, bk) = _subtaskTimelineBlocks.EnsureChunkBlock(sessionId, SubtaskTimelineBlockCoordinator.KindThink);
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
+            {
+                Type = "reasoning_chunk",
+                Content = delta,
+                IsSubtask = true,
+                BlockSeq = bs,
+                BlockKind = bk
+            }).ConfigureAwait(false);
+        }
+
         try
         {
             await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage
@@ -809,6 +826,9 @@ public sealed partial class ChatService : IDisposable
                 TaskDescription = taskDescTrimmed,
                 Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim()
             }).ConfigureAwait(false);
+            _subtaskTimelineBlocks.BeginSubtaskRun(sessionId);
+            subtaskTimelineBegun = true;
+
             using (DashScopeCallKindContext.EnterBackground())
             {
                 var pluginServices = _serviceProvider.GetRequiredService<Services.ToolInvocation.ToolInvocationPipelineServices>();
@@ -828,6 +848,10 @@ public sealed partial class ChatService : IDisposable
                 {
                     foreach (var d in Services.Maf.MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(update, toolCallArgBudget, callState))
                         await SendSubtaskToolDeltaAsync(d).ConfigureAwait(false);
+                    foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
+                        await SendSubtaskReasoningChunkAsync(reasoningDelta).ConfigureAwait(false);
+                    foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
+                        await SendSubtaskReasoningChunkAsync(reasoningDelta).ConfigureAwait(false);
                     var text = update.Text;
                     if (text is { Length: > 0 })
                     {
@@ -836,6 +860,11 @@ public sealed partial class ChatService : IDisposable
                     }
                 }
             }
+
+            var result = fullResponse.ToString().Trim();
+            var endContent = string.IsNullOrEmpty(result) ? null : result;
+            await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = endContent ?? "" }).ConfigureAwait(false);
+            return string.IsNullOrEmpty(result) ? "[子任务未返回文本结果]" : result;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -860,12 +889,10 @@ public sealed partial class ChatService : IDisposable
         }
         finally
         {
+            if (subtaskTimelineBegun)
+                _subtaskTimelineBlocks.EndSubtaskRun(sessionId);
             SubtaskContext.SetActive(false);
         }
-        var result = fullResponse.ToString().Trim();
-        var endContent = string.IsNullOrEmpty(result) ? null : result;
-        await SendSubtaskMessageAsync(sessionManager, sessionId, new WsMessage { Type = "subtask_end", Content = endContent ?? "" }).ConfigureAwait(false);
-        return string.IsNullOrEmpty(result) ? "[子任务未返回文本结果]" : result;
     }
 
     private static async Task SendSubtaskMessageAsync(SessionManager sessionManager, string sessionId, WsMessage msg)
@@ -991,6 +1018,14 @@ public sealed partial class ChatService : IDisposable
         + "通过 Memory、AccurateData 等工具写入或检索的记忆与结构化数据仍可使用，但不可替代「当前目录列表」等须当场核实的状态。";
 
     /// <summary>
+    /// 注入：tool_calls 的 arguments 键名须与工具 JSON Schema 一致，避免反射绑定在进插件前失败。
+    /// </summary>
+    private const string ToolCallArgumentsSchemaInstruction =
+        "[工具调用参数] 发起 tool_calls 时，function.arguments 解析后的 JSON 键名必须与该工具 OpenAPI/JSON Schema 中 properties 所列字段名完全一致（含大小写）；"
+        + "禁止用 data、content、values 等猜测别名替代 schema 中的正式字段名。"
+        + "schema 标为 required 的字段不得省略；各字段值类型须与 schema 一致。";
+
+    /// <summary>
     /// 注入：用户界面看不到工具原始返回全文，模型必须在最终回复中整理复述。
     /// </summary>
     private const string ToolResultEchoSystemInstruction =
@@ -1045,7 +1080,7 @@ public sealed partial class ChatService : IDisposable
     }
 
     /// <summary>
-    /// 构建本轮流式请求用的消息列表：可选追加 client 身份后缀；再追加意图/事实约束与工具结果复述约束。
+    /// 构建本轮流式请求用的消息列表：可选追加 client 身份后缀；再追加意图/事实约束、工具参数名约束与工具结果复述约束。
     /// </summary>
     private static List<ChatMessage> BuildHistoryForStreamingTurn(
         List<ChatMessage> stateHistory,
@@ -1068,7 +1103,7 @@ public sealed partial class ChatService : IDisposable
             var augmented = sys;
             if (!string.IsNullOrEmpty(enableSearchSuppressionSuffix))
                 augmented += "\n\n" + enableSearchSuppressionSuffix;
-            augmented += "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolResultEchoSystemInstruction;
+            augmented += "\n\n" + LatestIntentAndGroundedFactsInstruction + "\n\n" + ToolCallArgumentsSchemaInstruction + "\n\n" + ToolResultEchoSystemInstruction;
             var withEcho = new List<ChatMessage>(historyToUse.Count) { new(ChatRole.System, augmented) };
             for (var i = 1; i < historyToUse.Count; i++)
                 withEcho.Add(historyToUse[i]);

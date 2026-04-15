@@ -190,6 +190,11 @@ public class WsMessage
     [JsonPropertyName("blockKind")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BlockKind { get; set; }
+
+    /// <summary><c>tool_invocation_start</c>/<c>end</c>：同一次工具调用的关联 id（GUID），供前端乱序 end 时匹配块。</summary>
+    [JsonPropertyName("invocationId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InvocationId { get; set; }
 }
 
 public class AttachmentDto
@@ -326,9 +331,17 @@ public class ScheduledTaskUpdateRequest
     public bool? DeleteAfterRun { get; set; }
 }
 
+/// <summary>POST /api/config/sync-chrome-extension-id 请求体。</summary>
+public sealed class ChromeExtensionIdSyncRequest
+{
+    [JsonPropertyName("chromeExtensionId")]
+    public string? ChromeExtensionId { get; set; }
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(WsMessage))]
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(ChromeExtensionIdSyncRequest))]
 [JsonSerializable(typeof(AgentProfileEntry))]
 [JsonSerializable(typeof(List<AgentProfileEntry>))]
 [JsonSerializable(typeof(ToolPermissionRule))]

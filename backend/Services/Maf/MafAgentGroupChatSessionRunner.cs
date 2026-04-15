@@ -100,14 +100,14 @@ public static class MafAgentGroupChatSessionRunner
                     var streaming = updateEvt.Update;
                     if (streaming == null) continue;
 
+                    foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(streaming, toolCallArgBudget, callState))
+                        yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
+
                     foreach (var reasoningDelta in DashScopeReasoningSessionBridge.DrainForSession(sessionId))
                         yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
 
                     foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
                         yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
-
-                    foreach (var d in MafToolCallDeltaExtractor.ExtractFromAgentResponseUpdate(streaming, toolCallArgBudget, callState))
-                        yield return new StreamItem(IsWarning: false, Content: "", Kind: StreamSegmentKind.ToolCallDelta, ToolDelta: d);
 
                     if (streaming.Text is { Length: > 0 } text)
                         yield return new StreamItem(IsWarning: false, Content: text);

@@ -379,7 +379,7 @@ public class AppConfig
     public string? ActiveOcrModelId { get; set; }
     /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch；空或未识别时前端按 dark 处理。</summary>
     public string? UiThemeId { get; set; }
-    /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘「设置」用于打开 chrome-extension://…/options.html。请在 user-config.json 中填写。</summary>
+    /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘/WPS「设置」用于打开 chrome-extension://…/options.html。Chrome 选项页加载或保存时会自动写入本机 user-config.json。</summary>
     public string? ChromeExtensionId { get; set; }
     /// <summary>为 true 时，设置页「测试连接」可向 localhost、RFC1918 等地址发请求（默认 false，降低 SSRF 风险）。</summary>
     public bool AllowPrivateEndpointTests { get; set; }
@@ -1168,6 +1168,7 @@ public sealed class ConfigService
                 if (newConfig.OcrModels == null) newConfig.OcrModels = _currentConfig.OcrModels ?? new List<OcrModelEntry>();
                 if (newConfig.ActiveOcrModelId == null) newConfig.ActiveOcrModelId = _currentConfig.ActiveOcrModelId;
                 if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
+                if (string.IsNullOrWhiteSpace(newConfig.ChromeExtensionId)) newConfig.ChromeExtensionId = _currentConfig.ChromeExtensionId;
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
@@ -1225,6 +1226,52 @@ public sealed class ConfigService
             {
                 _logger.LogError(ex, "Failed to save user config.");
                 throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 仅更新 <see cref="AppConfig.ChromeExtensionId"/> 并落盘；供 Chrome 扩展打开选项页时登记本机扩展 ID，供 WPS/托盘等打开 <c>chrome-extension://…/options.html</c>。
+    /// </summary>
+    public bool TryPersistChromeExtensionId(string? extensionId, out string errorMessage)
+    {
+        var id = (extensionId ?? "").Trim();
+        if (string.IsNullOrEmpty(id))
+        {
+            errorMessage = "请求参数无效：缺少或为空 chromeExtensionId。";
+            return false;
+        }
+
+        if (id.Length != 32 || id.Any(c => !char.IsLetterOrDigit(c)))
+        {
+            errorMessage = "Chrome 扩展 ID 格式异常（应为 32 位字母数字）。";
+            return false;
+        }
+
+        lock (_lock)
+        {
+            try
+            {
+                _currentConfig.ChromeExtensionId = id;
+                var options = new JsonSerializerOptions
+                {
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    TypeInfoResolver = JsonCtx.Default
+                };
+                var json = JsonSerializer.Serialize(_currentConfig, typeof(AppConfig), options);
+                File.WriteAllText(_configPath, json);
+                _logger.LogInformation("ChromeExtensionId persisted to user config.");
+                OnConfigChanged?.Invoke();
+                errorMessage = "";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to persist ChromeExtensionId.");
+                errorMessage = "保存配置失败：" + ex.Message;
+                return false;
             }
         }
     }
