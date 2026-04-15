@@ -8,6 +8,6 @@ namespace OfficeCopilot.Server.Services.Maf;
 /// </summary>
 public static class MafRuntimeToolFacade
 {
-    public static IReadOnlyList<AITool> GetToolsForSession(IChatRuntimeAccessor runtime, string? clientType, string? sessionId) =>
-        runtime.GetAllowedTools(clientType, sessionId);
+    public static IReadOnlyList<AITool> GetToolsForSession(IChatRuntimeAccessor runtime, string? clientType, string? sessionId, string? wpsHostKind = null) =>
+        runtime.GetAllowedTools(clientType, sessionId, wpsHostKind);
 }

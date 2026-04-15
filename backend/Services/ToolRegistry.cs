@@ -90,14 +90,14 @@ public sealed class ToolRegistry
     }
 
     /// <summary>按 clientType 过滤后的工具列表（委托 <see cref="ClientTypeToolFilter.IsAllowed"/>）。</summary>
-    public IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId)
+    public IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId, string? wpsHostKind = null)
     {
         var list = new List<AITool>();
         foreach (var (plugin, funcs) in _plugins)
         {
             foreach (var (func, tool) in funcs)
             {
-                if (ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId))
+                if (ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHostKind))
                     list.Add(tool);
             }
         }

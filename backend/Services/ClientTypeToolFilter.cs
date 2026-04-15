@@ -82,9 +82,21 @@ public static class ClientTypeToolFilter
         || PluginComparer.Equals(functionName, "scheduled_task_update")
         || PluginComparer.Equals(functionName, "scheduled_task_delete");
 
+    /// <summary>WPS 下仅当宿主为 word/et/wpp 时收窄 CurrentDocument；unknown/none/未上报不收紧。</summary>
+    private static string? WpsNarrowCurrentDocumentHost(string? wpsHostKind)
+    {
+        var n = ClientPageContextSuffixBuilder.NormalizeWpsHostKind(wpsHostKind);
+        if (n == "unknown" || n == "none")
+            return null;
+        if (PluginComparer.Equals(n, "word") || PluginComparer.Equals(n, "et") || PluginComparer.Equals(n, "wpp"))
+            return n;
+        return null;
+    }
+
     /// <summary>判断该 (Plugin, Function) 是否允许暴露给给定 clientType 的会话。</summary>
     /// <param name="sessionId">非空且以 <c>scheduled:</c> 开头时，屏蔽 ScheduledTask 的创建/更新/删除工具。</param>
-    public static bool IsAllowed(string pluginName, string functionName, string? clientType, string? sessionId = null)
+    /// <param name="wpsHostKind">仅 <c>wps</c> 有效：set_context 上报的宿主；为 <c>word</c>/<c>et</c>/<c>wpp</c> 时 CurrentDocument 与对应 office-* 子集一致。</param>
+    public static bool IsAllowed(string pluginName, string functionName, string? clientType, string? sessionId = null, string? wpsHostKind = null)
     {
         if (string.IsNullOrEmpty(pluginName) || string.IsNullOrEmpty(functionName))
             return false;
@@ -94,7 +106,7 @@ public static class ClientTypeToolFilter
             && IsScheduledTaskMutationFunction(functionName))
             return false;
 
-        if (PluginComparer.Equals(pluginName, "Subagent") && !IsSubagentFunctionAllowed(functionName, clientType, sessionId))
+        if (PluginComparer.Equals(pluginName, "Subagent") && !IsSubagentFunctionAllowed(functionName, clientType, sessionId, wpsHostKind))
             return false;
 
         var ct = (clientType ?? "").Trim();
@@ -138,7 +150,18 @@ public static class ClientTypeToolFilter
             if (IsCommonPlugin(pluginName)) return true;
             if (IsPdfPlugin(pluginName)) return true;
             if (PluginComparer.Equals(pluginName, "CurrentDocument"))
-                return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+            {
+                var narrow = WpsNarrowCurrentDocumentHost(wpsHostKind);
+                if (narrow == null)
+                    return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+                if (PluginComparer.Equals(narrow, "word"))
+                    return IsCurrentDocumentWordFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+                if (PluginComparer.Equals(narrow, "et"))
+                    return IsCurrentDocumentExcelFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+                if (PluginComparer.Equals(narrow, "wpp"))
+                    return IsCurrentDocumentPptFunction(functionName) || IsCurrentDocumentScriptFunction(functionName);
+                return false;
+            }
             return false;
         }
 
@@ -149,20 +172,21 @@ public static class ClientTypeToolFilter
     public static IReadOnlyList<(string PluginName, string FunctionName)> Filter(
         IReadOnlyList<(string PluginName, string FunctionName)> pairs,
         string? clientType,
-        string? sessionId = null)
+        string? sessionId = null,
+        string? wpsHostKind = null)
     {
         if (pairs == null || pairs.Count == 0) return Array.Empty<(string, string)>();
         var list = new List<(string, string)>();
         foreach (var (p, f) in pairs)
         {
-            if (IsAllowed(p, f, clientType, sessionId))
+            if (IsAllowed(p, f, clientType, sessionId, wpsHostKind))
                 list.Add((p, f));
         }
         return list;
     }
 
     /// <summary>内置子任务入口按端裁剪：<c>run_browser_subtask</c> 仅 Chrome；<c>run_cli_subtask</c> 仅当该端可暴露 <c>CLI:run_command</c> 时。</summary>
-    private static bool IsSubagentFunctionAllowed(string functionName, string? clientType, string? sessionId)
+    private static bool IsSubagentFunctionAllowed(string functionName, string? clientType, string? sessionId, string? wpsHostKind)
     {
         if (PluginComparer.Equals(functionName, "run_browser_subtask"))
         {
@@ -173,7 +197,7 @@ public static class ClientTypeToolFilter
         }
 
         if (PluginComparer.Equals(functionName, "run_cli_subtask"))
-            return IsAllowed("CLI", "run_command", clientType, sessionId);
+            return IsAllowed("CLI", "run_command", clientType, sessionId, wpsHostKind);
 
         return true;
     }

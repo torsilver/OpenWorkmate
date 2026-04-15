@@ -101,6 +101,9 @@ public sealed class AgentToolingPlugin
         var registry = _runtime.ToolRegistry;
         var sessionId = SessionContext.GetSessionId();
         var clientType = string.IsNullOrEmpty(sessionId) ? null : _sessionManager.GetClientType(sessionId);
+        var wpsHostKindForActivate = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(sessionId)
+            ? (DynamicToolingTurnScope.Current?.WpsHostKindForTools ?? _sessionManager.GetWpsHostKind(sessionId))
+            : null;
 
         var preview = string.Join(", ", toolNames.Take(12).Select(n =>
         {
@@ -137,7 +140,7 @@ public sealed class AgentToolingPlugin
                 continue;
             }
 
-            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId))
+            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHostKindForActivate))
             {
                 rejected.Add(s);
                 continue;

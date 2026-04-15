@@ -53,6 +53,9 @@ public sealed class DynamicToolingTurnState
     /// <summary>构建允许列表与动态工具表时用，与当前会话一致。</summary>
     public string? SessionIdForTools { get; set; }
 
+    /// <summary>WPS 会话 <c>set_context</c> 的宿主快照；供 <c>BuildDynamicActiveToolList</c> 与 <c>activate_tools</c> 刷新工具表时过滤 CurrentDocument。</summary>
+    public string? WpsHostKindForTools { get; set; }
+
     /// <summary>
     /// 当前 MAF pass 绑定到 <see cref="Microsoft.Extensions.AI.ChatOptions.Tools"/> 的列表引用；
     /// <c>activate_tools</c> 成功后原地替换内容，使同一次 <c>RunStreamingAsync</c> 内后续模型请求带上新工具。

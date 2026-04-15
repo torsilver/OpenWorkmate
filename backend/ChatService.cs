@@ -782,7 +782,10 @@ public sealed partial class ChatService : IDisposable
             return "[错误] IChatClient 未就绪。";
         var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
         var clientType = sessionManager.GetClientType(sessionId);
-        var allTools = _runtime.GetAllowedTools(clientType, sessionId);
+        var wpsHostKind = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase)
+            ? sessionManager.GetWpsHostKind(sessionId)
+            : null;
+        var allTools = _runtime.GetAllowedTools(clientType, sessionId, wpsHostKind);
         var registry = _runtime.ToolRegistry;
         var allowedTools = SubagentBuiltinPresets.FilterToolsForSubtask(registry, allTools, preset, out var filterError);
         if (filterError != null)

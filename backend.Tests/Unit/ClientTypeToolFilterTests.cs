@@ -52,6 +52,53 @@ public class ClientTypeToolFilterTests
     }
 
     [Fact]
+    public void Wps_WithHostEt_NarrowsToExcelCurrentDocument()
+    {
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "wps", sessionId: null, wpsHostKind: "et"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_excel_read_range", "wps", sessionId: null, wpsHostKind: "et"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_slides_list", "wps", sessionId: null, wpsHostKind: "et"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_run_document_script", "wps", sessionId: null, wpsHostKind: "et"));
+    }
+
+    [Fact]
+    public void Wps_WithHostWord_NarrowsToWordCurrentDocument()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "wps", sessionId: null, wpsHostKind: "word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_excel_read_range", "wps", sessionId: null, wpsHostKind: "word"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_run_custom_document_script", "wps", sessionId: null, wpsHostKind: "word"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("unknown")]
+    [InlineData("none")]
+    public void Wps_WithUnknownOrNoneHost_DoesNotNarrow(string? host)
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "wps", null, host));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_excel_read_range", "wps", null, host));
+    }
+
+    [Fact]
+    public void Wps_WithHostWpp_NarrowsToPptCurrentDocument()
+    {
+        Assert.False(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_word_insert_text", "wps", null, "wpp"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_slides_list", "wps", null, "wpp"));
+    }
+
+    [Fact]
+    public void Filter_WpsEt_ExcludesWordPairs()
+    {
+        var pairs = new List<(string PluginName, string FunctionName)>
+        {
+            ("CurrentDocument", "current_word_insert_text"),
+            ("CurrentDocument", "current_excel_list_sheets")
+        };
+        var filtered = ClientTypeToolFilter.Filter(pairs, "wps", null, "et");
+        Assert.Single(filtered);
+        Assert.Equal("current_excel_list_sheets", filtered[0].FunctionName);
+    }
+
+    [Fact]
     public void OfficePowerPoint_AllowsExtendedPptCurrentDocument()
     {
         Assert.True(ClientTypeToolFilter.IsAllowed("CurrentDocument", "current_ppt_hyperlink_add", "office-powerpoint"));

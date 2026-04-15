@@ -36,6 +36,9 @@ public static class MafMainSessionStreamRunner
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
+        var wpsHostKindForSession = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase)
+            ? sessionManager.GetWpsHostKind(sessionId)
+            : null;
         using var activity = MafActivitySource.Activity.StartActivity("Maf.MainSession.Stream", ActivityKind.Internal);
         activity?.SetTag("sessionId", sessionId);
         activity?.SetTag("clientType", clientType ?? "");
@@ -63,7 +66,7 @@ public static class MafMainSessionStreamRunner
 
                 if (dts.Config.FallbackToFullAllowlistWhenNoActivation && !dts.HasActivatedAnyBusinessTool())
                 {
-                    var full = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+                    var full = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId, wpsHostKindForSession));
                     await foreach (var item in RunSinglePassStreamingAsync(
                                        chatClient, runtime, loggerFactory, services, history, settings,
                                        sessionId, state, ctxConfig, outcome, contextAttemptIndex,
@@ -77,7 +80,7 @@ public static class MafMainSessionStreamRunner
 
         var tools = toolsForAgent != null
             ? new List<AITool>(toolsForAgent)
-            : new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+            : new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId, wpsHostKindForSession));
         await foreach (var item in RunSinglePassStreamingAsync(
                            chatClient, runtime, loggerFactory, services, history, settings,
                            sessionId, state, ctxConfig, outcome, contextAttemptIndex,

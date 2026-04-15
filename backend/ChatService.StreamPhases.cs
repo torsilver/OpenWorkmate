@@ -109,6 +109,9 @@ public sealed partial class ChatService
         var sessionManagerForStatus = turn.SessionManager;
         var planResult = turn.PlanResult;
         var clientType = sessionManagerForStatus.GetClientType(sessionId);
+        var wpsHostKindForTools = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase)
+            ? sessionManagerForStatus.GetWpsHostKind(sessionId)
+            : null;
         var dynCfg = ctxConfig.DynamicTooling ?? new DynamicToolingConfig();
 
         await NotifyAgentStatusAsync(
@@ -122,7 +125,7 @@ public sealed partial class ChatService
         {
             if (dynCfg.Enabled)
             {
-                var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId);
+                var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId, wpsHostKindForTools);
                 var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(_skillService.GetAllSkills());
                 var mergePlan = planResult != null;
                 var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(
@@ -132,7 +135,8 @@ public sealed partial class ChatService
                     mergePlan,
                     dynCfg,
                     _skillService.GetAllSkills(),
-                    _logger);
+                    _logger,
+                    wpsHostKindForTools);
                 var bootstrapNames = new List<string>();
                 var nameSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var t in bootstrap)
@@ -146,7 +150,8 @@ public sealed partial class ChatService
                 {
                     MergePlanIntoDynamicBootstrap = mergePlan,
                     ClientTypeForTools = clientType,
-                    SessionIdForTools = sessionId
+                    SessionIdForTools = sessionId,
+                    WpsHostKindForTools = wpsHostKindForTools
                 };
                 var trace = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrap.Count, catalog.Entries.Count);
                 await NotifyAgentTraceAsync(
@@ -170,7 +175,7 @@ public sealed partial class ChatService
             else
             {
                 turn.DynamicToolingState = null;
-                IReadOnlyList<AITool>? selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId);
+                IReadOnlyList<AITool>? selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId, wpsHostKindForTools);
                 if (planResult != null && selectedTools != null)
                     selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
                 var funcsCount = selectedTools?.Count ?? 0;
@@ -187,7 +192,7 @@ public sealed partial class ChatService
             _logger.LogWarning(ex, "[{SessionId}] Tooling phase failed, using full allow-list.", sessionId);
             _agentDebugStats.RecordToolSelectionException();
             turn.DynamicToolingState = null;
-            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId);
+            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId, wpsHostKindForTools);
             if (planResult != null && selectedTools != null)
                 selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
             await NotifyAgentTraceAsync(

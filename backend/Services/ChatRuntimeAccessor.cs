@@ -5,7 +5,7 @@ namespace OfficeCopilot.Server.Services;
 /// <summary>按会话/端类型提供模型侧 <see cref="AITool"/> 列表。</summary>
 public interface IRuntimeTools
 {
-    IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId);
+    IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId, string? wpsHostKind = null);
 }
 
 /// <summary>插件工具集中入口（纯 <see cref="AITool"/> 注册表）。</summary>
@@ -76,8 +76,8 @@ public sealed class ChatRuntimeAccessor : IChatRuntimeAccessor
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId) =>
-        _toolRegistry.GetAllowedTools(clientType, sessionId);
+    public IReadOnlyList<AITool> GetAllowedTools(string? clientType, string? sessionId, string? wpsHostKind = null) =>
+        _toolRegistry.GetAllowedTools(clientType, sessionId, wpsHostKind);
 
     public IServiceProvider GetPluginServices() => _appServices;
 }

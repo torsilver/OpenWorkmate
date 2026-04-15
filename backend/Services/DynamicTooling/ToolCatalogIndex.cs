@@ -11,12 +11,12 @@ public sealed class ToolCatalogIndex
 
     public IReadOnlyList<Entry> Entries => _entries;
 
-    public static ToolCatalogIndex BuildFromAllowedTools(ToolRegistry registry, string? clientType, string? sessionId)
+    public static ToolCatalogIndex BuildFromAllowedTools(ToolRegistry registry, string? clientType, string? sessionId, string? wpsHostKind = null)
     {
         var list = new List<Entry>();
         foreach (var (plugin, function, tool) in registry.GetAllWithMetadata())
         {
-            if (!ClientTypeToolFilter.IsAllowed(plugin, function, clientType, sessionId))
+            if (!ClientTypeToolFilter.IsAllowed(plugin, function, clientType, sessionId, wpsHostKind))
                 continue;
             if (DynamicToolingConstants.MetaFunctionNames.Contains(function))
                 continue;

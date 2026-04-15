@@ -14,16 +14,17 @@ public static class SessionToolResolver
         ToolRegistry toolRegistry,
         IReadOnlyList<(string PluginName, string FunctionName)>? selectedPairs,
         string? clientType,
-        string? sessionId)
+        string? sessionId,
+        string? wpsHostKind = null)
     {
         IReadOnlyList<AITool>? result = null;
         if (selectedPairs is { Count: > 0 })
         {
-            var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType, sessionId);
+            var filtered = ClientTypeToolFilter.Filter(selectedPairs, clientType, sessionId, wpsHostKind);
             if (filtered.Count > 0)
                 result = GetToolsByPairs(toolRegistry, filtered);
         }
-        result ??= toolRegistry.GetAllowedTools(clientType, sessionId);
+        result ??= toolRegistry.GetAllowedTools(clientType, sessionId, wpsHostKind);
 
         if (result != null)
         {
@@ -110,7 +111,8 @@ public static class SessionToolResolver
         bool mergePlanTools,
         DynamicToolingConfig? dynCfg = null,
         IReadOnlyList<SkillDefinition>? skillsForBootstrap = null,
-        ILogger? bootstrapSkillLogger = null)
+        ILogger? bootstrapSkillLogger = null,
+        string? wpsHostKind = null)
     {
         var list = new List<AITool>();
         void AddIf(string plugin, string func)
@@ -139,7 +141,10 @@ public static class SessionToolResolver
 
         void AddSubagentIf(string func)
         {
-            if (!ClientTypeToolFilter.IsAllowed("Subagent", func, clientType, sessionId))
+            if (!ClientTypeToolFilter.IsAllowed("Subagent", func, clientType, sessionId, wpsHostKind))
+                return;
+            if (string.Equals(func, "run_cli_subtask", StringComparison.OrdinalIgnoreCase)
+                && toolRegistry.FindTool("CLI", "run_command") == null)
                 return;
             AddIf("Subagent", func);
         }
@@ -161,14 +166,15 @@ public static class SessionToolResolver
         IReadOnlyList<string> orderedFunctionNames,
         string? clientType,
         string? sessionId,
-        bool mergePlanTools)
+        bool mergePlanTools,
+        string? wpsHostKind = null)
     {
         var list = new List<AITool>();
         foreach (var func in orderedFunctionNames)
         {
             if (string.IsNullOrEmpty(func)) continue;
             if (!registry.TryGetPluginName(func, out var plugin)) continue;
-            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId)) continue;
+            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHostKind)) continue;
             var tool = registry.FindTool(plugin, func);
             if (tool != null && !list.Any(x => string.Equals(x.Name, func, StringComparison.OrdinalIgnoreCase)))
                 list.Add(tool);
@@ -184,10 +190,11 @@ public static class SessionToolResolver
         string? sessionId,
         bool mergePlanTools)
     {
+        var wpsHost = state.WpsHostKindForTools;
         IReadOnlyList<AITool> bootstrap = state.BootstrapFunctionNamesOrder.Count > 0
             ? MaterializeBootstrapFromOrderedFunctionNames(
-                registry, state.BootstrapFunctionNamesOrder, clientType, sessionId, mergePlanTools)
-            : GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools);
+                registry, state.BootstrapFunctionNamesOrder, clientType, sessionId, mergePlanTools, wpsHost)
+            : GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools, wpsHostKind: wpsHost);
 
         var set = new HashSet<string>(bootstrap.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
         var list = new List<AITool>(bootstrap);
@@ -197,7 +204,7 @@ public static class SessionToolResolver
                 continue;
             if (!registry.TryGetPluginName(func, out var plugin))
                 continue;
-            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId))
+            if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHost))
                 continue;
             var tool = registry.FindTool(plugin, func);
             if (tool != null && set.Add(func))

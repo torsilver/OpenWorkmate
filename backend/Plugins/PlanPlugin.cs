@@ -138,7 +138,10 @@ public sealed class PlanPlugin
     {
         ct.ThrowIfCancellationRequested();
         var registry = _runtime.ToolRegistry;
-        var catalog = ToolCatalogIndex.BuildFromAllowedTools(registry, clientType, sessionId);
+        var wpsHost = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(sessionId)
+            ? _sessionManager.GetWpsHostKind(sessionId)
+            : null;
+        var catalog = ToolCatalogIndex.BuildFromAllowedTools(registry, clientType, sessionId, wpsHost);
         var hits = catalog.Search(searchQuery, topK: 40);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tools = new List<AITool>();
@@ -152,7 +155,7 @@ public sealed class PlanPlugin
         IReadOnlyList<AITool> digestTools;
         if (tools.Count < 12)
         {
-            var full = SessionToolResolver.ResolveToolsByClientType(registry, null, clientType, sessionId) ?? Array.Empty<AITool>();
+            var full = SessionToolResolver.ResolveToolsByClientType(registry, null, clientType, sessionId, wpsHost) ?? Array.Empty<AITool>();
             digestTools = SessionToolResolver.MergePlanTools(registry, full);
             _logger.LogInformation("create_plan: digest full allow-list (search hits={Hits})", hits.Count);
         }

@@ -61,7 +61,10 @@ public static class MafAgentGroupChatSessionRunner
         var hostAgent = new ChatClientAgent(chatClient, hostOpts, loggerFactory, pluginServices);
 
         var clientType = sessionManager.GetClientType(sessionId);
-        var tools = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId));
+        var wpsHostKind = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase)
+            ? sessionManager.GetWpsHostKind(sessionId)
+            : null;
+        var tools = new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId, wpsHostKind));
         var workerChatOpts = MafChatOptionsMapper.ToChatOptions(workerBaseChatOptions, tools);
         workerChatOpts.Instructions = workerPreamble;
         var workerAgentOpts = new ChatClientAgentOptions
