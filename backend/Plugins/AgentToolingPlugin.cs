@@ -75,7 +75,7 @@ public sealed class AgentToolingPlugin
 
     [ToolFunction(DynamicToolingConstants.ActivateFunctionName)]
     [Description(
-        "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。可传裸函数名或 Plugin.function。"
+        "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。可传裸函数名或 Plugin.function；toolNames 为数组，支持一次激活多个工具，建议把本轮需要的业务工具尽量放在同一次调用中，避免只激活一部分导致后续 tool_calls 报 Function not found。"
         + " 推荐在首次 search_available_tools 之前已按需走通技能链（见 system「动态工具」）。"
         + " 固定协议：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
         + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_builtin_page_script\"]。")]
