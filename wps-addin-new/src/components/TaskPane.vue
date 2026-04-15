@@ -495,13 +495,14 @@ export default {
 </script>
 
 <style scoped>
+/* 对齐 chrome-extension/sidepanel.css：主题手写体由 chat-themes --font-ui 提供 */
 .copilot-app {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif);
   font-size: 14px;
   background: var(--copilot-bg-primary, #0f0f0f);
   color: var(--copilot-text-primary, #e8e8e8);

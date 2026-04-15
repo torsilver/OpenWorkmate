@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
   var KEY = "tasklyUiTheme";
-  var IDS = { light: 1, dark: 1, blocks: 1, modern: 1, minimal: 1, lines: 1, sketch: 1 };
+  var IDS = { light: 1, dark: 1, blocks: 1, modern: 1, minimal: 1, lines: 1, sketch: 1, parchment: 1 };
 
   function normalize(t) {
     t = (t == null ? "" : String(t)).trim();
@@ -48,7 +48,7 @@
     allIds: Object.keys(IDS),
     isLightUi: function (t) {
       t = normalize(t);
-      return t === "light" || t === "minimal" || t === "lines" || t === "sketch";
+      return t === "light" || t === "minimal" || t === "lines" || t === "sketch" || t === "parchment";
     },
     getMermaidTheme: function (t) {
       return global.TasklyTheme.isLightUi(t) ? "neutral" : "dark";

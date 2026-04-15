@@ -1,10 +1,10 @@
 /**
  * Taskly 对话 UI 命名预设主题（语义 CSS 变量）。
- * 根节点须设置 data-theme="light|dark|blocks|modern|minimal|lines|sketch"。
+ * 根节点须设置 data-theme="light|dark|blocks|modern|minimal|lines|sketch|parchment"。
  * 由 taskly-theme-boot.js 从 localStorage tasklyUiTheme 或后端配置同步。
  */
 
-/* 站酷快乐体（OFL，fonts/OFL.txt）— 手绘主题中文与西文手写气质一致 */
+/* 站酷快乐体（OFL，fonts/OFL.txt）— 手绘 / 羊皮纸主题手写气质 */
 @font-face {
   font-family: "ZCOOL KuaiLe";
   font-style: normal;
@@ -180,6 +180,46 @@ html[data-theme="sketch"] .msg--user {
 
 html[data-theme="sketch"] .msg--bot {
   border-bottom-left-radius: 8px;
+}
+
+/* 羊皮纸：暖黄褐、墨迹字、手写体；大底用纸纹渐变（--bg-* 仍为纯色供气泡与 color-mix） */
+html[data-theme="parchment"] {
+  color-scheme: light;
+  --bg-primary: #e8dcc8;
+  --bg-secondary: #f5ebe0;
+  --bg-tertiary: #dcc8ae;
+  --text-primary: #2a1810;
+  --text-secondary: #6b5344;
+  --accent: #8b4513;
+  --accent-dim: rgba(139, 69, 19, 0.14);
+  --user-bubble: #c9a66b;
+  --user-bubble-text: #2a1810;
+  --bot-bubble: #faf6ee;
+  --border: #9a8268;
+  --success: #1e5c2f;
+  --danger: #8b2922;
+  --radius: 14px;
+  --transition: 180ms ease;
+  --font-ui: "ZCOOL KuaiLe", "Segoe Print", "Brush Script MT", "Comic Sans MS", "PingFang SC", "Microsoft YaHei", cursive, serif;
+  --chat-code-bg: #efe4d4;
+}
+
+html[data-theme="parchment"] body,
+html[data-theme="parchment"] #app,
+html[data-theme="parchment"] .copilot-app {
+  background-color: #d4c4a8;
+  background-image:
+    radial-gradient(ellipse 130% 70% at 12% 18%, rgba(120, 72, 40, 0.1), transparent 42%),
+    radial-gradient(ellipse 90% 55% at 88% 78%, rgba(90, 55, 30, 0.09), transparent 48%),
+    linear-gradient(185deg, rgba(255, 250, 235, 0.45) 0%, transparent 32%, rgba(130, 100, 70, 0.07) 100%),
+    repeating-linear-gradient(
+      92deg,
+      transparent 0,
+      transparent 3px,
+      rgba(100, 70, 45, 0.028) 3px,
+      rgba(100, 70, 45, 0.028) 4px
+    );
+  background-attachment: fixed;
 }
 
 /* 计划页等复用对话 token（--bg-primary 等由上文各预设定义） */

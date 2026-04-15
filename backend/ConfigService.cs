@@ -377,7 +377,7 @@ public class AppConfig
     public List<OcrModelEntry> OcrModels { get; set; } = new();
     /// <summary>当前使用的 OCR 模型 Id，对应 OcrModels 中某条的 Id。</summary>
     public string? ActiveOcrModelId { get; set; }
-    /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch；空或未识别时前端按 dark 处理。</summary>
+    /// <summary>对话界面预设主题：light | dark | blocks | modern | minimal | lines | sketch | parchment；空或未识别时前端按 dark 处理。</summary>
     public string? UiThemeId { get; set; }
     /// <summary>Chrome 扩展 ID（chrome://extensions 中「ID」列），托盘/WPS「设置」用于打开 chrome-extension://…/options.html。Chrome 选项页加载或保存时会自动写入本机 user-config.json。</summary>
     public string? ChromeExtensionId { get; set; }
