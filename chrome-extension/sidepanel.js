@@ -2413,12 +2413,16 @@ function handleMessage(raw) {
       const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
       const titleLen = 48;
       const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
+      const presetRaw = msg.subtaskPreset != null ? String(msg.subtaskPreset).trim() : "";
+      const presetTag =
+        presetRaw === "explore" ? "（探索）" : presetRaw === "cliShell" ? "（CLI）" : presetRaw === "browser" ? "（浏览器）" : "";
       const block = document.createElement("details");
       block.className = "subtask-block tool-call-block tool-call--running";
-      block.dataset.label = "子代理：" + summaryLabel;
+      block.dataset.label = "子代理" + presetTag + "：" + summaryLabel;
+      block.dataset.subtaskPresetTag = presetTag;
       block.open = false;
       const sum = document.createElement("summary");
-      sum.innerHTML = `<span class="tool-status-icon">⏳</span> 子代理：${escapeHtml(summaryLabel)}`;
+      sum.innerHTML = `<span class="tool-status-icon">⏳</span> 子代理${escapeHtml(presetTag)}：${escapeHtml(summaryLabel)}`;
       block.appendChild(sum);
       const inner = document.createElement("div");
       inner.className = "subtask-inner";
@@ -2486,7 +2490,8 @@ function handleMessage(raw) {
       currentSubtaskReasoningRoot = null;
       if (currentSubtaskBlock) {
         const sum = currentSubtaskBlock.querySelector("summary");
-        if (sum) sum.innerHTML = `<span class="tool-status-icon">✓</span> 子代理（已完成）`;
+        const doneTag = currentSubtaskBlock.dataset.subtaskPresetTag || "";
+        if (sum) sum.innerHTML = `<span class="tool-status-icon">✓</span> 子代理${escapeHtml(doneTag)}（已完成）`;
         currentSubtaskBlock.classList.remove("tool-call--running");
         currentSubtaskBlock.classList.add("tool-call--done");
         if (msg.content && String(msg.content).trim() && currentSubtaskStreamEl) {

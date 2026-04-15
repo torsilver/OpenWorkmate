@@ -26,6 +26,12 @@ public class SessionToolResolverDynamicBootstrapTests
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SelectSkillForTurnFunctionName, Description = "" }));
         reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, Description = "" }));
+        void RegSub(string fn) =>
+            reg.Register("Subagent", fn, AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = fn, Description = "s" }));
+        RegSub("run_subtask");
+        RegSub("run_explore_subtask");
+        RegSub("run_cli_subtask");
+        RegSub("run_browser_subtask");
     }
 
     [Fact]
@@ -44,6 +50,41 @@ public class SessionToolResolverDynamicBootstrapTests
         Assert.Contains(DynamicToolingConstants.SearchAvailableSkillsFunctionName, names);
         Assert.Contains(DynamicToolingConstants.SelectSkillForTurnFunctionName, names);
         Assert.Contains(DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, names);
+        Assert.Contains("run_subtask", names);
+        Assert.Contains("run_explore_subtask", names);
+        Assert.Contains("run_cli_subtask", names);
+        Assert.Contains("run_browser_subtask", names);
+    }
+
+    [Fact]
+    public void GetDynamicBootstrapTools_OfficeWord_FiltersSubagentCliAndBrowser()
+    {
+        var reg = new ToolRegistry();
+        void RegSub(string fn) =>
+            reg.Register("Subagent", fn, AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = fn, Description = "s" }));
+        RegSub("run_subtask");
+        RegSub("run_explore_subtask");
+        RegSub("run_cli_subtask");
+        RegSub("run_browser_subtask");
+        reg.Register("AgentTooling", DynamicToolingConstants.SearchFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SearchFunctionName, Description = "" }));
+        reg.Register("AgentTooling", DynamicToolingConstants.ActivateFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.ActivateFunctionName, Description = "" }));
+        reg.Register("CurrentDocument", "current_run_document_script",
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "current_run_document_script", Description = "" }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SearchAvailableSkillsFunctionName, Description = "" }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SelectSkillForTurnFunctionName, Description = "" }));
+        reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
+            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, Description = "" }));
+
+        var tools = SessionToolResolver.GetDynamicBootstrapTools(reg, "office-word", null, mergePlanTools: false);
+        var names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("run_subtask", names);
+        Assert.Contains("run_explore_subtask", names);
+        Assert.DoesNotContain("run_cli_subtask", names);
+        Assert.DoesNotContain("run_browser_subtask", names);
     }
 
     [Fact]

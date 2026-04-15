@@ -89,6 +89,9 @@ public static class ClientTypeToolFilter
             && IsScheduledTaskMutationFunction(functionName))
             return false;
 
+        if (PluginComparer.Equals(pluginName, "Subagent") && !IsSubagentFunctionAllowed(functionName, clientType, sessionId))
+            return false;
+
         var ct = (clientType ?? "").Trim();
         if (string.IsNullOrEmpty(ct))
             ct = "chrome";
@@ -151,5 +154,22 @@ public static class ClientTypeToolFilter
                 list.Add((p, f));
         }
         return list;
+    }
+
+    /// <summary>内置子任务入口按端裁剪：<c>run_browser_subtask</c> 仅 Chrome；<c>run_cli_subtask</c> 仅当该端可暴露 <c>CLI:run_command</c> 时。</summary>
+    private static bool IsSubagentFunctionAllowed(string functionName, string? clientType, string? sessionId)
+    {
+        if (PluginComparer.Equals(functionName, "run_browser_subtask"))
+        {
+            var ct0 = (clientType ?? "").Trim();
+            if (string.IsNullOrEmpty(ct0))
+                ct0 = "chrome";
+            return PluginComparer.Equals(ct0, "chrome");
+        }
+
+        if (PluginComparer.Equals(functionName, "run_cli_subtask"))
+            return IsAllowed("CLI", "run_command", clientType, sessionId);
+
+        return true;
     }
 }

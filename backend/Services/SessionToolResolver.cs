@@ -102,7 +102,7 @@ public static class SessionToolResolver
             skills.Count);
     }
 
-    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command；可选配置的 UserSkill；Chrome 含 run_builtin_page_script 与 run_custom_javascript_in_page；可选合并 Plan 四函数。</summary>
+    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command + Subagent 四入口；可选配置的 UserSkill；Chrome 含 run_builtin_page_script 与 run_custom_javascript_in_page；可选合并 Plan 四函数。</summary>
     public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
         ToolRegistry toolRegistry,
         string? clientType,
@@ -136,6 +136,18 @@ public static class SessionToolResolver
         AddIf("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName);
         AddIf("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName);
         AddIf("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName);
+
+        void AddSubagentIf(string func)
+        {
+            if (!ClientTypeToolFilter.IsAllowed("Subagent", func, clientType, sessionId))
+                return;
+            AddIf("Subagent", func);
+        }
+
+        AddSubagentIf("run_subtask");
+        AddSubagentIf("run_explore_subtask");
+        AddSubagentIf("run_cli_subtask");
+        AddSubagentIf("run_browser_subtask");
 
         if (dynCfg != null && skillsForBootstrap is { Count: > 0 })
             AppendBootstrapUserSkills(list, toolRegistry, clientType, sessionId, dynCfg, skillsForBootstrap, bootstrapSkillLogger);

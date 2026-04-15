@@ -1401,9 +1401,18 @@ export function useCopilot() {
         const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || '子任务'
         const titleLen = 48
         const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + '…'
+        const presetRaw = msg.subtaskPreset != null ? String(msg.subtaskPreset).trim() : ''
+        const presetTag =
+          presetRaw === 'explore'
+            ? '（探索）'
+            : presetRaw === 'cliShell'
+              ? '（CLI）'
+              : presetRaw === 'browser'
+                ? '（浏览器）'
+                : ''
         const rSt = ensureRound()
         rSt.subtaskUi = {
-          label: '子代理：' + summaryLabel,
+          label: '子代理' + presetTag + '：' + summaryLabel,
           thinkBySeq: {},
           thinkOrder: [],
           looseThink: '',

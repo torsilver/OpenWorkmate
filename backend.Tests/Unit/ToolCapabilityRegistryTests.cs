@@ -54,4 +54,15 @@ public class ToolCapabilityRegistryTests
         Assert.True(c.Destructive);
         Assert.False(c.AllowParallelSameTurn);
     }
+
+    [Fact]
+    public void Get_ExactOverride_SubagentBuiltinEntries()
+    {
+        foreach (var fn in new[] { "run_subtask", "run_explore_subtask", "run_cli_subtask", "run_browser_subtask" })
+        {
+            var c = ToolCapabilityRegistry.Get("Subagent", fn);
+            Assert.False(c.ReadOnly);
+            Assert.False(c.Destructive);
+        }
+    }
 }

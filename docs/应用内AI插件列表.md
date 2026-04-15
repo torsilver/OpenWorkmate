@@ -20,7 +20,7 @@
 - **条件注册**：`Memory` — 仅当 **`_embeddingProvider.IsConfigured`**（Embedding 已配置）且未禁用 `memory` 时注册。
 - 故运行时**最多 23** 个内置插件名（无 Memory 时为 **22**）。
 - **另有一类动态插件**：配置中的外接 MCP **`MCP_{McpServers.Name}`**（**不含**内置的 `MCP_STT` / `MCP_OCR`）。**用户技能**不再以 `UserSkill_*` 每技能一插件注册，见 **§2.1**。
-- **未发现**其它向主会话注册工具的路径；`SubagentPlugin` 仅调用 `ChatService.RunSubtaskAsync`，不单独挂第二套 `ToolRegistry`。
+- **未发现**其它向主会话注册工具的路径；`SubagentPlugin` 通过 `ChatService.RunSubtaskAsync` / `RunSubtaskWithPresetAsync` 执行子任务，不单独挂第二套 `ToolRegistry`。
 
 ---
 
@@ -116,7 +116,7 @@
 | ClawhubSkill | 1 | `run_clawhub_script` |
 | Memory | 2 | `save_memory`, `search_memory` |
 | Context | 1 | `compact_conversation` |
-| Subagent | 1 | `run_subtask` |
+| Subagent | 4 | `run_subtask`、`run_explore_subtask`、`run_cli_subtask`、`run_browser_subtask` |
 | CrossAgentTask | 2 | `create_cross_agent_task`, `complete_cross_agent_task` |
 | Plan | 5 | `create_plan`, `get_plan`, `update_plan`, `execute_plan_step`, `complete_plan` |
 | SkillAuthor | 2 | `generate_user_skill`, `save_user_skill_markdown` |

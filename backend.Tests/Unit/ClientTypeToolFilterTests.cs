@@ -128,4 +128,29 @@ public class ClientTypeToolFilterTests
         Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_create", "chrome", null));
         Assert.True(ClientTypeToolFilter.IsAllowed("ScheduledTask", "scheduled_task_create", "chrome", "user-session-1"));
     }
+
+    [Fact]
+    public void Subagent_RunBrowserSubtask_OnlyChrome()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", "chrome"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", null));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", "office-word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", "wps"));
+    }
+
+    [Fact]
+    public void Subagent_RunCliSubtask_FollowsCliRunCommandVisibility()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "chrome"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_cli_subtask", "office-excel"));
+    }
+
+    [Fact]
+    public void Subagent_RunExploreAndRunSubtask_AllowedOnOfficeWord()
+    {
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_subtask", "office-word"));
+        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_explore_subtask", "office-word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", "office-word"));
+    }
 }

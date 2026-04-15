@@ -18,6 +18,7 @@ using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
+using OfficeCopilot.Server.Services.Subagent;
 using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server;
@@ -754,7 +755,16 @@ public sealed partial class ChatService : IDisposable
     }
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>
-    public async Task<string> RunSubtaskAsync(string sessionId, string taskDescription, string? constraints, CancellationToken ct = default)
+    public Task<string> RunSubtaskAsync(string sessionId, string taskDescription, string? constraints, CancellationToken ct = default) =>
+        RunSubtaskWithPresetAsync(sessionId, SubagentBuiltinPreset.General, taskDescription, constraints, ct);
+
+    /// <summary>供内置子代理预设与 <c>run_subtask</c> 共用：隔离上下文执行，仅将总结返回主 Agent。</summary>
+    public async Task<string> RunSubtaskWithPresetAsync(
+        string sessionId,
+        SubagentBuiltinPreset preset,
+        string taskDescription,
+        string? constraints,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             return "[错误] 无当前会话，无法执行子任务。";
@@ -767,24 +777,17 @@ public sealed partial class ChatService : IDisposable
         var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
         var clientType = sessionManager.GetClientType(sessionId);
         var allTools = _runtime.GetAllowedTools(clientType, sessionId);
-        var allowedTools = allTools
-            .Where(t => !string.Equals(t.Name, "run_subtask", StringComparison.OrdinalIgnoreCase)
-                     && !string.Equals(t.Name, "compact_conversation", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var registry = _runtime.ToolRegistry;
+        var allowedTools = SubagentBuiltinPresets.FilterToolsForSubtask(registry, allTools, preset, out var filterError);
+        if (filterError != null)
+            return filterError;
         if (allowedTools.Count == 0)
             return "[错误] 当前端无可用的工具集，无法执行子任务。";
 
-        var systemPrompt = "你是一个子代理。请完成用户给出的子任务，可使用现有工具。完成后仅用一段自然语言总结最终结果，不要逐步解释过程。"
-            + " 用户最新表述优先于历史中的旧结论；本机/文档/网页的当前状态须用工具查询后再下结论，勿仅凭聊天记录推断。"
-            + " 若子任务涉及修改本机文件或 Office 文档，须实际调用工具并依据工具返回再总结；不得未调用工具却声称已完成变更。";
+        var systemPrompt = SubagentBuiltinPresets.BuildSystemInstructions(preset);
         var userContent = taskDescTrimmed;
         if (!string.IsNullOrWhiteSpace(constraints))
             userContent += "\n\n约束：" + constraints.Trim();
-        var subHistory = new List<ChatMessage>
-        {
-            new(ChatRole.System, systemPrompt),
-            new(ChatRole.User, userContent)
-        };
 
         var settings = new ChatOptions
         {
@@ -824,7 +827,14 @@ public sealed partial class ChatService : IDisposable
             {
                 Type = "subtask_start",
                 TaskDescription = taskDescTrimmed,
-                Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim()
+                Constraints = string.IsNullOrWhiteSpace(constraints) ? null : constraints.Trim(),
+                SubtaskPreset = preset switch
+                {
+                    SubagentBuiltinPreset.Explore => "explore",
+                    SubagentBuiltinPreset.CliShell => "cliShell",
+                    SubagentBuiltinPreset.Browser => "browser",
+                    _ => null
+                }
             }).ConfigureAwait(false);
             _subtaskTimelineBlocks.BeginSubtaskRun(sessionId);
             subtaskTimelineBegun = true;

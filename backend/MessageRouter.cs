@@ -136,6 +136,11 @@ public class WsMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Constraints { get; set; }
 
+    /// <summary>subtask_start 时：内置预设标签（<c>explore</c> | <c>cliShell</c> | <c>browser</c>）；通用 <c>run_subtask</c> 不传。</summary>
+    [JsonPropertyName("subtaskPreset")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SubtaskPreset { get; set; }
+
     /// <summary>tool_invocation_start/end 与 tool_call_delta：是否属于子代理内，供前端归入子代理块。</summary>
     [JsonPropertyName("isSubtask")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
