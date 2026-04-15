@@ -42,6 +42,30 @@ function tasklyFetch(url, init = {}) {
   return fetch(url, { ...init, headers })
 }
 
+/** 对齐 Chrome sidepanel.js：tool_invocation_end 在 msg.success 与正文前缀不一致时的兜底判定 */
+function toolInvocationContentLooksLikeError(c) {
+  if (!c) return false
+  return (
+    c.startsWith('[错误]') ||
+    c.startsWith('[保存失败]') ||
+    c.startsWith('[记忆未启用]') ||
+    c.startsWith('[无效]') ||
+    c.startsWith('[MCP Error]') ||
+    c.startsWith('[MCP Client Exception]') ||
+    c.startsWith('[系统拦截]') ||
+    c.startsWith('[检索失败]') ||
+    c.startsWith('[创建失败]') ||
+    c.startsWith('[更新失败]') ||
+    c.startsWith('[生成计划失败]') ||
+    c.startsWith('[执行步骤失败]') ||
+    c.startsWith('[工具调用失败]') ||
+    c.startsWith('[参数绑定失败]') ||
+    c.startsWith('Error: Function failed.') ||
+    c.startsWith('Error: Requested function') ||
+    c.startsWith('Error: Unknown error.')
+  )
+}
+
 /** WPS 内 window.open 常被拦截；尽量把链接写入剪贴板，避免用户手打 chrome-extension URL。 */
 async function copyTextToClipboard(text) {
   const s = String(text || '')
@@ -1484,8 +1508,10 @@ export function useCopilot() {
             if (idx >= 0) t = r.subtaskUi.tools[idx]
           }
           if (t) {
-            t.status = msg.success === true ? 'done' : 'fail'
-            t.output = (msg.content && String(msg.content).trim()) || ''
+            const contentRaw = (msg.content && String(msg.content).trim()) || ''
+            const ok = msg.success === true && !toolInvocationContentLooksLikeError(contentRaw)
+            t.status = ok ? 'done' : 'fail'
+            t.output = contentRaw
           }
           if (msg.planStepIndex) {
             updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
@@ -1505,8 +1531,10 @@ export function useCopilot() {
         if (invEnd) block = r.toolSegQueue.find((s) => s.invocationId === invEnd)
         if (!block) block = r.toolSegQueue[currentToolEndIndex]
         if (block) {
-          block.status = msg.success === true ? 'done' : 'fail'
-          block.output = (msg.content && String(msg.content).trim()) || ''
+          const contentRaw = (msg.content && String(msg.content).trim()) || ''
+          const ok = msg.success === true && !toolInvocationContentLooksLikeError(contentRaw)
+          block.status = ok ? 'done' : 'fail'
+          block.output = contentRaw
           block.displayLabel = (block.label || '').replace(/^正在执行:\s*/i, '')
           block.open = false
         }

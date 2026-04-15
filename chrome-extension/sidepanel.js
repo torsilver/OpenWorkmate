@@ -2575,7 +2575,7 @@ function handleMessage(raw) {
         const contentRaw = (msg.content && String(msg.content).trim()) || "";
         const looksLikeError = (c) => {
           if (!c) return false;
-          return c.startsWith("[错误]") || c.startsWith("[保存失败]") || c.startsWith("[记忆未启用]") || c.startsWith("[无效]") || c.startsWith("[MCP Error]") || c.startsWith("[MCP Client Exception]") || c.startsWith("[系统拦截]") || c.startsWith("[检索失败]") || c.startsWith("[创建失败]") || c.startsWith("[更新失败]") || c.startsWith("[生成计划失败]") || c.startsWith("[执行步骤失败]");
+          return c.startsWith("[错误]") || c.startsWith("[保存失败]") || c.startsWith("[记忆未启用]") || c.startsWith("[无效]") || c.startsWith("[MCP Error]") || c.startsWith("[MCP Client Exception]") || c.startsWith("[系统拦截]") || c.startsWith("[检索失败]") || c.startsWith("[创建失败]") || c.startsWith("[更新失败]") || c.startsWith("[生成计划失败]") || c.startsWith("[执行步骤失败]") || c.startsWith("[工具调用失败]") || c.startsWith("[参数绑定失败]") || c.startsWith("Error: Function failed.") || c.startsWith("Error: Requested function") || c.startsWith("Error: Unknown error.");
         };
         const ok = msg.success === true && !looksLikeError(contentRaw);
         const name = `${msg.plugin || ""}.${msg.function || ""}`;

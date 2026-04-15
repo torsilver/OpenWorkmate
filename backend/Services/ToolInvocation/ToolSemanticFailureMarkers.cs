@@ -16,6 +16,10 @@ public static class ToolSemanticFailureMarkers
         "[MCP 工具错误]",
         "[MCP 调用异常]",
         "[MCP ",
+        // Microsoft.Extensions.AI FunctionInvokingChatClient 在工具异常且未向外抛时写入结果串（CreateFunctionResultContent）。
+        "Error: Requested function",
+        "Error: Function failed.",
+        "Error: Unknown error.",
         "[工具调用失败]",
         "[错误]",
         "[系统拦截]",

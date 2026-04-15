@@ -39,6 +39,16 @@ public sealed class ToolSemanticFailureMarkersTests
         Assert.False(ToolSemanticFailureMarkers.LooksLikeSemanticFailure("已写入 3 行到 Sheet1!A1"));
     }
 
+    [Theory]
+    [InlineData("Error: Function failed.")]
+    [InlineData("Error: Function failed. Exception: missing jsonData")]
+    [InlineData("Error: Requested function \"x\" not found.")]
+    [InlineData("Error: Unknown error.")]
+    public void LooksLikeSemanticFailure_meai_error_prefix_is_true(string s)
+    {
+        Assert.True(ToolSemanticFailureMarkers.LooksLikeSemanticFailure(s));
+    }
+
     [Fact]
     public void ClassifyFailureKind_binding_vs_mcp_vs_business()
     {

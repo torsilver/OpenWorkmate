@@ -83,10 +83,22 @@ public static class ToolInvocationMiddleware
 
                 TryRefreshDynamicToolingToolsAfterActivate(toolRegistry, funcName, pipelineServices.Logger);
 
-                await pipelineServices.ToolStatus.AfterInvocationAsync(
-                    statusCtx, result, success: true, cancellationToken).ConfigureAwait(false);
+                // MEAI FunctionInvokingChatClient：工具内异常可能不抛，而以 FunctionInvocationResult 封装。
+                if (ToolInvocationMeaiResultInspector.TryGetEnvelopeFailureMessage(
+                        result, pluginName, funcName, out var envelopeMsg))
+                {
+                    await pipelineServices.ToolStatus.AfterInvocationAsync(
+                        statusCtx, envelopeMsg, success: false, cancellationToken).ConfigureAwait(false);
+                    return envelopeMsg;
+                }
 
-                return result;
+                var payload = ToolInvocationMeaiResultInspector.GetEffectivePayload(result);
+                var normalized = ToolStatusNotifier.NormalizeToolResultToString(payload);
+                var invocationOk = !ToolSemanticFailureMarkers.LooksLikeSemanticFailure(normalized);
+                await pipelineServices.ToolStatus.AfterInvocationAsync(
+                    statusCtx, payload, invocationOk, cancellationToken).ConfigureAwait(false);
+
+                return payload;
             }
             catch (JsonException jsonEx)
             {

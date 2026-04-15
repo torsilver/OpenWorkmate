@@ -903,9 +903,13 @@
         }
         if (!block) block = currentRoundToolBlocks[currentToolEndIndex];
         if (block) {
-          var ok = msg.success === true;
-          var name = (msg.plugin || "") + "." + (msg.function || "");
           var content = (msg.content && String(msg.content).trim()) || "";
+          var looksLikeErr = function (c) {
+            if (!c) return false;
+            return c.startsWith("[错误]") || c.startsWith("[保存失败]") || c.startsWith("[记忆未启用]") || c.startsWith("[无效]") || c.startsWith("[MCP Error]") || c.startsWith("[MCP Client Exception]") || c.startsWith("[系统拦截]") || c.startsWith("[检索失败]") || c.startsWith("[创建失败]") || c.startsWith("[更新失败]") || c.startsWith("[生成计划失败]") || c.startsWith("[执行步骤失败]") || c.startsWith("[工具调用失败]") || c.startsWith("[参数绑定失败]") || c.startsWith("Error: Function failed.") || c.startsWith("Error: Requested function") || c.startsWith("Error: Unknown error.");
+          };
+          var ok = msg.success === true && !looksLikeErr(content);
+          var name = (msg.plugin || "") + "." + (msg.function || "");
           var displayLabel = (block.dataset.label || name).replace(/^正在执行:\s*/i, "");
           block.classList.remove("tool-call--running");
           block.classList.add(ok ? "tool-call--done" : "tool-call--fail");

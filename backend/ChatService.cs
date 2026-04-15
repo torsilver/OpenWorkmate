@@ -302,7 +302,13 @@ public sealed partial class ChatService : IDisposable
         var credential = new System.ClientModel.ApiKeyCredential(
             string.IsNullOrEmpty(apiKey) ? "placeholder" : apiKey);
         var openAiClient = new OpenAI.OpenAIClient(credential, options);
-        return openAiClient.GetChatClient(modelId).AsIChatClient();
+        var inner = openAiClient.GetChatClient(modelId).AsIChatClient();
+        // ChatClientAgent 仅在内层未含 FunctionInvokingChatClient 时才会再包一层；此处显式包裹以便开启 IncludeDetailedErrors，
+        // 使工具异常信息进入 FunctionResultContent / 与 ToolSemanticFailureMarkers 中 MEAI Error: 前缀对齐（Harness：时间块与日志一致）。
+        return new FunctionInvokingChatClient(inner, _loggerFactory, null)
+        {
+            IncludeDetailedErrors = true
+        };
     }
 
     /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>

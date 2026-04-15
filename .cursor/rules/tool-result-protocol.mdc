@@ -11,7 +11,7 @@ alwaysApply: false
    以管道为准：`ToolInvocationMiddleware` 捕获异常或绑定失败时 `success=false`，并返回格式化文案。**不要**在正常 return 路径抛异常表示业务失败。
 
 2. **`success==true` 时的语义失败**  
-   若工具执行完毕但要把失败告知模型/用户，返回字符串须以 **固定前缀** 开头，与 [`ToolSemanticFailureMarkers`](backend/Services/ToolInvocation/ToolSemanticFailureMarkers.cs) 中列表一致。当前包括：`[错误]`、`[工具调用失败]`、`[参数绑定失败]`、`[MCP …]`、`[系统拦截]`、`[用户拒绝]`、`[保存失败]`、`[无效]`、`[记忆未启用]`、`[创建失败]`、`[更新失败]`、`[技能生成失败]` 等。
+   若工具执行完毕但要把失败告知模型/用户，返回字符串须以 **固定前缀** 开头，与 [`ToolSemanticFailureMarkers`](backend/Services/ToolInvocation/ToolSemanticFailureMarkers.cs) 中列表一致。当前包括：`[错误]`、`[工具调用失败]`、`[参数绑定失败]`、`[MCP …]`、`[系统拦截]`、`[用户拒绝]`、`[保存失败]`、`[无效]`、`[记忆未启用]`、`[创建失败]`、`[更新失败]`、`[技能生成失败]`，以及 MEAI `FunctionInvokingChatClient` 在工具异常时写入结果串的 `Error: Function failed.` / `Error: Requested function` / `Error: Unknown error.` 前缀（与 `IncludeDetailedErrors` 组合时的详情行一致）。
 
 ## 禁止
 
