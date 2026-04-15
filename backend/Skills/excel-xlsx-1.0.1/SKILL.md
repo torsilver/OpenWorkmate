@@ -14,7 +14,7 @@ metadata: {"clawdbot":{"emoji":"📗","requires":{"bins":[]},"os":["linux","darw
 - **扩展名**：读写目标须 **`.xlsx`** 或 **`.xlsm`**；**勿**将 `.md`/`.txt`/`.csv`/`.xls` 当作输出扩展名（`excel_range_write` 会校验并可能规范化路径）。
 - **单元格地址**：一律 **A1 字符串**（如 `startCell`=`A1`，`endCell`=`D10`），与工具参数一致；**勿**与「0/1 基列号」混用。
 - **常用流程**：`excel_sheets_list` → `excel_range_read` / `excel_range_write`；大表用 `excel_range_read` 的 **`maxRows`** 或收紧 **`endCell`** 控制体积。
-- **`excel_range_write`**：参数 **`jsonData`** 为合法 **JSON 二维数组**（双引号、标准 JSON）；文件不存在时会**创建**工作簿。具体错误以工具返回的 **`[错误]`** 文案为准并**转述用户**。
+- **`excel_range_write`**：参数 **`data`** 为合法 **JSON 二维数组**（双引号、标准 JSON）；文件不存在时会**创建**工作簿。具体错误以工具返回的 **`[错误]`** 文案为准并**转述用户**。
 - **其它工具（按需）**：`excel_formula_write`、`excel_cells_merge` / `excel_cells_unmerge`、`excel_named_ranges_*`、`excel_column_width_set`、`excel_row_height_set`、`excel_validations_*`、`excel_conditional_format_*`、`excel_hyperlink_set`、`excel_sheet_add` / `excel_sheet_remove`、`excel_charts_list`。
 - **与 PDF**：从 PDF 取数见技能 **`Pdf / Pdf`**（`get_pdf_text` 等）；结构化落表仍用 **`excel_*`**。
 

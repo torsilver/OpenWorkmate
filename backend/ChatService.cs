@@ -1038,7 +1038,7 @@ public sealed partial class ChatService : IDisposable
     /// </summary>
     private const string ToolCallArgumentsSchemaInstruction =
         "[工具调用参数] 发起 tool_calls 时，function.arguments 解析后的 JSON 键名必须与该工具 OpenAPI/JSON Schema 中 properties 所列字段名完全一致（含大小写）；"
-        + "禁止用 data、content、values 等猜测别名替代 schema 中的正式字段名。"
+        + "禁止使用 schema 中未声明的键名去替代已声明字段（例如 schema 要求 filePath 时不要写 path 或 target）。"
         + "schema 标为 required 的字段不得省略；各字段值类型须与 schema 一致。";
 
     /// <summary>

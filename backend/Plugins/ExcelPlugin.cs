@@ -356,7 +356,7 @@ public sealed class ExcelPlugin
     [Description("向指定工作表和起始单元格写入 JSON 二维数组数据；文件不存在则创建（Open XML 工作簿）。filePath 必须以 .xlsx（推荐）或 .xlsm 结尾，勿用 .md/.txt/.csv/.xls 当作扩展名。路径须对应当前登录用户：优先仅文件名或相对路径；勿用 Public/%PUBLIC% 或臆测用户名目录。")]
     public string ExcelRangeWrite(
         [Description("Excel 路径，必须以 .xlsx（推荐）或 .xlsm 结尾；禁止用 .md、.txt、.csv、旧版 .xls。优先仅文件名或相对路径（当前用户下约定目录，常为 Downloads）；绝对路径用 %USERPROFILE%\\…")] string filePath,
-        [Description("合法 JSON 二维数组字符串，双引号键/字符串；示例 [[\"姓名\",\"年龄\"],[\"张三\",25]]。勿用单引号；解析失败时请检查转义与逗号")] string jsonData,
+        [Description("合法 JSON 二维数组字符串，双引号键/字符串；示例 [[\"姓名\",\"年龄\"],[\"张三\",25]]。勿用单引号；解析失败时请检查转义与逗号")] string data,
         [Description("工作表名称，留空为 Sheet1")] string sheetName = "",
         [Description("起始单元格，如 A1")] string startCell = "A1")
     {
@@ -366,22 +366,22 @@ public sealed class ExcelPlugin
         if (!string.Equals(filePath, beforeNormalize, StringComparison.OrdinalIgnoreCase))
             _logger?.LogInformation("[Excel] excel_range_write normalized path from {Before} to {After}", beforeNormalize, filePath);
         if (!OpenXmlHelpers.ValidateExcelExtension(filePath, out var extErr)) return extErr;
-        if (string.IsNullOrWhiteSpace(jsonData))
-            return "[错误] jsonData 不能为空；请传入 JSON 二维数组字符串（见参数说明中的示例）。";
+        if (string.IsNullOrWhiteSpace(data))
+            return "[错误] data 不能为空；请传入 JSON 二维数组字符串（见参数说明中的示例）。";
         try
         {
-            List<List<JsonElement>>? data;
+            List<List<JsonElement>>? grid;
             try
             {
-                data = JsonSerializer.Deserialize<List<List<JsonElement>>>(jsonData);
+                grid = JsonSerializer.Deserialize<List<List<JsonElement>>>(data);
             }
             catch (JsonException jex)
             {
-                return $"[错误] jsonData 不是合法 JSON 二维数组：{jex.Message}。请使用双引号字符串、检查逗号与反斜杠转义后重试。";
+                return $"[错误] data 不是合法 JSON 二维数组：{jex.Message}。请使用双引号字符串、检查逗号与反斜杠转义后重试。";
             }
 
-            if (data == null)
-                return "[错误] jsonData 解析结果为 null；请传入 JSON 二维数组字符串。";
+            if (grid == null)
+                return "[错误] data 解析结果为 null；请传入 JSON 二维数组字符串。";
             bool isNew = !File.Exists(filePath);
             var isXlsm = filePath.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase);
             var docType = isXlsm ? SpreadsheetDocumentType.MacroEnabledWorkbook : SpreadsheetDocumentType.Workbook;
@@ -406,18 +406,18 @@ public sealed class ExcelPlugin
 
             var sheetData = RequireWorksheet(wsPart).GetFirstChild<SheetData>()!;
             var (startRow, startCol) = ParseCellRef(startCell);
-            for (int r = 0; r < data.Count; r++)
+            for (int r = 0; r < grid.Count; r++)
             {
                 uint rowIdx = (uint)(startRow + r);
                 var row = sheetData.Elements<Row>().FirstOrDefault(x => x.RowIndex?.Value == rowIdx);
                 if (row == null) { row = new Row { RowIndex = rowIdx }; sheetData.Append(row); }
-                for (int c = 0; c < data[r].Count; c++)
+                for (int c = 0; c < grid[r].Count; c++)
                 {
                     var colLetter = GetColLetter(startCol + c);
                     var cellRef = $"{colLetter}{rowIdx}";
                     var cell = row.Elements<Cell>().FirstOrDefault(x => x.CellReference?.Value == cellRef);
                     if (cell == null) { cell = new Cell { CellReference = cellRef }; row.Append(cell); }
-                    var val = data[r][c];
+                    var val = grid[r][c];
                     if (val.ValueKind == JsonValueKind.Number)
                     { cell.CellValue = new CellValue(val.GetDouble().ToString()); cell.DataType = CellValues.Number; }
                     else
@@ -426,7 +426,7 @@ public sealed class ExcelPlugin
             }
             RequireWorksheet(wsPart).Save();
             RequireWorkbook(wbPart).Save();
-            return $"已写入 {data.Count} 行到 {targetSheetName}!{startCell}";
+            return $"已写入 {grid.Count} 行到 {targetSheetName}!{startCell}";
         }
         catch (Exception ex) { return $"[错误] 写入失败: {ex.Message}"; }
     }

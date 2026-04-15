@@ -94,7 +94,7 @@ public sealed class CurrentDocumentPlugin
     [Description("向当前打开的 Excel 工作表的指定区域写入数据（二维数组）。仅当用户从 Excel 任务窗格连接时可用。")]
     public Task<string> CurrentExcelWriteRangeAsync(
         [Description("区域左上角或完整区域，如 A1 或 A1:C3")] string address,
-        [Description("二维数组 JSON，如 [[1,2],[3,4]]")] string valuesJson,
+        [Description("二维数组 JSON，如 [[1,2],[3,4]]")] string data,
         [Description("工作表名称，不填则使用当前活动表")] string? sheetName = null,
         CancellationToken cancellationToken = default)
     {
@@ -102,11 +102,11 @@ public sealed class CurrentDocumentPlugin
         object? values;
         try
         {
-            values = JsonSerializer.Deserialize<object>(valuesJson);
+            values = JsonSerializer.Deserialize<object>(data);
         }
         catch
         {
-            return Task.FromResult("失败：valuesJson 不是合法 JSON，请使用二维数组格式如 [[1,2],[3,4]]。");
+            return Task.FromResult("失败：data 不是合法 JSON，请使用二维数组格式如 [[1,2],[3,4]]。");
         }
         _logger.LogInformation("[CurrentDocument] current_excel_write_range sessionId={SessionId} address={Address}", sessionId ?? "(null)", address);
         return SendRpcAsync(sessionId!, "excel_write_range", new { address, values, sheetName }, cancellationToken);
@@ -127,21 +127,21 @@ public sealed class CurrentDocumentPlugin
     public Task<string> CurrentWordInsertTableAsync(
         [Description("行数")] int rowCount,
         [Description("列数")] int columnCount,
-        [Description("可选：单元格内容二维数组 JSON，如 [[\"A\",\"B\"],[\"C\",\"D\"]]")] string? valuesJson = null,
+        [Description("可选：单元格内容二维数组 JSON，如 [[\"A\",\"B\"],[\"C\",\"D\"]]")] string? data = null,
         [Description("插入位置：End 文档末尾，Start 文档开头，或与选区相关")] string? insertLocation = "End",
         CancellationToken cancellationToken = default)
     {
         var sessionId = SessionContext.GetSessionId();
         object? values = null;
-        if (!string.IsNullOrWhiteSpace(valuesJson))
+        if (!string.IsNullOrWhiteSpace(data))
         {
             try
             {
-                values = JsonSerializer.Deserialize<object>(valuesJson);
+                values = JsonSerializer.Deserialize<object>(data);
             }
             catch
             {
-                return Task.FromResult("失败：valuesJson 不是合法 JSON。");
+                return Task.FromResult("失败：data 不是合法 JSON。");
             }
         }
         _logger.LogInformation("[CurrentDocument] current_word_insert_table sessionId={SessionId} rows={Rows} cols={Cols}", sessionId ?? "(null)", rowCount, columnCount);

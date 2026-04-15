@@ -18,7 +18,7 @@ public sealed class ToolSemanticFailureMarkersTests
     [Fact]
     public void LooksLikeSemanticFailure_bracket_error_prefix_is_true()
     {
-        Assert.True(ToolSemanticFailureMarkers.LooksLikeSemanticFailure("[错误] jsonData 不能为空"));
+        Assert.True(ToolSemanticFailureMarkers.LooksLikeSemanticFailure("[错误] data 不能为空"));
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class ToolSemanticFailureMarkersTests
 
     [Theory]
     [InlineData("Error: Function failed.")]
-    [InlineData("Error: Function failed. Exception: missing jsonData")]
+    [InlineData("Error: Function failed. Exception: missing data")]
     [InlineData("Error: Requested function \"x\" not found.")]
     [InlineData("Error: Unknown error.")]
     public void LooksLikeSemanticFailure_meai_error_prefix_is_true(string s)

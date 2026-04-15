@@ -39,10 +39,10 @@ public sealed class ToolInvocationMeaiResultInspectorTests
             types: [typeof(bool), statusType, typeof(FunctionCallContent), typeof(object), typeof(Exception)],
             modifiers: null);
         Assert.NotNull(ctor);
-        var fir = ctor.Invoke([false, exStatus, call, null, new ArgumentException("missing jsonData")]);
+        var fir = ctor.Invoke([false, exStatus, call, null, new ArgumentException("missing data")]);
         Assert.True(ToolInvocationMeaiResultInspector.TryGetEnvelopeFailureMessage(
             fir, "Excel", "excel_range_write", out var msg));
         Assert.StartsWith("[工具调用失败] Excel.excel_range_write:", msg, StringComparison.Ordinal);
-        Assert.Contains("jsonData", msg, StringComparison.Ordinal);
+        Assert.Contains("data", msg, StringComparison.Ordinal);
     }
 }
