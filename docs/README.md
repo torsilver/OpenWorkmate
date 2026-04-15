@@ -7,6 +7,7 @@
 | [architecture-dimensions.md](./architecture-dimensions.md) | 仓库结构、运行时拓扑、后端分层、WS/API 概念图（Mermaid） |
 | [用户请求-端到端时间线.md](./用户请求-端到端时间线.md) | 用户发起到 `stream_end` 的端到端流程（Chrome 为主） |
 | [WPS插件调试指南.md](./WPS插件调试指南.md) | 官方加载项调试要点与 `wps-addin-new` 下 `wpsjs debug` 实践 |
+| [WPS端手工测试计划.md](./WPS端手工测试计划.md) | WPS 任务窗格 + `CurrentDocument` RPC / 宿主守卫 / 动态工具手工回归 |
 | [maf-migration-baseline.md](./maf-migration-baseline.md) | MAF/MEAI 迁移状态、NuGet 基线、测试计数 |
 | [maf-host-debug-removal.md](./maf-host-debug-removal.md) | 已移除的 MAF DevUI / AG-UI 等宿主调试端点说明 |
 | [应用内AI插件列表.md](./应用内AI插件列表.md) | 内置/动态插件名与 `ClientTypeToolFilter` 可见性（含 WPS `wpsHostKind`） |

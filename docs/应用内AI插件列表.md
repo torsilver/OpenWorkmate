@@ -65,7 +65,7 @@
 | **Word** | 读写 Word 文件 | |
 | **Ppt** | 读写 PPT 文件 | |
 | **Browser** | 网页截图、高亮、页面脚本等 | 依赖会话与 Chrome 侧能力 |
-| **File** | 附件路径、文件大小、截图落盘；**文本类** `.txt` / `.md` / `.json` / `.csv` 读写（`text_file_read` / `text_file_write`） | 见下 **§1.2.1**；**Office/WPS 任务窗格会话不暴露本插件** |
+| **File** | 附件路径、文件大小、截图落盘；**文本类** `.txt` / `.md` / `.json` / `.csv` 读写（`text_file_read` / `text_file_write`） | 见下 **§1.2.1**；**`office-*` / `wps` 任务窗格与 Chrome 一样**：`File` 在 `IsCommonPlugin` 中，**会**随 `ClientTypeToolFilter` 暴露（路径仍为**后端进程**视角；`get_attachment_path` 依赖 Chrome 侧附件链时在 WPS 可能不适用） |
 | **System** | 当前日期与时间 | |
 | **MCP_STT** | 内置语音转文字（百炼实时 ASR） | 名称含 `MCP_` 但**不是**外接 MCP；需配置实时 ASR |
 | **MCP_OCR** | 内置图片 OCR | 同上，**不是**外接 MCP；需配置 OCR |
@@ -94,7 +94,7 @@
 | `.pdf` | **Pdf**：`get_pdf_text`、`get_pdf_info`、`pdf_document_create`、`pdf_merge` |
 | `.txt` / `.md` / `.markdown` / `.json` / `.csv` | **File**：`text_file_read`、`text_file_write`（按**纯文本**读写；不解析 CSV 为表格） |
 
-**端侧说明**：`ClientTypeToolFilter` 对 **`office-word` / `office-excel` / `office-powerpoint` / `wps`** 仅暴露 **CurrentDocument** 与「通用」插件（Memory、Context、MCP_* 等），**不暴露 File**（也不暴露 Word/Excel/Ppt 路径插件）。因此 **`text_file_read` / `text_file_write` 主要在 Chrome 等会暴露 File 的客户端可用**；在 Office/WPS 任务窗格中处理**当前打开的文档**请用 **CurrentDocument**。
+**端侧说明**：`office-word` / `office-excel` / `office-powerpoint` / `wps` 分支均为：先匹配 **`IsCommonPlugin`**（含 **Memory、Context、CLI、File、System、UserOptions**、AgentTooling、Subagent、MCP_* 等，见源码），再允许 **Pdf**，再按规则允许 **`CurrentDocument`**（及 WPS 下 `wpsHostKind` 收窄，见下段）。**不暴露**：**Browser**；磁盘型 **Word / Excel / Ppt** 路径插件（与「当前文档」RPC 区分）；**Plan**（未列入 `IsCommonPlugin`）。处理**当前宿主内文档**优先 **CurrentDocument**；读写**服务端可见路径**上的文本/PDF 等可用 **File** / **Pdf**。
 
 **WPS 特例（`clientType === wps`）**：`CurrentDocument` 下具体函数是否可见还取决于会话里上报的 **`wpsHostKind`**（WPS 加载项 `set_context` → `SessionManager.GetWpsHostKind`）。**仅当** 规范化后为 **`word` / `et` / `wpp`** 时，`CurrentDocument` 与对应 **`office-word` / `office-excel` / `office-powerpoint`** 子集一致（含脚本两枚 `current_run_*`）；**`null` / `unknown` / `none` / 首轮未上报** 时**不收紧**，仍为 Word+Excel+PPT 函数并集。实现见 `ClientTypeToolFilter.WpsNarrowCurrentDocumentHost`。
 
@@ -154,12 +154,12 @@
 | clientType | 模型侧要点 |
 |------------|------------|
 | **chrome**（默认） | **仅排除** `CurrentDocument`：**其余所有已在 ToolRegistry 中注册的插件**（含 **Pdf**、System、Plan、UserOptions、CLI、Browser、File、Office 三件套、Context、Subagent、CrossAgentTask、ScheduledTask 等，若未禁用）均可能暴露。 |
-| **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkillProgressive`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
-| **office-excel** | 同上结构，`CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
-| **office-powerpoint** | 同上结构，`CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
-| **wps** | 通用插件 + `CurrentDocument`：**默认**（`wpsHostKind` 未收紧）为 Word/Excel/PPT 函数及脚本的并集；**收紧**时与上表对应 `office-*` 行相同（由 `wpsHostKind` 决定）。 |
+| **office-word** | **`IsCommonPlugin` 全集**（含 **CLI、File、System、UserOptions**、Memory、Context、Subagent、…、外接 `MCP_*`）+ **Pdf** + `CurrentDocument` 中 **Word** 函数与文档脚本。**不暴露**：Browser、**Plan**、路径型 Word/Excel/Ppt 整插件。 |
+| **office-excel** | 同上 + `CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
+| **office-powerpoint** | 同上 + `CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
+| **wps** | 与 `office-*` 相同：**`IsCommonPlugin` + Pdf**；`CurrentDocument` 在 **`wpsHostKind` 未收紧** 时为 Word+Excel+PPT 并集，**收紧**为 `word`/`et`/`wpp` 时与同宿主 `office-*` 的 `CurrentDocument` 子集一致。 |
 
-**重要**：**System**、**Plan**、**UserOptions** 虽在注册表中存在，但 **未** 列入 `IsCommonPlugin`，因此在 **office-word / office-excel / office-powerpoint / wps** 下**不会**进入模型工具列表；仅在 **chrome**（及 `clientType` 为空时按 chrome 处理）侧可用。
+**重要**：**Plan** 未在 `IsCommonPlugin` 中，故 **`office-*` / `wps` 不暴露 Plan**；**Chrome** 对非 `CurrentDocument` 插件默认允许，**含 Plan**。**System**、**UserOptions**、**File**、**CLI** 均在 `IsCommonPlugin` 中，**Chrome 与 `office-*` / `wps` 均可暴露**（若已注册且未禁用）。
 
 ---
 
@@ -173,6 +173,7 @@
 | 动态工具 / 检索 | `backend/Services/DynamicTooling/`、`backend/Plugins/AgentToolingPlugin.cs` |
 | 技能撰写 | `backend/Plugins/SkillAuthorPlugin.cs` |
 | Chrome 端逐工具手工测 | `docs/Chrome端手工测试计划.md` |
+| WPS 端 CurrentDocument / RPC 手工测 | `docs/WPS端手工测试计划.md` |
 
 ---
 
