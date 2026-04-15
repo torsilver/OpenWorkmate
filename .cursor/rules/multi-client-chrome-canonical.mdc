@@ -8,8 +8,8 @@ alwaysApply: true
 ## 原则
 
 - **所有功能**（UI、交互、WebSocket 协议与字段、错误提示、HITL、设置页逻辑、侧栏行为等）的 **规范实现与「应该怎样」的定义**，均以 [chrome-extension/](chrome-extension/) 为 **唯一权威**。
-- **WPS**（[wps-addin-new/](wps-addin-new/)，含 Vue 与 `public` 遗留栈）：当前有 **专项目标——行为与协议向 Chrome 对齐**；改 WPS 时仍以 Chrome 为对照，**不得**把 WPS 旧实现当作产品定义。
-- **Office**（[office-addin/](office-addin/)）：**暂不纳入对齐排期**；仍视为可能滞后或不完整，**不得**当作正确样板，也**不要**为对齐 Office 而改 Chrome 或改 WPS 的「应有行为」。
+- **WPS**（[wps-addin-new/](wps-addin-new/)，Vue 任务窗格 + `public/` 静态资源）：当前有 **专项目标——行为与协议向 Chrome 对齐**；改 WPS 时仍以 Chrome 为对照，**不得**把 WPS 旧实现当作产品定义。
+- **Office**（[office-addin/](office-addin/)）：**暂不纳入对齐排期**；仍视为可能滞后或不完整，**不得**当作正确样板，也**不要**为对齐 Office 而改 Chrome 或改 WPS 的「应有行为」。另见 [office-addin-unverified-reference.mdc](office-addin-unverified-reference.mdc)：**Office 端未经充分测试，不足以作为可信参考源**。
 
 ## 开发时怎么做
 
@@ -25,7 +25,7 @@ alwaysApply: true
 ## 反例
 
 - 「WPS 已经这样写了，把 Chrome 改成一样。」
-- 未看 `chrome-extension/`，只复制 `wps-addin-new/public/taskpane.js` 或 Office `taskpane.js` 当需求来源。
+- 未看 `chrome-extension/`，仅凭 Office `taskpane.js` 或 WPS 侧局部实现推断产品定义，而不以 Chrome 规范为准。
 
 ## 正例
 

@@ -76,8 +76,8 @@ wpsjs debug
 |-----------|------|
 | [wps-addin-new/manifest.xml](../wps-addin-new/manifest.xml) | 加载项清单（`JsPlugin`）。 |
 | [wps-addin-new/public/ribbon.xml](../wps-addin-new/public/ribbon.xml) + `src/components/ribbon.js` | 功能区与打开任务窗格等入口。 |
-| [wps-addin-new/src/](../wps-addin-new/src/) | **Vue 主线**：`TaskPane.vue`、`composables/useCopilot.js` 等。 |
-| [wps-addin-new/public/taskpane.*](../wps-addin-new/public/) | **遗留静态栈**；仓库 README 已说明以 Vue 为准、public 冻结，调试时勿混淆「哪一套在跑」。 |
+| [wps-addin-new/src/](../wps-addin-new/src/) | **Vue 主线**：`TaskPane.vue`、`composables/useCopilot.js`（路由 `#/taskpane`）等。 |
+| [wps-addin-new/public/README.md](../wps-addin-new/public/README.md) | `public/` 仅静态资源与 ribbon 等；**无**独立静态任务窗格页面。 |
 
 ### 3.1 会话上下文与后端工具可见性（`wpsHostKind`）
 

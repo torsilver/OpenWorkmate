@@ -14,14 +14,9 @@ npm install
 npm run build
 ```
 
-## 双栈说明（Vue / public 遗留）
+## 任务窗格（唯一实现）
 
-| 栈 | 路径 | 状态 |
-|----|------|------|
-| **规范实现** | `src/components/TaskPane.vue` + `src/composables/useCopilot.js` | 对齐 Chrome 的迭代以这里为准 |
-| **遗留静态** | `public/taskpane.html`、`public/taskpane.js` | **冻结**：仅修安全或阻断性问题；新能力请迁到 Vue 栈 |
-
-Ribbon 打开任务窗格应指向 **Vue 路由**（`#/taskpane`），勿把 `public/taskpane` 当作权威实现。
+任务窗格与宿主 RPC 仅在 **`src/components/TaskPane.vue`** + **`src/composables/useCopilot.js`**（Vue 路由 **`#/taskpane`**）中维护；功能区 [`public/ribbon.xml`](public/ribbon.xml) 与 [`src/components/ribbon.js`](src/components/ribbon.js) 打开的即是该 Vue 页。
 
 ## 与 Chrome 对齐矩阵（WebSocket / HTTP）
 
@@ -40,7 +35,7 @@ Ribbon 打开任务窗格应指向 **Vue 路由**（`#/taskpane`），勿把 `pu
 | 会议 ASR、`workspace.html`、浏览器 RPC | Chrome 专属 | **不对齐**（宿主不同） |
 | 完整选项页（模型/密钥等） | `options.html` | **不对齐**：标题栏 ⚙️ 用 `window.open` 打开 `chrome-extension://<ID>/options.html`（需配置 `VITE_CHROME_EXTENSION_ID`） |
 
-**CurrentDocument（Word/Excel）RPC**：`excel_*` 与 `word_insert_table` 在 **Vue** [`src/wps-rpc/`](src/wps-rpc/) 与 [`useCopilot.js`](src/composables/useCopilot.js) 中维护；[`public/taskpane.js`](public/taskpane.js) 中对应分支**未与 Vue 双写**，以 Vue 为准。PPT 相关仍见仓库 `docs/未完成功能与能力缺口.md` 与 `scripts/sync-public-ppt-rpc.mjs`。
+**CurrentDocument（Word/Excel/PPT）RPC**：在 [`src/wps-rpc/`](src/wps-rpc/) 与 [`useCopilot.js`](src/composables/useCopilot.js) 中维护；与 Office 任务窗格 JSON 形状对齐时对照 [`office-addin/taskpane.js`](../office-addin/taskpane.js)。PPT 能力边界见仓库 [`docs/未完成功能与能力缺口.md`](../docs/未完成功能与能力缺口.md)。
 
 ## Chrome 扩展 ID（「设置」按钮）
 
@@ -54,7 +49,7 @@ VITE_CHROME_EXTENSION_ID=你的扩展ID
 
 ## 宿主 RPC 技术债（Backlog）
 
-`useCopilot.js` 中 `handleRpcRequest` 对 **Excel** 等多处仍为占位或「需按 WPS API 实现」的返回；**Word** 如 `word_insert_table` 等亦可能未实现。与 Chrome 浏览器工具不对标，按业务优先级在 WPS JS API 上逐项补全即可。
+部分能力仍受 **WPS 宿主版本 / JSAPI** 限制（例如 `ppt_slide_delete` 等分支的明确失败提示）。与 Chrome 浏览器专属能力不对标；新增或调整宿主 RPC 时在 `useCopilot.js` 与 `src/wps-rpc/` 中扩展即可。
 
 ## 相关文档
 

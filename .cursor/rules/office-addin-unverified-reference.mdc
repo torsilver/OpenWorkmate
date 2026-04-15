@@ -1,0 +1,30 @@
+---
+description: Office 加载项（office-addin）未经充分测试，不得当作可信参考源推断产品或对齐 WPS
+alwaysApply: true
+---
+
+# Office 加载项：非可信参考源
+
+## 原则
+
+- **[office-addin/](office-addin/)（含 `taskpane.js` / `taskpane.html`、Office.js RPC 分支等）当前未经系统化测试与验收**，**不足以**作为「产品应该怎样」或「另一宿主已验证正确」的依据。
+- **禁止**在缺乏 Chrome 规范与运行证据的情况下，仅凭 Office 端实现去：
+  - 推断协议、JSON 字段、错误语义或交互定义；
+  - 要求 WPS 与 Office 行为一致；
+  - 把 Office 代码当作 WPS/后端改动的**权威样板**。
+
+## 与现有「以 Chrome 为准」的关系
+
+- **规范源**仍以 [chrome-extension/](chrome-extension/) 为准（见 [multi-client-chrome-canonical.mdc](multi-client-chrome-canonical.mdc)）。
+- Office 端至多可作为**技术线索**（例如 Office.js API 形态），但**正确性、完整性、与产品契约的一致性均不得默认成立**；若需对照，须写明「未验证 Office，仅作 API 查阅」类说明，且**不得**压过 Chrome 规范。
+
+## 反例
+
+- 「Office `taskpane.js` 里 JSON 是这样返回的，所以后端/WPS 必须跟它一致。」
+- 「先按 Office 实现一版，再让 Chrome 对齐 Office。」
+- 未在真实 Office 环境跑通测试，却把 Office 实现写进文档当「已对齐标准」。
+
+## 正例
+
+- 对齐 WPS：以 Chrome 为准实现/验收；Office 若与 Chrome 偶然一致，**不**因此把 Office 升格为规范源。
+- 若用户明确要求改 Office：单独排期、单独说明测试范围，**不**把 Office 未测状态强加为全仓库的「默认真值」。

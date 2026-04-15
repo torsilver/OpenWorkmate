@@ -9,6 +9,7 @@ import { tasklyResolveLocalServiceBase, tasklyHttpWsFromBase } from '../utils/ta
 import { getWpsHostKind, assertWpsHost } from '../wps-rpc/hostKind.js'
 import { runWpsExcelRpc } from '../wps-rpc/excelRpc.js'
 import { wordInsertTableWps } from '../wps-rpc/wordTableRpc.js'
+import { wordInsertTextWps } from '../wps-rpc/wordInsertTextRpc.js'
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -1945,17 +1946,10 @@ export function useCopilot() {
       }
 
       if (method === 'word_insert_text') {
-        const text = params.text != null ? String(params.text) : ''
-        if (window.wps.Enum && window.wps.Enum.wdStory) {
-          const doc = window.wps.ActiveDocument
-          if (doc && doc.Content) {
-            doc.Content.InsertAfter(text)
-            sendRes('成功：已在当前 WPS 文档末尾插入内容。', null)
-          } else {
-            sendRes(null, '无法获取当前文档内容对象。')
-          }
-        } else {
-          sendRes(null, 'WPS 文字 API 需在 WPS 文字加载项中调用，请参考 WPS 开放平台文档。')
+        try {
+          sendRes(wordInsertTextWps(window.wps, params), null)
+        } catch (e) {
+          sendRes(null, e && e.message ? e.message : String(e))
         }
       } else if (method === 'word_read_body') {
         const maxLen = params.maxLength > 0 ? params.maxLength : 8000

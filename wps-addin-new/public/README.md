@@ -1,5 +1,19 @@
-# `public/` 与任务窗格主界面
+# `public/` 静态资源
 
-**产品主界面**：`wpsjs debug` / Vite 开发时实际使用的是 **Vue 路由**下的 [`src/components/TaskPane.vue`](../src/components/TaskPane.vue) + [`src/composables/useCopilot.js`](../src/composables/useCopilot.js)。
+本目录由 **Vite** 将文件**原样**输出到站点根（与根目录 [`index.html`](../index.html) 同级），供 **Vue 应用**（含路由 **`#/taskpane`**）与功能区等引用。
 
-本目录下的 `taskpane.html` / `taskpane.js` 等**不与 Vue 版功能逐项同步**；请仅将其视为 **RPC 同步脚本**（如 `npm run sync-public-ppt-rpc`）或历史/备用入口。修改 WPS 侧宿主能力时，以 `useCopilot.js` 为准，再按需同步 `public/taskpane.js`。
+## 主要内容
+
+- **`ribbon.xml`**：功能区定义（与 [`src/components/ribbon.js`](../src/components/ribbon.js) 配合）。
+- **`taskly-theme-boot.js`**、**`chat-themes.css`**、**`libs/*`**：主题与代码高亮等（根 `index.html` 引用）。
+- **`local-service-resolve.js`**：本地服务基址解析（若入口脚本引用）。
+- **`images/`**、**`fonts/`**、**`favicon.ico`** 等其它静态资源。
+
+## 任务窗格实现位置
+
+任务窗格的 **UI、WebSocket、宿主 RPC** 仅在 **Vue 栈**维护：
+
+- [`src/components/TaskPane.vue`](../src/components/TaskPane.vue)
+- [`src/composables/useCopilot.js`](../src/composables/useCopilot.js)
+
+历史上曾存在独立的 `taskpane.html` / `taskpane.js` / `taskpane.css` 静态任务窗格，已与 **`sync-public-ppt-rpc`** 同步脚本一并移除，避免与 Vue 双轨混淆。

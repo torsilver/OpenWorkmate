@@ -56,7 +56,7 @@ public sealed class CurrentDocumentPlugin
     }
 
     [ToolFunction("current_word_insert_text")]
-    [Description("在当前打开的 Word 文档末尾插入一段文字。可选 style 参数指定段落样式（如 Heading1、Heading2、Normal、Title）。仅当用户从 Word 任务窗格连接时可用。")]
+    [Description("在当前打开的 Word 文档末尾插入一段文字（每次调用独占一个新段落；多段/多级标题请多次调用，勿在同一次调用里混写多段再指望不同样式）。可选 style 指定段落样式（Heading1、Heading2、Normal、Title 等）。仅当用户从 Word 任务窗格连接时可用。")]
     public Task<string> CurrentWordInsertTextAsync(
         [Description("要插入的正文内容")] string text,
         [Description("可选段落样式：Heading1、Heading2、Heading3、Normal、Title、Subtitle")] string? style = null,

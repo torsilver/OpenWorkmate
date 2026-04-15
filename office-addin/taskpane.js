@@ -1700,11 +1700,12 @@
       } else if (OFFICE_CLIENT_TYPE === "office-word") {
         if (method === "word_insert_text") {
           const text = params.text != null ? String(params.text) : "";
-          const style = params.style || null;
+          const styleRaw = params.style != null ? String(params.style).trim() : "";
+          const styleNorm = styleRaw.toLowerCase().replace(/[\s_\-]+/g, "");
           await Word.run(function (context) {
             const body = context.document.body;
             const para = body.insertParagraph(text, "End");
-            if (style) {
+            if (styleNorm) {
               var styleMap = {
                 "heading1": Word.BuiltInStyleName.heading1,
                 "heading2": Word.BuiltInStyleName.heading2,
@@ -1713,7 +1714,7 @@
                 "title": Word.BuiltInStyleName.title,
                 "subtitle": Word.BuiltInStyleName.subtitle
               };
-              var builtIn = styleMap[(style || "").toLowerCase()];
+              var builtIn = styleMap[styleNorm];
               if (builtIn) para.styleBuiltIn = builtIn;
             }
             return context.sync();
