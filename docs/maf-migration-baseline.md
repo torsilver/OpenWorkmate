@@ -5,7 +5,7 @@
 ## 测试基线
 
 - 命令：`dotnet test backend.Tests/backend.Tests.csproj`
-- **最近一次全绿计数**：423（`net10.0`，Unit + Integration，2026-04 校验）。
+- **最近一次全绿计数**：524（`net10.0`，Unit + Integration，2026-04-15 校验）；后续以本地 `dotnet test backend.Tests/backend.Tests.csproj` 输出为准。
 
 ## 完全 MAF 迁移进度（摘要）
 
@@ -20,7 +20,7 @@
 | 辅助 LLM 调用 | 全部走 `IChatClient` + `List<ChatMessage>` + `ChatOptions`。 |
 | 会话历史 | `SessionState.History` 为 `List<ChatMessage>` (MEAI)。 |
 | 插件注册 | `[ToolFunction]` 自定义属性 + `ToolRegistry.RegisterPluginFromObject`（`AIFunctionFactory`）。 |
-| 工具选择 | **动态工具**：`ToolCatalogIndex`（关键词检索）+ `AgentToolingPlugin`（`search_available_tools` / `activate_tools`）；`SessionToolResolver` 按端类型与会话解析允许列表。 |
+| 工具选择 | **动态工具**：`ToolCatalogIndex.BuildFromAllowedTools(..., wpsHostKind)`（关键词检索）+ `AgentToolingPlugin`（`search_available_tools` / `activate_tools`）；`SessionToolResolver` 按 `clientType`、会话与 **WPS `wpsHostKind`** 解析允许列表。 |
 | 工具预筛选 | 主会话**无**独立向量工具索引；记忆/RAG 仍用 `IVectorStore`。 |
 | 主会话工具面 | 首轮仅注入动态工具插件 + 少量引导工具；模型检索并 `activate` 后扩容本轮 `ChatOptions.Tools`。无 `ToolNeedGate` / 两阶段选型 LLM。 |
 | MCP | `McpKernelPlugin.BuildMcpAIToolsAsync()` 产出 `IReadOnlyList<AITool>`，注册到 `ToolRegistry`。 |

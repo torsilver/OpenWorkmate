@@ -79,6 +79,15 @@ wpsjs debug
 | [wps-addin-new/src/](../wps-addin-new/src/) | **Vue 主线**：`TaskPane.vue`、`composables/useCopilot.js` 等。 |
 | [wps-addin-new/public/taskpane.*](../wps-addin-new/public/) | **遗留静态栈**；仓库 README 已说明以 Vue 为准、public 冻结，调试时勿混淆「哪一套在跑」。 |
 
+### 3.1 会话上下文与后端工具可见性（`wpsHostKind`）
+
+Vue 侧在 WebSocket **`set_context`** 中携带 **`wpsHostKind`**（与 [`wps-addin-new/src/wps-rpc/hostKind.js`](../wps-addin-new/src/wps-rpc/hostKind.js) 同源），供后端注入 system 与 **`SessionManager`** 存储。后端在 **`clientType === wps`** 时用它驱动 **`ClientTypeToolFilter`**：
+
+- 规范化后为 **`word` / `et` / `wpp`**：`CurrentDocument` 具名工具与对应 **`office-word` / `office-excel` / `office-powerpoint`** 子集一致（含 `current_run_document_script` / `current_run_custom_document_script`）。
+- **`unknown` / `none` / 尚未上报（null）`**：**不收紧**，模型仍可见 Word+Excel+PPT 并集（与首轮未 `set_context` 行为一致）。
+
+动态工具 **`search_available_tools` / `activate_tools`** 的索引与校验同样走上述过滤；单轮快照字段为 **`DynamicToolingTurnState.WpsHostKindForTools`**。详见 [`docs/应用内AI插件列表.md`](./应用内AI插件列表.md) §三、[`docs/动态工具与技能选择实现说明.md`](./动态工具与技能选择实现说明.md)。
+
 ---
 
 ## 4. 开发者工具（DevTools）在任务窗格里的用法
@@ -128,3 +137,4 @@ wpsjs debug
 
 - 若 WPS 官方更换域名或文档路径，请更新本文 **§1 链接** 与必要时 **§2 表述**。
 - 若仓库内 `wpsjs` 脚本或入口变更，请同步更新 **§3** 与 [wps-addin-new/README.md](../wps-addin-new/README.md)。
+- 若 **`set_context` / `wpsHostKind`** 或后端 `ClientTypeToolFilter` 规则变更，请同步 **§3.1** 与上文两篇后端文档。

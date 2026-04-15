@@ -1,6 +1,6 @@
 # Chrome 手工测试计划中 Playwright 无法（或暂不）覆盖的条目
 
-> **与主计划同步**：最近一次与 `Program.cs`（`GET /api/tools/builtin`）、`FilePlugin`（`text_file_*`）、`SessionToolResolver`（动态工具 bootstrap）对齐校准 **2026-04-13**。
+> **与主计划同步**：最近一次与 `Program.cs`（`GET /api/tools/builtin`）、`FilePlugin`（`text_file_*`）、`SessionToolResolver` / `ClientTypeToolFilter`（动态工具 bootstrap、WPS `wpsHostKind`）对齐校准 **2026-04-15**。
 
 本文档与 `**docs/Chrome端手工测试计划.md**` 配套：已在 `**e2e/**` 中用 Playwright 尽量覆盖「扩展壳、静态页、可选的后端 HTTP」等；**下列条目仍需你手工执行**（或将来用别的手段，如后端集成测试、带密钥的专用 E2E 环境）。
 

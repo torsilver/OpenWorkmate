@@ -96,6 +96,8 @@
 
 **端侧说明**：`ClientTypeToolFilter` 对 **`office-word` / `office-excel` / `office-powerpoint` / `wps`** 仅暴露 **CurrentDocument** 与「通用」插件（Memory、Context、MCP_* 等），**不暴露 File**（也不暴露 Word/Excel/Ppt 路径插件）。因此 **`text_file_read` / `text_file_write` 主要在 Chrome 等会暴露 File 的客户端可用**；在 Office/WPS 任务窗格中处理**当前打开的文档**请用 **CurrentDocument**。
 
+**WPS 特例（`clientType === wps`）**：`CurrentDocument` 下具体函数是否可见还取决于会话里上报的 **`wpsHostKind`**（WPS 加载项 `set_context` → `SessionManager.GetWpsHostKind`）。**仅当** 规范化后为 **`word` / `et` / `wpp`** 时，`CurrentDocument` 与对应 **`office-word` / `office-excel` / `office-powerpoint`** 子集一致（含脚本两枚 `current_run_*`）；**`null` / `unknown` / `none` / 首轮未上报** 时**不收紧**，仍为 Word+Excel+PPT 函数并集。实现见 `ClientTypeToolFilter.WpsNarrowCurrentDocumentHost`。
+
 ### 1.3 各内置插件 `ToolFunction` 数量（与源码一致）
 
 下列为 `backend/Plugins` 中各插件类上 **`[ToolFunction]`** 个数（用于与 `docs/Chrome端手工测试计划.md` §六 交叉核对；Office 三件套逐工具手工测以 Chrome 文档 §3.8–§3.10 为准）。
@@ -155,7 +157,7 @@
 | **office-word** | `CurrentDocument` 中 **Word** 相关函数（及文档脚本类）+ **通用**插件：Memory、Context、Subagent、CrossAgentTask、ClawhubSkill、AccurateData、MeetingTranscript、ScheduledTask、SkillAuthor、`UserSkillProgressive`、外接 `MCP_*`。**整插件不暴露**：Browser、File、CLI、Word、Excel、Ppt。 |
 | **office-excel** | 同上结构，`CurrentDocument` 仅 **Excel** 相关函数 + 脚本类。 |
 | **office-powerpoint** | 同上结构，`CurrentDocument` 仅 **PPT** 相关函数 + 脚本类。 |
-| **wps** | 通用插件 + `CurrentDocument` 下 Word/Excel/PPT 函数及脚本的并集。 |
+| **wps** | 通用插件 + `CurrentDocument`：**默认**（`wpsHostKind` 未收紧）为 Word/Excel/PPT 函数及脚本的并集；**收紧**时与上表对应 `office-*` 行相同（由 `wpsHostKind` 决定）。 |
 
 **重要**：**System**、**Plan**、**UserOptions** 虽在注册表中存在，但 **未** 列入 `IsCommonPlugin`，因此在 **office-word / office-excel / office-powerpoint / wps** 下**不会**进入模型工具列表；仅在 **chrome**（及 `clientType` 为空时按 chrome 处理）侧可用。
 
@@ -167,7 +169,7 @@
 |------|------|
 | 工具注册 / 运行时重建 | `backend/ChatService.cs`（`RebuildRuntimeAsync`） |
 | 内置插件清单（HTTP，可能与运行时略不同步） | `backend/Program.cs`（`GET /api/tools/builtin`） |
-| 端侧过滤 | `backend/Services/ClientTypeToolFilter.cs` |
+| 端侧过滤（含 WPS `wpsHostKind`） | `backend/Services/ClientTypeToolFilter.cs`、`backend/Services/ToolRegistry.cs`（`GetAllowedTools` 第三参） |
 | 动态工具 / 检索 | `backend/Services/DynamicTooling/`、`backend/Plugins/AgentToolingPlugin.cs` |
 | 技能撰写 | `backend/Plugins/SkillAuthorPlugin.cs` |
 | Chrome 端逐工具手工测 | `docs/Chrome端手工测试计划.md` |

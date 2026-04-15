@@ -526,4 +526,4 @@ Chrome / 扩展版本：
 
 ---
 
-*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`Program.cs`（`GET /api/tools/builtin`）、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；**校准日期：2026-04-13**（builtin 条数 18、File 增文本读写、§3.22 动态工具与渐进技能）。若后端增删工具，以代码为准同步 `**docs/应用内AI插件列表.md*`* 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*
+*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`Program.cs`（`GET /api/tools/builtin`）、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；**校准日期：2026-04-15**（WPS：`wpsHostKind` 收紧 `CurrentDocument` 与动态工具索引；`bootstrapUserSkillIds` 已废弃仅打日志；builtin 条数仍以 §六 表为准）。若后端增删工具，以代码为准同步 `docs/应用内AI插件列表.md` 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*

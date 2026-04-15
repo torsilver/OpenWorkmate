@@ -9,7 +9,8 @@
 | [WPS插件调试指南.md](./WPS插件调试指南.md) | 官方加载项调试要点与 `wps-addin-new` 下 `wpsjs debug` 实践 |
 | [maf-migration-baseline.md](./maf-migration-baseline.md) | MAF/MEAI 迁移状态、NuGet 基线、测试计数 |
 | [maf-host-debug-removal.md](./maf-host-debug-removal.md) | 已移除的 MAF DevUI / AG-UI 等宿主调试端点说明 |
-| [应用内AI插件列表.md](./应用内AI插件列表.md) | 内置/动态插件名与 `ClientTypeToolFilter` 可见性 |
+| [应用内AI插件列表.md](./应用内AI插件列表.md) | 内置/动态插件名与 `ClientTypeToolFilter` 可见性（含 WPS `wpsHostKind`） |
+| [动态工具与技能选择实现说明.md](./动态工具与技能选择实现说明.md) | `ToolCatalogIndex`、`GetDynamicBootstrapTools`、`DynamicToolingTurnState` 与 MAF 主路径 |
 | [提示词清单.md](./提示词清单.md) | System 与各层提示词归档（与 `ConfigService` 等对照） |
 | [模型运行时服务约定.md](./模型运行时服务约定.md) | 后端对「工具调用客户端」的义务：错误回传、动态工具同步、可观测性与安全边界 |
 | [开源AI借鉴落地.md](./开源AI借鉴落地.md) | 开源 Agent 模式与当前 MAF 栈的对照与优先级 |

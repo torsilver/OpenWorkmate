@@ -65,7 +65,7 @@ flowchart LR
   local --> FS
 ```
 
-**要点**：扩展与 Office/WPS 通过 **端口扫描 + `/api/bootstrap/local-service-auth`** 等发现本机服务；主交互在 **WebSocket**（配置项 `WebSocket:Path`，默认 `/ws`）。
+**要点**：扩展与 Office/WPS 通过 **端口扫描 + `/api/bootstrap/local-service-auth`** 等发现本机服务；主交互在 **WebSocket**（配置项 `WebSocket:Path`，默认 `/ws`）。**WPS**：加载项在 `set_context` 中上报 **`wpsHostKind`**（`word` / `et` / `wpp` 等），后端据此在 `clientType=wps` 时可选收窄 **`CurrentDocument`** 具名工具及动态工具索引，与 `office-*` 子集对齐；未上报或 `unknown`/`none` 时不收紧（见 `ClientTypeToolFilter`、`docs/应用内AI插件列表.md` §三）。
 
 ---
 
