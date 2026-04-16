@@ -158,9 +158,10 @@ public sealed class WordPlugin
     public string WordDocumentCreate(
         [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题；可省略，省略时用目标文件名（无扩展名）")] string title = "",
-        [Description("正文：字符串数组，每项为 Markdown 片段；多项并列等价于旧版用 | 分段。项内仍可用 |、空行、换行拆段。可省略或空数组则仅输出标题。")] string[]? paragraphs = null,
+        [Description("正文：JSON 数组，每项为一段 Markdown 字符串；若只有一段也可传单个字符串。可省略或 null 则仅输出标题。")] JsonElement? paragraphs = null,
         [Description("版式预设：default 或 cnGovGbt9704，默认 default")] string documentPreset = "default")
     {
+        var paragraphsArray = WordDocumentCreateParagraphsParser.Parse(paragraphs);
         filePath = OpenXmlHelpers.ResolvePath(filePath);
         var beforeNormalize = filePath;
         filePath = OpenXmlHelpers.NormalizeWordCreateOutputPath(filePath);
@@ -169,13 +170,13 @@ public sealed class WordPlugin
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         if (!WordDocumentCreatePresetParser.TryParse(documentPreset, out var preset, out var presetErr))
             return presetErr!;
-        var paragraphsJoined = NormalizeWordDocumentCreateParagraphsArray(paragraphs);
+        var paragraphsJoined = NormalizeWordDocumentCreateParagraphsArray(paragraphsArray);
         if (WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(paragraphsJoined))
         {
             _logger?.LogInformation(
                 "[Word] word_document_create rejected by ParagraphGuard (json-like paragraphs dump). path={Path} arrayLength={ArrayLength} normalizedLength={Length} paragraphPreview={Preview}",
                 filePath,
-                paragraphs?.Length ?? 0,
+                paragraphsArray?.Length ?? 0,
                 paragraphsJoined.Length,
                 BuildParagraphsGuardLogPreview(paragraphsJoined));
             return WordDocumentCreateParagraphGuard.RejectionMessage;

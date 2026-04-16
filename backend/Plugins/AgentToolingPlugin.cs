@@ -69,7 +69,14 @@ public sealed class AgentToolingPlugin
                 sb.Append(" - ").Append(fn).Append(": ").Append(string.Join(", ", plugins)).Append('\n');
         }
 
-        _logger.LogDebug("search_available_tools hits={Count} query={Query}", hits.Count, query);
+        var topFnPreview = string.Join(", ", hits.Take(12).Select(e => e.FunctionName));
+        if (hits.Count > 12)
+            topFnPreview += ",…";
+        _logger.LogInformation(
+            "[search_available_tools] query={Query} hitCount={Count} topFunctionNames={TopNames} (返回行里为 裸函数名（插件 Id）；tool_calls 须用裸名)",
+            (query ?? "").Trim(),
+            hits.Count,
+            topFnPreview);
         return Task.FromResult(sb.ToString());
     }
 
@@ -111,7 +118,12 @@ public sealed class AgentToolingPlugin
             return t.Length > 48 ? t[..48] + "…" : t;
         }));
         if (toolNames.Length > 12) preview += ",…";
-        _logger.LogDebug("activate_tools toolNames preview={Preview}", preview);
+        var inputsWithDot = toolNames.Count(n => (n ?? "").Contains('.', StringComparison.Ordinal));
+        _logger.LogInformation(
+            "[activate_tools] inputCount={Count} inputsContainingDot={QualifiedStyleCount} preview={Preview} (含点号多为 Plugin.function，仅用于激活；后续 tool_calls 仍须裸函数名)",
+            toolNames.Length,
+            inputsWithDot,
+            preview);
 
         var activated = new List<string>();
         var rejected = new List<string>();
@@ -136,12 +148,21 @@ public sealed class AgentToolingPlugin
 
             if (!ToolQualifiedNameResolver.TryResolve(registry, s, out var plugin, out var func, out _))
             {
+                _logger.LogInformation(
+                    "[activate_tools] reject input={Input} reason=not_in_registry_or_invalid_format (须为检索结果中的裸函数名，或唯一一段 Plugin.function)",
+                    s);
                 rejected.Add(s);
                 continue;
             }
 
             if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHostKindForActivate))
             {
+                _logger.LogInformation(
+                    "[activate_tools] reject input={Input} reason=client_not_allowed plugin={Plugin} func={Func} clientType={ClientType}",
+                    s,
+                    plugin,
+                    func,
+                    clientType ?? "?");
                 rejected.Add(s);
                 continue;
             }
@@ -180,9 +201,14 @@ public sealed class AgentToolingPlugin
                 msg.Append("[activate_tools] 未能激活任何新工具；请用 search_available_tools 核对名称。");
         }
 
+        var rejectedPreview = string.Join(", ", rejected.Take(16));
+        if (rejected.Count > 16)
+            rejectedPreview += ",…";
         _logger.LogInformation(
-            "activate_tools activated={Activated} rejected={Rejected}",
-            activated.Count, rejected.Count);
+            "activate_tools activatedCount={Activated} rejectedCount={Rejected} rejectedPreview={RejectedPreview}",
+            activated.Count,
+            rejected.Count,
+            string.IsNullOrEmpty(rejectedPreview) ? "-" : rejectedPreview);
         return Task.FromResult(msg.ToString().Trim());
     }
 }

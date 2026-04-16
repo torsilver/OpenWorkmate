@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Agents.AI;
+using OfficeCopilot.Server;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services;
@@ -31,6 +33,11 @@ public static class ToolInvocationMiddleware
             {
                 pluginName = pnBare;
                 funcName = rawName;
+                pipelineServices.Logger.LogDebug(
+                    "[ToolInvoke] nameResolution route=bare rawName={RawName} plugin={Plugin} func={Func} (schema/OpenAPI 工具 name 应为裸函数名)",
+                    rawName,
+                    pluginName,
+                    funcName);
             }
             else if (ToolQualifiedNameResolver.TryResolve(toolRegistry, rawName, out var pQual, out var bare, out var toolResolved)
                      && toolResolved is AIFunction afResolved)
@@ -39,9 +46,11 @@ public static class ToolInvocationMiddleware
                 funcName = bare;
                 if (!string.Equals(rawName, bare, StringComparison.Ordinal))
                 {
-                    pipelineServices.Logger.LogDebug(
-                        "[ToolInvoke] Resolved qualified name {Raw} -> bare={Bare} plugin={Plugin}",
-                        rawName, bare, pQual);
+                    pipelineServices.Logger.LogInformation(
+                        "[ToolInvoke] nameResolution route=qualified_rewrite rawName={RawName} bareName={BareName} plugin={Plugin} (模型在 tool_calls 中使用了 Plugin.function；已映射为裸名并替换 AIFunction，推荐后续直接使用裸名 tool_calls)",
+                        rawName,
+                        bare,
+                        pQual);
                     context.Function = afResolved;
                 }
             }
@@ -49,6 +58,9 @@ public static class ToolInvocationMiddleware
             {
                 pluginName = "?";
                 funcName = rawName;
+                pipelineServices.Logger.LogWarning(
+                    "[ToolInvoke] nameResolution route=unresolved rawName={RawName} (无法映射到注册表中的插件/函数；MEAI 可能报 Function not found，请核对 tool_calls.name 是否为 OpenAPI 中的裸函数名或有效 Plugin.function)",
+                    rawName);
             }
 
             // --- Permission rule (fast path: Deny blocks all tools) ---
@@ -82,6 +94,16 @@ public static class ToolInvocationMiddleware
             {
                 var result = await next(context, cancellationToken).ConfigureAwait(false);
 
+                if (result is FunctionInvokingChatClient.FunctionInvocationResult firNotFound
+                    && firNotFound.Status == FunctionInvokingChatClient.FunctionInvocationStatus.NotFound)
+                {
+                    pipelineServices.Logger.LogWarning(
+                        "[ToolInvoke] MEAI FunctionInvokingChatClient: tool not in current ChatOptions.Tools. rawName={RawName} plugin={Plugin} func={Func}. Dynamic tooling: call activate_tools with this bare name before tool_calls.",
+                        rawName,
+                        pluginName,
+                        funcName);
+                }
+
                 TryRefreshDynamicToolingToolsAfterActivate(toolRegistry, funcName, pipelineServices.Logger);
 
                 // 插件已执行：非 meta 工具（含 envelope 失败）均抑制「未 activate 则全量兜底」，避免二次写文档等。
@@ -111,9 +133,11 @@ public static class ToolInvocationMiddleware
                     $"[参数绑定失败] 工具 {pluginName}.{funcName} 的 JSON 参数与期望类型不一致（例如布尔请用 JSON 的 true/false，勿写成带引号的字符串 \"true\"/\"false\"）。详情：{jsonEx.Message}";
                 pipelineServices.Logger.LogWarning(
                     jsonEx,
-                    "[ToolInvoke] JSON parameter binding failed plugin={Plugin} func={Func}",
+                    "[ToolInvoke] JSON parameter binding failed plugin={Plugin} func={Func} rawName={RawName} argsPreview={ArgsPreview}",
                     pluginName,
-                    funcName);
+                    funcName,
+                    rawName,
+                    FormatArgumentsForDiagnosticLog(args));
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
                 EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, success: false, toolMsg);
@@ -138,6 +162,25 @@ public static class ToolInvocationMiddleware
                 return toolMsg;
             }
         };
+    }
+
+    private static string FormatArgumentsForDiagnosticLog(IDictionary<string, object?>? args)
+    {
+        if (args is null || args.Count == 0)
+            return "";
+        try
+        {
+            var s = JsonSerializer.Serialize(args, Utf8JsonFileOptions.Compact);
+            const int max = 4000;
+            if (s.Length > max)
+                return s[..max] + "…";
+            return s;
+        }
+        catch (Exception ex)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"[serialize failed: {ex.Message}] ")
+                + string.Join("; ", args.Select(kv => $"{kv.Key}={kv.Value}"));
+        }
     }
 
     private static void EmitToolTelemetry(
