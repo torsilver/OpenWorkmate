@@ -249,6 +249,18 @@
     </details>
 
     <details class="settings-block" open>
+      <summary>遥测密钥（Telemetry:ApiKey）</summary>
+      <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 10px;">
+          用于客户端 POST <code>/ingest/batch</code> 的 Bearer 或 <code>X-Telemetry-Key</code>。生成后会写入当前目录的 <code>appsettings.json</code> 并<strong>复制到剪贴板</strong>，便于填到 AI 端/扩展配置。
+        </p>
+        <div class="btn-row" style="margin-top: 0;">
+          <button type="button" id="genTelemetryApiKey">生成遥测密钥</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
       <summary>全局 defaults（telemetry-defaults.json）</summary>
       <div class="settings-block-inner">
         <div class="form-group">
@@ -411,6 +423,29 @@
       const t = await res.text();
       document.getElementById('devicesOut').textContent = t;
       applyResponsePanel(res, t);
+    });
+
+    document.getElementById('genTelemetryApiKey').onclick = () => withButton(document.getElementById('genTelemetryApiKey'), async () => {
+      const res = await fetch('/admin/telemetry/generate-api-key', { method: 'POST', headers: adminHeaders() });
+      const t = await show(res);
+      if (!res.ok) return;
+      try {
+        const j = JSON.parse(t);
+        const key = j && j.apiKey ? String(j.apiKey) : '';
+        if (!key) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(key);
+          const meta = document.getElementById('outMeta');
+          meta.innerHTML =
+            'HTTP <strong>' + res.status + '</strong> ' +
+            '<span class="status-ok">OK</span> · 已复制到剪贴板';
+        }
+      } catch (e) {
+        const meta = document.getElementById('outMeta');
+        meta.innerHTML =
+          'HTTP <strong>' + res.status + '</strong> ' +
+          '<span class="status-ok">OK</span> · 剪贴板复制失败：' + (e && e.message ? String(e.message) : String(e));
+      }
     });
   </script>
 </body>

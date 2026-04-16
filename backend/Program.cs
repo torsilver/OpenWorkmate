@@ -15,6 +15,7 @@ using OfficeCopilot.Server.Services.ScheduledTask;
 using OfficeCopilot.Server.Services.CrossAgentTask;
 using OfficeCopilot.Server.Services.Stt;
 using OfficeCopilot.Server.Services.Ocr;
+using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Mcp;
 using OfficeCopilot.Server.Security;
@@ -1286,6 +1287,16 @@ if (bindUnsafeMsg != null)
 }
 
 app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
+try
+{
+    var cfgSvc = app.Services.GetRequiredService<ConfigService>();
+    TelemetryRelayDefaults.LogOutboundRelayConfig(app.Logger, cfgSvc.Current);
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning(ex, "Failed to log telemetry outbound config snapshot");
+}
+
 var logPort = app.Configuration.GetSection("WebSocket")["Port"] ?? "8765";
 try
 {

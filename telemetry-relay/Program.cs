@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Mime;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Serilog;
 using Taskly.Telemetry.Relay;
@@ -10,10 +12,10 @@ using Taskly.Telemetry.Relay.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 勿再 WriteTo.Console：appsettings.json 的 Serilog:WriteTo 已含 Console，重复注册会导致每条日志在控制台出现两遍。
 builder.Host.UseSerilog((ctx, services, lc) => lc
     .ReadFrom.Configuration(ctx.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console());
+    .Enrich.FromLogContext());
 
 builder.Services.Configure<TelemetryOptions>(builder.Configuration.GetSection(TelemetryOptions.SectionName));
 builder.Services.AddSingleton<TelemetryPolicyResolver>();
@@ -26,6 +28,18 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true)));
 
 var app = builder.Build();
+
+try
+{
+    var dataRootOpt = app.Services.GetRequiredService<IOptions<TelemetryOptions>>();
+    var root = Path.GetFullPath(dataRootOpt.Value.DataRoot);
+    Directory.CreateDirectory(root);
+}
+catch (Exception ex)
+{
+    // 启动失败时仍由后续写入路径报错；此处仅尽量保证 data 根目录存在
+    Log.Warning(ex, "Telemetry relay: could not create DataRoot directory");
+}
 
 app.UseSerilogRequestLogging();
 app.UseForwardedHeaders(new ForwardedHeadersOptions
@@ -152,8 +166,63 @@ admin.MapDelete("/devices/{deviceId}/override", (string deviceId, TelemetryPolic
     return Results.Json(new { ok = true });
 });
 
+admin.MapPost("/telemetry/generate-api-key", async Task<IResult> (
+    IWebHostEnvironment env,
+    IConfiguration configuration,
+    CancellationToken ct) =>
+{
+    var path = Path.Combine(env.ContentRootPath, "appsettings.json");
+    if (!File.Exists(path))
+        return Results.Json(new { ok = false, message = "未找到 appsettings.json，无法写入 Telemetry:ApiKey。" }, statusCode: 500);
+
+    string newKey;
+    try
+    {
+        newKey = TelemetryAppsettingsApiKeyWriter.GenerateApiKey();
+        await TelemetryAppsettingsApiKeyWriter.WriteTelemetryApiKeyAsync(path, newKey, ct).ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, message = "写入配置失败：" + ex.Message }, statusCode: 500);
+    }
+
+    if (configuration is IConfigurationRoot root)
+        root.Reload();
+
+    return Results.Json(new { ok = true, apiKey = newKey });
+});
+
 admin.MapGet("/health", () => Results.Text("ok", MediaTypeNames.Text.Plain));
 
 app.MapGet("/", () => Results.Redirect("/admin.html", permanent: false));
+
+string MaskTelemetryKey(string? s)
+{
+    if (string.IsNullOrWhiteSpace(s)) return "(empty)";
+    var t = s.Trim();
+    if (t.Length <= 8) return "***";
+    return t[..4] + "…" + t[^4..];
+}
+
+try
+{
+    var opt = app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value;
+    var fullData = Path.GetFullPath(opt.DataRoot);
+    var urls = app.Urls.Count > 0 ? string.Join(", ", app.Urls) : "(not bound yet)";
+    Log.Information(
+        "Telemetry relay startup: urls={Urls}, dataRoot={DataRoot}, dataRootResolved={Resolved}, ingestApiKeyConfigured={IngestKeyOk}, ingestApiKeyMask={IngestKeyMask}, adminApiKeyConfigured={AdminKeyOk}, retentionDays={Days}, maxEventPayloadChars={Max}",
+        urls,
+        opt.DataRoot,
+        fullData,
+        !string.IsNullOrWhiteSpace(opt.ApiKey),
+        MaskTelemetryKey(opt.ApiKey),
+        !string.IsNullOrWhiteSpace(opt.AdminApiKey),
+        opt.RetentionDays,
+        opt.MaxEventPayloadChars);
+}
+catch (Exception ex)
+{
+    Log.Warning(ex, "Telemetry relay: failed to log startup configuration snapshot");
+}
 
 app.Run();

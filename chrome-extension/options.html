@@ -29,8 +29,73 @@
     }
 
     .container {
-      max-width: 800px;
+      max-width: 1100px;
       margin: 0 auto;
+    }
+
+    .options-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .options-sidebar {
+      flex: 0 0 240px;
+      min-width: 200px;
+    }
+    .partition-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .partition-nav-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+      color: var(--text-primary);
+    }
+    .partition-nav-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      line-height: 1.35;
+      background: var(--bg-panel);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .partition-nav-btn:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .partition-nav-btn.active {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.08);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .partition-nav-btn:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    .partition-nav-btn:focus:not(:focus-visible) {
+      box-shadow: none;
+    }
+    .partition-nav-btn:focus-visible {
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    .options-main {
+      flex: 1;
+      min-width: min(100%, 280px);
+    }
+    @media (max-width: 640px) {
+      .options-layout { flex-direction: column; }
+      .options-sidebar { flex: 1 1 auto; width: 100%; max-width: 100%; }
     }
 
     .console-header {
@@ -68,36 +133,11 @@
       box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
     }
 
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 2px;
-      margin-bottom: -1px;
-    }
-    
-    .tab {
-      padding: 12px 24px;
-      background: #e2e8f0;
-      border: 1px solid var(--border);
-      border-bottom: none;
-      border-radius: 8px 8px 0 0;
-      cursor: pointer;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-    
-    .tab.active {
-      background: var(--bg-panel);
-      color: var(--accent);
-      border-bottom: 1px solid var(--bg-panel);
-      z-index: 1;
-    }
-
     .tab-content {
       display: none;
       background: var(--bg-panel);
       border: 1px solid var(--border);
-      border-radius: 0 8px 8px 8px;
+      border-radius: 8px;
       padding: 24px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
@@ -359,16 +399,21 @@
       </select>
     </header>
 
-    <div class="tabs">
-      <div class="tab active" data-target="tab-general">连接与杂项</div>
-      <div class="tab" data-target="tab-models">模型与多模态</div>
-      <div class="tab" data-target="tab-memory-storage">记忆与存储</div>
-      <div class="tab" data-target="tab-skills-mcp">技能与 MCP</div>
-      <div class="tab" data-target="tab-plans-automation">计划与自动化</div>
-    </div>
-
-    <!-- 连接与杂项 -->
-    <div id="tab-general" class="tab-content active">
+    <div class="options-layout">
+      <aside class="options-sidebar">
+        <nav class="partition-nav" aria-label="设置分区">
+          <div class="partition-nav-title">分区</div>
+          <button type="button" class="partition-nav-btn active" data-partition="tab-partition-connect">本机连接与安全</button>
+          <button type="button" class="partition-nav-btn" data-partition="tab-partition-privacy">隐私与观测</button>
+          <button type="button" class="partition-nav-btn" data-partition="tab-models">模型与 Agent</button>
+          <button type="button" class="partition-nav-btn" data-partition="tab-memory-storage">记忆与知识库</button>
+          <button type="button" class="partition-nav-btn" data-partition="tab-skills-mcp">技能、工具与 MCP</button>
+          <button type="button" class="partition-nav-btn" data-partition="tab-plans-automation">调度与自动化</button>
+        </nav>
+      </aside>
+      <div class="options-main">
+    <!-- 本机连接与安全 -->
+    <div id="tab-partition-connect" class="tab-content active">
       <details class="settings-block">
         <summary>多端说明</summary>
         <div class="settings-block-inner">
@@ -389,49 +434,15 @@
         </div>
       </details>
       <details class="settings-block">
-        <summary>遥测（隐私档位）</summary>
-        <div class="settings-block-inner">
-          <p class="help-text" style="margin: 0 0 12px 0;">机器级设置，仅存于本扩展 <code>chrome.storage.local</code>。与侧栏 WebSocket 连接参数 <code>deviceId</code>、<code>telemetryTier</code> 一致；<strong>off</strong> 时不向后端携带可识别档位（仍可能连接，由后端决定是否上报）。内测可将遥测中继的 API Key 写入服务端 user-config。</p>
-          <div class="form-group">
-            <label for="telemetryTierSelect">采集档位</label>
-            <select id="telemetryTierSelect" style="max-width: 24rem;">
-              <option value="off">off（关闭）</option>
-              <option value="minimal">minimal（元数据）</option>
-              <option value="traces">traces（工具与计划轨迹）</option>
-              <option value="full">full（较长文本，内测）</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="telemetryDeviceIdDisplay">本机 deviceId（自动生成，只读）</label>
-            <input type="text" id="telemetryDeviceIdDisplay" readonly style="max-width: 36rem; width: 100%; font-family: ui-monospace, monospace; font-size: 12px;">
-          </div>
-          <button type="button" id="telemetryTierSaveBtn" class="btn-secondary">保存遥测档位</button>
-          <hr style="margin: 1.25rem 0; border: none; border-top: 1px solid #e2e8f0;" />
-          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，与「保存配置」一并提交。</p>
-          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 10px;">
-            <input type="checkbox" id="telemetryRelayEnabled" style="margin-top: 4px;">
-            <span class="help-text" style="margin: 0;">启用向遥测中继上报（需填写中继地址与 API Key）</span>
-          </label>
-          <div class="form-group">
-            <label for="telemetryRelayBaseUrl">遥测中继根 URL</label>
-            <input type="text" id="telemetryRelayBaseUrl" placeholder="http://127.0.0.1:8777" style="max-width: 36rem; width: 100%;">
-          </div>
-          <div class="form-group">
-            <label for="telemetryRelayApiKey">遥测中继 API Key（与 relay appsettings Telemetry:ApiKey 一致）</label>
-            <input type="password" id="telemetryRelayApiKey" autocomplete="off" style="max-width: 36rem; width: 100%;">
-          </div>
-        </div>
-      </details>
-      <details class="settings-block">
         <summary>本地服务访问密钥</summary>
         <div class="settings-block-inner">
       <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
-        <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：填写后与 AI 等配置一起点「保存配置」会写入服务端 user-config（字段 <code>webSocketAuthToken</code>）；若未填写 user-config，则使用 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。侧栏、Workspace 会在本机自动从引导接口同步到 <code>chrome.storage.local</code>；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥，一般无需在各端再填一遍。</p>
+        <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：修改下方密钥后会<strong>自动保存</strong>到本机服务端 <code>user-config</code>（字段 <code>webSocketAuthToken</code>），请留意页顶「已自动保存」且本机 Office Copilot 后台已启动；若未写入 user-config，则回退为 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。同一值会同步到 <code>chrome.storage.local</code> 供侧栏/Workspace；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥。</p>
         <div class="form-group" style="margin-bottom: 8px;">
           <label for="localServiceAuthToken">访问密钥（与服务端当前生效值一致）</label>
           <input type="password" id="localServiceAuthToken" autocomplete="off" placeholder="留空则服务端未强制密钥时可不携带" style="max-width: 480px; width: 100%;">
         </div>
-        <p class="help-text" style="margin-bottom: 10px;">保存配置后密钥会进入本机 user-config；扩展仍会把它写入 <code>chrome.storage.local</code>，供侧栏与 Workspace 发请求时使用。</p>
+        <p class="help-text" style="margin-bottom: 10px;">自动保存成功后，密钥同时在本机 user-config 与扩展 storage 中一致。</p>
         <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
           <input type="checkbox" id="allowPrivateEndpointTests" style="margin-top: 4px;">
           <span class="help-text" style="margin: 0;">允许「测试连接」访问 localhost / 内网地址（降低 SSRF 防护，仅供调试；会写入本机 user-config）</span>
@@ -466,7 +477,47 @@
       </details>
     </div>
 
-    <!-- 模型与多模态 -->
+    <!-- 隐私与观测 -->
+    <div id="tab-partition-privacy" class="tab-content">
+      <details class="settings-block">
+        <summary>遥测（隐私档位）</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin: 0 0 12px 0;"><strong>档位与 deviceId</strong>仅在本扩展 <code>chrome.storage.local</code>，经侧栏 WebSocket 的 <code>deviceId</code>、<code>telemetryTier</code> 传给后台；<strong>off</strong> 时不向后端携带可识别档位。<strong>遥测中继</strong>（启用 / URL / API Key）由 AI 后台写入 <code>user-config</code> 并负责上报，请在本页修改后看到「已自动保存」再使用侧栏。</p>
+          <div class="form-group">
+            <label for="telemetryTierSelect">采集档位</label>
+            <select id="telemetryTierSelect" style="max-width: 24rem;">
+              <option value="off">off（关闭）</option>
+              <option value="minimal">minimal（元数据）</option>
+              <option value="traces">traces（工具与计划轨迹）</option>
+              <option value="full">full（较长文本，内测）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="telemetryDeviceIdDisplay">本机 deviceId（自动生成，只读）</label>
+            <input type="text" id="telemetryDeviceIdDisplay" readonly style="max-width: 36rem; width: 100%; font-family: ui-monospace, monospace; font-size: 12px;">
+          </div>
+          <button type="button" id="telemetryTierSaveBtn" class="btn-secondary">保存遥测档位</button>
+          <p class="help-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--text-secondary);">仅写入档位到本扩展 storage；若下方中继有改动，请等页顶「已自动保存」后再连侧栏对话。</p>
+          <hr style="margin: 1.25rem 0; border: none; border-top: 1px solid #e2e8f0;" />
+          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，随本页<strong>自动保存</strong>提交（非「保存遥测档位」按钮）。</p>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 10px;">
+            <input type="checkbox" id="telemetryRelayEnabled" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">启用向遥测中继上报（需填写中继地址与 API Key）</span>
+          </label>
+          <div class="form-group">
+            <label for="telemetryRelayBaseUrl">遥测中继根 URL</label>
+            <input type="text" id="telemetryRelayBaseUrl" placeholder="http://127.0.0.1:8777" style="max-width: 36rem; width: 100%;">
+            <p class="help-text" style="margin: 6px 0 0 0; font-size: 12px; color: var(--text-secondary);">留空时，AI 后台在已启用遥测且填写了 API Key 的情况下会默认使用 <code>http://127.0.0.1:8777</code>（与本机 <code>start-ai-and-telemetry.cmd</code> 一致）。</p>
+          </div>
+          <div class="form-group">
+            <label for="telemetryRelayApiKey">遥测中继 API Key（与 relay appsettings Telemetry:ApiKey 一致）</label>
+            <input type="password" id="telemetryRelayApiKey" autocomplete="off" style="max-width: 36rem; width: 100%;">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- 模型与 Agent -->
     <div id="tab-models" class="tab-content">
       <details class="settings-block">
         <summary>对话大模型</summary>
@@ -754,12 +805,12 @@
       </div>
     </div>
     
-    <!-- 记忆与存储 -->
+    <!-- 记忆与知识库 -->
     <div id="tab-memory-storage" class="tab-content">
       <details class="settings-block">
         <summary>记忆管理（增删改查）</summary>
         <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 12px;">需先在「模型与多模态」中配置 Embedding 模型（与对话大模型独立）。此处可查看、新增、编辑、删除长期记忆。共享记忆跨端可见（Chrome/Word 等均可检索）。</p>
+      <p class="help-text" style="margin-bottom: 12px;">需先在「模型与 Agent」分区中配置 Embedding 模型（与对话大模型独立）。此处可查看、新增、编辑、删除长期记忆。共享记忆跨端可见（Chrome/Word 等均可检索）。</p>
       <div style="margin-bottom: 12px;">
         <button type="button" id="addMemoryBtn" class="btn-secondary">+ 新增记忆</button>
         <label style="margin-left: 12px;">范围：</label>
@@ -814,20 +865,20 @@
       </div>
         </div>
       </details>
-      <details class="settings-block">
+      <div class="actions">
+        <span class="status save-config-status">已自动保存</span>
+      </div>
+    </div>
+
+    <!-- 技能、工具与 MCP -->
+    <div id="tab-skills-mcp" class="tab-content">
+      <details class="settings-block" id="skillEnvSection">
         <summary>技能所需环境变量</summary>
         <div class="settings-block-inner">
         <p class="help-text" style="margin-bottom: 12px;">根据已安装技能的 <code>requires.env</code> 自动列出，无需为每个新技能改前端。安装<strong>可执行脚本类</strong>技能并刷新本页后，可出现对应输入项（如 <code>OPENAI_API_KEY</code> 等）。</p>
         <div id="skillEnvList"></div>
         </div>
       </details>
-      <div class="actions">
-        <span class="status save-config-status">已自动保存</span>
-      </div>
-    </div>
-
-    <!-- 技能与 MCP -->
-    <div id="tab-skills-mcp" class="tab-content">
       <details class="settings-block">
         <summary>自定义技能 (Skills)</summary>
         <div class="settings-block-inner">
@@ -912,7 +963,7 @@
       <details class="settings-block">
         <summary>内置能力（自带的 MCP）</summary>
         <div class="settings-block-inner">
-        <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置；其中部分能力需在「模型与多模态」中单独配置：<strong>图片 OCR</strong>（<code>MCP_OCR</code>）见「OCR 模型」；<strong>语音转文字</strong>（<code>MCP_STT</code>）见「百炼实时语音识别」。Browser 的页面脚本白名单在上方「安全与确认 → 浏览器内（页面脚本）」中配置。</p>
+        <p class="help-text" style="font-size: 13px; margin-bottom: 12px;">以下插件随后端内置；其中部分能力需在「模型与 Agent」分区中单独配置：<strong>图片 OCR</strong>（<code>MCP_OCR</code>）见「OCR 模型」；<strong>语音转文字</strong>（<code>MCP_STT</code>）见「百炼实时语音识别」。Browser 的页面脚本白名单在上方「安全与确认 → 浏览器内（页面脚本）」中配置。</p>
       <div id="builtinToolsList">
         <!-- 内置插件列表由 JS 注入 -->
       </div>
@@ -967,7 +1018,7 @@ postgresql://localhost/mydb"></textarea>
       </div>
     </div>
 
-    <!-- 计划与自动化 -->
+    <!-- 调度与自动化 -->
     <div id="tab-plans-automation" class="tab-content">
       <details class="settings-block">
         <summary>定时任务</summary>
@@ -1211,7 +1262,9 @@ postgresql://localhost/mydb"></textarea>
         <span class="status save-config-status">已自动保存</span>
       </div>
     </div>
-    
+      </div>
+    </div>
+
   </div>
 
   <script src="local-service-resolve.js"></script>

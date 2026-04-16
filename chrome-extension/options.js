@@ -187,8 +187,8 @@ const els = {
   testAiConnectionBtn: document.getElementById('testAiConnectionBtn'),
   testAiStatus: document.getElementById('testAiStatus'),
   
-  // Tabs
-  tabs: document.querySelectorAll('.tab'),
+  // Partitions (options page)
+  partitionNavButtons: document.querySelectorAll('.partition-nav-btn'),
   tabContents: document.querySelectorAll('.tab-content'),
   
   // Skills
@@ -440,28 +440,39 @@ function wireVendorSelectListeners() {
   if (e) e.addEventListener('change', onEmbeddingVendorChange);
 }
 
-// ───── Tabs ─────
-els.tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    els.tabs.forEach(t => t.classList.remove('active'));
-    els.tabContents.forEach(c => c.classList.remove('active'));
-    
-    tab.classList.add('active');
-    document.getElementById(tab.dataset.target).classList.add('active');
-    
-    if (tab.dataset.target === 'tab-skills-mcp') {
-      loadSkills();
-      loadBuiltinTools();
-      updateUserScriptsSection();
-    }
-    if (tab.dataset.target === 'tab-memory-storage') {
-      loadMemoryList();
-    }
-    if (tab.dataset.target === 'tab-plans-automation') {
-      loadScheduledTasks();
-      loadPlansList();
-      loadAccurateDataList();
-    }
+// ───── Options partitions (left nav buttons) ─────
+function setActivePartitionButton(targetId) {
+  els.partitionNavButtons.forEach(function (btn) {
+    var id = btn.getAttribute('data-partition');
+    btn.classList.toggle('active', id === targetId);
+  });
+}
+
+function applyPartition(targetId) {
+  if (!targetId) return;
+  els.tabContents.forEach(function (c) { c.classList.remove('active'); });
+  var panel = document.getElementById(targetId);
+  if (panel) panel.classList.add('active');
+  setActivePartitionButton(targetId);
+
+  if (targetId === 'tab-skills-mcp') {
+    loadSkills();
+    loadBuiltinTools();
+    updateUserScriptsSection();
+  }
+  if (targetId === 'tab-memory-storage') {
+    loadMemoryList();
+  }
+  if (targetId === 'tab-plans-automation') {
+    loadScheduledTasks();
+    loadPlansList();
+    loadAccurateDataList();
+  }
+}
+
+els.partitionNavButtons.forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    applyPartition(btn.getAttribute('data-partition'));
   });
 });
 
@@ -1756,6 +1767,15 @@ function debouncedSaveConfig() {
   }, SAVE_DEBOUNCE_MS);
 }
 
+/** 取消防抖并立即保存，供关页/切走标签页时尽量落盘 user-config。 */
+function flushPendingDebouncedSave() {
+  if (saveConfigDebounceTimer) {
+    clearTimeout(saveConfigDebounceTimer);
+    saveConfigDebounceTimer = null;
+  }
+  saveConfig();
+}
+
 function collectSemanticKernelPayload() {
   function ck(id) {
     var el = document.getElementById(id);
@@ -3023,21 +3043,49 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
   var localTok = document.getElementById('localServiceAuthToken');
+  function syncLocalServiceTokenToStorage() {
+    if (!localTok) return;
+    var o = {};
+    o[COPILOT_TOKEN_STORAGE_KEY] = (localTok.value || '').trim();
+    chrome.storage.local.set(o);
+  }
   if (localTok) {
+    localTok.addEventListener('input', function () {
+      syncLocalServiceTokenToStorage();
+      debouncedSaveConfig();
+    });
     localTok.addEventListener('change', function () {
-      var o = {};
-      o[COPILOT_TOKEN_STORAGE_KEY] = (localTok.value || '').trim();
-      chrome.storage.local.set(o);
+      syncLocalServiceTokenToStorage();
+      debouncedSaveConfig();
+    });
+    localTok.addEventListener('blur', function () {
+      debouncedSaveConfig();
     });
   }
   var allowPrivEl = document.getElementById('allowPrivateEndpointTests');
   if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
   var telRelayEn = document.getElementById('telemetryRelayEnabled');
-  if (telRelayEn) telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); });
+  if (telRelayEn) {
+    telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayEn.addEventListener('input', function () { debouncedSaveConfig(); });
+  }
   var telRelayUrl = document.getElementById('telemetryRelayBaseUrl');
-  if (telRelayUrl) telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); });
+  if (telRelayUrl) {
+    telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayUrl.addEventListener('input', function () { debouncedSaveConfig(); });
+  }
   var telRelayKey = document.getElementById('telemetryRelayApiKey');
-  if (telRelayKey) telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); });
+  if (telRelayKey) {
+    telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayKey.addEventListener('input', function () { debouncedSaveConfig(); });
+    telRelayKey.addEventListener('blur', function () { debouncedSaveConfig(); });
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && saveConfigDebounceTimer) flushPendingDebouncedSave();
+  });
+  window.addEventListener('beforeunload', function () {
+    if (saveConfigDebounceTimer) flushPendingDebouncedSave();
+  });
   tasklyEnsureOptionsApiBase()
     .then(function () { return ensureLocalServiceTokenFromBootstrap(); })
     .then(function () { loadConfig(); })

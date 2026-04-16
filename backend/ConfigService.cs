@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using OfficeCopilot.Server.Mcp;
+using OfficeCopilot.Server.Services.Telemetry;
 
 namespace OfficeCopilot.Server;
 
@@ -746,6 +747,18 @@ public sealed class ConfigService
         ApplyActivePresetIfSet(config);
         MigrateLegacyAiIfNeeded(config);
         MigrateLegacyOcrIfNeeded(config);
+        ApplyDefaultTelemetryRelayBaseUrlIfNeeded(config);
+    }
+
+    /// <summary>启用遥测且已填中继 API Key 时，若未填根 URL，则默认本机开发中继（与 <see cref="TelemetryRelayDefaults.LocalDevBaseUrl"/> 一致）。</summary>
+    private static void ApplyDefaultTelemetryRelayBaseUrlIfNeeded(AppConfig config)
+    {
+        if (!config.TelemetryEnabled) return;
+        var key = (config.TelemetryRelayApiKey ?? "").Trim();
+        if (string.IsNullOrEmpty(key)) return;
+        var url = (config.TelemetryRelayBaseUrl ?? "").Trim();
+        if (!string.IsNullOrEmpty(url)) return;
+        config.TelemetryRelayBaseUrl = TelemetryRelayDefaults.LocalDevBaseUrl;
     }
 
     private AppConfig CreateDefaultAppConfig()
@@ -1186,6 +1199,7 @@ public sealed class ConfigService
                     newConfig.TelemetryRelayBaseUrl = _currentConfig.TelemetryRelayBaseUrl;
                 if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayApiKey))
                     newConfig.TelemetryRelayApiKey = _currentConfig.TelemetryRelayApiKey;
+                ApplyDefaultTelemetryRelayBaseUrlIfNeeded(newConfig);
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
                 if (newConfig.AiModels == null)

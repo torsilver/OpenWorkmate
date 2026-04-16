@@ -2,12 +2,15 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using System.Threading;
 
 namespace OfficeCopilot.Server.Services.Telemetry;
 
 /// <summary>从内存队列批量 POST 到遥测中继 <c>/ingest/batch</c>；失败仅打日志，不影响主业务。</summary>
 public sealed class TelemetryRelayDispatchService : BackgroundService
 {
+    private static int s_relayConfigSkipInfoLogged;
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -73,10 +76,20 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
     private async Task FlushBatchAsync(List<TelemetryRelayEvent> buffer, CancellationToken ct)
     {
         var cfg = _configService.Current;
-        if (!cfg.TelemetryEnabled) return;
-        var baseUrl = (cfg.TelemetryRelayBaseUrl ?? "").Trim().TrimEnd('/');
         var apiKey = (cfg.TelemetryRelayApiKey ?? "").Trim();
-        if (string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey)) return;
+        var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
+        if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
+        {
+            if (Interlocked.CompareExchange(ref s_relayConfigSkipInfoLogged, 1, 0) == 0)
+            {
+                _logger.LogInformation(
+                    "Telemetry relay batch skipped: disabled or missing relay URL/API key (TelemetryEnabled={Enabled}, HasBaseUrl={HasUrl}, HasApiKey={HasKey})",
+                    cfg.TelemetryEnabled,
+                    !string.IsNullOrEmpty(baseUrl),
+                    !string.IsNullOrEmpty(apiKey));
+            }
+            return;
+        }
 
         foreach (var group in buffer.GroupBy(e => (e.DeviceId, e.ClientTier)))
         {
