@@ -27,6 +27,30 @@ function ensureApiBase() {
 }
 /** 与后端有效密钥一致；通常首次连接会自动从本机引导接口同步，也可手动 localStorage.setItem */
 const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
+/** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier（localStorage） */
+const TASKLY_TELEMETRY_DEVICE_ID_KEY = 'tasklyTelemetryDeviceId'
+const TASKLY_TELEMETRY_TIER_KEY = 'tasklyTelemetryTier'
+
+function getOrCreateTelemetryDeviceId() {
+  try {
+    let id = (localStorage.getItem(TASKLY_TELEMETRY_DEVICE_ID_KEY) || '').trim()
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'tid-' + String(Date.now())
+      localStorage.setItem(TASKLY_TELEMETRY_DEVICE_ID_KEY, id)
+    }
+    return id
+  } catch {
+    return 'wps-' + String(Date.now())
+  }
+}
+
+function getTelemetryTier() {
+  try {
+    return (localStorage.getItem(TASKLY_TELEMETRY_TIER_KEY) || 'minimal').trim() || 'minimal'
+  } catch {
+    return 'minimal'
+  }
+}
 
 function getStoredAuthToken() {
   try {
@@ -1274,6 +1298,11 @@ export function useCopilot() {
       '&agentProfileId=' +
       encodeURIComponent(ap)
     if (tok) qs += '&token=' + encodeURIComponent(tok)
+    const tier = getTelemetryTier()
+    if (tier !== 'off') {
+      qs += '&deviceId=' + encodeURIComponent(getOrCreateTelemetryDeviceId())
+      qs += '&telemetryTier=' + encodeURIComponent(tier)
+    }
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {
       reconnectDelay = RECONNECT_BASE_MS

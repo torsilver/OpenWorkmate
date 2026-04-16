@@ -1,6 +1,8 @@
 let WS_URL = "ws://127.0.0.1:8765/ws";
 let API_BASE = "http://127.0.0.1:8765";
 const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
+const TELEMETRY_DEVICE_ID_KEY = "telemetryDeviceId";
+const TELEMETRY_TIER_KEY = "telemetryTier";
 
 var tasklySidepanelApiReady = null;
 /** 避免在「后台晚启动」场景下反复弹出同一条气泡提示 */
@@ -1042,14 +1044,26 @@ function connect() {
 
   sessionId = getSessionId();
   ensureLocalServiceTokenFromBootstrap().then(function () {
-  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY, STORAGE_ACTIVE_AGENT_PROFILE_ID], function (r) {
+  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY, STORAGE_ACTIVE_AGENT_PROFILE_ID, TELEMETRY_DEVICE_ID_KEY, TELEMETRY_TIER_KEY], function (r) {
     var token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
     var ap = String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || "default").trim() || "default";
+    var devId = (r && r[TELEMETRY_DEVICE_ID_KEY] || "").trim();
+    if (!devId) {
+      devId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "tid-" + String(Date.now());
+      var o = {};
+      o[TELEMETRY_DEVICE_ID_KEY] = devId;
+      chrome.storage.local.set(o);
+    }
+    var tier = (r && r[TELEMETRY_TIER_KEY] || "minimal").trim() || "minimal";
     var qs = new URLSearchParams();
     qs.set("sessionId", sessionId);
     qs.set("clientType", "chrome");
     qs.set("agentProfileId", ap);
     if (token) qs.set("token", token);
+    if (tier !== "off") {
+      qs.set("deviceId", devId);
+      qs.set("telemetryTier", tier);
+    }
     var url = WS_URL + "?" + qs.toString();
     ws = new WebSocket(url);
 

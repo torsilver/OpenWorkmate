@@ -386,6 +386,18 @@ public class AppConfig
     /// <summary>本地 HTTP/WebSocket 访问密钥；在扩展选项页保存后写入 user-config.json，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
 
+    /// <summary>是否向遥测中继（Taskly.Telemetry.Relay）异步上报会话/工具/计划事件。</summary>
+    [JsonPropertyName("telemetryEnabled")]
+    public bool TelemetryEnabled { get; set; }
+
+    /// <summary>遥测中继根 URL，例如 <c>http://127.0.0.1:8777</c>（不要尾斜杠）。</summary>
+    [JsonPropertyName("telemetryRelayBaseUrl")]
+    public string? TelemetryRelayBaseUrl { get; set; }
+
+    /// <summary>与遥测中继 <c>Telemetry:ApiKey</c> 一致的共享密钥。</summary>
+    [JsonPropertyName("telemetryRelayApiKey")]
+    public string? TelemetryRelayApiKey { get; set; }
+
     /// <summary>按 <c>Plugin:function</c> 通配符（<c>*</c>）匹配的工具权限覆盖；多条命中时按 Deny &gt; Ask &gt; AllowAlways &gt; AllowOnceSession。</summary>
     public List<ToolPermissionRule>? ToolPermissionRules { get; set; }
 }
@@ -1170,6 +1182,10 @@ public sealed class ConfigService
                 if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
                 if (string.IsNullOrWhiteSpace(newConfig.ChromeExtensionId)) newConfig.ChromeExtensionId = _currentConfig.ChromeExtensionId;
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
+                if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayBaseUrl))
+                    newConfig.TelemetryRelayBaseUrl = _currentConfig.TelemetryRelayBaseUrl;
+                if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayApiKey))
+                    newConfig.TelemetryRelayApiKey = _currentConfig.TelemetryRelayApiKey;
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
                 if (newConfig.AiModels == null)

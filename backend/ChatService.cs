@@ -19,6 +19,7 @@ using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Services.Subagent;
+using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Logging;
 
 namespace OfficeCopilot.Server;
@@ -42,9 +43,10 @@ public sealed partial class ChatService : IDisposable
     private readonly IChatSessionStore _chatSessionStore;
     private readonly IBuiltinTurnCompletionVerifier _builtinTurnCompletionVerifier;
     private readonly SubtaskTimelineBlockCoordinator _subtaskTimelineBlocks;
+    private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, ITelemetryRelayQueue? telemetryRelay = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -59,6 +61,7 @@ public sealed partial class ChatService : IDisposable
         _chatSessionStore = chatSessionStore;
         _builtinTurnCompletionVerifier = builtinTurnCompletionVerifier;
         _subtaskTimelineBlocks = subtaskTimelineBlocks;
+        _telemetryRelay = telemetryRelay;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -753,11 +756,39 @@ public sealed partial class ChatService : IDisposable
 
             var assistantText = ReasoningTagStreamParser.StripReasoningTags(fullResponse.ToString());
             state.History.Add(new ChatMessage(ChatRole.Assistant, assistantText));
+            if (assistantText.Length > 0)
+                TryEnqueueAssistantTurnTelemetry(sessionManagerForStatus, sessionId, assistantText);
             var preview = assistantText.Length > 0 ? LogPreview.HeadTail(assistantText, 64, 64) : "";
             _logger.LogInformation("[{SessionId}] Turn completed, turns={Turns}, assistantChars={AssistantChars}, assistantPreview={Preview}",
                 sessionId, state.History.Count, assistantText.Length, preview);
         }
         finally { }
+    }
+
+    /// <summary>主会话一轮结束时的可见助手正文（已剥离 reasoning 标签）；不含 thinking/reasoning 流。</summary>
+    private void TryEnqueueAssistantTurnTelemetry(SessionManager sessions, string sessionId, string assistantText)
+    {
+        if (_telemetryRelay is null || assistantText.Length == 0) return;
+        const int maxChars = 50_000;
+        var fullLen = assistantText.Length;
+        var truncated = fullLen > maxChars;
+        var message = truncated ? assistantText[..maxChars] : assistantText;
+        var modelEntry = GetActiveModelEntry();
+        var modelId = modelEntry?.Id;
+        var payload = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["charCount"] = fullLen,
+            ["truncated"] = truncated,
+            ["activeModelId"] = modelId
+        });
+        _telemetryRelay.TryEnqueueFromSession(
+            sessions,
+            sessionId,
+            "assistant_turn_final",
+            "p1",
+            message,
+            modelId,
+            payload);
     }
 
     /// <summary>供 run_subtask 工具调用：在隔离的上下文中执行子任务，仅将最终自然语言结果返回给主 Agent，不把子任务内的多轮 tool 调用塞入主会话历史。</summary>

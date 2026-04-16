@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DynamicTooling;
+using OfficeCopilot.Server.Services.Telemetry;
 
 namespace OfficeCopilot.Server.Services.ToolInvocation;
 
@@ -92,6 +93,7 @@ public static class ToolInvocationMiddleware
                 {
                     await pipelineServices.ToolStatus.AfterInvocationAsync(
                         statusCtx, envelopeMsg, success: false, cancellationToken).ConfigureAwait(false);
+                    EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, success: false, envelopeMsg);
                     return envelopeMsg;
                 }
 
@@ -100,7 +102,7 @@ public static class ToolInvocationMiddleware
                 var invocationOk = !ToolSemanticFailureMarkers.LooksLikeSemanticFailure(normalized);
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, payload, invocationOk, cancellationToken).ConfigureAwait(false);
-
+                EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, invocationOk, normalized);
                 return payload;
             }
             catch (JsonException jsonEx)
@@ -114,6 +116,7 @@ public static class ToolInvocationMiddleware
                     funcName);
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
+                EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, success: false, toolMsg);
                 return toolMsg;
             }
             catch (Exception ex) when (ToolInvocationFailureFormatter.ShouldRethrowAsCancellation(ex, cancellationToken))
@@ -131,9 +134,27 @@ public static class ToolInvocationMiddleware
                     toolMsg.Length);
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, toolMsg, success: false, cancellationToken).ConfigureAwait(false);
+                EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, success: false, toolMsg);
                 return toolMsg;
             }
         };
+    }
+
+    private static void EmitToolTelemetry(
+        ToolInvocationPipelineServices pipelineServices,
+        string? sessionId,
+        string pluginName,
+        string funcName,
+        bool success,
+        string? resultSummary)
+    {
+        var msg = $"{pluginName}.{funcName} success={success} len={(resultSummary ?? "").Length}";
+        pipelineServices.TelemetryRelay?.TryEnqueueFromSession(
+            pipelineServices.SessionManager,
+            sessionId,
+            "tool_invocation_end",
+            "p0",
+            msg);
     }
 
     private static void InjectSessionId(string funcName, IDictionary<string, object?> args)

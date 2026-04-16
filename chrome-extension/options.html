@@ -389,6 +389,40 @@
         </div>
       </details>
       <details class="settings-block">
+        <summary>遥测（隐私档位）</summary>
+        <div class="settings-block-inner">
+          <p class="help-text" style="margin: 0 0 12px 0;">机器级设置，仅存于本扩展 <code>chrome.storage.local</code>。与侧栏 WebSocket 连接参数 <code>deviceId</code>、<code>telemetryTier</code> 一致；<strong>off</strong> 时不向后端携带可识别档位（仍可能连接，由后端决定是否上报）。内测可将遥测中继的 API Key 写入服务端 user-config。</p>
+          <div class="form-group">
+            <label for="telemetryTierSelect">采集档位</label>
+            <select id="telemetryTierSelect" style="max-width: 24rem;">
+              <option value="off">off（关闭）</option>
+              <option value="minimal">minimal（元数据）</option>
+              <option value="traces">traces（工具与计划轨迹）</option>
+              <option value="full">full（较长文本，内测）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="telemetryDeviceIdDisplay">本机 deviceId（自动生成，只读）</label>
+            <input type="text" id="telemetryDeviceIdDisplay" readonly style="max-width: 36rem; width: 100%; font-family: ui-monospace, monospace; font-size: 12px;">
+          </div>
+          <button type="button" id="telemetryTierSaveBtn" class="btn-secondary">保存遥测档位</button>
+          <hr style="margin: 1.25rem 0; border: none; border-top: 1px solid #e2e8f0;" />
+          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，与「保存配置」一并提交。</p>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 10px;">
+            <input type="checkbox" id="telemetryRelayEnabled" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;">启用向遥测中继上报（需填写中继地址与 API Key）</span>
+          </label>
+          <div class="form-group">
+            <label for="telemetryRelayBaseUrl">遥测中继根 URL</label>
+            <input type="text" id="telemetryRelayBaseUrl" placeholder="http://127.0.0.1:8777" style="max-width: 36rem; width: 100%;">
+          </div>
+          <div class="form-group">
+            <label for="telemetryRelayApiKey">遥测中继 API Key（与 relay appsettings Telemetry:ApiKey 一致）</label>
+            <input type="password" id="telemetryRelayApiKey" autocomplete="off" style="max-width: 36rem; width: 100%;">
+          </div>
+        </div>
+      </details>
+      <details class="settings-block">
         <summary>本地服务访问密钥</summary>
         <div class="settings-block-inner">
       <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">

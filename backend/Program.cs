@@ -62,6 +62,11 @@ try
     builder.Host.UseSerilog();
 
     builder.Services.AddHttpClient();
+    builder.Services.AddHttpClient("telemetry", client => client.Timeout = TimeSpan.FromSeconds(12));
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayQueue>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(sp =>
+        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayQueue>());
+    builder.Services.AddHostedService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayDispatchService>();
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
@@ -74,6 +79,8 @@ try
             ConfigService = sp.GetRequiredService<ConfigService>(),
             SecurityPipeline = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline>(),
             ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>(),
+            SessionManager = sp.GetRequiredService<SessionManager>(),
+            TelemetryRelay = sp.GetService<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(),
             Logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("DynamicTooling")
         });
     builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
@@ -275,12 +282,17 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     var (resolvedProfileId, resolvedDisplayName) = configService.ResolveAgentProfileForWebSocket(
         string.IsNullOrWhiteSpace(agentProfileIdFromQuery) ? null : agentProfileIdFromQuery);
 
+    var telemetryDeviceId = context.Request.Query["deviceId"].ToString().Trim();
+    if (string.IsNullOrEmpty(telemetryDeviceId)) telemetryDeviceId = null;
+    var telemetryTier = context.Request.Query["telemetryTier"].ToString().Trim();
+    if (string.IsNullOrEmpty(telemetryTier)) telemetryTier = null;
+
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     app.Logger.LogInformation(
-        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId}",
-        sessionId, clientType ?? "(none)", resolvedProfileId);
+        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId} telemetryTier={TelemetryTier}",
+        sessionId, clientType ?? "(none)", resolvedProfileId, telemetryTier ?? "(none)");
 
-    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName);
+    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName, telemetryDeviceId, telemetryTier);
     try
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();

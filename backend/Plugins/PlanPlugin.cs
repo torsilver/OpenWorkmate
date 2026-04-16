@@ -5,6 +5,7 @@ using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Plan;
+using OfficeCopilot.Server.Services.Telemetry;
 
 namespace OfficeCopilot.Server.Plugins;
 
@@ -15,6 +16,7 @@ public sealed class PlanPlugin
     private readonly IPlanStore _store;
     private readonly IChatRuntimeAccessor _runtime;
     private readonly SessionManager _sessionManager;
+    private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly ILogger<PlanPlugin> _logger;
 
     private const string PlanAuthoringCapabilityRules =
@@ -27,11 +29,13 @@ public sealed class PlanPlugin
         IPlanStore store,
         IChatRuntimeAccessor runtimeAccessor,
         SessionManager sessionManager,
-        ILogger<PlanPlugin> logger)
+        ILogger<PlanPlugin> logger,
+        ITelemetryRelayQueue? telemetryRelay = null)
     {
         _store = store;
         _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
+        _telemetryRelay = telemetryRelay;
         _logger = logger;
     }
 
@@ -111,6 +115,12 @@ public sealed class PlanPlugin
         };
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("create_plan: saved planId={PlanId} title={Title}", planId, meta.Title);
+        _telemetryRelay?.TryEnqueueFromSession(
+            _sessionManager,
+            sessionId,
+            "plan_created",
+            "p0",
+            $"planId={planId} title={meta.Title}");
         return $"[计划已生成] planId={planId}，标题：{meta.Title}。请在计划页查看与编辑；确认后在计划页点击执行以开始按步任务。";
     }
 
@@ -210,6 +220,7 @@ public sealed class PlanPlugin
         [Description("步骤序号，从 1 开始")] int stepIndex = 1,
         CancellationToken ct = default)
     {
+        var sessionId = SessionContext.GetSessionId();
         var result = await _store.GetAsync(planId, ct).ConfigureAwait(false);
         if (result == null)
             return $"[未找到计划] planId={planId}";
@@ -228,6 +239,12 @@ public sealed class PlanPlugin
             await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
         }
 
+        _telemetryRelay?.TryEnqueueFromSession(
+            _sessionManager,
+            sessionId,
+            "plan_step_read",
+            "p0",
+            $"planId={planId} stepIndex={stepIndex} totalSteps={totalSteps}");
         return $"[计划步骤 {stepIndex}/{totalSteps}] 请使用你的工具完成以下步骤，完成后简要说明做了什么：\n\n{stepContent}";
     }
 
@@ -237,6 +254,7 @@ public sealed class PlanPlugin
         [Description("计划 ID")] string planId,
         CancellationToken ct = default)
     {
+        var sessionId = SessionContext.GetSessionId();
         var result = await _store.GetAsync(planId, ct).ConfigureAwait(false);
         if (result == null)
             return $"[未找到计划] planId={planId}";
@@ -245,6 +263,12 @@ public sealed class PlanPlugin
         meta.UpdatedAt = DateTimeOffset.UtcNow;
         await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("complete_plan: planId={PlanId}", planId);
+        _telemetryRelay?.TryEnqueueFromSession(
+            _sessionManager,
+            sessionId,
+            "plan_completed",
+            "p0",
+            $"planId={planId}");
         return "[计划已完成]";
     }
 

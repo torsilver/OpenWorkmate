@@ -3,6 +3,9 @@ var SKILLS_API_URL = "http://127.0.0.1:8765/api/skills";
 var BUILTIN_TOOLS_URL = "http://127.0.0.1:8765/api/tools/builtin";
 /** 与后端有效访问密钥一致；保存配置会写入 user-config，并同步到 chrome.storage.local 供侧栏/Workspace 使用 */
 var COPILOT_TOKEN_STORAGE_KEY = 'localServiceAuthToken';
+/** 遥测：本机设备 Id（UUID）与档位，与侧栏 WS 查询参数一致 */
+var TELEMETRY_DEVICE_ID_KEY = 'telemetryDeviceId';
+var TELEMETRY_TIER_KEY = 'telemetryTier';
 
 function tasklySetOptionsApiUrls(apiBase) {
   var b = TasklyLocalService.normalizeBase(apiBase);
@@ -1787,6 +1790,12 @@ async function loadConfig() {
     const data = fullConfig;
     var apEl = document.getElementById('allowPrivateEndpointTests');
     if (apEl) apEl.checked = !!(data.allowPrivateEndpointTests ?? data.AllowPrivateEndpointTests);
+    var telEn = document.getElementById('telemetryRelayEnabled');
+    if (telEn) telEn.checked = !!(data.telemetryEnabled ?? data.TelemetryEnabled);
+    var telUrl = document.getElementById('telemetryRelayBaseUrl');
+    if (telUrl) telUrl.value = String((data.telemetryRelayBaseUrl ?? data.TelemetryRelayBaseUrl) || '').trim();
+    var telKey = document.getElementById('telemetryRelayApiKey');
+    if (telKey) telKey.value = String((data.telemetryRelayApiKey ?? data.TelemetryRelayApiKey) || '').trim();
     var srvTok = String((data.webSocketAuthToken ?? data.WebSocketAuthToken) ?? '').trim();
     var tokInp = document.getElementById('localServiceAuthToken');
     if (tokInp) {
@@ -2181,6 +2190,17 @@ async function saveConfig() {
       chromeExtensionId: (function () {
         var rid = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
         return rid || undefined;
+      })(),
+      telemetryEnabled: !!(document.getElementById('telemetryRelayEnabled') && document.getElementById('telemetryRelayEnabled').checked),
+      telemetryRelayBaseUrl: (function () {
+        var el = document.getElementById('telemetryRelayBaseUrl');
+        var s = el ? String(el.value || '').trim() : '';
+        return s || undefined;
+      })(),
+      telemetryRelayApiKey: (function () {
+        var el = document.getElementById('telemetryRelayApiKey');
+        var s = el ? String(el.value || '').trim() : '';
+        return s || undefined;
       })()
     };
     const response = await tasklyFetch(API_URL, {
@@ -2192,7 +2212,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, telemetryRelayBaseUrl: payload.telemetryRelayBaseUrl, telemetryRelayApiKey: payload.telemetryRelayApiKey });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
@@ -2960,6 +2980,33 @@ function collectCliSecurityPayload() {
   return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
 }
 
+function initTelemetryOptionsUi() {
+  var tierSel = document.getElementById('telemetryTierSelect');
+  var devDisp = document.getElementById('telemetryDeviceIdDisplay');
+  var saveBtn = document.getElementById('telemetryTierSaveBtn');
+  if (!tierSel || !devDisp) return;
+  chrome.storage.local.get([TELEMETRY_DEVICE_ID_KEY, TELEMETRY_TIER_KEY], function (r) {
+    var id = (r && r[TELEMETRY_DEVICE_ID_KEY] || '').trim();
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('tid-' + String(Date.now()));
+      var o = {};
+      o[TELEMETRY_DEVICE_ID_KEY] = id;
+      chrome.storage.local.set(o);
+    }
+    devDisp.value = id;
+    tierSel.value = (r && r[TELEMETRY_TIER_KEY]) ? String(r[TELEMETRY_TIER_KEY]).trim() : 'minimal';
+  });
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function () {
+      var o = {};
+      o[TELEMETRY_TIER_KEY] = (tierSel.value || 'minimal').trim();
+      chrome.storage.local.set(o, function () {
+        alert('遥测档位已保存。重新连接侧栏 WebSocket 后生效。');
+      });
+    });
+  }
+}
+
 // ───── Boot ─────
 document.addEventListener('DOMContentLoaded', function () {
   var aiModelForm = document.getElementById('aiModelForm');
@@ -2985,6 +3032,12 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   var allowPrivEl = document.getElementById('allowPrivateEndpointTests');
   if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
+  var telRelayEn = document.getElementById('telemetryRelayEnabled');
+  if (telRelayEn) telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); });
+  var telRelayUrl = document.getElementById('telemetryRelayBaseUrl');
+  if (telRelayUrl) telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); });
+  var telRelayKey = document.getElementById('telemetryRelayApiKey');
+  if (telRelayKey) telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); });
   tasklyEnsureOptionsApiBase()
     .then(function () { return ensureLocalServiceTokenFromBootstrap(); })
     .then(function () { loadConfig(); })
@@ -2996,6 +3049,7 @@ document.addEventListener('DOMContentLoaded', function () {
   setupPassThroughContextToggle();
   setupUserScriptsExtensionLink();
   updateUserScriptsSection();
+  initTelemetryOptionsUi();
 });
 
 // ───── MCP ─────

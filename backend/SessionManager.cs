@@ -15,7 +15,14 @@ public sealed class SessionManager
     public SessionManager(ILogger<SessionManager> logger) => _logger = logger;
 
     /// <summary>Registers or replaces a session. If the same <paramref name="sessionId"/> reconnects, the previous entry's send lock is disposed.</summary>
-    public void Add(string sessionId, WebSocket ws, string? clientType, string agentProfileId, string agentDisplayName)
+    public void Add(
+        string sessionId,
+        WebSocket ws,
+        string? clientType,
+        string agentProfileId,
+        string agentDisplayName,
+        string? telemetryDeviceId,
+        string? telemetryTier)
     {
         if (_connections.TryRemove(sessionId, out var old))
         {
@@ -25,7 +32,9 @@ public sealed class SessionManager
 
         var pid = (agentProfileId ?? "").Trim();
         var dn = (agentDisplayName ?? "").Trim();
-        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, new SemaphoreSlim(1, 1));
+        var dev = string.IsNullOrWhiteSpace(telemetryDeviceId) ? null : telemetryDeviceId.Trim();
+        var tier = string.IsNullOrWhiteSpace(telemetryTier) ? null : telemetryTier.Trim();
+        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, dev, tier, new SemaphoreSlim(1, 1));
     }
 
     public void Remove(string sessionId)
@@ -68,6 +77,14 @@ public sealed class SessionManager
         var hk = updateWpsHostKind ? wpsHostKind : entry.WpsHostKind;
         _connections[sessionId] = entry with { PageContextTitle = pt, WpsHostKind = hk };
     }
+
+    /// <summary>Chrome/WPS 遥测 deviceId（GUID）；无则不上报遥测。</summary>
+    public string? GetTelemetryDeviceId(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryDeviceId : null;
+
+    /// <summary>客户端遥测档位：off | minimal | traces | full。</summary>
+    public string? GetTelemetryTier(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryTier : null;
 
     /// <summary>当前页标题或 WPS 展示名（若有）。</summary>
     public string? GetPageContextTitle(string sessionId) =>
@@ -167,5 +184,7 @@ public sealed class SessionManager
         string AgentDisplayName,
         string? PageContextTitle,
         string? WpsHostKind,
+        string? TelemetryDeviceId,
+        string? TelemetryTier,
         SemaphoreSlim SendLock);
 }
