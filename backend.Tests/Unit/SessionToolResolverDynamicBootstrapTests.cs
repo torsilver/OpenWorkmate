@@ -35,6 +35,21 @@ public class SessionToolResolverDynamicBootstrapTests
     }
 
     [Fact]
+    public void GetDynamicBootstrapTools_UnclearRoute_ExcludesScriptsCommandAndSubagent()
+    {
+        var reg = new ToolRegistry();
+        RegisterChromeBootstrapShell(reg);
+        var tools = SessionToolResolver.GetDynamicBootstrapTools(
+            reg, "chrome", null, mergePlanTools: false, turnRoute: TurnRoute.UnclearOrChitchat);
+        var names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(DynamicToolingConstants.SearchFunctionName, names);
+        Assert.Contains(DynamicToolingConstants.ActivateFunctionName, names);
+        Assert.DoesNotContain("run_command", names);
+        Assert.DoesNotContain("run_builtin_page_script", names);
+        Assert.DoesNotContain("run_subtask", names);
+    }
+
+    [Fact]
     public void GetDynamicBootstrapTools_Chrome_IncludesSkillChainAndScripts()
     {
         var reg = new ToolRegistry();

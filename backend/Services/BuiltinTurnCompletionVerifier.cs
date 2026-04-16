@@ -22,8 +22,24 @@ public sealed record TurnCompletionVerifierRequest(
     int ActivateInvocationCount,
     IReadOnlyList<string> ActivatedBusinessToolNames);
 
-/// <summary>解析成功且 <see cref="Incomplete"/> 为 true 时，外层可触发一轮 MAF 续跑。</summary>
-public sealed record TurnCompletionEvaluationResult(bool Incomplete, string? Reason, bool ParseOk);
+/// <summary>内置评判结构化输出：<see cref="NeedMoreWork"/> 可触发 MAF 续跑；<see cref="AskUser"/> 由外层生成追问句。</summary>
+public enum TurnCompletionVerifierOutcome
+{
+    Unknown,
+    Done,
+    NeedMoreWork,
+    AskUser,
+}
+
+/// <param name="Outcome"><see cref="TurnCompletionVerifierOutcome.Unknown"/> 表示解析失败或未调用评判。</param>
+public sealed record TurnCompletionEvaluationResult(
+    TurnCompletionVerifierOutcome Outcome,
+    string? Reason,
+    bool ParseOk)
+{
+    /// <summary>兼容旧逻辑：仅 <see cref="TurnCompletionVerifierOutcome.NeedMoreWork"/> 视为需 MAF 续跑。</summary>
+    public bool Incomplete => ParseOk && Outcome == TurnCompletionVerifierOutcome.NeedMoreWork;
+}
 
 /// <summary>续跑前追加到 <see cref="ChatRole.User"/> 的内置提示（用户不可配置）。</summary>
 public static class BuiltinTurnCompletionMessages
@@ -41,39 +57,58 @@ public static class BuiltinTurnCompletionMessages
 public static class BuiltinTurnCompletionVerdictParser
 {
     /// <summary>
-    /// 从模型原文中提取 <c>{"complete":bool,"reason":"..."}</c>。
-    /// 解析失败或缺少 <c>complete</c> 时返回 <c>parseOk: false</c>，外层应视为不续跑。
+    /// 优先解析 <c>{"outcome":"done|need_more_work|ask_user","reason":"..."}</c>；
+    /// 否则兼容 <c>{"complete":bool,"reason":"..."}</c>（complete true→done，false→need_more_work）。
     /// </summary>
     public static TurnCompletionEvaluationResult ParseModelOutput(string? raw)
     {
         var extracted = ExtractJsonObject(raw);
         if (string.IsNullOrWhiteSpace(extracted))
-            return new TurnCompletionEvaluationResult(Incomplete: false, Reason: null, ParseOk: false);
+            return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, Reason: null, ParseOk: false);
 
         try
         {
             using var doc = JsonDocument.Parse(extracted);
             var root = doc.RootElement;
-            if (!root.TryGetProperty("complete", out var completeEl))
-                return new TurnCompletionEvaluationResult(Incomplete: false, Reason: null, ParseOk: false);
-
-            var complete = ReadCompleteBoolean(completeEl);
-            if (complete is null)
-                return new TurnCompletionEvaluationResult(Incomplete: false, Reason: null, ParseOk: false);
-
             var reason = root.TryGetProperty("reason", out var reasonEl) && reasonEl.ValueKind == JsonValueKind.String
                 ? reasonEl.GetString()
                 : null;
 
-            return new TurnCompletionEvaluationResult(
-                Incomplete: !complete.Value,
-                Reason: reason,
-                ParseOk: true);
+            if (root.TryGetProperty("outcome", out var outcomeEl) && outcomeEl.ValueKind == JsonValueKind.String)
+            {
+                var o = MapOutcomeString(outcomeEl.GetString());
+                if (o == TurnCompletionVerifierOutcome.Unknown)
+                    return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, reason, ParseOk: false);
+                return new TurnCompletionEvaluationResult(o, reason, ParseOk: true);
+            }
+
+            if (!root.TryGetProperty("complete", out var completeEl))
+                return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, reason, ParseOk: false);
+
+            var complete = ReadCompleteBoolean(completeEl);
+            if (complete is null)
+                return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, reason, ParseOk: false);
+
+            var legacy = complete.Value ? TurnCompletionVerifierOutcome.Done : TurnCompletionVerifierOutcome.NeedMoreWork;
+            return new TurnCompletionEvaluationResult(legacy, reason, ParseOk: true);
         }
         catch (JsonException)
         {
-            return new TurnCompletionEvaluationResult(Incomplete: false, Reason: null, ParseOk: false);
+            return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, Reason: null, ParseOk: false);
         }
+    }
+
+    private static TurnCompletionVerifierOutcome MapOutcomeString(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return TurnCompletionVerifierOutcome.Unknown;
+        if (string.Equals(s, "done", StringComparison.OrdinalIgnoreCase))
+            return TurnCompletionVerifierOutcome.Done;
+        if (string.Equals(s, "need_more_work", StringComparison.OrdinalIgnoreCase))
+            return TurnCompletionVerifierOutcome.NeedMoreWork;
+        if (string.Equals(s, "ask_user", StringComparison.OrdinalIgnoreCase))
+            return TurnCompletionVerifierOutcome.AskUser;
+        return TurnCompletionVerifierOutcome.Unknown;
     }
 
     private static bool? ReadCompleteBoolean(JsonElement el)
@@ -142,14 +177,15 @@ public sealed class BuiltinTurnCompletionVerifier : IBuiltinTurnCompletionVerifi
         """
         你是对话完成度评判器（仅内部分析，用户不会直接看到你的输出）。
         下面 user 消息中包含三段：UserRequest（用户本轮要求）、AssistantVisible（助手已对用户可见的回复正文，可能为空）、ToolSummary（动态工具检索/激活的计数与已激活业务工具名列表）。
-        请判断：仅根据这些材料，助手是否已经**充分完成**用户本轮提出的任务或给出了**对用户有用的可见答复**。
+        请判断：仅根据这些材料，本轮是否应结束、是否应续跑以完成任务，或是否信息不足应先向用户追问。
 
         规则：
-        - 若 AssistantVisible 为空或仅有占位套话，且从 UserRequest 看仍需要工具执行或实质性答复，则 complete 应为 false。
-        - 若用户只是闲聊、或 AssistantVisible 已合理回应用户请求，则 complete 应为 true。
-        - 不要编造未出现在材料中的工具执行结果；不得引用「思考过程」字段（材料中不会提供）。
+        - outcome=done：用户只是闲聊/试探、或 AssistantVisible 已合理回应、或任务已充分完成。
+        - outcome=need_more_work：需要工具执行或更实质的可见答复，但 AssistantVisible 仍不足（空、占位、未完成）。
+        - outcome=ask_user：用户意图不清、缺少关键信息，应先让用户补充后再继续（不要选 need_more_work 代替追问）。
+        - 不要编造未出现在材料中的工具执行结果。
         - 只输出一个 JSON 对象，不要其它文字。格式严格为：
-        {"complete":true或false,"reason":"一句中文简要理由"}
+        {"outcome":"done"|"need_more_work"|"ask_user","reason":"一句中文简要理由"}
         """;
 
     private readonly IChatRuntimeAccessor _runtime;
@@ -171,7 +207,7 @@ public sealed class BuiltinTurnCompletionVerifier : IBuiltinTurnCompletionVerifi
         if (client == null)
         {
             _logger.LogDebug("BuiltinTurnCompletionVerifier: 无 IChatClient，跳过评判。");
-            return new TurnCompletionEvaluationResult(false, null, false);
+            return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, null, false);
         }
 
         var userBlock = BuildUserPayload(request);
@@ -204,12 +240,12 @@ public sealed class BuiltinTurnCompletionVerifier : IBuiltinTurnCompletionVerifi
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             _logger.LogWarning("BuiltinTurnCompletionVerifier: 评判超时，跳过续跑。");
-            return new TurnCompletionEvaluationResult(false, null, false);
+            return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, null, false);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "BuiltinTurnCompletionVerifier: 评判请求失败，跳过续跑。");
-            return new TurnCompletionEvaluationResult(false, null, false);
+            return new TurnCompletionEvaluationResult(TurnCompletionVerifierOutcome.Unknown, null, false);
         }
 
         var raw = HitlPlainLanguageExplainer.StripReasoningTags(responseText.ToString().Trim());
@@ -218,8 +254,9 @@ public sealed class BuiltinTurnCompletionVerifier : IBuiltinTurnCompletionVerifi
             ? LogPreview.HeadTail(r, 120, 40)
             : "";
         _logger.LogInformation(
-            "BuiltinTurnCompletionVerifier: parseOk={ParseOk} incomplete={Incomplete} reasonPreview={ReasonPreview}",
+            "BuiltinTurnCompletionVerifier: parseOk={ParseOk} outcome={Outcome} incomplete={Incomplete} reasonPreview={ReasonPreview}",
             parsed.ParseOk,
+            parsed.Outcome,
             parsed.Incomplete,
             reasonPreview);
         return parsed;

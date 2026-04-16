@@ -125,6 +125,8 @@ public sealed partial class ChatService
         {
             if (dynCfg.Enabled)
             {
+                turn.TurnRoute = TurnRouteClassifier.Classify(turn.UserMessage, planResult != null);
+                _logger.LogInformation("[{SessionId}] TurnRoute={Route}", sessionId, turn.TurnRoute);
                 var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId, wpsHostKindForTools);
                 var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(_skillService.GetAllSkills());
                 var mergePlan = planResult != null;
@@ -136,7 +138,8 @@ public sealed partial class ChatService
                     dynCfg,
                     _skillService.GetAllSkills(),
                     _logger,
-                    wpsHostKindForTools);
+                    turnRoute: turn.TurnRoute,
+                    wpsHostKind: wpsHostKindForTools);
                 var bootstrapNames = new List<string>();
                 var nameSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var t in bootstrap)
@@ -151,7 +154,8 @@ public sealed partial class ChatService
                     MergePlanIntoDynamicBootstrap = mergePlan,
                     ClientTypeForTools = clientType,
                     SessionIdForTools = sessionId,
-                    WpsHostKindForTools = wpsHostKindForTools
+                    WpsHostKindForTools = wpsHostKindForTools,
+                    InitialTurnRoute = turn.TurnRoute
                 };
                 var trace = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrap.Count, catalog.Entries.Count);
                 await NotifyAgentTraceAsync(

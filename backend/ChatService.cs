@@ -710,7 +710,11 @@ public sealed partial class ChatService : IDisposable
                             dts.ActivateInvocationCount,
                             bizNames);
                         var eval = await _builtinTurnCompletionVerifier.EvaluateAsync(verifierReq, ct).ConfigureAwait(false);
-                        if (eval.ParseOk && eval.Incomplete)
+                        _logger.LogInformation(
+                            "[{SessionId}] Builtin completion verifier: outcome={Outcome} parseOk={ParseOk} turnRoute={Route}",
+                            sessionId, eval.Outcome, eval.ParseOk, turn.TurnRoute);
+
+                        if (eval.ParseOk && eval.Outcome == TurnCompletionVerifierOutcome.NeedMoreWork)
                         {
                             _logger.LogInformation(
                                 "[{SessionId}] Builtin completion verifier: triggering one MAF continuation pass (historyBaseline={Baseline}, historyNow={Now}).",
@@ -750,6 +754,23 @@ public sealed partial class ChatService : IDisposable
                                 _logger.LogWarning(
                                     "[{SessionId}] Builtin completion continuation pass requested context-length retry; not chaining another rebuild in this experimental path.",
                                     sessionId);
+                            }
+                        }
+                        else if (eval.ParseOk && eval.Outcome == TurnCompletionVerifierOutcome.AskUser)
+                        {
+                            var clarify = await GenerateAskUserClarificationAsync(
+                                turn.UserMessage, visibleAssistantForVerifier, eval.Reason, ct).ConfigureAwait(false);
+                            if (!string.IsNullOrWhiteSpace(clarify))
+                            {
+                                fullResponse.Clear();
+                                fullResponse.Append(clarify);
+                                yield return new StreamItem(IsWarning: false, Content: clarify);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(eval.Reason))
+                            {
+                                fullResponse.Clear();
+                                fullResponse.Append(eval.Reason);
+                                yield return new StreamItem(IsWarning: false, Content: eval.Reason);
                             }
                         }
                     }
@@ -1101,9 +1122,57 @@ public sealed partial class ChatService : IDisposable
         var dts = turn.DynamicToolingState;
         if (dts is not { Config.Enabled: true })
             return false;
-        if (!string.IsNullOrWhiteSpace(visibleAssistantTrimmed))
-            return false;
-        return dts.SearchInvocationCount + dts.ActivateInvocationCount > 0;
+
+        if (turn.TurnRoute == TurnRoute.UnclearOrChitchat)
+            return true;
+
+        if (string.IsNullOrWhiteSpace(visibleAssistantTrimmed)
+            && dts.SearchInvocationCount + dts.ActivateInvocationCount > 0)
+            return true;
+
+        if (!dts.HasActivatedAnyBusinessTool()
+            && TurnRouteClassifier.LooksLikeTaskUserMessage(turn.UserMessage)
+            && !string.IsNullOrWhiteSpace(visibleAssistantTrimmed))
+            return true;
+
+        return false;
+    }
+
+    private async Task<string> GenerateAskUserClarificationAsync(
+        string userMessage,
+        string assistantVisible,
+        string? verifierReason,
+        CancellationToken ct)
+    {
+        var client = _runtime.GetChatClient();
+        if (client == null)
+            return "";
+
+        const string system =
+            "你是办公助手。根据用户输入与助手已给出的可见回复，用一两句礼貌、简短的中文向用户追问以澄清意图或补充信息；不要编造事实；不要提及「系统」「评判」等词。";
+        var u = userMessage.Trim();
+        var av = assistantVisible.Length > 1200 ? assistantVisible[..1200] + "\n[…]" : assistantVisible;
+        var userBlock = $"用户说：{u}\n\n助手已回复：{av}\n\n备注：{verifierReason?.Trim() ?? ""}";
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, system),
+            new(ChatRole.User, userBlock)
+        };
+        var options = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.3f };
+        try
+        {
+            using (DashScopeCallKindContext.EnterBackground())
+            {
+                var response = await client.GetResponseAsync(messages, options, ct).ConfigureAwait(false);
+                var t = ReasoningTagStreamParser.StripReasoningTags(response.Text ?? "").Trim();
+                return t.Length > 0 ? t : "";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GenerateAskUserClarificationAsync failed.");
+            return "";
+        }
     }
 
     private static List<string> GetActivatedBusinessToolNamesForVerifier(DynamicToolingTurnState dts)

@@ -1022,7 +1022,6 @@ public sealed class ConfigService
             MaxSkillSearchPerTurn = s.MaxSkillSearchPerTurn,
             MaxSkillSelectPerTurn = s.MaxSkillSelectPerTurn,
             RequireSkillSelectBeforeLoad = s.RequireSkillSelectBeforeLoad,
-            FallbackToFullAllowlistWhenNoActivation = s.FallbackToFullAllowlistWhenNoActivation,
             BootstrapUserSkillIds = s.BootstrapUserSkillIds != null
                 ? new List<string>(s.BootstrapUserSkillIds)
                 : new List<string>(),

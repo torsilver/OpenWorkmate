@@ -51,6 +51,9 @@ public sealed class DynamicToolingTurnState
     /// <summary>与 <see cref="SessionToolResolver.BuildDynamicActiveToolList"/> 的 mergePlan 一致（工具阶段写入）。</summary>
     public bool MergePlanIntoDynamicBootstrap { get; set; }
 
+    /// <summary>首轮 tooling 时的路由（<see cref="BootstrapFunctionNamesOrder"/> 为空时物化 bootstrap 用）。</summary>
+    public TurnRoute InitialTurnRoute { get; set; } = TurnRoute.Standard;
+
     /// <summary>构建允许列表与动态工具表时用，与当前会话一致。</summary>
     public string? ClientTypeForTools { get; set; }
 

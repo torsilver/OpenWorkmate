@@ -1978,14 +1978,12 @@ function fillContextWindowForm(activePresetId, presets) {
   var dtOuterEl = document.getElementById('ctxDynToolingMaxOuterLoops');
   var dtSearchEl = document.getElementById('ctxDynToolingMaxSearchPerTurn');
   var dtActEl = document.getElementById('ctxDynToolingMaxActivatePerTurn');
-  var dtFbEl = document.getElementById('ctxDynToolingFallbackNoActivation');
   var dtIncAllEl = document.getElementById('ctxDynToolingBootstrapIncludeAll');
   var dtIdsTa = document.getElementById('ctxDynToolingBootstrapUserSkillIds');
   if (dtEnEl) dtEnEl.checked = (dt.enabled ?? dt.Enabled ?? true);
   if (dtOuterEl) dtOuterEl.value = (dt.maxOuterLoops ?? dt.MaxOuterLoops ?? 4);
   if (dtSearchEl) dtSearchEl.value = (dt.maxSearchPerTurn ?? dt.MaxSearchPerTurn ?? 12);
   if (dtActEl) dtActEl.value = (dt.maxActivatePerTurn ?? dt.MaxActivatePerTurn ?? 48);
-  if (dtFbEl) dtFbEl.checked = (dt.fallbackToFullAllowlistWhenNoActivation ?? dt.FallbackToFullAllowlistWhenNoActivation ?? true);
   if (dtIncAllEl) dtIncAllEl.checked = !!(dt.bootstrapIncludeAllEnabledUserSkills ?? dt.BootstrapIncludeAllEnabledUserSkills);
   var idsRaw = dt.bootstrapUserSkillIds ?? dt.BootstrapUserSkillIds;
   if (dtIdsTa) dtIdsTa.value = formatBootstrapUserSkillIdsForTextarea(Array.isArray(idsRaw) ? idsRaw : []);
@@ -2058,7 +2056,6 @@ function collectContextWindowFromForm() {
   var dtOuterEl = document.getElementById('ctxDynToolingMaxOuterLoops');
   var dtSearchEl = document.getElementById('ctxDynToolingMaxSearchPerTurn');
   var dtActEl = document.getElementById('ctxDynToolingMaxActivatePerTurn');
-  var dtFbEl = document.getElementById('ctxDynToolingFallbackNoActivation');
   var dtIncAllEl = document.getElementById('ctxDynToolingBootstrapIncludeAll');
   var dtIdsTa = document.getElementById('ctxDynToolingBootstrapUserSkillIds');
   return {
@@ -2087,7 +2084,6 @@ function collectContextWindowFromForm() {
       maxOuterLoops: num(dtOuterEl && dtOuterEl.value ? dtOuterEl.value : '', 4),
       maxSearchPerTurn: num(dtSearchEl && dtSearchEl.value ? dtSearchEl.value : '', 12),
       maxActivatePerTurn: num(dtActEl && dtActEl.value ? dtActEl.value : '', 48),
-      fallbackToFullAllowlistWhenNoActivation: !!(dtFbEl && dtFbEl.checked),
       bootstrapIncludeAllEnabledUserSkills: !!(dtIncAllEl && dtIncAllEl.checked),
       bootstrapUserSkillIds: parseBootstrapUserSkillIdsFromTextarea(dtIdsTa && dtIdsTa.value ? dtIdsTa.value : '')
     }

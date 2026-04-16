@@ -31,10 +31,6 @@ public sealed class DynamicToolingConfig
     [JsonPropertyName("requireSkillSelectBeforeLoad")]
     public bool RequireSkillSelectBeforeLoad { get; set; }
 
-    /// <summary>若所有外层轮结束后从未激活任何非引导工具，则用全量允许列表再跑一轮 agent（提高可用性）。</summary>
-    [JsonPropertyName("fallbackToFullAllowlistWhenNoActivation")]
-    public bool FallbackToFullAllowlistWhenNoActivation { get; set; } = true;
-
     /// <summary>
     /// 已废弃：渐进式 UserSkill 下首轮固定含 <c>load_user_skill_instructions</c>，技能发现见 system 元数据块。
     /// 若配置仍非空，运行时会打警告并忽略。

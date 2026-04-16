@@ -103,7 +103,7 @@ public static class SessionToolResolver
             skills.Count);
     }
 
-    /// <summary>动态工具首轮：AgentTooling（search/activate）+ 各端保底脚本 + run_command + Subagent 四入口；可选配置的 UserSkill；Chrome 含 run_builtin_page_script 与 run_custom_javascript_in_page；可选合并 Plan 四函数。</summary>
+    /// <summary>动态工具首轮：默认含 AgentTooling（search/activate）+ 各端保底脚本 + run_command + Subagent 等；<see cref="TurnRoute.UnclearOrChitchat"/> 时仅 meta + 渐进技能链。可选合并 Plan 四函数。</summary>
     public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
         ToolRegistry toolRegistry,
         string? clientType,
@@ -112,6 +112,7 @@ public static class SessionToolResolver
         DynamicToolingConfig? dynCfg = null,
         IReadOnlyList<SkillDefinition>? skillsForBootstrap = null,
         ILogger? bootstrapSkillLogger = null,
+        TurnRoute turnRoute = TurnRoute.Standard,
         string? wpsHostKind = null)
     {
         var list = new List<AITool>();
@@ -120,6 +121,18 @@ public static class SessionToolResolver
             var t = toolRegistry.FindTool(plugin, func);
             if (t != null && !list.Any(x => string.Equals(x.Name, func, StringComparison.OrdinalIgnoreCase)))
                 list.Add(t);
+        }
+
+        if (turnRoute == TurnRoute.UnclearOrChitchat)
+        {
+            AddIf("AgentTooling", DynamicToolingConstants.SearchFunctionName);
+            AddIf("AgentTooling", DynamicToolingConstants.ActivateFunctionName);
+            AddIf("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName);
+            AddIf("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName);
+            AddIf("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName);
+            if (dynCfg != null && skillsForBootstrap is { Count: > 0 })
+                AppendBootstrapUserSkills(list, toolRegistry, clientType, sessionId, dynCfg, skillsForBootstrap, bootstrapSkillLogger);
+            return mergePlanTools ? MergePlanTools(toolRegistry, list) : list;
         }
 
         AddIf("AgentTooling", DynamicToolingConstants.SearchFunctionName);
@@ -194,7 +207,8 @@ public static class SessionToolResolver
         IReadOnlyList<AITool> bootstrap = state.BootstrapFunctionNamesOrder.Count > 0
             ? MaterializeBootstrapFromOrderedFunctionNames(
                 registry, state.BootstrapFunctionNamesOrder, clientType, sessionId, mergePlanTools, wpsHost)
-            : GetDynamicBootstrapTools(registry, clientType, sessionId, mergePlanTools, wpsHostKind: wpsHost);
+            : GetDynamicBootstrapTools(
+                registry, clientType, sessionId, mergePlanTools, turnRoute: state.InitialTurnRoute, wpsHostKind: wpsHost);
 
         var set = new HashSet<string>(bootstrap.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
         var list = new List<AITool>(bootstrap);

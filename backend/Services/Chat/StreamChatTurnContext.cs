@@ -43,4 +43,7 @@ public sealed class StreamChatTurnContext
 
     /// <summary>当前活动模型开启百炼 <c>enable_search</c> 时，由主会话 <c>BuildHistoryForStreamingTurn</c> 拼入 system 的短提示（抑制「开浏览器页再搜」）；未开启时为 null。</summary>
     public string? EnableSearchSuppressionSuffix { get; set; }
+
+    /// <summary>本轮 tooling 启发式路由，供首轮小工具表与 Verifier 门控。</summary>
+    public TurnRoute TurnRoute { get; set; } = TurnRoute.Standard;
 }

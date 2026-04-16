@@ -65,5 +65,28 @@ public sealed class BuiltinTurnCompletionVerdictParserTests
         var r = BuiltinTurnCompletionVerdictParser.ParseModelOutput("""{"complete":"true","reason":""}""");
         Assert.True(r.ParseOk);
         Assert.False(r.Incomplete);
+        Assert.Equal(TurnCompletionVerifierOutcome.Done, r.Outcome);
+    }
+
+    [Fact]
+    public void ParseModelOutput_outcome_ask_user()
+    {
+        var r = BuiltinTurnCompletionVerdictParser.ParseModelOutput(
+            """{"outcome":"ask_user","reason":"意图不明"}""");
+        Assert.True(r.ParseOk);
+        Assert.Equal(TurnCompletionVerifierOutcome.AskUser, r.Outcome);
+        Assert.False(r.Incomplete);
+        Assert.Equal("意图不明", r.Reason);
+    }
+
+    [Fact]
+    public void ParseModelOutput_outcome_need_more_work()
+    {
+        var r = BuiltinTurnCompletionVerdictParser.ParseModelOutput(
+            """{"outcome":"need_more_work","reason":"缺工具结果"}""");
+        Assert.True(r.ParseOk);
+        Assert.Equal(TurnCompletionVerifierOutcome.NeedMoreWork, r.Outcome);
+        Assert.True(r.Incomplete);
     }
 }
+
