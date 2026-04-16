@@ -44,9 +44,10 @@ public sealed partial class ChatService : IDisposable
     private readonly IBuiltinTurnCompletionVerifier _builtinTurnCompletionVerifier;
     private readonly SubtaskTimelineBlockCoordinator _subtaskTimelineBlocks;
     private readonly ITelemetryRelayQueue? _telemetryRelay;
+    private readonly ITelemetryTransmissionPolicyProvider _telemetryTransmissionPolicy;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, ITelemetryRelayQueue? telemetryRelay = null)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ITelemetryRelayQueue? telemetryRelay = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -61,6 +62,7 @@ public sealed partial class ChatService : IDisposable
         _chatSessionStore = chatSessionStore;
         _builtinTurnCompletionVerifier = builtinTurnCompletionVerifier;
         _subtaskTimelineBlocks = subtaskTimelineBlocks;
+        _telemetryTransmissionPolicy = telemetryTransmissionPolicy;
         _telemetryRelay = telemetryRelay;
 
         var session = configService.Current.Session ?? new SessionConfig();
@@ -782,6 +784,7 @@ public sealed partial class ChatService : IDisposable
             ["activeModelId"] = modelId
         });
         _telemetryRelay.TryEnqueueFromSession(
+            _telemetryTransmissionPolicy,
             sessions,
             sessionId,
             "assistant_turn_final",

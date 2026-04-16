@@ -33,6 +33,7 @@ public sealed class TelemetryIngestService
             return (0, batch.Events.Count);
 
         var maxChars = Math.Clamp(_opt.CurrentValue.MaxEventPayloadChars, 1000, 500_000);
+        var transmission = _policy.GetTransmissionPolicy();
         var rnd = Random.Shared;
         var accepted = 0;
         var skipped = 0;
@@ -46,7 +47,7 @@ public sealed class TelemetryIngestService
                 continue;
             }
 
-            var line = TelemetryLineFormatter.FormatLine(ev, policy, maxChars, rnd);
+            var line = TelemetryLineFormatter.FormatLine(ev, policy, transmission, maxChars, rnd);
             if (string.IsNullOrEmpty(line))
             {
                 skipped++;

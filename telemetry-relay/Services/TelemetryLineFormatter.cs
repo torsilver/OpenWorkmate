@@ -14,6 +14,7 @@ public static class TelemetryLineFormatter
     public static string FormatLine(
         IngestEvent ev,
         EffectivePolicy policy,
+        TelemetryTransmissionPolicyFile transmission,
         int maxChars,
         Random random)
     {
@@ -39,14 +40,14 @@ public static class TelemetryLineFormatter
         return policy.EffectiveTier switch
         {
             TelemetryTier.Off => "",
-            TelemetryTier.Minimal => FormatMinimal(ts, type, ev, msg),
-            TelemetryTier.Traces => FormatTraces(ts, type, ev, msg, payloadStr, maxChars),
-            TelemetryTier.Full => FormatFull(ts, type, ev, msg, payloadStr, maxChars),
+            TelemetryTier.Minimal => FormatMinimal(ts, type, ev, msg, transmission.Minimal),
+            TelemetryTier.Traces => FormatTraces(ts, type, ev, msg, payloadStr, transmission.Traces, maxChars),
+            TelemetryTier.Full => FormatFull(ts, type, ev, msg, payloadStr, transmission.Full, maxChars),
             _ => ""
         };
     }
 
-    private static string FormatMinimal(string ts, string type, IngestEvent ev, string msg)
+    private static string FormatMinimal(string ts, string type, IngestEvent ev, string msg, MinimalTransmissionLimits lim)
     {
         var ct = ev.ClientType ?? "";
         var mid = ev.ModelId ?? "";
@@ -64,13 +65,13 @@ public static class TelemetryLineFormatter
                     truncated = trEl.ValueKind == JsonValueKind.True;
             }
 
-            var preview = TelemetryPathValidator.SanitizeForLog(msg, 240);
+            var preview = TelemetryPathValidator.SanitizeForLog(msg, lim.AssistantTurnFinalMsgPreviewMax);
             return $"{ts}\t{type}\tclientType={ct}\tmodelId={mid}\tcharCount={charCount}\ttruncated={truncated}\tmsgPreview={preview}\tsession={ev.SessionId}";
         }
 
         if (string.Equals(type, "tool_invocation_end", StringComparison.Ordinal))
         {
-            var preview = TelemetryPathValidator.SanitizeForLog(msg, 120);
+            var preview = TelemetryPathValidator.SanitizeForLog(msg, lim.ToolInvocationEndMsgPreviewMax);
             return $"{ts}\t{type}\tclientType={ct}\tmodelId={mid}\tmsgLen={msg.Length}\tmsgPreview={preview}\tsession={ev.SessionId}";
         }
 
@@ -78,17 +79,21 @@ public static class TelemetryLineFormatter
         return $"{ts}\t{type}\tclientType={ct}\tmodelId={mid}\tmsgLen={len}\tsession={ev.SessionId}";
     }
 
-    private static string FormatTraces(string ts, string type, IngestEvent ev, string msg, string payload, int max)
+    private static string FormatTraces(string ts, string type, IngestEvent ev, string msg, string payload, TracesTransmissionLimits lim, int max)
     {
-        var m = TelemetryPathValidator.SanitizeForLog(msg, Math.Min(500, max));
-        var p = payload.Length == 0 ? "" : TelemetryPathValidator.SanitizeForLog(payload, Math.Min(2000, max));
+        var msgCap = Math.Min(lim.MsgMax, max);
+        var payCap = Math.Min(lim.PayloadMax, max);
+        var m = TelemetryPathValidator.SanitizeForLog(msg, msgCap);
+        var p = payload.Length == 0 ? "" : TelemetryPathValidator.SanitizeForLog(payload, payCap);
         return $"{ts}\t{type}\tsession={ev.SessionId}\tmsg={m}\tpayload={p}";
     }
 
-    private static string FormatFull(string ts, string type, IngestEvent ev, string msg, string payload, int max)
+    private static string FormatFull(string ts, string type, IngestEvent ev, string msg, string payload, FullTransmissionLimits lim, int maxFromOptions)
     {
-        var m = TelemetryPathValidator.SanitizeForLog(msg, max);
-        var p = payload.Length == 0 ? "" : TelemetryPathValidator.SanitizeForLog(payload, max);
+        var msgCap = Math.Min(lim.MsgMax, maxFromOptions);
+        var payCap = Math.Min(lim.PayloadMax, maxFromOptions);
+        var m = TelemetryPathValidator.SanitizeForLog(msg, msgCap);
+        var p = payload.Length == 0 ? "" : TelemetryPathValidator.SanitizeForLog(payload, payCap);
         return $"{ts}\t{type}\tsession={ev.SessionId}\tmsg={m}\tpayload={p}";
     }
 }

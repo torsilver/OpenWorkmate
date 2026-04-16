@@ -9,6 +9,7 @@ public sealed class TelemetryPolicyResolver
     private readonly IOptionsMonitor<TelemetryOptions> _opt;
     private readonly ILogger<TelemetryPolicyResolver> _logger;
     private readonly ConcurrentRefreshedCache<string, (TelemetryOverrideFile? Override, TelemetryDefaultsFile? Defaults, DateTime LoadedUtc)> _cache;
+    private readonly ConcurrentRefreshedCache<string, TelemetryTransmissionPolicyFile> _transmissionPolicyCache;
 
     private static readonly JsonSerializerOptions JsonRead = new()
     {
@@ -21,10 +22,29 @@ public sealed class TelemetryPolicyResolver
     {
         _opt = opt;
         _logger = logger;
+        var ttl = TimeSpan.FromSeconds(Math.Max(5, opt.CurrentValue.PolicyCacheSeconds));
         _cache = new ConcurrentRefreshedCache<string, (TelemetryOverrideFile?, TelemetryDefaultsFile?, DateTime)>(
-            TimeSpan.FromSeconds(Math.Max(5, opt.CurrentValue.PolicyCacheSeconds)),
+            ttl,
             LoadPair);
+        _transmissionPolicyCache = new ConcurrentRefreshedCache<string, TelemetryTransmissionPolicyFile>(
+            ttl,
+            _ => LoadTransmissionPolicy());
     }
+
+    /// <summary>与 <c>telemetry-transmission-policy.json</c> 合并后的策略；供 ingest 落盘与 GET /policy/transmission。</summary>
+    public TelemetryTransmissionPolicyFile GetTransmissionPolicy() =>
+        _transmissionPolicyCache.GetOrAdd("_");
+
+    private TelemetryTransmissionPolicyFile LoadTransmissionPolicy()
+    {
+        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
+        var path = Path.Combine(root, "telemetry-transmission-policy.json");
+        var raw = ReadJson<TelemetryTransmissionPolicyFile>(path);
+        return TelemetryTransmissionPolicyDefaults.Merge(raw);
+    }
+
+    /// <summary>更新传输策略文件后可调用以使进程内缓存失效。</summary>
+    public void InvalidateTransmissionPolicyCache() => _transmissionPolicyCache.Invalidate("_");
 
     public EffectivePolicy ResolveForDevice(string deviceId, string? clientTierString)
     {

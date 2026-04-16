@@ -1882,6 +1882,7 @@ async function loadConfig() {
       themeEl.value = 'dark';
     }
     applySemanticKernelToForm(data.semanticKernel ?? data.SemanticKernel);
+    refreshTransmissionPolicyHint();
     try {
       var runId = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
       var cfgId = String((data.chromeExtensionId ?? data.ChromeExtensionId ?? '')).trim();
@@ -3000,6 +3001,33 @@ function collectCliSecurityPayload() {
   return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
 }
 
+function refreshTransmissionPolicyHint() {
+  var hint = document.getElementById('telemetryTransmissionPolicyHint');
+  if (!hint) return;
+  var urlEl = document.getElementById('telemetryRelayBaseUrl');
+  var keyEl = document.getElementById('telemetryRelayApiKey');
+  var enEl = document.getElementById('telemetryRelayEnabled');
+  var base = (urlEl && urlEl.value || '').trim().replace(/\/+$/, '');
+  var key = (keyEl && keyEl.value || '').trim();
+  if (!enEl || !enEl.checked || !base || !key) {
+    hint.textContent = '';
+    return;
+  }
+  var u = base + '/policy/transmission';
+  fetch(u, { headers: { Authorization: 'Bearer ' + key } })
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function (j) {
+      var v = j.schemaVersion != null ? j.schemaVersion : (j.SchemaVersion != null ? j.SchemaVersion : '?');
+      hint.textContent = '当前遥测传输策略 schemaVersion=' + v + '（来自 ' + u + '）。';
+    })
+    .catch(function () {
+      hint.textContent = '无法拉取遥测传输策略（请检查中继 URL / API Key 与网络）。';
+    });
+}
+
 function initTelemetryOptionsUi() {
   var tierSel = document.getElementById('telemetryTierSelect');
   var devDisp = document.getElementById('telemetryDeviceIdDisplay');
@@ -3066,19 +3094,20 @@ document.addEventListener('DOMContentLoaded', function () {
   if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
   var telRelayEn = document.getElementById('telemetryRelayEnabled');
   if (telRelayEn) {
-    telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayEn.addEventListener('input', function () { debouncedSaveConfig(); });
   }
   var telRelayUrl = document.getElementById('telemetryRelayBaseUrl');
   if (telRelayUrl) {
-    telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayUrl.addEventListener('input', function () { debouncedSaveConfig(); });
+    telRelayUrl.addEventListener('blur', function () { refreshTransmissionPolicyHint(); });
   }
   var telRelayKey = document.getElementById('telemetryRelayApiKey');
   if (telRelayKey) {
-    telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); });
+    telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayKey.addEventListener('input', function () { debouncedSaveConfig(); });
-    telRelayKey.addEventListener('blur', function () { debouncedSaveConfig(); });
+    telRelayKey.addEventListener('blur', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
   }
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden' && saveConfigDebounceTimer) flushPendingDebouncedSave();

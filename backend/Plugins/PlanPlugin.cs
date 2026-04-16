@@ -17,6 +17,7 @@ public sealed class PlanPlugin
     private readonly IChatRuntimeAccessor _runtime;
     private readonly SessionManager _sessionManager;
     private readonly ITelemetryRelayQueue? _telemetryRelay;
+    private readonly ITelemetryTransmissionPolicyProvider _telemetryPolicy;
     private readonly ILogger<PlanPlugin> _logger;
 
     private const string PlanAuthoringCapabilityRules =
@@ -30,11 +31,13 @@ public sealed class PlanPlugin
         IChatRuntimeAccessor runtimeAccessor,
         SessionManager sessionManager,
         ILogger<PlanPlugin> logger,
+        ITelemetryTransmissionPolicyProvider telemetryPolicy,
         ITelemetryRelayQueue? telemetryRelay = null)
     {
         _store = store;
         _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
+        _telemetryPolicy = telemetryPolicy;
         _telemetryRelay = telemetryRelay;
         _logger = logger;
     }
@@ -116,6 +119,7 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("create_plan: saved planId={PlanId} title={Title}", planId, meta.Title);
         _telemetryRelay?.TryEnqueueFromSession(
+            _telemetryPolicy,
             _sessionManager,
             sessionId,
             "plan_created",
@@ -240,6 +244,7 @@ public sealed class PlanPlugin
         }
 
         _telemetryRelay?.TryEnqueueFromSession(
+            _telemetryPolicy,
             _sessionManager,
             sessionId,
             "plan_step_read",
@@ -264,6 +269,7 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("complete_plan: planId={PlanId}", planId);
         _telemetryRelay?.TryEnqueueFromSession(
+            _telemetryPolicy,
             _sessionManager,
             sessionId,
             "plan_completed",

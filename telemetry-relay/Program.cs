@@ -93,6 +93,16 @@ app.MapPost("/ingest/batch", async (HttpContext http, TelemetryIngestService ing
     .WithName("IngestBatch")
     .WithTags("telemetry");
 
+app.MapGet("/policy/transmission", (HttpContext http, TelemetryPolicyResolver policies) =>
+    {
+        if (!TelemetryAuth.ValidateIngestApiKey(http, app.Configuration))
+            return Results.Json(new { ok = false, message = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
+        var p = policies.GetTransmissionPolicy();
+        return Results.Json(p, jsonOpts);
+    })
+    .WithName("TransmissionPolicy")
+    .WithTags("telemetry");
+
 var admin = app.MapGroup("/admin");
 admin.AddEndpointFilter(async (invocationContext, next) =>
 {

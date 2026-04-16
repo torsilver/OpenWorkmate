@@ -6,6 +6,7 @@ public static class TelemetryRelaySessionExtensions
 {
     public static void TryEnqueueFromSession(
         this ITelemetryRelayQueue? queue,
+        ITelemetryTransmissionPolicyProvider policyProvider,
         SessionManager sessions,
         string? sessionId,
         string eventType,
@@ -22,6 +23,8 @@ public static class TelemetryRelaySessionExtensions
         var tier = sessions.GetTelemetryTier(sessionId) ?? "minimal";
         if (string.Equals(tier, "off", StringComparison.OrdinalIgnoreCase))
             return;
+        var policy = policyProvider.GetCurrentPolicy();
+        var (msgOut, payloadOut) = TelemetryOutboundRedactor.Apply(tier, eventType, message, payload, policy);
         queue.TryEnqueue(new TelemetryRelayEvent
         {
             DeviceId = deviceId,
@@ -31,8 +34,8 @@ public static class TelemetryRelaySessionExtensions
             DetailLevel = detailLevel,
             ClientType = sessions.GetClientType(sessionId),
             ModelId = modelId,
-            Message = message,
-            Payload = payload,
+            Message = msgOut,
+            Payload = payloadOut,
             TimestampUtc = timestampUtc ?? DateTime.UtcNow
         });
     }

@@ -13,6 +13,7 @@ public sealed class ToolInvocationPipelineServices
     public required IToolStatusNotifier ToolStatus { get; init; }
     public required SessionManager SessionManager { get; init; }
     public ITelemetryRelayQueue? TelemetryRelay { get; init; }
+    public required ITelemetryTransmissionPolicyProvider TelemetryTransmissionPolicy { get; init; }
     /// <summary>动态工具表刷新、工具名解析等（分类名 <c>DynamicTooling</c>）。</summary>
     public required ILogger Logger { get; init; }
 }

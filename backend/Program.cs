@@ -68,6 +68,11 @@ try
     builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(sp =>
         sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayQueue>());
     builder.Services.AddHostedService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayDispatchService>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>();
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(sp =>
+        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
@@ -82,6 +87,7 @@ try
             ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>(),
             SessionManager = sp.GetRequiredService<SessionManager>(),
             TelemetryRelay = sp.GetService<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(),
+            TelemetryTransmissionPolicy = sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(),
             Logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("DynamicTooling")
         });
     builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
