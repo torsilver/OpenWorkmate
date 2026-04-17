@@ -1,0 +1,26 @@
+---
+alwaysApply: true
+description: 疑难调试时把「NuGet/微软官方包也可能有问题」纳入假设，并用 issue/版本证据验证
+---
+
+# 上游依赖：不排除官方包缺陷
+
+## 原则
+
+- **Microsoft / dotnet / NuGet 上的包同样可能有 bug、回归、版本间行为差异**；生态成熟不等于「当前版本 + 当前用法」无坑。
+- 当现象落在**框架边界**（例如 MEAI `FunctionInvokingChatClient` 与 `ChatOptions.Tools`、MAF 管道顺序、流式与工具轮次）且本仓库侧已有单测仍难以自洽时，**把上游包行为列为待验证假设之一**，避免只在业务代码里反复试错。
+
+## 应当怎么做
+
+1. **查证据**：到对应仓库（如 `dotnet/extensions`）搜 issue/PR，读 release 说明与合并时间；必要时写最小复现或对比**相邻包版本**（升级/降级一侧）。
+2. **与 [debug-evidence-not-guess.mdc](debug-evidence-not-guess.mdc) 一致**：用版本号、issue/PR 链接、复现步骤支撑结论；**禁止**无证据就把问题甩给上游。
+3. **与本仓库策略一致**：可接受升级修 bug、可本地包装或绕开（见 [maf-pragmatic.mdc](maf-pragmatic.mdc)）；实验性项目不必为「官方包」长期背 workaround（见 [project-experimental-no-compat.mdc](project-experimental-no-compat.mdc)）。
+
+## 反例
+
+- 「微软写的，不可能有问题」→ 拒绝查 issue 与版本差异。
+- 无复现、无对照，就断定是上游并停止排查本仓库。
+
+## 正例
+
+- 同轮 `activate_tools` 后仍出现工具 NotFound → 对照 MEAI 已知 issue，再决定升级 `Microsoft.Extensions.AI` 或保留本地 `TryRefresh`/同步包装。

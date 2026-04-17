@@ -209,6 +209,10 @@ public sealed class AgentToolingPlugin
             activated.Count,
             rejected.Count,
             string.IsNullOrEmpty(rejectedPreview) ? "-" : rejectedPreview);
+
+        if (activated.Count > 0)
+            DynamicToolingToolListRefresher.RefreshMutationTargetAfterActivate(registry, _logger);
+
         return Task.FromResult(msg.ToString().Trim());
     }
 }

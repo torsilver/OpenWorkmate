@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services.DynamicTooling;
 
 namespace OfficeCopilot.Server.Services;
@@ -161,12 +162,14 @@ public static class SessionToolResolver
     }
 
     /// <summary>动态工具当前外层 pass 应绑定到模型的完整列表：bootstrap ∪ 已激活业务工具。</summary>
+    /// <param name="diagnosticLogger">可选；非空时记录「已激活名」未能进入最终列表的原因（便于对照 activate_tools 与 MEAI Function not found）。</param>
     public static IReadOnlyList<AITool> BuildDynamicActiveToolList(
         ToolRegistry registry,
         DynamicToolingTurnState state,
         string? clientType,
         string? sessionId,
-        bool mergePlanTools)
+        bool mergePlanTools,
+        ILogger? diagnosticLogger = null)
     {
         var wpsHost = state.WpsHostKindForTools;
         IReadOnlyList<AITool> bootstrap = state.BootstrapFunctionNamesOrder.Count > 0
@@ -180,15 +183,48 @@ public static class SessionToolResolver
         foreach (var func in state.ActivatedFunctionNames)
         {
             if (DynamicToolingConstants.MetaFunctionNames.Contains(func))
+            {
+                diagnosticLogger?.LogDebug("[DynamicTools] buildActive skip {Func}: meta tool", func);
                 continue;
+            }
+
             if (!registry.TryGetPluginName(func, out var plugin))
+            {
+                diagnosticLogger?.LogWarning(
+                    "[DynamicTools] buildActive skip {Func}: TryGetPluginName failed (not in registry as bare name)",
+                    func);
                 continue;
+            }
+
             if (!ClientTypeToolFilter.IsAllowed(plugin, func, clientType, sessionId, wpsHost))
+            {
+                diagnosticLogger?.LogWarning(
+                    "[DynamicTools] buildActive skip {Func}: client filter denied plugin={Plugin} clientType={ClientType}",
+                    func,
+                    plugin,
+                    clientType ?? "?");
                 continue;
+            }
+
             var tool = registry.FindTool(plugin, func);
-            if (tool != null && set.Add(func))
-                list.Add(tool);
+            if (tool is null)
+            {
+                diagnosticLogger?.LogWarning(
+                    "[DynamicTools] buildActive skip {Func}: FindTool returned null plugin={Plugin}",
+                    func,
+                    plugin);
+                continue;
+            }
+
+            if (!set.Add(func))
+            {
+                diagnosticLogger?.LogDebug("[DynamicTools] buildActive skip {Func}: already in bootstrap/active set", func);
+                continue;
+            }
+
+            list.Add(tool);
         }
+
         return list;
     }
 

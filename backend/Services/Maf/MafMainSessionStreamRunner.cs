@@ -56,7 +56,7 @@ public static class MafMainSessionStreamRunner
             {
                 dts.ClearExpansionFlag();
                 var active = SessionToolResolver.BuildDynamicActiveToolList(
-                    runtime.ToolRegistry, dts, clientType, sessionId, mergePlanIntoDynamicBootstrap);
+                    runtime.ToolRegistry, dts, clientType, sessionId, mergePlanIntoDynamicBootstrap, diagnosticLogger: log);
                 await foreach (var item in RunSinglePassStreamingAsync(
                                    chatClient, runtime, loggerFactory, services, history, settings,
                                    sessionId, state, ctxConfig, outcome, contextAttemptIndex,

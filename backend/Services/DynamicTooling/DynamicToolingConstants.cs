@@ -2,6 +2,12 @@ namespace OfficeCopilot.Server.Services.DynamicTooling;
 
 public static class DynamicToolingConstants
 {
+    /// <summary>与 <c>AgentToolingPlugin</c> 上 <c>[CopilotPluginId]</c> 一致。</summary>
+    public const string AgentToolingPluginId = "AgentTooling";
+
+    /// <summary>与 <c>AgentToolingPlugin.ActivateToolsAsync</c> 方法名一致；MEAI 有时上报 C# 方法名而非 OpenAPI 工具名。</summary>
+    public const string ActivateToolsAsyncMethodName = "ActivateToolsAsync";
+
     public const string SearchFunctionName = "search_available_tools";
     public const string ActivateFunctionName = "activate_tools";
     /// <summary>渐进式技能正文/资源加载；不进工具检索索引，与业务工具发现分离。</summary>

@@ -97,14 +97,44 @@ public static class ToolInvocationMiddleware
                 if (result is FunctionInvokingChatClient.FunctionInvocationResult firNotFound
                     && firNotFound.Status == FunctionInvokingChatClient.FunctionInvocationStatus.NotFound)
                 {
+                    var dts = DynamicToolingTurnScope.Current;
+                    var mt = dts?.ToolListMutationTarget;
+                    var mtCount = mt?.Count ?? -1;
+                    var mtPreview = mt is null
+                        ? "(null)"
+                        : string.Join(
+                            ",",
+                            mt.Where(t => !string.IsNullOrEmpty(t.Name)).Select(t => t!.Name).Take(40));
+                    if (mtPreview.Length > 520)
+                        mtPreview = mtPreview[..520] + "…";
+                    var activatedPreview = dts is null
+                        ? "(no scope)"
+                        : string.Join(
+                            ",",
+                            dts.ActivatedFunctionNames.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Take(32));
+                    if (activatedPreview.Length > 520)
+                        activatedPreview = activatedPreview[..520] + "…";
                     pipelineServices.Logger.LogWarning(
-                        "[ToolInvoke] MEAI FunctionInvokingChatClient: tool not in current ChatOptions.Tools. rawName={RawName} plugin={Plugin} func={Func}. Dynamic tooling: call activate_tools with this bare name before tool_calls.",
+                        "[ToolInvoke] MEAI FunctionInvokingChatClient: tool not in current ChatOptions.Tools. rawName={RawName} plugin={Plugin} func={Func} mutationTargetCount={MtCount} mutationToolNamesPreview={MtPreview} activatedNamesPreview={ActivatedPreview}",
                         rawName,
                         pluginName,
-                        funcName);
+                        funcName,
+                        mtCount,
+                        mtPreview,
+                        activatedPreview);
                 }
 
-                TryRefreshDynamicToolingToolsAfterActivate(toolRegistry, funcName, pipelineServices.Logger);
+                var shouldRefreshDynamicToolsAfterActivate =
+                    DynamicToolingActivateRefreshTriggers.ShouldRefreshChatOptionsToolsAfterInvocation(pluginName, funcName);
+                pipelineServices.Logger.LogInformation(
+                    "[ToolInvoke] completed rawToolCallName={RawName} resolvedPlugin={Plugin} resolvedFunc={Func} shouldRefreshDynamicToolsAfterActivate={ShouldRefresh} session={SessionId}",
+                    rawName,
+                    pluginName,
+                    funcName,
+                    shouldRefreshDynamicToolsAfterActivate,
+                    SessionContext.GetSessionId() ?? "?");
+
+                // activate_tools 后 ChatOptions.Tools 刷新见 AgentToolingPlugin（不依赖本中间件是否被 MAF 完整命中）。
 
                 // 插件已执行：非 meta 工具（含 envelope 失败）均抑制「未 activate 则全量兜底」，避免二次写文档等。
                 DynamicToolingTurnScope.Current?.MarkEffectfulNonMetaInvocation(funcName);
@@ -214,66 +244,4 @@ public static class ToolInvocationMiddleware
     private static bool IsMeetingTranscriptFunction(string? functionName) =>
         string.Equals(functionName, "meeting_transcript_read", StringComparison.OrdinalIgnoreCase)
         || string.Equals(functionName, "meeting_transcript_meta", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 同一次 <c>RunStreamingAsync</c> 内，<c>activate_tools</c> 会更新 <see cref="DynamicToolingTurnState.ActivatedFunctionNames"/>，
-    /// 但 <see cref="ChatOptions.Tools"/> 仍指向 pass 开始时的列表；此处原地同步，使下一跳模型请求能调用新激活的工具。
-    /// </summary>
-    private static void TryRefreshDynamicToolingToolsAfterActivate(ToolRegistry registry, string funcName, ILogger log)
-    {
-        if (!string.Equals(funcName, DynamicToolingConstants.ActivateFunctionName, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        var dts = DynamicToolingTurnScope.Current;
-        if (dts is null)
-        {
-            log.LogDebug("[DynamicTools] activate_tools finished but DynamicToolingTurnScope.Current is null (not a dynamic-tooling pass)");
-            return;
-        }
-
-        var target = dts.ToolListMutationTarget;
-        if (target is null)
-        {
-            log.LogWarning(
-                "[DynamicTools] activate_tools finished but ToolListMutationTarget is missing; ChatOptions.Tools will NOT refresh until next MAF outer pass. session={SessionId} clientType={ClientType}",
-                dts.SessionIdForTools ?? SessionContext.GetSessionId() ?? "?",
-                dts.ClientTypeForTools ?? "?");
-            return;
-        }
-
-        var beforeCount = target.Count;
-        var fresh = SessionToolResolver.BuildDynamicActiveToolList(
-            registry,
-            dts,
-            dts.ClientTypeForTools,
-            dts.SessionIdForTools,
-            dts.MergePlanIntoDynamicBootstrap);
-
-        var activatedSorted = dts.ActivatedFunctionNames.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-        var activatedPreview = string.Join(',', activatedSorted);
-        if (activatedPreview.Length > 480)
-            activatedPreview = activatedPreview[..480] + "…";
-
-        var nameList = fresh.Select(t => t.Name ?? "?").ToArray();
-        var preview = string.Join(',', nameList.Take(28));
-        if (nameList.Length > 28)
-            preview += ",…";
-
-        target.Clear();
-        target.AddRange(fresh);
-
-        // 已在同一 RunStreamingAsync 内刷新 ChatOptions.Tools，后续模型请求会带上新工具；不必再开外层 RunSinglePass（否则多一次 Agent 会话，模型常从头再跑浏览器/检索）。
-        dts.ClearExpansionFlag();
-
-        log.LogInformation(
-            "[DynamicTools] ChatOptions.Tools refreshed after activate_tools session={SessionId} clientType={ClientType} mergePlan={MergePlan} beforeCount={Before} afterCount={After} activatedCount={ActivatedCount} activated={ActivatedPreview} toolsPreview={ToolsPreview}",
-            dts.SessionIdForTools ?? SessionContext.GetSessionId() ?? "?",
-            dts.ClientTypeForTools ?? "?",
-            dts.MergePlanIntoDynamicBootstrap,
-            beforeCount,
-            fresh.Count,
-            activatedSorted.Length,
-            activatedPreview,
-            preview);
-    }
 }

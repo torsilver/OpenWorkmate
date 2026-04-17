@@ -309,7 +309,9 @@ public sealed partial class ChatService : IDisposable
         var openAiClient = new OpenAI.OpenAIClient(credential, options);
         var inner = openAiClient.GetChatClient(modelId).AsIChatClient();
         // 动态工具：activate_tools 后刷新 ToolListMutationTarget，但 MEAI ChatOptions.Clone 会复制 Tools 列表，导致 FunctionInvokingChatClient.FindTool 仍见旧表；在发往模型前用当前快照覆盖 options.Tools。
-        inner = new DynamicToolingChatOptionsSyncChatClient(inner);
+        inner = new DynamicToolingChatOptionsSyncChatClient(
+            inner,
+            _loggerFactory.CreateLogger<DynamicToolingChatOptionsSyncChatClient>());
         // ChatClientAgent 仅在内层未含 FunctionInvokingChatClient 时才会再包一层；此处显式包裹以便开启 IncludeDetailedErrors，
         // 使工具异常信息进入 FunctionResultContent / 与 ToolSemanticFailureMarkers 中 MEAI Error: 前缀对齐（Harness：时间块与日志一致）。
         return new FunctionInvokingChatClient(inner, _loggerFactory, null)
