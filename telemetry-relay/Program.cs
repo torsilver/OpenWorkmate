@@ -13,15 +13,22 @@ using Taskly.Telemetry.Relay.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // 勿再 WriteTo.Console：appsettings.json 的 Serilog:WriteTo 已含 Console，重复注册会导致每条日志在控制台出现两遍。
-builder.Host.UseSerilog((ctx, services, lc) => lc
-    .ReadFrom.Configuration(ctx.Configuration)
-    .Enrich.FromLogContext());
+builder.Host.UseSerilog((ctx, services, lc) =>
+{
+    lc.ReadFrom.Configuration(ctx.Configuration)
+        .Enrich.FromLogContext();
+    var tel = ctx.Configuration.GetSection(TelemetryOptions.SectionName);
+    var seqUrl = (tel["SeqServerUrl"] ?? "").Trim();
+    if (!string.IsNullOrEmpty(seqUrl))
+    {
+        var apiKey = (tel["SeqApiKey"] ?? "").Trim();
+        lc.WriteTo.Seq(seqUrl, apiKey: string.IsNullOrEmpty(apiKey) ? null : apiKey);
+    }
+});
 
 builder.Services.Configure<TelemetryOptions>(builder.Configuration.GetSection(TelemetryOptions.SectionName));
 builder.Services.AddSingleton<TelemetryPolicyResolver>();
-builder.Services.AddSingleton<TelemetrySessionWriter>();
-builder.Services.AddSingleton<TelemetryIngestService>();
-builder.Services.AddHostedService<TelemetryRetentionBackgroundService>();
+builder.Services.AddSingleton<TelemetryAggregatedPolicyBuilder>();
 builder.Services.AddOpenApi();
 builder.Services.AddAuthorization();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
@@ -61,46 +68,36 @@ var jsonOpts = new JsonSerializerOptions
     AllowTrailingCommas = true
 };
 
-app.MapPost("/ingest/batch", async (HttpContext http, TelemetryIngestService ingest, CancellationToken ct) =>
-    {
-        if (!TelemetryAuth.ValidateIngestApiKey(http, app.Configuration))
-            return Results.Json(new { ok = false, message = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
-
-        IngestBatchRequest? body;
-        try
-        {
-            body = await JsonSerializer.DeserializeAsync<IngestBatchRequest>(http.Request.Body, jsonOpts, ct)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            return Results.Json(new { ok = false, message = "Invalid JSON body." }, statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (body?.Events is not { Count: > 0 })
-            return Results.Json(new { ok = false, message = "events required." }, statusCode: StatusCodes.Status400BadRequest);
-
-        try
-        {
-            var (accepted, skipped) = await ingest.IngestAsync(body, ct).ConfigureAwait(false);
-            return Results.Json(new { ok = true, accepted, skipped });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.Json(new { ok = false, message = ex.Message }, statusCode: StatusCodes.Status400BadRequest);
-        }
-    })
-    .WithName("IngestBatch")
-    .WithTags("telemetry");
-
 app.MapGet("/policy/transmission", (HttpContext http, TelemetryPolicyResolver policies) =>
     {
-        if (!TelemetryAuth.ValidateIngestApiKey(http, app.Configuration))
+        if (!TelemetryAuth.ValidatePolicyApiKey(http, app.Configuration))
             return Results.Json(new { ok = false, message = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
         var p = policies.GetTransmissionPolicy();
         return Results.Json(p, jsonOpts);
     })
     .WithName("TransmissionPolicy")
+    .WithTags("telemetry");
+
+app.MapGet("/policy/aggregated", (HttpContext http, TelemetryAggregatedPolicyBuilder agg) =>
+    {
+        if (!TelemetryAuth.ValidatePolicyApiKey(http, app.Configuration))
+            return Results.Json(new { ok = false, message = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
+
+        var profileId = http.Request.Query["profileId"].ToString().Trim();
+        if (string.IsNullOrEmpty(profileId))
+            profileId = null;
+        var (body, etagHeader) = agg.Build(profileId);
+        foreach (var raw in http.Request.Headers.IfNoneMatch)
+        {
+            var t = (raw ?? "").Trim().Trim('"');
+            if (string.Equals(t, body.ETag, StringComparison.OrdinalIgnoreCase))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+        http.Response.Headers.ETag = etagHeader;
+        http.Response.Headers.CacheControl = "private, max-age=0, must-revalidate";
+        return Results.Json(body, jsonOpts);
+    })
+    .WithName("AggregatedPolicy")
     .WithTags("telemetry");
 
 var admin = app.MapGroup("/admin");
@@ -119,19 +116,37 @@ admin.AddEndpointFilter(async (invocationContext, next) =>
     return Results.Json(new { ok = false, message = "Forbidden." }, statusCode: StatusCodes.Status403Forbidden);
 });
 
-admin.MapGet("/defaults", (TelemetryPolicyResolver policies) =>
+admin.MapGet("/policy", (TelemetryPolicyResolver policies) =>
 {
-    var d = policies.ReadDefaultsOnly() ?? new TelemetryDefaultsFile();
-    return Results.Json(d);
+    var bundle = policies.GetBundleForDisplay();
+    return Results.Json(bundle, jsonOpts);
 });
 
-admin.MapPut("/defaults", async Task<IResult> (HttpContext http, TelemetryPolicyResolver policies, CancellationToken ct) =>
+admin.MapPut("/policy", async Task<IResult> (HttpContext http, TelemetryPolicyResolver policies, CancellationToken ct) =>
 {
-    var body = await JsonSerializer.DeserializeAsync<TelemetryDefaultsFile>(http.Request.Body, jsonOpts, ct)
-        .ConfigureAwait(false);
+    TelemetryRelayPolicyBundle? body;
+    try
+    {
+        body = await JsonSerializer.DeserializeAsync<TelemetryRelayPolicyBundle>(http.Request.Body, jsonOpts, ct)
+            .ConfigureAwait(false);
+    }
+    catch (JsonException ex)
+    {
+        return Results.Json(new { ok = false, message = "请求体不是合法 JSON：" + ex.Message }, statusCode: 400);
+    }
+
     if (body is null)
-        return Results.Json(new { ok = false, message = "Invalid body." }, statusCode: 400);
-    policies.WriteDefaults(body);
+        return Results.Json(new { ok = false, message = "请求体解析失败，请确认 JSON 格式与字段类型。" }, statusCode: 400);
+
+    try
+    {
+        policies.WriteFullBundle(body);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, message = "写入策略文件失败：" + ex.Message }, statusCode: 500);
+    }
+
     return Results.Json(new { ok = true });
 });
 
@@ -220,7 +235,7 @@ try
     var fullData = Path.GetFullPath(opt.DataRoot);
     var urls = app.Urls.Count > 0 ? string.Join(", ", app.Urls) : "(not bound yet)";
     Log.Information(
-        "Telemetry relay startup: urls={Urls}, dataRoot={DataRoot}, dataRootResolved={Resolved}, ingestApiKeyConfigured={IngestKeyOk}, ingestApiKeyMask={IngestKeyMask}, adminApiKeyConfigured={AdminKeyOk}, retentionDays={Days}, maxEventPayloadChars={Max}",
+        "Telemetry relay startup: urls={Urls}, dataRoot={DataRoot}, dataRootResolved={Resolved}, policyApiKeyConfigured={PolicyKeyOk}, policyApiKeyMask={PolicyKeyMask}, adminApiKeyConfigured={AdminKeyOk}, retentionDays={Days}, maxEventPayloadChars={Max}",
         urls,
         opt.DataRoot,
         fullData,

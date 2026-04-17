@@ -27,9 +27,15 @@ function ensureApiBase() {
 }
 /** 与后端有效密钥一致；通常首次连接会自动从本机引导接口同步，也可手动 localStorage.setItem */
 const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
-/** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier（localStorage） */
+/** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier / telemetryIngestLogLevel / telemetryLogKinds（localStorage） */
 const TASKLY_TELEMETRY_DEVICE_ID_KEY = 'tasklyTelemetryDeviceId'
-const TASKLY_TELEMETRY_TIER_KEY = 'tasklyTelemetryTier'
+/** 与 Chrome 选项页一致：以 log 种类筛选为主，不再单独配置档位。 */
+const DEFAULT_TELEMETRY_TIER = 'full'
+const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = 'information'
+const TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'tasklyTelemetryRelayActiveProfileId'
+const TASKLY_TELEMETRY_LOG_KINDS_BY_PROFILE_KEY = 'tasklyTelemetryLogKindsByProfile'
+/** 对齐 Chrome <code>telemetryClientEmission</code>：<code>on</code> | <code>off</code> */
+const TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = 'tasklyTelemetryClientEmission'
 
 function getOrCreateTelemetryDeviceId() {
   try {
@@ -44,11 +50,34 @@ function getOrCreateTelemetryDeviceId() {
   }
 }
 
+function getTelemetryIngestLogLevel() {
+  return DEFAULT_TELEMETRY_INGEST_LOG_LEVEL
+}
+
 function getTelemetryTier() {
+  return DEFAULT_TELEMETRY_TIER
+}
+
+function getTelemetryClientEmission() {
   try {
-    return (localStorage.getItem(TASKLY_TELEMETRY_TIER_KEY) || 'minimal').trim() || 'minimal'
+    return (localStorage.getItem(TASKLY_TELEMETRY_CLIENT_EMISSION_KEY) || 'on').trim() || 'on'
   } catch {
-    return 'minimal'
+    return 'on'
+  }
+}
+
+/** 与 Chrome <code>telemetryRelayActiveProfileId</code> + <code>telemetryLogKindsByProfile</code> 同形；未配置时不限制种类。 */
+function getTelemetryLogKindsQueryParam() {
+  try {
+    const active = (localStorage.getItem(TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY) || 'default').trim() || 'default'
+    const raw = localStorage.getItem(TASKLY_TELEMETRY_LOG_KINDS_BY_PROFILE_KEY)
+    if (!raw) return ''
+    const map = JSON.parse(raw)
+    const kinds = map && map[active]
+    if (!Array.isArray(kinds) || kinds.length === 0) return ''
+    return '&telemetryLogKinds=' + encodeURIComponent(kinds.join(','))
+  } catch {
+    return ''
   }
 }
 
@@ -122,22 +151,31 @@ async function copyTextToClipboard(text) {
   }
 }
 
-/** 本机 loopback：localStorage 尚无密钥时从后台拉取（与 Chrome 选项页写入的 user-config / appsettings 一致） */
+/** 本机 loopback：同步密钥与 <code>telemetryUserObservabilityEnabled</code>（与 user-config 一致） */
 function ensureBootstrapAuthToken() {
   return ensureApiBase().then(() =>
     fetch(`${API_BASE}/api/bootstrap/local-service-auth`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (!j || !j.ok) return
+      if (!j || !j.ok) return j
+      try {
+        localStorage.setItem(
+          TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+          j.telemetryUserObservabilityEnabled === false ? 'off' : 'on'
+        )
+      } catch {
+        /* ignore */
+      }
       const t = (j.webSocketAuthToken || '').trim()
-      if (!t || getStoredAuthToken()) return
+      if (!t || getStoredAuthToken()) return j
       try {
         localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t)
       } catch {
         /* ignore */
       }
+      return j
     })
-    .catch(() => {})
+    .catch(() => null)
   )
 }
 const RECONNECT_BASE_MS = 1000
@@ -1287,7 +1325,7 @@ export function useCopilot() {
         sessionId = getSessionId()
         return ensureBootstrapAuthToken()
       })
-      .then(() => {
+      .then((bootstrap) => {
     const tok = getStoredAuthToken()
     const ap = (activeAgentProfileId.value || 'default').trim() || 'default'
     let qs =
@@ -1299,9 +1337,18 @@ export function useCopilot() {
       encodeURIComponent(ap)
     if (tok) qs += '&token=' + encodeURIComponent(tok)
     const tier = getTelemetryTier()
-    if (tier !== 'off') {
+    const clientEmission = getTelemetryClientEmission()
+    let serverAllowsObs = true
+    if (bootstrap && typeof bootstrap.telemetryUserObservabilityEnabled === 'boolean') {
+      serverAllowsObs = bootstrap.telemetryUserObservabilityEnabled
+    } else {
+      serverAllowsObs = clientEmission !== 'off'
+    }
+    if (serverAllowsObs && tier !== 'off') {
       qs += '&deviceId=' + encodeURIComponent(getOrCreateTelemetryDeviceId())
       qs += '&telemetryTier=' + encodeURIComponent(tier)
+      qs += '&telemetryIngestLogLevel=' + encodeURIComponent(getTelemetryIngestLogLevel())
+      qs += getTelemetryLogKindsQueryParam()
     }
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {

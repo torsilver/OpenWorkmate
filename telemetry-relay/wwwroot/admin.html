@@ -249,10 +249,22 @@
     </details>
 
     <details class="settings-block" open>
+      <summary>配置落盘位置（DataRoot）</summary>
+      <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 0;">
+          默认 <code>Telemetry:DataRoot</code> 为 <code>data</code>（相对中继进程工作目录）。全局策略为单文件
+          <code>telemetry-relay-policy.json</code>（含 <code>transmission</code>、<code>defaults</code>、<code>policyProfiles</code>；可从仓库根 <code>telemetry-relay/telemetry-relay-policy.example.json</code> 复制），
+          另加按设备 <code>devices/&lt;deviceId&gt;/telemetry-override.json</code>。
+          监听地址、API Key、Seq 等非 JSON 项在 <code>appsettings.json</code> 的 <code>Telemetry</code> 节。
+        </p>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
       <summary>遥测密钥（Telemetry:ApiKey）</summary>
       <div class="settings-block-inner">
         <p class="help-text" style="margin-bottom: 10px;">
-          用于客户端 POST <code>/ingest/batch</code> 的 Bearer 或 <code>X-Telemetry-Key</code>。生成后会写入当前目录的 <code>appsettings.json</code> 并<strong>复制到剪贴板</strong>，便于填到 AI 端/扩展配置。
+          用于 AI 后台等对 <code>GET /policy/aggregated</code>、<code>GET /policy/transmission</code> 的 Bearer 或 <code>X-Telemetry-Key</code>（不再使用 <code>/ingest/batch</code>）。生成后会写入当前目录的 <code>appsettings.json</code> 并<strong>复制到剪贴板</strong>，便于填到 AI 端/扩展配置。
         </p>
         <div class="btn-row" style="margin-top: 0;">
           <button type="button" id="genTelemetryApiKey">生成遥测密钥</button>
@@ -261,15 +273,20 @@
     </details>
 
     <details class="settings-block" open>
-      <summary>全局 defaults（telemetry-defaults.json）</summary>
+      <summary>全局策略（telemetry-relay-policy.json）</summary>
       <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 10px;">
+          单文件包含 <code>schemaVersion</code>、<code>transmission</code>、<code>defaults</code>、<code>policyProfiles</code>。
+          每组 profile 含 <code>id</code>、<code>name</code>、<code>logKinds</code>；可选 <code>ingestLogLevel</code>；可选 <code>transmission</code> 覆盖全局上限。
+          保存为整包覆盖写入 DataRoot；无效 JSON 将返回 400。
+        </p>
         <div class="form-group">
-          <label for="defaultsJson">JSON</label>
-          <textarea id="defaultsJson" placeholder='{"retentionDays":30,"defaultP2BodySampleRate":1,"defaultEffectiveTierCap":"full"}'></textarea>
+          <label for="policyBundleJson">JSON</label>
+          <textarea id="policyBundleJson" style="min-height: 320px;" placeholder='{"schemaVersion":1,"transmission":{},"defaults":{},"policyProfiles":{"schemaVersion":1,"defaultProfileId":"default","profiles":[]}}'></textarea>
         </div>
         <div class="actions actions--start" style="margin-top: 0; padding-top: 0; border-top: none;">
-          <button type="button" id="loadDefaults" class="btn-secondary">读取</button>
-          <button type="button" id="saveDefaults">保存</button>
+          <button type="button" id="loadPolicyBundle" class="btn-secondary">读取</button>
+          <button type="button" id="savePolicyBundle">保存</button>
         </div>
       </div>
     </details>
@@ -378,19 +395,19 @@
       }
     }
 
-    document.getElementById('loadDefaults').onclick = () => withButton(document.getElementById('loadDefaults'), async () => {
-      const res = await fetch('/admin/defaults', { headers: adminHeaders() });
+    document.getElementById('loadPolicyBundle').onclick = () => withButton(document.getElementById('loadPolicyBundle'), async () => {
+      const res = await fetch('/admin/policy', { headers: adminHeaders() });
       const t = await show(res);
       if (res.ok) {
         try {
-          document.getElementById('defaultsJson').value = JSON.stringify(JSON.parse(t), null, 2);
+          document.getElementById('policyBundleJson').value = JSON.stringify(JSON.parse(t), null, 2);
         } catch { /* keep textarea */ }
       }
     });
 
-    document.getElementById('saveDefaults').onclick = () => withButton(document.getElementById('saveDefaults'), async () => {
-      const body = document.getElementById('defaultsJson').value;
-      const res = await fetch('/admin/defaults', { method: 'PUT', headers: adminHeaders(), body });
+    document.getElementById('savePolicyBundle').onclick = () => withButton(document.getElementById('savePolicyBundle'), async () => {
+      const body = document.getElementById('policyBundleJson').value;
+      const res = await fetch('/admin/policy', { method: 'PUT', headers: adminHeaders(), body });
       await show(res);
     });
 

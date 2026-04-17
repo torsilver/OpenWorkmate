@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace OfficeCopilot.Server.Services.Telemetry;
 
-/// <summary>按会话档位与中继传输策略在入队前裁剪；持久化语义仍以中继 ingest 为准（第二道闸）。</summary>
+/// <summary>按会话档位与中继传输策略在入队前裁剪；持久化以 Seq 为准（经 Serilog 写入）。</summary>
 public static class TelemetryOutboundRedactor
 {
     private static readonly JsonSerializerOptions PayloadJson = new()

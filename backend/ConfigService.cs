@@ -396,17 +396,28 @@ public class AppConfig
     /// <summary>本地 HTTP/WebSocket 访问密钥；在扩展选项页保存后写入 user-config.json，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
 
-    /// <summary>是否向遥测中继（Taskly.Telemetry.Relay）异步上报会话/工具/计划事件。</summary>
+    /// <summary>为 true 时允许将观测事件写入 Seq（需配置 <c>Telemetry:SeqServerUrl</c>）并从中继拉取策略。</summary>
     [JsonPropertyName("telemetryEnabled")]
     public bool TelemetryEnabled { get; set; }
 
-    /// <summary>遥测中继根 URL，例如 <c>http://127.0.0.1:8777</c>（不要尾斜杠）。</summary>
+    /// <summary>遥测中继根 URL（仅用于 <c>GET /policy/aggregated</c>），例如 <c>http://127.0.0.1:8777</c>（不要尾斜杠）。</summary>
     [JsonPropertyName("telemetryRelayBaseUrl")]
     public string? TelemetryRelayBaseUrl { get; set; }
 
-    /// <summary>与遥测中继 <c>Telemetry:ApiKey</c> 一致的共享密钥。</summary>
+    /// <summary>与遥测中继 <c>Telemetry:ApiKey</c> 一致，用于拉取策略。</summary>
     [JsonPropertyName("telemetryRelayApiKey")]
     public string? TelemetryRelayApiKey { get; set; }
+
+    /// <summary>遥测中继上多组策略之一（与 <c>GET /policy/aggregated?profileId=</c> 一致）；空则中继使用默认配置。</summary>
+    [JsonPropertyName("telemetryServerPolicyProfileId")]
+    public string? TelemetryServerPolicyProfileId { get; set; }
+
+    /// <summary>
+    /// 为 <c>false</c> 时：不向 Seq 发送结构化遥测出站（由后台强制过滤，与客户端 WebSocket 是否带 deviceId 无关）。
+    /// 缺省 / <c>null</c> 视为允许（与旧配置兼容）。
+    /// </summary>
+    [JsonPropertyName("telemetryUserObservabilityEnabled")]
+    public bool? TelemetryUserObservabilityEnabled { get; set; }
 
     /// <summary>按 <c>Plugin:function</c> 通配符（<c>*</c>）匹配的工具权限覆盖；多条命中时按 Deny &gt; Ask &gt; AllowAlways &gt; AllowOnceSession。</summary>
     public List<ToolPermissionRule>? ToolPermissionRules { get; set; }
@@ -1202,6 +1213,10 @@ public sealed class ConfigService
                     newConfig.TelemetryRelayBaseUrl = _currentConfig.TelemetryRelayBaseUrl;
                 if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayApiKey))
                     newConfig.TelemetryRelayApiKey = _currentConfig.TelemetryRelayApiKey;
+                if (string.IsNullOrWhiteSpace(newConfig.TelemetryServerPolicyProfileId))
+                    newConfig.TelemetryServerPolicyProfileId = _currentConfig.TelemetryServerPolicyProfileId;
+                if (newConfig.TelemetryUserObservabilityEnabled == null)
+                    newConfig.TelemetryUserObservabilityEnabled = _currentConfig.TelemetryUserObservabilityEnabled;
                 ApplyDefaultTelemetryRelayBaseUrlIfNeeded(newConfig);
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);

@@ -62,9 +62,8 @@ backend/Data/
 # Chrome MCP 远程调试专用用户数据（本地浏览器配置，勿提交）
 scripts/chrome-mcp-debug-profile/
 
-# 遥测中继落盘（设备/会话等运行时数据）；默认传输策略 JSON 可入库
-telemetry-relay/data/*
-!telemetry-relay/data/telemetry-transmission-policy.json
+# 遥测中继本地 DataRoot（运行时设备目录等，勿提交）
+telemetry-relay/data/
 
 # Cursor 本地计划（不入库）
 .cursor/plans/

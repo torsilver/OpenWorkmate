@@ -23,12 +23,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Debug()
-    .WriteTo.Console()
-    .WriteTo.File("logs/office-copilot-.txt", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
-
 try
 {
     var allowSecondInstance =
@@ -60,7 +54,19 @@ try
 
     var builder = WebApplication.CreateBuilder(hostArgs);
     LocalListenUrlConfigurer.Apply(builder);
-    builder.Host.UseSerilog();
+    builder.Host.UseSerilog((ctx, services, lc) =>
+    {
+        lc.MinimumLevel.Debug()
+            .Enrich.FromLogContext()
+            .WriteTo.Console()
+            .WriteTo.File("logs/office-copilot-.txt", rollingInterval: RollingInterval.Day);
+        var seqUrl = ctx.Configuration["Telemetry:SeqServerUrl"]?.Trim();
+        if (!string.IsNullOrEmpty(seqUrl))
+        {
+            var seqKey = ctx.Configuration["Telemetry:SeqApiKey"]?.Trim();
+            lc.WriteTo.Seq(seqUrl, apiKey: string.IsNullOrEmpty(seqKey) ? null : seqKey);
+        }
+    });
 
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("telemetry", client => client.Timeout = TimeSpan.FromSeconds(12));
@@ -293,13 +299,17 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     if (string.IsNullOrEmpty(telemetryDeviceId)) telemetryDeviceId = null;
     var telemetryTier = context.Request.Query["telemetryTier"].ToString().Trim();
     if (string.IsNullOrEmpty(telemetryTier)) telemetryTier = null;
+    var telemetryIngestLogLevel = context.Request.Query["telemetryIngestLogLevel"].ToString().Trim();
+    if (string.IsNullOrEmpty(telemetryIngestLogLevel)) telemetryIngestLogLevel = null;
+    var telemetryLogKinds = TelemetrySessionLogKindFilter.ParseFromQuery(context.Request.Query);
 
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     app.Logger.LogInformation(
-        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId} telemetryTier={TelemetryTier}",
-        sessionId, clientType ?? "(none)", resolvedProfileId, telemetryTier ?? "(none)");
+        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId} telemetryTier={TelemetryTier} telemetryIngestLogLevel={IngestLv} telemetryLogKinds={LogKinds}",
+        sessionId, clientType ?? "(none)", resolvedProfileId, telemetryTier ?? "(none)", telemetryIngestLogLevel ?? "(none)",
+        telemetryLogKinds is { Count: > 0 } c ? string.Join(',', c) : "(any)");
 
-    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName, telemetryDeviceId, telemetryTier);
+    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName, telemetryDeviceId, telemetryTier, telemetryIngestLogLevel, telemetryLogKinds);
     try
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
@@ -407,13 +417,15 @@ app.MapGet("/api/bootstrap/local-service-auth", (HttpContext ctx, ConfigService 
         return Results.Json(new { ok = false, message = "仅允许本机 loopback 拉取访问密钥。" }, statusCode: 403);
     var t = config.GetEffectiveWebSocketAuthToken();
     var reqBase = $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+    var obs = config.Current.TelemetryUserObservabilityEnabled != false;
     return Results.Json(new
     {
         ok = true,
         webSocketAuthToken = t,
         localServiceBaseUrl = reqBase,
         localServicePortScanStart = LocalServiceListenOptions.PortScanStart,
-        localServicePortScanCount = LocalServiceListenOptions.PortScanCount
+        localServicePortScanCount = LocalServiceListenOptions.PortScanCount,
+        telemetryUserObservabilityEnabled = obs
     });
 });
 
@@ -1296,7 +1308,7 @@ app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
 try
 {
     var cfgSvc = app.Services.GetRequiredService<ConfigService>();
-    TelemetryRelayDefaults.LogOutboundRelayConfig(app.Logger, cfgSvc.Current);
+    TelemetryRelayDefaults.LogOutboundRelayConfig(app.Logger, cfgSvc.Current, app.Configuration);
 }
 catch (Exception ex)
 {

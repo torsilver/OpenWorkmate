@@ -816,6 +816,7 @@ public sealed partial class ChatService : IDisposable
             ["activeModelId"] = modelId
         });
         _telemetryRelay.TryEnqueueFromSession(
+            _configService,
             _telemetryTransmissionPolicy,
             sessions,
             sessionId,

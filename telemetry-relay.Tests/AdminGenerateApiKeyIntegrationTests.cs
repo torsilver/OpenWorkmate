@@ -39,7 +39,7 @@ public sealed class AdminGenerateApiKeyIntegrationTests : IClassFixture<RelayWeb
     }
 
     [Fact]
-    public async Task Ingest_accepts_key_after_generate_and_reload()
+    public async Task Policy_aggregated_accepts_key_after_generate_and_reload()
     {
         var res = await _client.PostAsync("/admin/telemetry/generate-api-key", new StringContent("", Encoding.UTF8, "application/json"));
         res.EnsureSuccessStatusCode();
@@ -47,15 +47,7 @@ public sealed class AdminGenerateApiKeyIntegrationTests : IClassFixture<RelayWeb
         var apiKey = JsonDocument.Parse(json).RootElement.GetProperty("apiKey").GetString()!;
 
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        var deviceId = Guid.NewGuid().ToString();
-        var body = new
-        {
-            deviceId,
-            clientTier = "full",
-            events = new[] { new { sessionId = "s1", eventType = "tool_invocation", detailLevel = "p0", message = "x" } }
-        };
-        var ingestRes = await _client.PostAsync("/ingest/batch",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
-        ingestRes.EnsureSuccessStatusCode();
+        var policyRes = await _client.GetAsync("/policy/aggregated");
+        policyRes.EnsureSuccessStatusCode();
     }
 }

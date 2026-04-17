@@ -225,6 +225,7 @@ public static class ToolInvocationMiddleware
     {
         var msg = $"{pluginName}.{funcName} success={success} len={(resultSummary ?? "").Length}";
         pipelineServices.TelemetryRelay?.TryEnqueueFromSession(
+            pipelineServices.ConfigService,
             pipelineServices.TelemetryTransmissionPolicy,
             pipelineServices.SessionManager,
             sessionId,

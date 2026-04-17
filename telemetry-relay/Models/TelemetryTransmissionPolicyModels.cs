@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Taskly.Telemetry.Relay.Models;
 
-/// <summary>落盘与 AI 出站共用的传输上限（telemetry-transmission-policy.json）。持久化语义以中继 ingest 为准。</summary>
+/// <summary>落盘与 AI 出站共用的传输上限（<c>DataRoot/telemetry-relay-policy.json</c> 内 <c>transmission</c>，与缺省合并后由 GET /policy/transmission 等返回）。观测持久化在 Seq。</summary>
 public sealed class TelemetryTransmissionPolicyFile
 {
     [JsonPropertyName("schemaVersion")]
@@ -44,7 +44,7 @@ public sealed class TracesTransmissionLimits
 
 public sealed class FullTransmissionLimits
 {
-    /// <summary>与 <see cref="TelemetryOptions.MaxEventPayloadChars"/> 对齐时的默认；ingest 仍会再与 Options 取 min。</summary>
+    /// <summary>与 <see cref="TelemetryOptions.MaxEventPayloadChars"/> 对齐时的默认；聚合策略响应会再与 Options 取 min。</summary>
     [JsonPropertyName("msgMax")]
     public int MsgMax { get; set; } = 50_000;
 
@@ -82,6 +82,23 @@ public static class TelemetryTransmissionPolicyDefaults
         d.Full.MsgMax = PosOrDefault(fromFile.Full.MsgMax, d.Full.MsgMax);
         d.Full.PayloadMax = PosOrDefault(fromFile.Full.PayloadMax, d.Full.PayloadMax);
 
+        return d;
+    }
+
+    /// <summary>在已通过 <see cref="Merge"/> 得到的全局策略上叠加 profile 片段（仅当 overlay 中对应字段 &gt; 0 时覆盖）。</summary>
+    public static TelemetryTransmissionPolicyFile MergeOverlay(TelemetryTransmissionPolicyFile globalMerged, TelemetryTransmissionPolicyFile? overlay)
+    {
+        var d = Merge(globalMerged);
+        if (overlay is null) return d;
+        var o = Merge(overlay);
+        if (o.SchemaVersion > d.SchemaVersion) d.SchemaVersion = o.SchemaVersion;
+        if (o.Minimal.AssistantTurnFinalMsgPreviewMax > 0) d.Minimal.AssistantTurnFinalMsgPreviewMax = o.Minimal.AssistantTurnFinalMsgPreviewMax;
+        if (o.Minimal.ToolInvocationEndMsgPreviewMax > 0) d.Minimal.ToolInvocationEndMsgPreviewMax = o.Minimal.ToolInvocationEndMsgPreviewMax;
+        if (o.Minimal.OtherEventMsgMax > 0) d.Minimal.OtherEventMsgMax = o.Minimal.OtherEventMsgMax;
+        if (o.Traces.MsgMax > 0) d.Traces.MsgMax = o.Traces.MsgMax;
+        if (o.Traces.PayloadMax > 0) d.Traces.PayloadMax = o.Traces.PayloadMax;
+        if (o.Full.MsgMax > 0) d.Full.MsgMax = o.Full.MsgMax;
+        if (o.Full.PayloadMax > 0) d.Full.PayloadMax = o.Full.PayloadMax;
         return d;
     }
 

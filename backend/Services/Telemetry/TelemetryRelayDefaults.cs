@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server;
 
@@ -8,7 +9,7 @@ public static class TelemetryRelayDefaults
 {
     public const string LocalDevBaseUrl = "http://127.0.0.1:8777";
 
-    /// <summary>与 <see cref="TelemetryRelayDispatchService"/> 实际上报使用的根 URL 一致（含 Key 非空时的本机默认）。</summary>
+    /// <summary>与 <see cref="TelemetryTransmissionPolicyBackgroundService"/> 拉取策略使用的根 URL 一致（含 Key 非空时的本机默认）。</summary>
     public static string GetEffectiveRelayBaseUrl(AppConfig cfg)
     {
         var apiKey = (cfg.TelemetryRelayApiKey ?? "").Trim();
@@ -27,19 +28,24 @@ public static class TelemetryRelayDefaults
         return t[..4] + "…" + t[^4..];
     }
 
-    /// <summary>AI 后台启动时打印遥测出站配置，便于与中继 <c>appsettings</c> 对照。</summary>
-    public static void LogOutboundRelayConfig(ILogger logger, AppConfig cfg)
+    /// <summary>AI 后台启动时打印遥测相关配置：策略拉取（中继）与观测落库（Seq）。</summary>
+    public static void LogOutboundRelayConfig(ILogger logger, AppConfig cfg, IConfiguration hostConfiguration)
     {
         var raw = (cfg.TelemetryRelayBaseUrl ?? "").Trim();
         var eff = GetEffectiveRelayBaseUrl(cfg);
-        var key = (cfg.TelemetryRelayApiKey ?? "").Trim();
-        var willPost = cfg.TelemetryEnabled && !string.IsNullOrEmpty(eff) && !string.IsNullOrEmpty(key);
+        var seqUrl = (hostConfiguration["Telemetry:SeqServerUrl"] ?? "").Trim();
+        var seqConfigured = !string.IsNullOrEmpty(seqUrl);
+        var policyOk = cfg.TelemetryEnabled && !string.IsNullOrEmpty(eff) && !string.IsNullOrEmpty((cfg.TelemetryRelayApiKey ?? "").Trim());
+        var willEmitToSeq = cfg.TelemetryEnabled && seqConfigured;
         logger.LogInformation(
-            "Telemetry outbound: enabled={Enabled}, relayBaseUrlRaw={RawUrl}, relayBaseUrlEffective={EffUrl}, relayApiKey={KeyMask}, willPostToRelay={WillPost}",
+            "Telemetry: enabled={Enabled}, relayPolicyUrlEffective={EffUrl}, relayApiKey={KeyMask}, policyFetchOk={PolicyOk}, seqServerConfigured={SeqConfigured}, willEmitTelemetryToSeq={WillEmit}",
             cfg.TelemetryEnabled,
-            string.IsNullOrEmpty(raw) ? "(null/empty)" : raw,
             string.IsNullOrEmpty(eff) ? "(none)" : eff,
             MaskSecret(cfg.TelemetryRelayApiKey),
-            willPost);
+            policyOk,
+            seqConfigured,
+            willEmitToSeq);
+        if (!string.IsNullOrEmpty(raw))
+            logger.LogDebug("Telemetry relayBaseUrlRaw={RawUrl}", raw);
     }
 }

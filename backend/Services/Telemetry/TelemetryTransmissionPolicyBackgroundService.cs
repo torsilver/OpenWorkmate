@@ -7,17 +7,34 @@ namespace OfficeCopilot.Server.Services.Telemetry;
 
 public interface ITelemetryTransmissionPolicyProvider
 {
-    /// <summary>当前缓存的传输策略；持久化仍以中继 ingest 为准。</summary>
+    /// <summary>当前缓存的传输策略（来源：中继 JSON）；观测持久化在 Seq。</summary>
     TelemetryTransmissionPolicyFile GetCurrentPolicy();
+
+    /// <summary>最近一次成功从遥测中继拉取并校验通过；<c>false</c> 时结构化遥测 fail-closed（不入队/不写 Seq）。</summary>
+    bool IsTelemetryPolicyHealthy { get; }
+
+    /// <summary>远端 <c>availableLogKinds</c> 集合；仅在 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>true</c> 时非空。</summary>
+    IReadOnlySet<string> RelayAllowedLogKinds { get; }
+
+    /// <summary>远端聚合策略中的 <c>ingestLogLevel</c>（error/information/debug 等）；与 WebSocket 会话值取更严一侧；不健康或未拉取时为 <c>null</c>。</summary>
+    string? RelayIngestLogLevelCap { get; }
 }
 
 /// <summary>
-/// 从遥测中继 <c>GET /policy/transmission</c> 拉取策略并定时刷新（默认 30s + 配置变更）；失败保留上次或内置默认。
-/// 落盘仍以中继 ingest 为准；本缓存仅影响 AI 出站裁剪，中继策略更新后最多滞后至下一刷新周期。
+/// 从遥测中继 <c>GET /policy/aggregated</c> 拉取策略并定时刷新（默认 30s + 配置变更）。
+/// 拉取失败、解析失败、<c>telemetryEmissionAllowed=false</c> 或 <c>availableLogKinds</c> 为空时 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>false</c>（fail-closed）。
 /// </summary>
 public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundService, ITelemetryTransmissionPolicyProvider
 {
+    private readonly object _policyLock = new();
+
     private TelemetryTransmissionPolicyFile _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
+    private bool _policyHealthy;
+    private HashSet<string> _relayAllowedKinds = new(StringComparer.Ordinal);
+    private string? _relayIngestCap;
+
+    private static readonly HashSet<string> EmptyRelayKinds = new(StringComparer.Ordinal);
+
     private readonly IHttpClientFactory _httpFactory;
     private readonly ConfigService _config;
     private readonly ILogger<TelemetryTransmissionPolicyBackgroundService> _logger;
@@ -40,7 +57,38 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         _logger = logger;
     }
 
-    public TelemetryTransmissionPolicyFile GetCurrentPolicy() => _policy;
+    public TelemetryTransmissionPolicyFile GetCurrentPolicy()
+    {
+        lock (_policyLock)
+            return _policy;
+    }
+
+    public bool IsTelemetryPolicyHealthy
+    {
+        get
+        {
+            lock (_policyLock)
+                return _policyHealthy;
+        }
+    }
+
+    public IReadOnlySet<string> RelayAllowedLogKinds
+    {
+        get
+        {
+            lock (_policyLock)
+                return _policyHealthy ? _relayAllowedKinds : EmptyRelayKinds;
+        }
+    }
+
+    public string? RelayIngestLogLevelCap
+    {
+        get
+        {
+            lock (_policyLock)
+                return _policyHealthy ? _relayIngestCap : null;
+        }
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -86,26 +134,79 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
         if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
         {
-            _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
+            lock (_policyLock)
+            {
+                _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
+                _policyHealthy = false;
+                _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
+                _relayIngestCap = null;
+            }
+
             return;
         }
 
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/policy/transmission");
+            var aggUrl = $"{baseUrl}/policy/aggregated";
+            var profileId = (cfg.TelemetryServerPolicyProfileId ?? "").Trim();
+            if (!string.IsNullOrEmpty(profileId))
+                aggUrl += "?profileId=" + Uri.EscapeDataString(profileId);
+            using var req = new HttpRequestMessage(HttpMethod.Get, aggUrl);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             var client = _httpFactory.CreateClient("telemetry");
             using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (!res.IsSuccessStatusCode)
             {
-                _logger.LogDebug("Telemetry transmission policy GET status={Status}", res.StatusCode);
+                _logger.LogDebug("Telemetry aggregated policy GET status={Status}", res.StatusCode);
+                MarkUnhealthy();
                 return;
             }
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            var parsed = await JsonSerializer.DeserializeAsync<TelemetryTransmissionPolicyFile>(stream, JsonOpts, ct).ConfigureAwait(false);
-            if (parsed != null)
-                _policy = TelemetryTransmissionPolicyDefaults.Merge(parsed);
+            var agg = await JsonSerializer.DeserializeAsync<TelemetryAggregatedPolicyResponse>(stream, JsonOpts, ct).ConfigureAwait(false);
+            if (agg is null)
+            {
+                MarkUnhealthy();
+                return;
+            }
+
+            var emissionAllowed = agg.TelemetryEmissionAllowed != false;
+            var kinds = new HashSet<string>(StringComparer.Ordinal);
+            if (agg.AvailableLogKinds is { Count: > 0 })
+            {
+                foreach (var e in agg.AvailableLogKinds)
+                {
+                    var k = (e.Kind ?? "").Trim();
+                    if (k.Length > 0)
+                        kinds.Add(k);
+                }
+            }
+
+            var healthy = emissionAllowed && kinds.Count > 0;
+            var mergedTransmission = agg.Transmission != null
+                ? TelemetryTransmissionPolicyDefaults.Merge(agg.Transmission)
+                : TelemetryTransmissionPolicyDefaults.CreateDefault();
+            var ingestCap = (agg.IngestLogLevel ?? "").Trim();
+            if (string.IsNullOrEmpty(ingestCap))
+                ingestCap = "information";
+
+            lock (_policyLock)
+            {
+                if (healthy)
+                {
+                    _policyHealthy = true;
+                    _relayAllowedKinds = kinds;
+                    _policy = mergedTransmission;
+                    _relayIngestCap = ingestCap;
+                }
+                else
+                {
+                    _policyHealthy = false;
+                    _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
+                    _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
+                    _relayIngestCap = null;
+                }
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -114,6 +215,18 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Telemetry transmission policy refresh failed");
+            MarkUnhealthy();
+        }
+    }
+
+    private void MarkUnhealthy()
+    {
+        lock (_policyLock)
+        {
+            _policyHealthy = false;
+            _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
+            _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
+            _relayIngestCap = null;
         }
     }
 }

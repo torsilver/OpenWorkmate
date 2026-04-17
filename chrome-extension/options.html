@@ -480,29 +480,29 @@
     <!-- 隐私与观测 -->
     <div id="tab-partition-privacy" class="tab-content">
       <details class="settings-block">
-        <summary>遥测（隐私档位）</summary>
+        <summary>遥测（log 种类）</summary>
         <div class="settings-block-inner">
-          <p class="help-text" style="margin: 0 0 12px 0;"><strong>档位与 deviceId</strong>仅在本扩展 <code>chrome.storage.local</code>，经侧栏 WebSocket 的 <code>deviceId</code>、<code>telemetryTier</code> 传给后台；<strong>off</strong> 时不向后端携带可识别档位。<strong>遥测中继</strong>（启用 / URL / API Key）由 AI 后台写入 <code>user-config</code> 并负责上报，请在本页修改后看到「已自动保存」再使用侧栏。</p>
-          <div class="form-group">
-            <label for="telemetryTierSelect">采集档位</label>
-            <select id="telemetryTierSelect" style="max-width: 24rem;">
-              <option value="off">off（关闭）</option>
-              <option value="minimal">minimal（元数据）</option>
-              <option value="traces">traces（工具与计划轨迹）</option>
-              <option value="full">full（较长文本，内测）</option>
-            </select>
-          </div>
+          <p class="help-text" style="margin: 0 0 12px 0;"><strong>deviceId</strong> 与 <strong>log 种类子集</strong>在本扩展 <code>chrome.storage.local</code>，经侧栏 WebSocket 的 <code>deviceId</code>、<code>telemetryLogKinds</code> 传给后台；筛选以 <strong>log 种类</strong>为准（与中继策略取交集）。<strong>运行日志与遥测事件</strong>由 AI 后台写入内网 <strong>Seq</strong>（在后台 <code>Telemetry:SeqServerUrl</code> 配置）。下方<strong>遥测中继</strong>用于拉取聚合策略并写入后台 user-config；修改后请看到页顶「已自动保存」再使用侧栏。</p>
           <div class="form-group">
             <label for="telemetryDeviceIdDisplay">本机 deviceId（自动生成，只读）</label>
             <input type="text" id="telemetryDeviceIdDisplay" readonly style="max-width: 36rem; width: 100%; font-family: ui-monospace, monospace; font-size: 12px;">
           </div>
-          <button type="button" id="telemetryTierSaveBtn" class="btn-secondary">保存遥测档位</button>
-          <p class="help-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--text-secondary);">仅写入档位到本扩展 storage；若下方中继有改动，请等页顶「已自动保存」后再连侧栏对话。</p>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 12px;">
+            <input type="checkbox" id="telemetryClientEmissionOff" style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;"><strong>完全关闭用户端观测：</strong>写入 AI 后台 <code>user-config</code>（<code>telemetryUserObservabilityEnabled: false</code>），由<strong>后台</strong>拒绝结构化遥测出站；侧栏重连后亦不再附带遥测参数。请点页顶「已自动保存」。</span>
+          </label>
           <hr style="margin: 1.25rem 0; border: none; border-top: 1px solid #e2e8f0;" />
-          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，随本页<strong>自动保存</strong>提交（非「保存遥测档位」按钮）。</p>
+          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，随本页<strong>自动保存</strong>提交。当前选中的「遥测中继配置」会同步为 <code>telemetryRelayBaseUrl</code> / <code>telemetryRelayApiKey</code>；<strong>遥测服务端策略配置</strong>对应 <code>telemetryServerPolicyProfileId</code>（AI 后台拉取 <code>/policy/aggregated?profileId=…</code>）。</p>
+          <div class="form-group" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;">
+            <div style="flex: 1; min-width: 12rem;">
+              <label for="telemetryRelayProfileSelect">遥测中继配置</label>
+              <select id="telemetryRelayProfileSelect" style="max-width: 24rem; width: 100%;"></select>
+            </div>
+            <button type="button" id="telemetryRelayAddProfileBtn" class="btn-secondary">+ 添加配置</button>
+          </div>
           <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 10px;">
             <input type="checkbox" id="telemetryRelayEnabled" style="margin-top: 4px;">
-            <span class="help-text" style="margin: 0;">启用向遥测中继上报（需填写中继地址与 API Key）</span>
+            <span class="help-text" style="margin: 0;">启用从遥测中继拉取策略（需填写中继地址与 API Key；观测数据写入 Seq，不经中继 ingest）</span>
           </label>
           <div class="form-group">
             <label for="telemetryRelayBaseUrl">遥测中继根 URL</label>
@@ -512,6 +512,17 @@
           <div class="form-group">
             <label for="telemetryRelayApiKey">遥测中继 API Key（与 relay appsettings Telemetry:ApiKey 一致）</label>
             <input type="password" id="telemetryRelayApiKey" autocomplete="off" style="max-width: 36rem; width: 100%;">
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label for="telemetryServerPolicyProfileSelect">遥测服务端策略配置（中继上多组之一；空表示使用中继默认配置）</label>
+            <select id="telemetryServerPolicyProfileSelect" style="max-width: 36rem; width: 100%;" disabled>
+              <option value="">（请先填写 URL 与 Key 并成功拉取策略）</option>
+            </select>
+          </div>
+          <div class="form-group" id="telemetryLogKindsGroup" style="margin-top: 10px;">
+            <label>上报 log 种类（在所选服务端策略允许的集合内再缩小；与远端取交集）</label>
+            <div id="telemetryLogKindsList" class="help-text" style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+            <p class="help-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--text-secondary);">未勾选任何项时不写入侧栏参数（后台视为不限制种类）。首次拉取成功后默认全选。</p>
           </div>
           <p id="telemetryTransmissionPolicyHint" class="help-text" style="margin: 10px 0 0 0; font-size: 12px; color: var(--text-secondary);"></p>
         </div>

@@ -6,10 +6,12 @@ namespace Taskly.Telemetry.Relay.Services;
 
 public sealed class TelemetryPolicyResolver
 {
+    public const string BundleFileName = "telemetry-relay-policy.json";
+
     private readonly IOptionsMonitor<TelemetryOptions> _opt;
     private readonly ILogger<TelemetryPolicyResolver> _logger;
     private readonly ConcurrentRefreshedCache<string, (TelemetryOverrideFile? Override, TelemetryDefaultsFile? Defaults, DateTime LoadedUtc)> _cache;
-    private readonly ConcurrentRefreshedCache<string, TelemetryTransmissionPolicyFile> _transmissionPolicyCache;
+    private readonly ConcurrentRefreshedCache<string, (TelemetryTransmissionPolicyFile Tx, TelemetryDefaultsFile? Def, TelemetryPolicyProfilesFile Prof)> _bundleSnapshotCache;
 
     private static readonly JsonSerializerOptions JsonRead = new()
     {
@@ -25,26 +27,56 @@ public sealed class TelemetryPolicyResolver
         var ttl = TimeSpan.FromSeconds(Math.Max(5, opt.CurrentValue.PolicyCacheSeconds));
         _cache = new ConcurrentRefreshedCache<string, (TelemetryOverrideFile?, TelemetryDefaultsFile?, DateTime)>(
             ttl,
-            LoadPair);
-        _transmissionPolicyCache = new ConcurrentRefreshedCache<string, TelemetryTransmissionPolicyFile>(
+            LoadPairImpl);
+        _bundleSnapshotCache = new ConcurrentRefreshedCache<string, (TelemetryTransmissionPolicyFile, TelemetryDefaultsFile?, TelemetryPolicyProfilesFile)>(
             ttl,
-            _ => LoadTransmissionPolicy());
+            _ => LoadBundleSnapshot());
     }
 
-    /// <summary>与 <c>telemetry-transmission-policy.json</c> 合并后的策略；供 ingest 落盘与 GET /policy/transmission。</summary>
+    /// <summary>与 bundle 内 <c>transmission</c> 合并后的策略；供 GET /policy/transmission 与 /policy/aggregated。</summary>
     public TelemetryTransmissionPolicyFile GetTransmissionPolicy() =>
-        _transmissionPolicyCache.GetOrAdd("_");
+        _bundleSnapshotCache.GetOrAdd("_").Tx;
 
-    private TelemetryTransmissionPolicyFile LoadTransmissionPolicy()
+    /// <summary>与 bundle 内 <c>policyProfiles</c> 合并后的多配置策略。</summary>
+    public TelemetryPolicyProfilesFile GetPolicyProfiles() =>
+        _bundleSnapshotCache.GetOrAdd("_").Prof;
+
+    /// <summary>合并后的策略快照，供 Admin GET 展示（与运行时一致）。</summary>
+    public TelemetryRelayPolicyBundle GetBundleForDisplay()
     {
-        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
-        var path = Path.Combine(root, "telemetry-transmission-policy.json");
-        var raw = ReadJson<TelemetryTransmissionPolicyFile>(path);
-        return TelemetryTransmissionPolicyDefaults.Merge(raw);
+        var (tx, def, prof) = _bundleSnapshotCache.GetOrAdd("_");
+        return new TelemetryRelayPolicyBundle
+        {
+            SchemaVersion = 1,
+            Transmission = tx,
+            Defaults = def,
+            PolicyProfiles = prof
+        };
     }
 
-    /// <summary>更新传输策略文件后可调用以使进程内缓存失效。</summary>
-    public void InvalidateTransmissionPolicyCache() => _transmissionPolicyCache.Invalidate("_");
+    /// <summary>写入完整 bundle（PUT /admin/policy）；会对 transmission / policyProfiles 做与缺省合并。</summary>
+    public void WriteFullBundle(TelemetryRelayPolicyBundle incoming)
+    {
+        ArgumentNullException.ThrowIfNull(incoming);
+        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, BundleFileName);
+        var merged = new TelemetryRelayPolicyBundle
+        {
+            SchemaVersion = incoming.SchemaVersion > 0 ? incoming.SchemaVersion : 1,
+            Transmission = TelemetryTransmissionPolicyDefaults.Merge(incoming.Transmission),
+            Defaults = incoming.Defaults,
+            PolicyProfiles = TelemetryPolicyProfilesDefaults.Merge(incoming.PolicyProfiles)
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(merged, JsonWriteIndented));
+        InvalidateBundleCaches();
+    }
+
+    public void InvalidateBundleCaches()
+    {
+        _bundleSnapshotCache.Invalidate("_");
+        _cache.InvalidateAll();
+    }
 
     public EffectivePolicy ResolveForDevice(string deviceId, string? clientTierString)
     {
@@ -57,21 +89,8 @@ public sealed class TelemetryPolicyResolver
         return new EffectivePolicy(effective, client, p2Rate, sampleRate);
     }
 
-    public TelemetryDefaultsFile? ReadDefaultsOnly()
-    {
-        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
-        var path = Path.Combine(root, "telemetry-defaults.json");
-        return ReadJson<TelemetryDefaultsFile>(path);
-    }
-
-    public void WriteDefaults(TelemetryDefaultsFile data)
-    {
-        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
-        Directory.CreateDirectory(root);
-        var path = Path.Combine(root, "telemetry-defaults.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(data, JsonWriteIndented));
-        _cache.InvalidateAll();
-    }
+    public TelemetryDefaultsFile? ReadDefaultsOnly() =>
+        _bundleSnapshotCache.GetOrAdd("_").Def;
 
     public TelemetryOverrideFile? ReadOverride(string deviceId)
     {
@@ -103,12 +122,21 @@ public sealed class TelemetryPolicyResolver
         _cache.Invalidate(deviceId);
     }
 
-    private (TelemetryOverrideFile?, TelemetryDefaultsFile?, DateTime) LoadPair(string deviceId)
+    private (TelemetryTransmissionPolicyFile Tx, TelemetryDefaultsFile? Def, TelemetryPolicyProfilesFile Prof) LoadBundleSnapshot()
     {
         var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
-        var defPath = Path.Combine(root, "telemetry-defaults.json");
+        var path = Path.Combine(root, BundleFileName);
+        var raw = ReadJson<TelemetryRelayPolicyBundle>(path);
+        var tx = TelemetryTransmissionPolicyDefaults.Merge(raw?.Transmission);
+        var prof = TelemetryPolicyProfilesDefaults.Merge(raw?.PolicyProfiles);
+        return (tx, raw?.Defaults, prof);
+    }
+
+    private (TelemetryOverrideFile?, TelemetryDefaultsFile?, DateTime) LoadPairImpl(string deviceId)
+    {
+        var (_, def, _) = _bundleSnapshotCache.GetOrAdd("_");
+        var root = Path.GetFullPath(_opt.CurrentValue.DataRoot);
         var ovPath = Path.Combine(root, "devices", deviceId, "telemetry-override.json");
-        var def = ReadJson<TelemetryDefaultsFile>(defPath);
         var ov = ReadJson<TelemetryOverrideFile>(ovPath);
         return (ov, def, DateTime.UtcNow);
     }
@@ -157,6 +185,7 @@ public readonly record struct EffectivePolicy(
     TelemetryTier ClientTier,
     double P2BodySampleRate,
     double EventSampleRate);
+
 
 /// <summary>Per-key TTL cache with manual invalidate.</summary>
 internal sealed class ConcurrentRefreshedCache<TKey, TValue> where TKey : notnull

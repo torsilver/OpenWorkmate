@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Taskly.Telemetry.Relay.Services;
 
 namespace Taskly.Telemetry.Relay.Tests;
 
@@ -15,6 +16,9 @@ public sealed class RelayWebApplicationFactory : WebApplicationFactory<Program>
     {
         Directory.CreateDirectory(ContentRoot);
         Directory.CreateDirectory(DataRoot);
+        File.WriteAllText(
+            Path.Combine(DataRoot, TelemetryPolicyResolver.BundleFileName),
+            "{\"schemaVersion\":1}\n");
 
         var appsettingsPath = Path.Combine(ContentRoot, "appsettings.json");
         File.WriteAllText(appsettingsPath, """
@@ -24,13 +28,14 @@ public sealed class RelayWebApplicationFactory : WebApplicationFactory<Program>
                 "WriteTo": [ { "Name": "Console" } ]
               },
               "Telemetry": {
-                "ApiKey": "test-ingest-key",
+                "ApiKey": "test-policy-key",
                 "AdminApiKey": "",
                 "DataRoot": "data",
                 "RetentionDays": 1,
                 "RetentionSweepHours": 168,
                 "PolicyCacheSeconds": 1,
-                "MaxEventPayloadChars": 50000
+                "MaxEventPayloadChars": 50000,
+                "SeqServerUrl": ""
               },
               "Logging": {
                 "LogLevel": {

@@ -13,7 +13,7 @@ public sealed class TelemetryRelayEvent
     public string? ModelId { get; init; }
     public string? Message { get; init; }
 
-    /// <summary>可选结构化字段，与遥测中继 <c>IngestEvent.Payload</c> 对齐（camelCase JSON）。</summary>
+    /// <summary>可选结构化字段（camelCase JSON），写入 Seq 时序列化为 TelemetryPayloadJson。</summary>
     public JsonElement? Payload { get; init; }
 
     /// <summary>事件发生时间（UTC）；未设置时中继使用服务端收到批次的时刻。</summary>

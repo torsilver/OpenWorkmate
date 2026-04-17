@@ -22,7 +22,9 @@ public sealed class SessionManager
         string agentProfileId,
         string agentDisplayName,
         string? telemetryDeviceId,
-        string? telemetryTier)
+        string? telemetryTier,
+        string? telemetryIngestLogLevel,
+        HashSet<string>? telemetryLogKinds)
     {
         if (_connections.TryRemove(sessionId, out var old))
         {
@@ -34,7 +36,8 @@ public sealed class SessionManager
         var dn = (agentDisplayName ?? "").Trim();
         var dev = string.IsNullOrWhiteSpace(telemetryDeviceId) ? null : telemetryDeviceId.Trim();
         var tier = string.IsNullOrWhiteSpace(telemetryTier) ? null : telemetryTier.Trim();
-        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, dev, tier, new SemaphoreSlim(1, 1));
+        var ingestLv = string.IsNullOrWhiteSpace(telemetryIngestLogLevel) ? null : telemetryIngestLogLevel.Trim();
+        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, dev, tier, ingestLv, telemetryLogKinds, new SemaphoreSlim(1, 1));
     }
 
     public void Remove(string sessionId)
@@ -85,6 +88,14 @@ public sealed class SessionManager
     /// <summary>客户端遥测档位：off | minimal | traces | full。</summary>
     public string? GetTelemetryTier(string sessionId) =>
         _connections.TryGetValue(sessionId, out var e) ? e.TelemetryTier : null;
+
+    /// <summary>遥测出站详细程度：off | error | warning | information | debug（与 Chrome 选项一致）。</summary>
+    public string? GetTelemetryIngestLogLevel(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryIngestLogLevel : null;
+
+    /// <summary>非空时仅上报集合内的 <c>eventType</c>；空或 <c>null</c> 表示不限制。</summary>
+    public HashSet<string>? GetTelemetryLogKinds(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryLogKinds : null;
 
     /// <summary>当前页标题或 WPS 展示名（若有）。</summary>
     public string? GetPageContextTitle(string sessionId) =>
@@ -186,5 +197,7 @@ public sealed class SessionManager
         string? WpsHostKind,
         string? TelemetryDeviceId,
         string? TelemetryTier,
+        string? TelemetryIngestLogLevel,
+        HashSet<string>? TelemetryLogKinds,
         SemaphoreSlim SendLock);
 }

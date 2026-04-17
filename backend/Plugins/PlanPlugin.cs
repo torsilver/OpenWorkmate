@@ -18,6 +18,7 @@ public sealed class PlanPlugin
     private readonly SessionManager _sessionManager;
     private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly ITelemetryTransmissionPolicyProvider _telemetryPolicy;
+    private readonly ConfigService _configService;
     private readonly ILogger<PlanPlugin> _logger;
 
     private const string PlanAuthoringCapabilityRules =
@@ -30,6 +31,7 @@ public sealed class PlanPlugin
         IPlanStore store,
         IChatRuntimeAccessor runtimeAccessor,
         SessionManager sessionManager,
+        ConfigService configService,
         ILogger<PlanPlugin> logger,
         ITelemetryTransmissionPolicyProvider telemetryPolicy,
         ITelemetryRelayQueue? telemetryRelay = null)
@@ -37,6 +39,7 @@ public sealed class PlanPlugin
         _store = store;
         _runtime = runtimeAccessor;
         _sessionManager = sessionManager;
+        _configService = configService;
         _telemetryPolicy = telemetryPolicy;
         _telemetryRelay = telemetryRelay;
         _logger = logger;
@@ -119,6 +122,7 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("create_plan: saved planId={PlanId} title={Title}", planId, meta.Title);
         _telemetryRelay?.TryEnqueueFromSession(
+            _configService,
             _telemetryPolicy,
             _sessionManager,
             sessionId,
@@ -244,6 +248,7 @@ public sealed class PlanPlugin
         }
 
         _telemetryRelay?.TryEnqueueFromSession(
+            _configService,
             _telemetryPolicy,
             _sessionManager,
             sessionId,
@@ -269,6 +274,7 @@ public sealed class PlanPlugin
         await _store.SaveAsync(planId, result.Value.Content, meta, ct).ConfigureAwait(false);
         _logger.LogInformation("complete_plan: planId={PlanId}", planId);
         _telemetryRelay?.TryEnqueueFromSession(
+            _configService,
             _telemetryPolicy,
             _sessionManager,
             sessionId,

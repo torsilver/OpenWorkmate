@@ -2,7 +2,7 @@ namespace Taskly.Telemetry.Relay;
 
 public static class TelemetryAuth
 {
-    public static bool ValidateIngestApiKey(HttpContext http, IConfiguration cfg)
+    public static bool ValidatePolicyApiKey(HttpContext http, IConfiguration cfg)
     {
         var expected = (cfg.GetSection(TelemetryOptions.SectionName)["ApiKey"] ?? "").Trim();
         if (string.IsNullOrEmpty(expected))

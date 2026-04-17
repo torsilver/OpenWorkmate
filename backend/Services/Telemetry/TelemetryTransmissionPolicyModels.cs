@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace OfficeCopilot.Server.Services.Telemetry;
 
-/// <summary>与遥测中继 <c>GET /policy/transmission</c> 及 telemetry-transmission-policy.json 对齐（camelCase）。</summary>
+/// <summary>与遥测中继 <c>GET /policy/transmission</c> 及 <c>DataRoot/telemetry-relay-policy.json</c> 内 <c>transmission</c> 对齐（camelCase）。</summary>
 public sealed class TelemetryTransmissionPolicyFile
 {
     [JsonPropertyName("schemaVersion")]

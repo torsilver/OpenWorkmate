@@ -6,6 +6,8 @@ cd /d "%ROOT%"
 
 echo.
 echo [Taskly] 启动 AI 后台 (http://localhost:8765) 与遥测中继 (http://127.0.0.1:8777)
+echo 观测与遥测事件由后台 Serilog 写入内网 Seq（需单独部署；配置 Telemetry:SeqServerUrl）。
+echo 中继 8777 仅提供策略 GET /policy/aggregated 等，不提供 ingest。
 echo AI 后台（调试）：目标框架 net10.0（不含 net10.0-windows 专用代码路径）。
 echo.
 

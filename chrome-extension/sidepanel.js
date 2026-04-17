@@ -2,7 +2,13 @@ let WS_URL = "ws://127.0.0.1:8765/ws";
 let API_BASE = "http://127.0.0.1:8765";
 const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
 const TELEMETRY_DEVICE_ID_KEY = "telemetryDeviceId";
-const TELEMETRY_TIER_KEY = "telemetryTier";
+/** 与选项页「完全关闭本端观测」一致：<code>on</code> | <code>off</code> */
+const TELEMETRY_CLIENT_EMISSION_KEY = "telemetryClientEmission";
+/** 与选项页移除「档位/详细程度」后的固定默认一致：筛选以 log 种类为主。 */
+const DEFAULT_TELEMETRY_TIER = "full";
+const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = "information";
+const TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "telemetryRelayActiveProfileId";
+const TELEMETRY_LOG_KINDS_BY_PROFILE_KEY = "telemetryLogKindsByProfile";
 
 var tasklySidepanelApiReady = null;
 /** 避免在「后台晚启动」场景下反复弹出同一条气泡提示 */
@@ -49,26 +55,31 @@ function tasklyFetch(url, init) {
   });
 }
 
-/** 本机 loopback：若 chrome.storage 尚无密钥，从后台引导接口写入（与选项页保存的 user-config / appsettings 一致） */
+/** 本机 loopback：同步访问密钥，并拉取 <code>telemetryUserObservabilityEnabled</code>（与 user-config 一致） */
 function ensureLocalServiceTokenFromBootstrap() {
   return tasklyEnsureApiBase().then(function () {
   return fetch(API_BASE + "/api/bootstrap/local-service-auth")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (!j || !j.ok) return;
+      if (!j || !j.ok) return j;
+      try {
+        var o = {};
+        o[TELEMETRY_CLIENT_EMISSION_KEY] = j.telemetryUserObservabilityEnabled === false ? "off" : "on";
+        chrome.storage.local.set(o);
+      } catch (e) { /* ignore */ }
       var t = (j.webSocketAuthToken || "").trim();
-      if (!t) return;
+      if (!t) return j;
       return new Promise(function (resolve) {
         chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (cur) {
           var existing = (cur && cur[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
-          if (existing) { resolve(); return; }
-          var o = {};
-          o[COPILOT_TOKEN_STORAGE_KEY] = t;
-          chrome.storage.local.set(o, function () { resolve(); });
+          if (existing) { resolve(j); return; }
+          var o2 = {};
+          o2[COPILOT_TOKEN_STORAGE_KEY] = t;
+          chrome.storage.local.set(o2, function () { resolve(j); });
         });
       });
     })
-    .catch(function () {});
+    .catch(function () { return null; });
   });
 }
 
@@ -1043,8 +1054,17 @@ function connect() {
   }
 
   sessionId = getSessionId();
-  ensureLocalServiceTokenFromBootstrap().then(function () {
-  chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY, STORAGE_ACTIVE_AGENT_PROFILE_ID, TELEMETRY_DEVICE_ID_KEY, TELEMETRY_TIER_KEY], function (r) {
+  ensureLocalServiceTokenFromBootstrap().then(function (bootstrap) {
+  chrome.storage.local.get(
+    [
+      COPILOT_TOKEN_STORAGE_KEY,
+      STORAGE_ACTIVE_AGENT_PROFILE_ID,
+      TELEMETRY_DEVICE_ID_KEY,
+      TELEMETRY_CLIENT_EMISSION_KEY,
+      TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
+      TELEMETRY_LOG_KINDS_BY_PROFILE_KEY
+    ],
+    function (r) {
     var token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
     var ap = String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || "default").trim() || "default";
     var devId = (r && r[TELEMETRY_DEVICE_ID_KEY] || "").trim();
@@ -1054,15 +1074,30 @@ function connect() {
       o[TELEMETRY_DEVICE_ID_KEY] = devId;
       chrome.storage.local.set(o);
     }
-    var tier = (r && r[TELEMETRY_TIER_KEY] || "minimal").trim() || "minimal";
+    var tier = DEFAULT_TELEMETRY_TIER;
+    var ingestLv = DEFAULT_TELEMETRY_INGEST_LOG_LEVEL;
+    var clientEmission = String((r && r[TELEMETRY_CLIENT_EMISSION_KEY]) || "on").trim() || "on";
+    var serverAllowsObs = true;
+    if (bootstrap && typeof bootstrap.telemetryUserObservabilityEnabled === "boolean") {
+      serverAllowsObs = bootstrap.telemetryUserObservabilityEnabled;
+    } else {
+      serverAllowsObs = clientEmission !== "off";
+    }
     var qs = new URLSearchParams();
     qs.set("sessionId", sessionId);
     qs.set("clientType", "chrome");
     qs.set("agentProfileId", ap);
     if (token) qs.set("token", token);
-    if (tier !== "off") {
+    if (serverAllowsObs && tier !== "off") {
       qs.set("deviceId", devId);
       qs.set("telemetryTier", tier);
+      qs.set("telemetryIngestLogLevel", ingestLv);
+      var relayActive = String((r && r[TELEMETRY_RELAY_ACTIVE_PROFILE_KEY]) || "default").trim() || "default";
+      var kindsMap = (r && r[TELEMETRY_LOG_KINDS_BY_PROFILE_KEY]) || {};
+      var logKinds = kindsMap[relayActive];
+      if (Array.isArray(logKinds) && logKinds.length > 0) {
+        qs.set("telemetryLogKinds", logKinds.join(","));
+      }
     }
     var url = WS_URL + "?" + qs.toString();
     ws = new WebSocket(url);
