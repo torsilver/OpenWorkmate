@@ -24,6 +24,20 @@ public sealed partial class ChatService
             - ctxConfig.ReservedToolsTokens
             - ctxConfig.ReservedOutputTokens;
 
+        if (historyBudget > 0 && !ctxConfig.PassThroughContext && ctxConfig.CompactionQueryAwareHeuristicEnabled)
+        {
+            var sessionCfg = _configService.Current.Session ?? new SessionConfig();
+            var effMax = GetEffectiveMaxContextTokens();
+            var removed = CompactionQueryAwareHeuristic.TryTrimLowRelevanceOldestRemovable(
+                state.History, turn.UserMessage, ctxConfig, sessionCfg, effMax, _logger, sessionId, roundId);
+            if (removed > 0)
+            {
+                await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context",
+                    $"Query-aware 启发式：已移除 {removed} 条与当前句无词重叠的旧消息",
+                    "用于缓解 token 压力；配置项 ContextWindowConfig.CompactionQueryAware*。", ct).ConfigureAwait(false);
+            }
+        }
+
         if (historyBudget > 0 && !ctxConfig.PassThroughContext && ctxConfig.SummarizationEnabled && state.History.Count > 5)
         {
             var beforeCount = state.History.Count;

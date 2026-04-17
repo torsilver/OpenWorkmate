@@ -45,6 +45,7 @@
 ## 相关文档
 
 - `docs/动态工具与技能选择实现说明.md`
+- `docs/动态上下文压缩.md`（Compaction 双轨、`compact_conversation`、压缩边界）
 - `docs/提示词清单.md`（含压缩边界、分层说明等）
 - `docs/Token预算与上下文裁剪.md`
-- `docs/Agent优化进展.md`（路线图落地清单，与本表互补）
+- `docs/Agent优化.md`（已落地、Backlog、观测基线）

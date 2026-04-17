@@ -8,6 +8,8 @@ namespace OfficeCopilot.Server.Services.Chat;
 /// <summary>
 /// 送入 MAF 主会话前：结构化 Debug 日志 + 可选落盘（仅当设置环境变量 <c>OFFICECOPILOT_CONTEXT_SNAPSHOT_DIR</c>）。
 /// 不改变 <see cref="StreamChatTurnContext.HistoryToUse"/> 语义。
+/// 用途：对照「本轮模型实际看到的消息列表」与持久 <c>SessionState.History</c>（后者已含 Part1 Compaction、启发式删条、<c>TrimHistory</c> 等之后的状态）；
+/// 落盘 JSON 含每条 role、长度与 preview，便于与 <c>CompactionRelevanceDiagnostics</c> 日志、<c>RoundId</c> 做同一轮复盘。
 /// </summary>
 public static class ContextTurnSnapshot
 {

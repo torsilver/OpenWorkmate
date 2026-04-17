@@ -143,6 +143,15 @@ public class ContextWindowConfig
     /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
     public int TruncateToolArgsMaxChars { get; set; } = 2000;
 
+    /// <summary>实验：Part1 在 MAF Compaction 前，若估算历史 token 超过预算×<see cref="CompactionQueryAwareTokenPressureRatio"/>，则按与当前用户句的词重叠度从可删区删去最旧且无重叠的消息。默认关闭；与 <c>CompactionRelevanceDiagnostics</c> 日志对照评估。</summary>
+    public bool CompactionQueryAwareHeuristicEnabled { get; set; }
+
+    /// <summary>单次 Part1 中上述启发式最多删除几条消息。</summary>
+    public int CompactionQueryAwareMaxRemovalsPerTurn { get; set; } = 3;
+
+    /// <summary>仅当 <see cref="ContextManager.EstimateHistoryTokens"/> ≥ (有效上限 − ReservedOutput) × 本比例时才运行启发式。</summary>
+    public double CompactionQueryAwareTokenPressureRatio { get; set; } = 0.92;
+
     /// <summary>主会话动态工具（search/activate + 外层扩容 MAF 循环）。</summary>
     public OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig DynamicTooling { get; set; } = new();
 
@@ -1057,6 +1066,9 @@ public sealed class ConfigService
             TruncateToolArgsThresholdRatio = preset.ContextWindow.TruncateToolArgsThresholdRatio,
             TruncateToolArgsKeepMessages = preset.ContextWindow.TruncateToolArgsKeepMessages,
             TruncateToolArgsMaxChars = preset.ContextWindow.TruncateToolArgsMaxChars,
+            CompactionQueryAwareHeuristicEnabled = preset.ContextWindow.CompactionQueryAwareHeuristicEnabled,
+            CompactionQueryAwareMaxRemovalsPerTurn = preset.ContextWindow.CompactionQueryAwareMaxRemovalsPerTurn,
+            CompactionQueryAwareTokenPressureRatio = preset.ContextWindow.CompactionQueryAwareTokenPressureRatio,
             DynamicTooling = CloneDynamicTooling(preset.ContextWindow.DynamicTooling)
         };
     }

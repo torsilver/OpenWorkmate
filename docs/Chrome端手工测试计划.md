@@ -2,13 +2,13 @@
 
 > **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Office Copilot Server**；测试素材与操作在 Chrome 内完成。  
 > **不包含**：Cursor/VSCode 侧自行配置的 MCP、Office/WPS 任务窗格专属能力。  
-> **内置工具定义**：以运行时 `**ToolRegistry`（`ChatService.RebuildRuntimeAsync`）** 为准。 `**GET /api/tools/builtin`**（`Program.cs`）当前返回 **18** 条，**仍缺少** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见 `**docs/应用内AI插件列表.md` §五**）。手工核对插件开关请以该文档 **§1.1**（`disabledBuiltInPlugins` 小写 id）与 **§1.3**（各插件函数数）为准。  
+> **内置工具定义**：以运行时 **ToolRegistry**（`ChatService.RebuildRuntimeAsync`）为准。**GET** `/api/tools/builtin`（`Program.cs`）当前返回 **18** 条，**仍缺少** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见 [应用内AI插件列表.md](应用内AI插件列表.md) §五）。手工核对插件开关请以该文档 **§1.1**（`disabledBuiltInPlugins` 小写 id）与 **§1.3**（各插件函数数）为准。  
 > **Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余已注册且未禁用的插件均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。  
-> **内置插件数量**：后端 `RebuildRuntimeAsync` 在「未禁用」前提下**无条件注册 22 个**内置插件名 + 可选 **`Memory`**（Embedding 已配置）⇒ 注册侧最多 **23** 个；Chrome 端裁剪掉 **`CurrentDocument`** 后模型可见 **21** 个 + **`Memory`** ⇒ 最多 **22**。与 `**docs/应用内AI插件列表.md` §「与代码核对」** 一致。
+> **内置插件数量**：后端 `RebuildRuntimeAsync` 在「未禁用」前提下**无条件注册 22 个**内置插件名 + 可选 **`Memory`**（Embedding 已配置）⇒ 注册侧最多 **23** 个；Chrome 端裁剪掉 **`CurrentDocument`** 后模型可见 **21** 个 + **`Memory`** ⇒ 最多 **22**。与 [应用内AI插件列表.md](应用内AI插件列表.md) §「与代码核对」一致。
 
 **通过标准（每条用例）**：行为符合描述；失败时 **HTTP 4xx/5xx 或工具返回中带明确原因**（见项目错误可见性约定），侧栏/选项页能展示服务端 `message`。
 
-> **Playwright 自动化**：仓库 `e2e/` 已覆盖本节部分壳层与辅助页；**其余仍需手工**的条目汇总见 `**docs/Chrome端手工测试-Playwright无法覆盖清单.md`**。
+> **Playwright 自动化**：仓库 `e2e/` 已覆盖本节部分壳层与辅助页；**其余仍需手工**的条目汇总见 [Chrome端手工测试-Playwright无法覆盖清单.md](Chrome端手工测试-Playwright无法覆盖清单.md)。
 
 ---
 

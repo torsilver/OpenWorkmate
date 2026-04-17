@@ -100,7 +100,7 @@ public sealed class ContextManager
         return tokens;
     }
 
-    /// <summary>为 context_length 重试裁剪历史：先按轮数限制，再按预算减半裁剪。</summary>
+    /// <summary>为 context_length 重试裁剪历史：先按轮数限制，再按预算减半裁剪；token 估算与主路径一致，含 <see cref="EstimateMessageTokens"/>（多模态片段等）。</summary>
     public static void TrimHistoryForRetry(List<ChatMessage> history, int maxTurns, ContextWindowConfig ctx)
     {
         var keepMessages = 1 + Math.Max(0, maxTurns) * 2;
@@ -110,13 +110,13 @@ public sealed class ContextManager
         if (halfBudget <= 0) return;
         var total = 0;
         for (var i = 0; i < history.Count; i++)
-            total += TokenEstimator.EstimateTokens(history[i].Text ?? "", ctx);
+            total += EstimateMessageTokens(history[i], ctx);
         while (total > halfBudget && history.Count > 3)
         {
             var start = ConversationCompactBoundary.GetFirstRemovableChatIndex(history);
             if (start >= history.Count)
                 break;
-            var removed = TokenEstimator.EstimateTokens(history[start].Text ?? "", ctx);
+            var removed = EstimateMessageTokens(history[start], ctx);
             history.RemoveAt(start);
             total -= removed;
         }
