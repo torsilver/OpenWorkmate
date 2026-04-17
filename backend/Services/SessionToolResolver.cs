@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services.DynamicTooling;
 
 namespace OfficeCopilot.Server.Services;
@@ -77,41 +76,12 @@ public static class SessionToolResolver
         return tools;
     }
 
-    /// <summary>
-    /// 历史配置项：曾为每个 Prompt 技能挂载独立工具。现已改为渐进式（<c>load_user_skill_instructions</c> + system 元数据），
-    /// 此处仅在使用旧配置时打日志，不再向 bootstrap 注入 per-skill 函数。
-    /// </summary>
-    public static void AppendBootstrapUserSkills(
-        List<AITool> list,
-        ToolRegistry toolRegistry,
-        string? clientType,
-        string? sessionId,
-        DynamicToolingConfig cfg,
-        IReadOnlyList<SkillDefinition> skills,
-        ILogger? logger)
-    {
-        _ = list;
-        _ = toolRegistry;
-        _ = clientType;
-        _ = sessionId;
-        if (!cfg.BootstrapIncludeAllEnabledUserSkills && cfg.BootstrapUserSkillIds is not { Count: > 0 })
-            return;
-
-        logger?.LogWarning(
-            "Dynamic tooling bootstrap: bootstrapUserSkillIds / bootstrapIncludeAllEnabledUserSkills 已忽略（UserSkill 已改为渐进式：system 元数据 + {LoadFn}；当前 skills 条数={SkillCount}，见 DynamicToolingConfig 注释）。",
-            DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
-            skills.Count);
-    }
-
     /// <summary>动态工具首轮：默认含 AgentTooling（search/activate）+ 各端保底脚本 + run_command + Subagent 等；<see cref="TurnRoute.UnclearOrChitchat"/> 时仅 meta + 渐进技能链。可选合并 Plan 四函数。</summary>
     public static IReadOnlyList<AITool> GetDynamicBootstrapTools(
         ToolRegistry toolRegistry,
         string? clientType,
         string? sessionId,
         bool mergePlanTools,
-        DynamicToolingConfig? dynCfg = null,
-        IReadOnlyList<SkillDefinition>? skillsForBootstrap = null,
-        ILogger? bootstrapSkillLogger = null,
         TurnRoute turnRoute = TurnRoute.Standard,
         string? wpsHostKind = null)
     {
@@ -130,8 +100,6 @@ public static class SessionToolResolver
             AddIf("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName);
             AddIf("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName);
             AddIf("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName);
-            if (dynCfg != null && skillsForBootstrap is { Count: > 0 })
-                AppendBootstrapUserSkills(list, toolRegistry, clientType, sessionId, dynCfg, skillsForBootstrap, bootstrapSkillLogger);
             return mergePlanTools ? MergePlanTools(toolRegistry, list) : list;
         }
 
@@ -166,9 +134,6 @@ public static class SessionToolResolver
         AddSubagentIf("run_explore_subtask");
         AddSubagentIf("run_cli_subtask");
         AddSubagentIf("run_browser_subtask");
-
-        if (dynCfg != null && skillsForBootstrap is { Count: > 0 })
-            AppendBootstrapUserSkills(list, toolRegistry, clientType, sessionId, dynCfg, skillsForBootstrap, bootstrapSkillLogger);
 
         return mergePlanTools ? MergePlanTools(toolRegistry, list) : list;
     }

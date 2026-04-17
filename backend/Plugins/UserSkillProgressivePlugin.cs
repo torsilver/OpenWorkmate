@@ -38,7 +38,7 @@ public sealed class UserSkillProgressivePlugin
         if (state == null)
             return Task.FromResult("[search_available_skills] 当前不在动态工具模式，忽略。");
 
-        var maxSearch = Math.Max(1, state.Config.MaxSkillSearchPerTurn);
+        var maxSearch = Math.Max(1, DynamicToolingConstants.MaxSkillSearchPerTurnDefault);
         if (state.SkillSearchInvocationCount >= maxSearch)
         {
             return Task.FromResult(
@@ -89,7 +89,7 @@ public sealed class UserSkillProgressivePlugin
         if (skillIds == null || skillIds.Length == 0)
             return Task.FromResult("[select_skill_for_turn] skillIds 为空，请传入至少一个技能 Id。");
 
-        var maxSelectCalls = Math.Max(1, state.Config.MaxSkillSelectPerTurn);
+        var maxSelectCalls = Math.Max(1, DynamicToolingConstants.MaxSkillSelectPerTurnDefault);
         if (state.SkillSelectInvocationCount >= maxSelectCalls)
         {
             return Task.FromResult($"[select_skill_for_turn] 已达本轮调用上限（{maxSelectCalls}）。");
@@ -134,7 +134,7 @@ public sealed class UserSkillProgressivePlugin
     [ToolFunction(DynamicToolingConstants.LoadUserSkillInstructionsFunctionName)]
     [Description(
         "按需加载用户技能（SKILL）的正文或技能目录下的附属文件。与 search_available_tools 无关。"
-        + " 建议流程：search_available_skills → select_skill_for_turn → 再调用本工具；若配置 requireSkillSelectBeforeLoad 则必须先 select。"
+        + " 建议流程：search_available_skills → select_skill_for_turn → 再调用本工具（也可在确认 Id 后直接 load）。"
         + " skillId 填技能 Id（frontmatter name）或消毒函数名。"
         + " 不传 relativeResourcePath 时返回 SKILL.md 正文（第二个 --- 之后）；传入时返回该相对路径下的文本文件片段（须在技能 BaseDir 内）。")]
     public Task<string> LoadUserSkillInstructionsAsync(
@@ -153,15 +153,6 @@ public sealed class UserSkillProgressivePlugin
             _logger.LogInformation("[SkillProgressive] unknown or disabled skillId={SkillId}", idInput);
             return Task.FromResult(
                 "[load_user_skill_instructions] 未找到已启用的技能，或 skillId 不匹配。请对照 system 中「渐进式用户技能」列表的 Id。");
-        }
-
-        var scopeState = DynamicToolingTurnScope.Current;
-        if (scopeState?.Config.RequireSkillSelectBeforeLoad == true
-            && !scopeState.SelectedSkillIds.Contains(skill.Id))
-        {
-            _logger.LogInformation("[SkillProgressive] load blocked by requireSkillSelectBeforeLoad skillId={SkillId}", skill.Id);
-            return Task.FromResult(
-                "[load_user_skill_instructions] 当前配置要求先调用 select_skill_for_turn 选中本技能（skillId 须与选中 Id 一致），再加载正文。");
         }
 
         var rel = (relativeResourcePath ?? "").Trim();

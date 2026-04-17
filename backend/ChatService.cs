@@ -677,7 +677,6 @@ public sealed partial class ChatService : IDisposable
                                            attempt,
                                            requireToolInvocation: false,
                                            contextProviders: contextProviders,
-                                           toolsForAgent: turn.ToolsForAgentRound,
                                            dynamicTooling: turn.DynamicToolingState,
                                            mergePlanIntoDynamicBootstrap: turn.PlanResult != null,
                                            ct: ct).ConfigureAwait(false))
@@ -741,7 +740,6 @@ public sealed partial class ChatService : IDisposable
                                                contextAttemptIndex: 0,
                                                requireToolInvocation: false,
                                                contextProviders: contextProviders,
-                                               toolsForAgent: turn.ToolsForAgentRound,
                                                dynamicTooling: turn.DynamicToolingState,
                                                mergePlanIntoDynamicBootstrap: turn.PlanResult != null,
                                                ct: ct).ConfigureAwait(false))
@@ -1122,7 +1120,7 @@ public sealed partial class ChatService : IDisposable
     private static bool ShouldInvokeBuiltinCompletionVerifier(StreamChatTurnContext turn, string visibleAssistantTrimmed)
     {
         var dts = turn.DynamicToolingState;
-        if (dts is not { Config.Enabled: true })
+        if (dts == null)
             return false;
 
         if (turn.TurnRoute == TurnRoute.UnclearOrChitchat)

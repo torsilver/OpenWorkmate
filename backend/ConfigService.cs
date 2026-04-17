@@ -143,7 +143,7 @@ public class ContextWindowConfig
     /// <summary>单条消息内容截断后的最大字符数，超出部分替换为「…(已截断)」。</summary>
     public int TruncateToolArgsMaxChars { get; set; } = 2000;
 
-    /// <summary>主会话动态工具（search/activate + 外层扩容 MAF 循环）。为 false 时使用全量允许工具单次流式。</summary>
+    /// <summary>主会话动态工具（search/activate + 外层扩容 MAF 循环）。</summary>
     public OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig DynamicTooling { get; set; } = new();
 
     /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
@@ -1015,17 +1015,9 @@ public sealed class ConfigService
         s ??= new OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig();
         return new OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig
         {
-            Enabled = s.Enabled,
             MaxOuterLoops = s.MaxOuterLoops,
             MaxSearchPerTurn = s.MaxSearchPerTurn,
-            MaxActivatePerTurn = s.MaxActivatePerTurn,
-            MaxSkillSearchPerTurn = s.MaxSkillSearchPerTurn,
-            MaxSkillSelectPerTurn = s.MaxSkillSelectPerTurn,
-            RequireSkillSelectBeforeLoad = s.RequireSkillSelectBeforeLoad,
-            BootstrapUserSkillIds = s.BootstrapUserSkillIds != null
-                ? new List<string>(s.BootstrapUserSkillIds)
-                : new List<string>(),
-            BootstrapIncludeAllEnabledUserSkills = s.BootstrapIncludeAllEnabledUserSkills
+            MaxActivatePerTurn = s.MaxActivatePerTurn
         };
     }
 

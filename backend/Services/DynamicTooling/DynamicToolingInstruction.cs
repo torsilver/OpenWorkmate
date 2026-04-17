@@ -12,7 +12,7 @@ public static class DynamicToolingInstruction
         + "硬性规则：若已调用过 search_available_tools 且仍有已启用用户技能，则在 activate_tools 之前必须至少再调用一次 search_available_skills（空 query 亦可）。"
         + "发起 tool_calls 时名称必须与 OpenAPI 工具 schema 中的裸函数名一致，勿使用 Plugin.function。不要编造未出现在工具列表中的函数名。"
         + "每次调用的 arguments 中 JSON 键名也须与该工具 schema 的 properties 完全一致（含大小写），勿用 data/content/values 等别名替代正式字段名。"
-        + " 子任务：大范围只读探索用 run_explore_subtask；终端长输出用 run_cli_subtask；重浏览器页内脚本用 run_browser_subtask；其它多步隔离仍可用 run_subtask。";
+        + " 子任务：大范围只读探索用 run_explore_subtask；终端长输出用 run_cli_subtask；重浏览器页内脚本用 run_browser_subtask。";
 
     /// <summary>首轮已含非检索类工具（脚本、run_command、渐进式技能加载 load_user_skill_instructions 等）时追加，避免模型误以为必须先 activate 才能调用。</summary>
     public const string BootstrapDirectToolsHint =

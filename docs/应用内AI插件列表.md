@@ -137,7 +137,7 @@
 ### 2.1 用户技能（渐进式）
 
 - 来自设置中的 **用户技能**（`Skills/*/SKILL.md` 或遗留 `.json`）；启用后其 **Id 与 description** 会进入主会话 system 的 **「渐进式用户技能 · 元数据」** 块。
-- 完整正文**不**预载；技能较多或不确定 Id 时建议 **`search_available_skills` → `select_skill_for_turn`**，再调用 **`UserSkillProgressive.load_user_skill_instructions`**（`skillId` 填元数据或检索结果中的 Id；可选 `relativeResourcePath` 读 `BaseDir` 下附属文件）。配置 `requireSkillSelectBeforeLoad` 为 true 时，仅允许加载本回合已 `select_skill_for_turn` 选中的技能。
+- 完整正文**不**预载；技能较多或不确定 Id 时建议 **`search_available_skills` → `select_skill_for_turn`**，再调用 **`UserSkillProgressive.load_user_skill_instructions`**（`skillId` 填元数据或检索结果中的 Id；可选 `relativeResourcePath` 读 `BaseDir` 下附属文件）。在确认 Id 后也可直接 `load_user_skill_instructions`。
 - 与 **业务工具检索**（`search_available_tools` / `activate_tools`）分离：上述三个函数列入动态工具 **bootstrap** 且**不进入** `ToolCatalogIndex`。
 
 ### 2.2 外接 MCP：`MCP_{配置名}`

@@ -431,7 +431,7 @@
 
 ### 3.22 AgentTooling 与 UserSkillProgressive（动态工具）
 
-> **前提**：`AppConfig.contextWindow.dynamicTooling.enabled` 为 **true**（默认 `true`）。为 **false** 时首轮为全量工具表，本节 **DT1/DT2** 不适用（工具调用会返回「当前不在动态工具模式」类说明）。**US*** 依赖设置中**至少启用一个用户技能**；若 `requireSkillSelectBeforeLoad` 为 true，须 **US2 在 US3 之前**。
+> **前提**：主会话固定为动态工具（首轮 bootstrap）。**US*** 依赖设置中**至少启用一个用户技能**。
 
 
 | 编号  | 工具名                         | 前置                    | 建议粘贴到对话框的话术                                                                 | 应核对工具名                        | 预期要点                    |
@@ -440,7 +440,7 @@
 | DT2 | `activate_tools`            | DT1 之后、已看到目标函数名       | 「请 activate_tools：只激活【excel_range_read】。」（按你环境把数组换成上一步真实函数名）                 | `activate_tools`              | 工具返回成功；后续轮次可实际调用已激活工具   |
 | US1 | `search_available_skills`   | 已启用用户技能               | 「请 search_available_skills：query【手工】。」                                       | `search_available_skills`     | 返回技能 id 列表              |
 | US2 | `select_skill_for_turn`     | US1 之后                | 「请 select_skill_for_turn：skillId【上一步某一 id】。」                              | `select_skill_for_turn`       | 成功                      |
-| US3 | `load_user_skill_instructions` | US2 之后（若配置要求先选技能）     | 「请 load_user_skill_instructions：skillId【与 US2 相同】。」                        | `load_user_skill_instructions` | 返回 SKILL 正文片段（或配置错误说明）   |
+| US3 | `load_user_skill_instructions` | US2 之后（或已知 Id 时可直接 load）     | 「请 load_user_skill_instructions：skillId【与 US2 相同】。」                        | `load_user_skill_instructions` | 返回 SKILL 正文片段（或配置错误说明）   |
 
 
 **与 `activate_tools` 的门禁**：若本轮已调用过 `search_available_tools` 且存在已启用用户技能，须先至少调用一次 `search_available_skills`，再 `activate_tools`（见 `应用内AI插件列表.md` §1 工具链说明）。
@@ -526,4 +526,4 @@ Chrome / 扩展版本：
 
 ---
 
-*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`Program.cs`（`GET /api/tools/builtin`）、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；**校准日期：2026-04-15**（WPS：`wpsHostKind` 收紧 `CurrentDocument` 与动态工具索引；`bootstrapUserSkillIds` 已废弃仅打日志；builtin 条数仍以 §六 表为准）。若后端增删工具，以代码为准同步 `docs/应用内AI插件列表.md` 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*
+*文档依据仓库内 `ClientTypeToolFilter`、`ChatService.RebuildRuntimeAsync`、`Program.cs`（`GET /api/tools/builtin`）、`docs/应用内AI插件列表.md`（§1.1 / §1.3 / §五）与各 `*Plugin.cs` 整理；**校准日期：2026-04-15**（WPS：`wpsHostKind` 收紧 `CurrentDocument` 与动态工具索引；builtin 条数仍以 §六 表为准）。若后端增删工具，以代码为准同步 `docs/应用内AI插件列表.md` 与本文 §六。Chrome 侧栏「哪些 WS 进时间线」以 `chrome-extension/sidepanel.js` 中 `handleMessage` 上方注释（`reasoning_chunk` / `stream_warning` / `tool_invocation_*` 等）为准。*

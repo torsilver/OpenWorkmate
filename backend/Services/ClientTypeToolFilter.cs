@@ -188,6 +188,10 @@ public static class ClientTypeToolFilter
     /// <summary>内置子任务入口按端裁剪：<c>run_browser_subtask</c> 仅 Chrome；<c>run_cli_subtask</c> 仅当该端可暴露 <c>CLI:run_command</c> 时。</summary>
     private static bool IsSubagentFunctionAllowed(string functionName, string? clientType, string? sessionId, string? wpsHostKind)
     {
+        // 临时：不向模型暴露通用子任务 run_subtask（插件仍注册，便于日后恢复；子代理管线与其它入口不变）。
+        if (PluginComparer.Equals(functionName, "run_subtask"))
+            return false;
+
         if (PluginComparer.Equals(functionName, "run_browser_subtask"))
         {
             var ct0 = (clientType ?? "").Trim();

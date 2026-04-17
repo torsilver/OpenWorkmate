@@ -117,93 +117,65 @@ public sealed partial class ChatService
         await NotifyAgentStatusAsync(
             sessionManagerForStatus,
             sessionId,
-            dynCfg.Enabled ? "正在准备动态工具…" : "正在准备工具…",
+            "正在准备动态工具…",
             ct).ConfigureAwait(false);
         _agentDebugStats.IncrementToolSelectionTotal();
 
         try
         {
-            if (dynCfg.Enabled)
+            turn.TurnRoute = TurnRouteClassifier.Classify(turn.UserMessage, planResult != null);
+            _logger.LogInformation("[{SessionId}] TurnRoute={Route}", sessionId, turn.TurnRoute);
+            var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId, wpsHostKindForTools);
+            var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(_skillService.GetAllSkills());
+            var mergePlan = planResult != null;
+            var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(
+                _runtime.ToolRegistry,
+                clientType,
+                sessionId,
+                mergePlan,
+                turnRoute: turn.TurnRoute,
+                wpsHostKind: wpsHostKindForTools);
+            var bootstrapNames = new List<string>();
+            var nameSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in bootstrap)
             {
-                turn.TurnRoute = TurnRouteClassifier.Classify(turn.UserMessage, planResult != null);
-                _logger.LogInformation("[{SessionId}] TurnRoute={Route}", sessionId, turn.TurnRoute);
-                var catalog = ToolCatalogIndex.BuildFromAllowedTools(_runtime.ToolRegistry, clientType, sessionId, wpsHostKindForTools);
-                var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(_skillService.GetAllSkills());
-                var mergePlan = planResult != null;
-                var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(
-                    _runtime.ToolRegistry,
-                    clientType,
-                    sessionId,
-                    mergePlan,
-                    dynCfg,
-                    _skillService.GetAllSkills(),
-                    _logger,
-                    turnRoute: turn.TurnRoute,
-                    wpsHostKind: wpsHostKindForTools);
-                var bootstrapNames = new List<string>();
-                var nameSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var t in bootstrap)
-                {
-                    var n = t.Name;
-                    if (string.IsNullOrWhiteSpace(n)) continue;
-                    if (!nameSeen.Add(n)) continue;
-                    bootstrapNames.Add(n);
-                }
-                turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, skillCatalog, bootstrapNames)
-                {
-                    MergePlanIntoDynamicBootstrap = mergePlan,
-                    ClientTypeForTools = clientType,
-                    SessionIdForTools = sessionId,
-                    WpsHostKindForTools = wpsHostKindForTools,
-                    InitialTurnRoute = turn.TurnRoute
-                };
-                var trace = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrap.Count, catalog.Entries.Count);
-                await NotifyAgentTraceAsync(
-                    sessionManagerForStatus, sessionId, "toolSelection", trace.Title, trace.Detail, ct).ConfigureAwait(false);
-                _agentDebugStats.RecordDynamicToolingBootstrap();
-                _logger.LogInformation(
-                    "[{SessionId}] Dynamic tooling: bootstrapCount={Boot} indexEntries={Idx}",
-                    sessionId, bootstrap.Count, catalog.Entries.Count);
-                var hasBootstrapDirectTools = bootstrap.Any(t =>
-                    !string.IsNullOrEmpty(t.Name) && !DynamicToolingConstants.MetaFunctionNames.Contains(t.Name));
-                FinalizeToolingPhaseTurn(
-                    turn,
-                    state,
-                    clientType,
-                    bootstrap,
-                    selectedPairs: null,
-                    restrictedSubset: true,
-                    appendDynamicToolingInstruction: true,
-                    appendBootstrapDirectToolsHint: hasBootstrapDirectTools);
+                var n = t.Name;
+                if (string.IsNullOrWhiteSpace(n)) continue;
+                if (!nameSeen.Add(n)) continue;
+                bootstrapNames.Add(n);
             }
-            else
+            turn.DynamicToolingState = new DynamicToolingTurnState(dynCfg, catalog, skillCatalog, bootstrapNames)
             {
-                turn.DynamicToolingState = null;
-                IReadOnlyList<AITool>? selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId, wpsHostKindForTools);
-                if (planResult != null && selectedTools != null)
-                    selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
-                var funcsCount = selectedTools?.Count ?? 0;
-                _logger.LogInformation("[{SessionId}] Static tooling: full allow-list functionCount={Count}.", sessionId, funcsCount);
-                await NotifyAgentTraceAsync(
-                    sessionManagerForStatus, sessionId, "toolSelection", "全量允许工具",
-                    $"本端可用 {funcsCount} 个函数。", ct).ConfigureAwait(false);
-                FinalizeToolingPhaseTurn(
-                    turn, state, clientType, selectedTools ?? Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false, appendDynamicToolingInstruction: false);
-            }
+                MergePlanIntoDynamicBootstrap = mergePlan,
+                ClientTypeForTools = clientType,
+                SessionIdForTools = sessionId,
+                WpsHostKindForTools = wpsHostKindForTools,
+                InitialTurnRoute = turn.TurnRoute
+            };
+            var trace = AgentTraceFormatter.BuildDynamicToolingBootstrapTrace(bootstrap.Count, catalog.Entries.Count);
+            await NotifyAgentTraceAsync(
+                sessionManagerForStatus, sessionId, "toolSelection", trace.Title, trace.Detail, ct).ConfigureAwait(false);
+            _agentDebugStats.RecordDynamicToolingBootstrap();
+            _logger.LogInformation(
+                "[{SessionId}] Dynamic tooling: bootstrapCount={Boot} indexEntries={Idx}",
+                sessionId, bootstrap.Count, catalog.Entries.Count);
+            var hasBootstrapDirectTools = bootstrap.Any(t =>
+                !string.IsNullOrEmpty(t.Name) && !DynamicToolingConstants.MetaFunctionNames.Contains(t.Name));
+            FinalizeToolingPhaseTurn(
+                turn,
+                state,
+                clientType,
+                bootstrap,
+                selectedPairs: null,
+                restrictedSubset: true,
+                appendDynamicToolingInstruction: true,
+                appendBootstrapDirectToolsHint: hasBootstrapDirectTools);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[{SessionId}] Tooling phase failed, using full allow-list.", sessionId);
+            _logger.LogError(ex, "[{SessionId}] Tooling phase failed; dynamic tooling is required.", sessionId);
             _agentDebugStats.RecordToolSelectionException();
-            turn.DynamicToolingState = null;
-            var selectedTools = SessionToolResolver.ResolveToolsByClientType(_runtime.ToolRegistry, null, clientType, sessionId, wpsHostKindForTools);
-            if (planResult != null && selectedTools != null)
-                selectedTools = SessionToolResolver.MergePlanTools(_runtime.ToolRegistry, selectedTools);
-            await NotifyAgentTraceAsync(
-                sessionManagerForStatus, sessionId, "toolSelection", "工具阶段异常，已回退全量工具",
-                ErrorMessageHelper.GetFriendlyMessage(ex), ct).ConfigureAwait(false);
-            FinalizeToolingPhaseTurn(
-                turn, state, clientType, selectedTools ?? Array.Empty<AITool>(), selectedPairs: null, restrictedSubset: false, appendDynamicToolingInstruction: false);
+            throw;
         }
     }
 

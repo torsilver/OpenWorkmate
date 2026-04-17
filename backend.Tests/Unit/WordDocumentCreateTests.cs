@@ -35,49 +35,6 @@ public class WordDocumentCreateTests
     }
 
     [Fact]
-    public void ParagraphGuard_DetectsJsonStringArrayDump()
-    {
-        var prev = WordDocumentCreateParagraphGuard.SkipParagraphGuard;
-        WordDocumentCreateParagraphGuard.SkipParagraphGuard = false;
-        try
-        {
-            var bad = "[\"line1\",\"line2" + new string('x', 200) + "\"]";
-            Assert.True(WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(bad));
-        }
-        finally
-        {
-            WordDocumentCreateParagraphGuard.SkipParagraphGuard = prev;
-        }
-    }
-
-    [Fact]
-    public void ParagraphGuard_AllowsLongBracketNoteWithoutJsonMarkers()
-    {
-        var ok = "[说明]" + new string('文', 400);
-        Assert.False(WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(ok));
-    }
-
-    [Fact]
-    public void WordDocumentCreate_GuardBlocksBeforeWrite()
-    {
-        var prev = WordDocumentCreateParagraphGuard.SkipParagraphGuard;
-        WordDocumentCreateParagraphGuard.SkipParagraphGuard = false;
-        try
-        {
-            var path = Path.Combine(Path.GetTempPath(), "taskly_word_guard_" + Guid.NewGuid().ToString("N") + ".docx");
-            var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
-            var raw = "[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\",\"j\",\"k\",\"l\",\"m\",\"n\",\"o\",\"p\"]" + new string('x', 120);
-            var msg = plugin.WordDocumentCreate(path, "T", JsonSerializer.SerializeToElement(new[] { raw }), "default");
-            Assert.Contains("paragraphs", msg, StringComparison.Ordinal);
-            Assert.False(File.Exists(path), "不应在拦截后创建文件");
-        }
-        finally
-        {
-            WordDocumentCreateParagraphGuard.SkipParagraphGuard = prev;
-        }
-    }
-
-    [Fact]
     public void WordDocumentCreate_CnGov_PageTopMarginDiffersFromDefault()
     {
         var id = Guid.NewGuid().ToString("N");

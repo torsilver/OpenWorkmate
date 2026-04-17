@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging.Abstractions;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using Xunit;
@@ -65,7 +64,7 @@ public class SessionToolResolverDynamicBootstrapTests
         Assert.Contains(DynamicToolingConstants.SearchAvailableSkillsFunctionName, names);
         Assert.Contains(DynamicToolingConstants.SelectSkillForTurnFunctionName, names);
         Assert.Contains(DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, names);
-        Assert.Contains("run_subtask", names);
+        Assert.DoesNotContain("run_subtask", names);
         Assert.Contains("run_explore_subtask", names);
         Assert.Contains("run_cli_subtask", names);
         Assert.Contains("run_browser_subtask", names);
@@ -96,48 +95,10 @@ public class SessionToolResolverDynamicBootstrapTests
 
         var tools = SessionToolResolver.GetDynamicBootstrapTools(reg, "office-word", null, mergePlanTools: false);
         var names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("run_subtask", names);
+        Assert.DoesNotContain("run_subtask", names);
         Assert.Contains("run_explore_subtask", names);
         Assert.DoesNotContain("run_cli_subtask", names);
         Assert.DoesNotContain("run_browser_subtask", names);
-    }
-
-    [Fact]
-    public void GetDynamicBootstrapTools_LegacyBootstrapUserSkillIds_DoesNotAddPerSkillTools()
-    {
-        var reg = new ToolRegistry();
-        RegisterChromeBootstrapShell(reg);
-
-        var cfg = new DynamicToolingConfig { BootstrapUserSkillIds = new List<string> { "MySkill" } };
-        var skills = new List<SkillDefinition>
-        {
-            new() { Id = "MySkill", Enabled = true, PromptTemplate = "x" }
-        };
-
-        var tools = SessionToolResolver.GetDynamicBootstrapTools(
-            reg, "chrome", null, mergePlanTools: false, cfg, skills, NullLogger.Instance);
-        Assert.DoesNotContain(tools, t => string.Equals(t.Name, "MySkill", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(tools, t => string.Equals(t.Name, DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void GetDynamicBootstrapTools_IncludeAllEnabledUserSkills_DoesNotAddPerSkillTools()
-    {
-        var reg = new ToolRegistry();
-        RegisterChromeBootstrapShell(reg);
-
-        var cfg = new DynamicToolingConfig { BootstrapIncludeAllEnabledUserSkills = true };
-        var skills = new List<SkillDefinition>
-        {
-            new() { Id = "A", Enabled = true, PromptTemplate = "p" },
-            new() { Id = "B", Enabled = true, PromptTemplate = "p" }
-        };
-
-        var tools = SessionToolResolver.GetDynamicBootstrapTools(
-            reg, "chrome", null, mergePlanTools: false, cfg, skills, NullLogger.Instance);
-        Assert.DoesNotContain(tools, t => string.Equals(t.Name, "A", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(tools, t => string.Equals(t.Name, "B", StringComparison.OrdinalIgnoreCase));
-        Assert.Single(tools, t => string.Equals(t.Name, DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -148,7 +109,7 @@ public class SessionToolResolverDynamicBootstrapTests
         reg.Register("Word", "word_document_create",
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "word_document_create", Description = "" }));
 
-        var cfg = new DynamicToolingConfig { Enabled = true };
+        var cfg = new DynamicToolingConfig();
         var catalog = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
         var bootstrap = SessionToolResolver.GetDynamicBootstrapTools(reg, "chrome", null, mergePlanTools: false);
         var orderedNames = bootstrap.Select(t => t.Name!).Where(n => !string.IsNullOrEmpty(n)).ToList();

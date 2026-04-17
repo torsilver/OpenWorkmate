@@ -41,7 +41,7 @@ public class WordDocumentCreateParagraphsParserTests
         Assert.Equal(new[] { "x", "y" }, arr);
     }
 
-    /// <summary>模型把 JSON 数组字面量塞进 string 字段时，应展开为多段，避免 ParagraphGuard 误杀。</summary>
+    /// <summary>模型把 JSON 数组字面量塞进 string 字段时，应展开为多段，便于按真实段落落盘。</summary>
     [Fact]
     public void Parse_StringContainingJsonStringArray_ExpandsToMultipleParagraphs()
     {

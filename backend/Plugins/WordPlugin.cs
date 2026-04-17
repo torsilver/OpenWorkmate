@@ -171,16 +171,6 @@ public sealed class WordPlugin
         if (!WordDocumentCreatePresetParser.TryParse(documentPreset, out var preset, out var presetErr))
             return presetErr!;
         var paragraphsJoined = NormalizeWordDocumentCreateParagraphsArray(paragraphsArray);
-        if (WordDocumentCreateParagraphGuard.LooksLikeJsonStringArrayDump(paragraphsJoined))
-        {
-            _logger?.LogInformation(
-                "[Word] word_document_create rejected by ParagraphGuard (json-like paragraphs dump). path={Path} arrayLength={ArrayLength} normalizedLength={Length} paragraphPreview={Preview}",
-                filePath,
-                paragraphsArray?.Length ?? 0,
-                paragraphsJoined.Length,
-                BuildParagraphsGuardLogPreview(paragraphsJoined));
-            return WordDocumentCreateParagraphGuard.RejectionMessage;
-        }
         if (string.IsNullOrWhiteSpace(title))
         {
             var stem = Path.GetFileNameWithoutExtension(filePath);
@@ -231,14 +221,6 @@ public sealed class WordPlugin
     {
         if (paragraphs is null || paragraphs.Length == 0) return "";
         return string.Join("|", paragraphs.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
-    }
-
-    /// <summary>单行截断，仅用于拒绝写盘时的诊断日志，避免整段抓取文本刷屏。</summary>
-    private static string BuildParagraphsGuardLogPreview(string paragraphs)
-    {
-        var s = paragraphs.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        if (s.Length > 200) return s[..200] + "…";
-        return s;
     }
 
     private static Paragraph ParseMarkdownParagraph(string text, WordDocumentCreatePreset preset)

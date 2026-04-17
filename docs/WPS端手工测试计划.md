@@ -17,7 +17,7 @@
 | W0 | 后端已启动 | 本机 `OfficeCopilot.Server` 可连；任务窗格能完成握手（见 W1） |
 | W1 | 加载项已加载 | `wpsjs debug` 拉起后，在 **WPS 文字 / 表格 / 演示** 中打开 **Office Copilot** 任务窗格 |
 | W2 | 模型与密钥 | 与扩展/选项页或环境变量一致，请求不被 401 |
-| W3 | 动态工具（若测 §八） | `AppConfig.contextWindow.dynamicTooling.enabled` 为 **true**（默认）；首轮为 bootstrap，业务工具需 **`search_available_tools` → `activate_tools`** |
+| W3 | 动态工具（若测 §八） | 主会话固定动态工具；首轮为 bootstrap，业务工具需 **`search_available_tools` → `activate_tools`** |
 | W4 | Pdf / Memory / MCP | 按需：Pdf 读写**服务端进程可见路径**；Memory 需 Embedding；外接 MCP 需在设置中启用 |
 
 ---

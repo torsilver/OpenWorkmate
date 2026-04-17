@@ -12,7 +12,7 @@ using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
 
-/// <summary>使用 MAF <see cref="ChatClientAgent"/> + MEAI 消息流映射主会话 <see cref="StreamItem"/>（主路径；工具来自 <see cref="MafRuntimeToolFacade"/> 或动态扩容）。</summary>
+/// <summary>使用 MAF <see cref="ChatClientAgent"/> + MEAI 消息流映射主会话 <see cref="StreamItem"/>（主路径；工具表由 <see cref="DynamicToolingTurnState"/> 与 <see cref="SessionToolResolver.BuildDynamicActiveToolList"/> 驱动）。</summary>
 public static class MafMainSessionStreamRunner
 {
     public static async IAsyncEnumerable<StreamItem> EnumerateStreamingAsync(
@@ -30,52 +30,38 @@ public static class MafMainSessionStreamRunner
         int contextAttemptIndex,
         bool requireToolInvocation = false,
         MessageAIContextProvider[]? contextProviders = null,
-        IReadOnlyList<AITool>? toolsForAgent = null,
         DynamicToolingTurnState? dynamicTooling = null,
         bool mergePlanIntoDynamicBootstrap = false,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
-        var wpsHostKindForSession = string.Equals(clientType, "wps", StringComparison.OrdinalIgnoreCase)
-            ? sessionManager.GetWpsHostKind(sessionId)
-            : null;
         using var activity = MafActivitySource.Activity.StartActivity("Maf.MainSession.Stream", ActivityKind.Internal);
         activity?.SetTag("sessionId", sessionId);
         activity?.SetTag("clientType", clientType ?? "");
         activity?.SetTag("requireToolInvocation", requireToolInvocation);
-        activity?.SetTag("dynamicTooling", dynamicTooling != null && dynamicTooling.Config.Enabled);
+        activity?.SetTag("dynamicTooling", dynamicTooling != null);
 
-        if (dynamicTooling is { Config.Enabled: true } dts)
+        if (dynamicTooling is null)
+            throw new InvalidOperationException("主会话 MAF 需要 DynamicToolingTurnState；工具阶段须已成功完成动态工具初始化。");
+
+        var dts = dynamicTooling;
+        using (DynamicToolingTurnScope.Push(dts))
         {
-            using (DynamicToolingTurnScope.Push(dts))
+            for (var outer = 0; outer < dts.Config.MaxOuterLoops; outer++)
             {
-                for (var outer = 0; outer < dts.Config.MaxOuterLoops; outer++)
-                {
-                    dts.ClearExpansionFlag();
-                    var active = SessionToolResolver.BuildDynamicActiveToolList(
-                        runtime.ToolRegistry, dts, clientType, sessionId, mergePlanIntoDynamicBootstrap);
-                    await foreach (var item in RunSinglePassStreamingAsync(
-                                       chatClient, runtime, loggerFactory, services, history, settings,
-                                       sessionId, state, ctxConfig, outcome, contextAttemptIndex,
-                                       requireToolInvocation, contextProviders, active, ct).ConfigureAwait(false))
-                        yield return item;
+                dts.ClearExpansionFlag();
+                var active = SessionToolResolver.BuildDynamicActiveToolList(
+                    runtime.ToolRegistry, dts, clientType, sessionId, mergePlanIntoDynamicBootstrap);
+                await foreach (var item in RunSinglePassStreamingAsync(
+                                   chatClient, runtime, loggerFactory, services, history, settings,
+                                   sessionId, state, ctxConfig, outcome, contextAttemptIndex,
+                                   requireToolInvocation, contextProviders, active, ct).ConfigureAwait(false))
+                    yield return item;
 
-                    if (!dts.ExpansionOccurredInLastPass)
-                        break;
-                }
+                if (!dts.ExpansionOccurredInLastPass)
+                    break;
             }
-
-            yield break;
         }
-
-        var tools = toolsForAgent != null
-            ? new List<AITool>(toolsForAgent)
-            : new List<AITool>(MafRuntimeToolFacade.GetToolsForSession(runtime, clientType, sessionId, wpsHostKindForSession));
-        await foreach (var item in RunSinglePassStreamingAsync(
-                           chatClient, runtime, loggerFactory, services, history, settings,
-                           sessionId, state, ctxConfig, outcome, contextAttemptIndex,
-                           requireToolInvocation, contextProviders, tools, ct).ConfigureAwait(false))
-            yield return item;
     }
 
     private static async IAsyncEnumerable<StreamItem> RunSinglePassStreamingAsync(

@@ -208,9 +208,10 @@ public class ClientTypeToolFilterTests
     }
 
     [Fact]
-    public void Subagent_RunExploreAndRunSubtask_AllowedOnOfficeWord()
+    public void Subagent_RunExplore_AllowedOnOfficeWord_RunSubtaskTemporarilyHidden()
     {
-        Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_subtask", "office-word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_subtask", "office-word"));
+        Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_subtask", "chrome"));
         Assert.True(ClientTypeToolFilter.IsAllowed("Subagent", "run_explore_subtask", "office-word"));
         Assert.False(ClientTypeToolFilter.IsAllowed("Subagent", "run_browser_subtask", "office-word"));
     }

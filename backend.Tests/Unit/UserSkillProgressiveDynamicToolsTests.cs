@@ -10,20 +10,20 @@ namespace backend.Tests.Unit;
 public class UserSkillProgressiveDynamicToolsTests
 {
     [Fact]
-    public async Task LoadUserSkillInstructions_WhenRequireSelectTrue_AndNotSelected_ReturnsGateMessage()
+    public async Task LoadUserSkillInstructions_WithoutSelect_ReturnsBody()
     {
-        var root = Path.Combine(Path.GetTempPath(), "taskly_skill_gate_" + Guid.NewGuid().ToString("N"));
-        var skillDir = Path.Combine(root, "load_gate_skill");
+        var root = Path.Combine(Path.GetTempPath(), "taskly_skill_load_" + Guid.NewGuid().ToString("N"));
+        var skillDir = Path.Combine(root, "direct_load_skill");
         Directory.CreateDirectory(skillDir);
         await File.WriteAllTextAsync(
             Path.Combine(skillDir, "SKILL.md"),
             """
             ---
-            name: load_gate_skill
-            description: gate test
+            name: direct_load_skill
+            description: direct load test
             ---
 
-            body
+            expected body line
             """,
             Encoding.UTF8);
 
@@ -33,14 +33,13 @@ public class UserSkillProgressiveDynamicToolsTests
         var reg = new ToolRegistry();
         var catalog = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
         var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(skillSvc.GetAllSkills());
-        var cfg = new DynamicToolingConfig { RequireSkillSelectBeforeLoad = true };
+        var cfg = new DynamicToolingConfig();
         var state = new DynamicToolingTurnState(cfg, catalog, skillCatalog);
 
         using (DynamicToolingTurnScope.Push(state))
         {
-            var msg = await plugin.LoadUserSkillInstructionsAsync("load_gate_skill");
-            Assert.Contains("select_skill_for_turn", msg, StringComparison.Ordinal);
-            Assert.Contains("load_user_skill_instructions", msg, StringComparison.Ordinal);
+            var msg = await plugin.LoadUserSkillInstructionsAsync("direct_load_skill");
+            Assert.Contains("expected body line", msg, StringComparison.Ordinal);
         }
 
         try
@@ -54,7 +53,7 @@ public class UserSkillProgressiveDynamicToolsTests
     }
 
     [Fact]
-    public async Task SearchAvailableSkills_RespectsMaxPerTurn()
+    public async Task SearchAvailableSkills_RespectsFixedMaxPerTurn()
     {
         var root = Path.Combine(Path.GetTempPath(), "taskly_skill_search_" + Guid.NewGuid().ToString("N"));
         var skillDir = Path.Combine(root, "s1");
@@ -77,15 +76,23 @@ public class UserSkillProgressiveDynamicToolsTests
         var reg = new ToolRegistry();
         var catalog = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
         var skillCatalog = SkillCatalogIndex.BuildFromEnabledSkills(skillSvc.GetAllSkills());
-        var cfg = new DynamicToolingConfig { MaxSkillSearchPerTurn = 1 };
+        var cfg = new DynamicToolingConfig();
         var state = new DynamicToolingTurnState(cfg, catalog, skillCatalog);
 
         using (DynamicToolingTurnScope.Push(state))
         {
-            var first = await plugin.SearchAvailableSkillsAsync("one");
-            Assert.Contains("[search_available_skills]", first, StringComparison.Ordinal);
-            var second = await plugin.SearchAvailableSkillsAsync("one");
-            Assert.Contains("上限", second);
+            var max = DynamicToolingConstants.MaxSkillSearchPerTurnDefault;
+            string? last = null;
+            for (var i = 0; i < max; i++)
+            {
+                last = await plugin.SearchAvailableSkillsAsync("one");
+                Assert.Contains("[search_available_skills]", last, StringComparison.Ordinal);
+                Assert.DoesNotContain("已达本轮检索上限", last, StringComparison.Ordinal);
+            }
+
+            last = await plugin.SearchAvailableSkillsAsync("one");
+            Assert.NotNull(last);
+            Assert.Contains("已达本轮检索上限", last, StringComparison.Ordinal);
         }
 
         try
