@@ -116,7 +116,7 @@ public class SessionConfig
     public int CleanupIntervalMinutes { get; set; } = 5;
 }
 
-/// <summary>上下文窗口配置：64K 优化及业内常用项，便于将来换硬件时改配置即可。</summary>
+/// <summary>上下文窗口配置：64K 优化及业内常用项，便于将来换硬件时改配置即可。预算与字段含义见 <c>docs/Token预算与上下文裁剪.md</c>。</summary>
 public class ContextWindowConfig
 {
     public int MaxContextTokens { get; set; } = 64_000;

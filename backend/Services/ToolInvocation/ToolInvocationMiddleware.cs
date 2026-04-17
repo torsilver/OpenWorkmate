@@ -125,6 +125,8 @@ public static class ToolInvocationMiddleware
                 await pipelineServices.ToolStatus.AfterInvocationAsync(
                     statusCtx, payload, invocationOk, cancellationToken).ConfigureAwait(false);
                 EmitToolTelemetry(pipelineServices, sessionId, pluginName, funcName, invocationOk, normalized);
+                if (invocationOk)
+                    ToolCatalogSuccessBoost.RecordSuccess(funcName);
                 return payload;
             }
             catch (JsonException jsonEx)

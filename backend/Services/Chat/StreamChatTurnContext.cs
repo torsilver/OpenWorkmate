@@ -8,6 +8,9 @@ namespace OfficeCopilot.Server.Services.Chat;
 /// <summary>主会话单轮流式编排的共享状态：上下文准备与工具阶段写入，主模型流式阶段读取。</summary>
 public sealed class StreamChatTurnContext
 {
+    /// <summary>本轮用户消息的唯一标识，用于日志关联（与 <see cref="SystemPromptBuilder.BuildHistoryForStreamingTurn"/> 等配合排障）。</summary>
+    public string RoundId { get; init; } = "";
+
     public required string SessionId { get; init; }
     public required string UserMessage { get; init; }
     public string? KnowledgeBaseId { get; init; }
@@ -41,7 +44,7 @@ public sealed class StreamChatTurnContext
     /// </summary>
     public DynamicToolingTurnState? DynamicToolingState { get; set; }
 
-    /// <summary>当前活动模型开启百炼 <c>enable_search</c> 时，由主会话 <c>BuildHistoryForStreamingTurn</c> 拼入 system 的短提示（抑制「开浏览器页再搜」）；未开启时为 null。</summary>
+    /// <summary>当前活动模型开启百炼 <c>enable_search</c> 时，由 <see cref="SystemPromptBuilder.BuildHistoryForStreamingTurn"/> 拼入 system 的短提示（抑制「开浏览器页再搜」）；未开启时为 null。</summary>
     public string? EnableSearchSuppressionSuffix { get; set; }
 
     /// <summary>本轮 tooling 启发式路由，供首轮小工具表与 Verifier 门控。</summary>

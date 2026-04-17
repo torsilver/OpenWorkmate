@@ -35,11 +35,16 @@ public static class MafMainSessionStreamRunner
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var clientType = sessionManager.GetClientType(sessionId);
+        var roundId = SessionContext.GetRoundId();
         using var activity = MafActivitySource.Activity.StartActivity("Maf.MainSession.Stream", ActivityKind.Internal);
         activity?.SetTag("sessionId", sessionId);
+        activity?.SetTag("roundId", roundId ?? "");
         activity?.SetTag("clientType", clientType ?? "");
         activity?.SetTag("requireToolInvocation", requireToolInvocation);
         activity?.SetTag("dynamicTooling", dynamicTooling != null);
+
+        var log = loggerFactory.CreateLogger(typeof(MafMainSessionStreamRunner));
+        log.LogDebug("[{SessionId}] [{RoundId}] MAF main session stream enumerate begin.", sessionId, roundId ?? "");
 
         if (dynamicTooling is null)
             throw new InvalidOperationException("主会话 MAF 需要 DynamicToolingTurnState；工具阶段须已成功完成动态工具初始化。");

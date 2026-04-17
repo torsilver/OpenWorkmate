@@ -45,7 +45,7 @@ public sealed class AgentToolingPlugin
 
         state.SearchInvocationCount++;
         var k = Math.Clamp(topK, 1, 32);
-        var hits = state.Catalog.Search(query, k, state.BootstrapFunctionNames);
+        var hits = state.Catalog.Search(query, k, state.BootstrapFunctionNames, ToolCatalogSuccessBoost.GetSnapshot());
         if (hits.Count == 0)
             return Task.FromResult("[search_available_tools] 无匹配项；可换关键词或检查任务是否需其它能力。");
 

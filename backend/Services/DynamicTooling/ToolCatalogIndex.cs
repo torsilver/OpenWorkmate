@@ -27,8 +27,12 @@ public sealed class ToolCatalogIndex
         return new ToolCatalogIndex(list);
     }
 
-    /// <summary>简单关键词打分：query 拆词后在 plugin/function/desc 中的命中次数。空 query 时先放入 <paramref name="pinnedFunctionNames"/> 对应条目，再按函数名补满。</summary>
-    public IReadOnlyList<Entry> Search(string? query, int topK, IReadOnlyCollection<string>? pinnedFunctionNames = null)
+    /// <summary>简单关键词打分：query 拆词后在 plugin/function/desc 中的命中次数；可选 <paramref name="functionSuccessBoost"/> 叠加进程内成功次数（上限见实现）。空 query 时先放入 <paramref name="pinnedFunctionNames"/> 对应条目，再按函数名补满。</summary>
+    public IReadOnlyList<Entry> Search(
+        string? query,
+        int topK,
+        IReadOnlyCollection<string>? pinnedFunctionNames = null,
+        IReadOnlyDictionary<string, int>? functionSuccessBoost = null)
     {
         if (topK <= 0) return Array.Empty<Entry>();
         var q = (query ?? "").Trim();
@@ -52,6 +56,11 @@ public sealed class ToolCatalogIndex
                 if (e.FunctionName.Contains(t, StringComparison.OrdinalIgnoreCase))
                     score += 3;
             }
+
+            if (functionSuccessBoost != null
+                && functionSuccessBoost.TryGetValue(e.FunctionName, out var boost) && boost > 0)
+                score += Math.Min(boost, 20);
+
             scored.Add((e, score));
         }
 

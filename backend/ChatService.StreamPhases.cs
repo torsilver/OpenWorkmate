@@ -13,6 +13,8 @@ public sealed partial class ChatService
     internal async Task RunStreamChatContextPhasePart1Async(StreamChatTurnContext turn, CancellationToken ct)
     {
         var sessionId = turn.SessionId;
+        var roundId = turn.RoundId;
+        _logger.LogDebug("[{SessionId}] [{RoundId}] Context phase Part1 begin (compaction gate).", sessionId, roundId);
         var sessionManagerForStatus = turn.SessionManager;
         var state = turn.State;
         var ctxConfig = turn.CtxConfig;
@@ -32,6 +34,7 @@ public sealed partial class ChatService
                 var chatClient = _runtime.GetChatClient();
                 if (chatClient != null)
                 {
+                    CompactionRelevanceDiagnostics.LogIfEnabled(_logger, sessionId, roundId, turn.UserMessage, state.History);
                     var triggerTokens = (int)(historyBudget * ctxConfig.SummarizationTriggerRatio);
                     var strategy = BuildCompactionStrategy(chatClient, triggerTokens, historyBudget);
                     var compacted = await Microsoft.Agents.AI.Compaction.CompactionProvider.CompactAsync(
@@ -42,8 +45,8 @@ public sealed partial class ChatService
                         state.History.Clear();
                         state.History.AddRange(compactedList);
                         var removed = beforeCount - compactedList.Count;
-                        _logger.LogDebug("[{SessionId}] MAF Compaction removed {Removed} messages ({Before} → {After}).",
-                            sessionId, removed, beforeCount, compactedList.Count);
+                        _logger.LogDebug("[{SessionId}] [{RoundId}] MAF Compaction removed {Removed} messages ({Before} → {After}).",
+                            sessionId, roundId, removed, beforeCount, compactedList.Count);
                         await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context",
                             $"历史压缩：{removed} 条消息已整理",
                             $"压缩前 {beforeCount} 条 → 压缩后 {compactedList.Count} 条（token 预算 {historyBudget}）", ct).ConfigureAwait(false);
@@ -52,7 +55,7 @@ public sealed partial class ChatService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[{SessionId}] MAF Compaction failed, continuing without.", sessionId);
+                _logger.LogDebug(ex, "[{SessionId}] [{RoundId}] MAF Compaction failed, continuing without.", sessionId, roundId);
                 var failTrace = AgentTraceFormatter.BuildContextSummarizationFailureTrace(ErrorMessageHelper.GetFriendlyMessage(ex));
                 await NotifyAgentTraceAsync(sessionManagerForStatus, sessionId, "context", failTrace.Title, failTrace.Detail, ct).ConfigureAwait(false);
             }
@@ -212,9 +215,9 @@ public sealed partial class ChatService
         turn.SelectedTools = funcsCount > 0 ? toolsForAgent : null;
 
         var activeModel = GetActiveModelEntry();
-        turn.EnableSearchSuppressionSuffix = activeModel?.EnableSearch == true ? EnableSearchSuppressionInstruction : null;
+        turn.EnableSearchSuppressionSuffix = activeModel?.EnableSearch == true ? SystemPromptBuilder.EnableSearchSuppressionInstruction : null;
 
-        var id = GetClientTypeIdentitySuffix(clientType);
+        var id = SystemPromptBuilder.GetClientTypeIdentitySuffix(clientType);
         if (appendDynamicToolingInstruction)
         {
             var dyn = DynamicToolingInstruction.Text;
@@ -231,7 +234,7 @@ public sealed partial class ChatService
             id = string.IsNullOrEmpty(id) ? pageCtx : id + "\n\n" + pageCtx;
 
         turn.IdentitySuffix = id;
-        turn.HistoryToUse = BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
+        turn.HistoryToUse = SystemPromptBuilder.BuildHistoryForStreamingTurn(state.History, turn.IdentitySuffix, turn.EnableSearchSuppressionSuffix);
     }
 
     /// <summary>将 Host 前言合并进本轮流式用历史的 system 首条，不写入持久 <see cref="SessionState.History"/>。</summary>

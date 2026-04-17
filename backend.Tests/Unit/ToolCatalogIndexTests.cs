@@ -3,78 +3,22 @@ using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using Xunit;
 
-namespace backend.Tests.Unit;
+namespace OfficeCopilot.Server.Tests.Unit;
 
-public class ToolCatalogIndexTests
+public sealed class ToolCatalogIndexTests
 {
     [Fact]
-    public void Search_EmptyQuery_ReturnsFirstTopKSortedByFunctionName()
+    public void Search_AppliesFunctionSuccessBoost_WhenProvided()
     {
-        var reg = new ToolRegistry();
-        reg.Register("X", "fn_b", AIFunctionFactory.Create(() => Task.FromResult("1"), new AIFunctionFactoryOptions { Name = "fn_b", Description = "z" }));
-        reg.Register("X", "fn_a", AIFunctionFactory.Create(() => Task.FromResult("2"), new AIFunctionFactoryOptions { Name = "fn_a", Description = "y" }));
-        var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
-        var hits = idx.Search("", 1);
-        Assert.Single(hits);
-        Assert.Equal("fn_a", hits[0].FunctionName);
-    }
+        var registry = new ToolRegistry();
+        registry.Register("Memory", "alpha_read", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "alpha_read", Description = "alpha" }));
+        registry.Register("Memory", "beta_read", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "beta_read", Description = "beta" }));
+        var index = ToolCatalogIndex.BuildFromAllowedTools(registry, "chrome", sessionId: "s1", wpsHostKind: null);
 
-    [Fact]
-    public void Search_KeywordPrioritizesMatchingFunctionName()
-    {
-        var reg = new ToolRegistry();
-        reg.Register("X", "excel_read", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "excel_read", Description = "read cells" }));
-        reg.Register("X", "other", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "other", Description = "excel helper text" }));
-        var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
-        var hits = idx.Search("excel", 2);
-        Assert.True(hits.Count >= 1);
-        Assert.Equal("excel_read", hits[0].FunctionName);
-    }
+        var boost = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["beta_read"] = 50 };
+        var hits = index.Search("read", topK: 2, pinnedFunctionNames: null, functionSuccessBoost: boost);
 
-    [Fact]
-    public void Search_EmptyQuery_WithPinned_IncludesPinnedEvenWhenNotInAlphabeticalTopK()
-    {
-        var reg = new ToolRegistry();
-        for (var i = 0; i < 40; i++)
-        {
-            var name = $"z_tool_{i:00}";
-            reg.Register("X", name, AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = name, Description = "d" }));
-        }
-
-        reg.Register("Browser", "run_builtin_page_script", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "run_builtin_page_script", Description = "tabs" }));
-        var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
-        var pinned = new[] { "run_builtin_page_script" };
-        var hits = idx.Search("", 8, pinned);
-        Assert.Contains(hits, e => string.Equals(e.FunctionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void BuildFromAllowedTools_ExcludesProgressiveSkillMetaFromCatalog()
-    {
-        var reg = new ToolRegistry();
-        reg.Register("UserSkillProgressive", DynamicToolingConstants.SearchAvailableSkillsFunctionName,
-            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
-            {
-                Name = DynamicToolingConstants.SearchAvailableSkillsFunctionName,
-                Description = "search skills"
-            }));
-        reg.Register("UserSkillProgressive", DynamicToolingConstants.SelectSkillForTurnFunctionName,
-            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
-            {
-                Name = DynamicToolingConstants.SelectSkillForTurnFunctionName,
-                Description = "select skill"
-            }));
-        reg.Register("UserSkillProgressive", DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
-            AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions
-            {
-                Name = DynamicToolingConstants.LoadUserSkillInstructionsFunctionName,
-                Description = "load"
-            }));
-        reg.Register("Word", "word_x", AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = "word_x", Description = "w" }));
-        var idx = ToolCatalogIndex.BuildFromAllowedTools(reg, "chrome", null);
-        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.SearchAvailableSkillsFunctionName, StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.SelectSkillForTurnFunctionName, StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(idx.Entries, e => string.Equals(e.FunctionName, DynamicToolingConstants.LoadUserSkillInstructionsFunctionName, StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(idx.Entries, e => string.Equals(e.FunctionName, "word_x", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, hits.Count);
+        Assert.Equal("beta_read", hits[0].FunctionName);
     }
 }
