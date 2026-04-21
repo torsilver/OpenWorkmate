@@ -4,7 +4,7 @@ using OfficeCopilot.Server;
 
 namespace OfficeCopilot.Server.Services.Telemetry;
 
-/// <summary>与 <c>start-ai-and-telemetry.cmd</c>、选项页占位符一致的本机开发默认。</summary>
+/// <summary>与 <c>start-ai-and-gateway.cmd</c>、选项页占位符一致的本机开发默认。</summary>
 public static class TelemetryRelayDefaults
 {
     public const string LocalDevBaseUrl = "http://127.0.0.1:8777";
@@ -12,8 +12,8 @@ public static class TelemetryRelayDefaults
     /// <summary>与 <see cref="TelemetryTransmissionPolicyBackgroundService"/> 拉取策略使用的根 URL 一致（含 Key 非空时的本机默认）。</summary>
     public static string GetEffectiveRelayBaseUrl(AppConfig cfg)
     {
-        var apiKey = (cfg.TelemetryRelayApiKey ?? "").Trim();
-        var baseUrl = (cfg.TelemetryRelayBaseUrl ?? "").Trim().TrimEnd('/');
+        var apiKey = (cfg.AiGatewayApiKey ?? "").Trim();
+        var baseUrl = (cfg.AiGatewayBaseUrl ?? "").Trim().TrimEnd('/');
         if (string.IsNullOrEmpty(baseUrl) && cfg.TelemetryEnabled && !string.IsNullOrEmpty(apiKey))
             baseUrl = LocalDevBaseUrl.TrimEnd('/');
         return baseUrl;
@@ -28,24 +28,22 @@ public static class TelemetryRelayDefaults
         return t[..4] + "…" + t[^4..];
     }
 
-    /// <summary>AI 后台启动时打印遥测相关配置：策略拉取（中继）与观测落库（Seq）。</summary>
+    /// <summary>AI 后台启动时打印遥测相关配置：Gateway URL + span ingest。</summary>
     public static void LogOutboundRelayConfig(ILogger logger, AppConfig cfg, IConfiguration hostConfiguration)
     {
-        var raw = (cfg.TelemetryRelayBaseUrl ?? "").Trim();
+        _ = hostConfiguration;
+        var raw = (cfg.AiGatewayBaseUrl ?? "").Trim();
         var eff = GetEffectiveRelayBaseUrl(cfg);
-        var seqUrl = (hostConfiguration["Telemetry:SeqServerUrl"] ?? "").Trim();
-        var seqConfigured = !string.IsNullOrEmpty(seqUrl);
-        var policyOk = cfg.TelemetryEnabled && !string.IsNullOrEmpty(eff) && !string.IsNullOrEmpty((cfg.TelemetryRelayApiKey ?? "").Trim());
-        var willEmitToSeq = cfg.TelemetryEnabled && seqConfigured;
+        var policyOk = cfg.TelemetryEnabled && !string.IsNullOrEmpty(eff) && !string.IsNullOrEmpty((cfg.AiGatewayApiKey ?? "").Trim());
+        var willIngestSpans = cfg.TelemetryEnabled && policyOk;
         logger.LogInformation(
-            "Telemetry: enabled={Enabled}, relayPolicyUrlEffective={EffUrl}, relayApiKey={KeyMask}, policyFetchOk={PolicyOk}, seqServerConfigured={SeqConfigured}, willEmitTelemetryToSeq={WillEmit}",
+            "AI Gateway client: enabled={Enabled}, aiGatewayBaseUrlEffective={EffUrl}, gatewayApiKey={KeyMask}, policyFetchOk={PolicyOk}, willPostSpansToGateway={WillIngest}",
             cfg.TelemetryEnabled,
             string.IsNullOrEmpty(eff) ? "(none)" : eff,
-            MaskSecret(cfg.TelemetryRelayApiKey),
+            MaskSecret(cfg.AiGatewayApiKey),
             policyOk,
-            seqConfigured,
-            willEmitToSeq);
+            willIngestSpans);
         if (!string.IsNullOrEmpty(raw))
-            logger.LogDebug("Telemetry relayBaseUrlRaw={RawUrl}", raw);
+            logger.LogDebug("AI Gateway baseUrlRaw={RawUrl}", raw);
     }
 }

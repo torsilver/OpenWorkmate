@@ -8,7 +8,7 @@ const TELEMETRY_CLIENT_EMISSION_KEY = "telemetryClientEmission";
 const DEFAULT_TELEMETRY_TIER = "full";
 const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = "information";
 const TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "telemetryRelayActiveProfileId";
-const TELEMETRY_LOG_KINDS_BY_PROFILE_KEY = "telemetryLogKindsByProfile";
+const TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = "telemetryEventKindsByProfile";
 
 var tasklySidepanelApiReady = null;
 /** 避免在「后台晚启动」场景下反复弹出同一条气泡提示 */
@@ -1062,7 +1062,7 @@ function connect() {
       TELEMETRY_DEVICE_ID_KEY,
       TELEMETRY_CLIENT_EMISSION_KEY,
       TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
-      TELEMETRY_LOG_KINDS_BY_PROFILE_KEY
+      TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
     ],
     function (r) {
     var token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
@@ -1093,10 +1093,10 @@ function connect() {
       qs.set("telemetryTier", tier);
       qs.set("telemetryIngestLogLevel", ingestLv);
       var relayActive = String((r && r[TELEMETRY_RELAY_ACTIVE_PROFILE_KEY]) || "default").trim() || "default";
-      var kindsMap = (r && r[TELEMETRY_LOG_KINDS_BY_PROFILE_KEY]) || {};
-      var logKinds = kindsMap[relayActive];
-      if (Array.isArray(logKinds) && logKinds.length > 0) {
-        qs.set("telemetryLogKinds", logKinds.join(","));
+      var kindsMap = (r && r[TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY]) || {};
+      var eventKinds = kindsMap[relayActive];
+      if (Array.isArray(eventKinds) && eventKinds.length > 0) {
+        qs.set("telemetryEventKinds", eventKinds.join(","));
       }
     }
     var url = WS_URL + "?" + qs.toString();

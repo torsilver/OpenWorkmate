@@ -19,6 +19,7 @@ using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Services.Subagent;
+using OfficeCopilot.Server.Services.LlmRouting;
 using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Logging;
 
@@ -130,7 +131,7 @@ public sealed partial class ChatService : IDisposable
                     modelId = deployment;
                 }
 
-                chatClients[entry.Id] = CreateDirectChatClient(entry.Id, modelId, apiKey, endpointUri);
+                chatClients[entry.Id] = CreateDirectChatClient(entry.Id, modelId, apiKey, endpointUri, entry);
             }
             catch (Exception ex)
             {
@@ -294,9 +295,25 @@ public sealed partial class ChatService : IDisposable
     }
 
     /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
-    private IChatClient CreateDirectChatClient(string entryId, string modelId, string apiKey, Uri? endpointUri)
+    private IChatClient CreateDirectChatClient(string entryId, string modelId, string apiKey, Uri? endpointUri, AiModelEntry entry)
     {
-        var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>());
+        var cfg = _configService.Current;
+        var gatewayMode = cfg.TelemetryEnabled
+            && _telemetryTransmissionPolicy.IsTelemetryPolicyHealthy
+            && string.Equals(_telemetryTransmissionPolicy.EffectiveRouteMode, "gateway", StringComparison.OrdinalIgnoreCase);
+        var gwBase = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
+        var endpointTrimmed = (entry.Endpoint ?? "").Trim();
+        HttpMessageHandler innerChain = new HttpClientHandler();
+        if (gatewayMode && !string.IsNullOrEmpty(gwBase))
+        {
+            var upstream = endpointTrimmed.Length > 0
+                ? endpointTrimmed.TrimEnd('/')
+                : "https://dashscope.aliyuncs.com/compatible-mode/v1";
+            innerChain = new LlmGatewayHeadersHandler(upstream, innerChain);
+            endpointUri = new Uri(gwBase.TrimEnd('/') + "/llm/v1");
+        }
+
+        var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>(), innerChain);
         var dashHandler = new DashScopeOpenAiCompatHandler(
             _configService, entryId, logHandler,
             _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>());

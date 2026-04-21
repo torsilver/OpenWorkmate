@@ -24,7 +24,7 @@ public sealed class SessionManager
         string? telemetryDeviceId,
         string? telemetryTier,
         string? telemetryIngestLogLevel,
-        HashSet<string>? telemetryLogKinds)
+        HashSet<string>? telemetryEventKinds)
     {
         if (_connections.TryRemove(sessionId, out var old))
         {
@@ -37,7 +37,7 @@ public sealed class SessionManager
         var dev = string.IsNullOrWhiteSpace(telemetryDeviceId) ? null : telemetryDeviceId.Trim();
         var tier = string.IsNullOrWhiteSpace(telemetryTier) ? null : telemetryTier.Trim();
         var ingestLv = string.IsNullOrWhiteSpace(telemetryIngestLogLevel) ? null : telemetryIngestLogLevel.Trim();
-        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, dev, tier, ingestLv, telemetryLogKinds, new SemaphoreSlim(1, 1));
+        _connections[sessionId] = new SessionEntry(ws, clientType, pid, dn, null, null, dev, tier, ingestLv, telemetryEventKinds, new SemaphoreSlim(1, 1));
     }
 
     public void Remove(string sessionId)
@@ -94,8 +94,8 @@ public sealed class SessionManager
         _connections.TryGetValue(sessionId, out var e) ? e.TelemetryIngestLogLevel : null;
 
     /// <summary>非空时仅上报集合内的 <c>eventType</c>；空或 <c>null</c> 表示不限制。</summary>
-    public HashSet<string>? GetTelemetryLogKinds(string sessionId) =>
-        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryLogKinds : null;
+    public HashSet<string>? GetTelemetryEventKinds(string sessionId) =>
+        _connections.TryGetValue(sessionId, out var e) ? e.TelemetryEventKinds : null;
 
     /// <summary>当前页标题或 WPS 展示名（若有）。</summary>
     public string? GetPageContextTitle(string sessionId) =>
@@ -198,6 +198,6 @@ public sealed class SessionManager
         string? TelemetryDeviceId,
         string? TelemetryTier,
         string? TelemetryIngestLogLevel,
-        HashSet<string>? TelemetryLogKinds,
+        HashSet<string>? TelemetryEventKinds,
         SemaphoreSlim SendLock);
 }

@@ -1,0 +1,6 @@
+@Taskly.AI.Gateway_HostAddress = http://localhost:5228
+
+GET {{Taskly.AI.Gateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

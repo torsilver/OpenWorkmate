@@ -9,7 +9,21 @@ var TELEMETRY_DEVICE_ID_KEY = 'telemetryDeviceId';
 var TELEMETRY_CLIENT_EMISSION_KEY = 'telemetryClientEmission';
 var TELEMETRY_RELAY_PROFILES_KEY = 'telemetryRelayProfiles';
 var TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'telemetryRelayActiveProfileId';
-var TELEMETRY_LOG_KINDS_BY_PROFILE_KEY = 'telemetryLogKindsByProfile';
+var TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'telemetryEventKindsByProfile';
+
+/** 新字段 <code>aiGatewayBaseUrl</code> 优先，兼容旧 <code>telemetryRelayBaseUrl</code>。 */
+function tasklyAiGatewayBaseFromConfig(data) {
+  data = data || {};
+  return String((data.aiGatewayBaseUrl ?? data.AiGatewayBaseUrl ?? data.telemetryRelayBaseUrl ?? data.TelemetryRelayBaseUrl) || '').trim();
+}
+function tasklyAiGatewayKeyFromConfig(data) {
+  data = data || {};
+  return String((data.aiGatewayApiKey ?? data.AiGatewayApiKey ?? data.telemetryRelayApiKey ?? data.TelemetryRelayApiKey) || '').trim();
+}
+function tasklyOpsPolicyProfileIdFromConfig(data) {
+  data = data || {};
+  return String((data.opsPolicyProfileId ?? data.OpsPolicyProfileId ?? data.telemetryServerPolicyProfileId ?? data.TelemetryServerPolicyProfileId) || '').trim();
+}
 
 function tasklySetOptionsApiUrls(apiBase) {
   var b = TasklyLocalService.normalizeBase(apiBase);
@@ -1814,19 +1828,17 @@ async function loadConfig() {
     const data = fullConfig;
     var apEl = document.getElementById('allowPrivateEndpointTests');
     if (apEl) apEl.checked = !!(data.allowPrivateEndpointTests ?? data.AllowPrivateEndpointTests);
-    var telEn = document.getElementById('telemetryRelayEnabled');
+    var telEn = document.getElementById('aiGatewayEnabled');
     if (telEn) telEn.checked = !!(data.telemetryEnabled ?? data.TelemetryEnabled);
-    var telUrl = document.getElementById('telemetryRelayBaseUrl');
-    if (telUrl) telUrl.value = String((data.telemetryRelayBaseUrl ?? data.TelemetryRelayBaseUrl) || '').trim();
-    var telKey = document.getElementById('telemetryRelayApiKey');
-    if (telKey) telKey.value = String((data.telemetryRelayApiKey ?? data.TelemetryRelayApiKey) || '').trim();
-    var telSrvProf = document.getElementById('telemetryServerPolicyProfileSelect');
+    var telUrl = document.getElementById('aiGatewayBaseUrl');
+    if (telUrl) telUrl.value = tasklyAiGatewayBaseFromConfig(data);
+    var telKey = document.getElementById('aiGatewayApiKey');
+    if (telKey) telKey.value = tasklyAiGatewayKeyFromConfig(data);
+    var telSrvProf = document.getElementById('opsPolicyProfileSelect');
     if (telSrvProf) {
-      telSrvProf.value = String((data.telemetryServerPolicyProfileId ?? data.TelemetryServerPolicyProfileId) || '').trim();
+      telSrvProf.value = tasklyOpsPolicyProfileIdFromConfig(data);
     }
-    var telObsOff = document.getElementById('telemetryClientEmissionOff');
     var obsEnabled = data.telemetryUserObservabilityEnabled ?? data.TelemetryUserObservabilityEnabled;
-    if (telObsOff) telObsOff.checked = obsEnabled === false;
     try {
       var oSync = {};
       oSync[TELEMETRY_CLIENT_EMISSION_KEY] = obsEnabled === false ? 'off' : 'on';
@@ -2202,25 +2214,21 @@ async function saveConfig() {
         var rid = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
         return rid || undefined;
       })(),
-      telemetryEnabled: !!(document.getElementById('telemetryRelayEnabled') && document.getElementById('telemetryRelayEnabled').checked),
-      telemetryRelayBaseUrl: (function () {
-        var el = document.getElementById('telemetryRelayBaseUrl');
+      telemetryEnabled: !!(document.getElementById('aiGatewayEnabled') && document.getElementById('aiGatewayEnabled').checked),
+      aiGatewayBaseUrl: (function () {
+        var el = document.getElementById('aiGatewayBaseUrl');
         var s = el ? String(el.value || '').trim() : '';
         return s || undefined;
       })(),
-      telemetryRelayApiKey: (function () {
-        var el = document.getElementById('telemetryRelayApiKey');
+      aiGatewayApiKey: (function () {
+        var el = document.getElementById('aiGatewayApiKey');
         var s = el ? String(el.value || '').trim() : '';
         return s || undefined;
       })(),
-      telemetryServerPolicyProfileId: (function () {
-        var el = document.getElementById('telemetryServerPolicyProfileSelect');
+      opsPolicyProfileId: (function () {
+        var el = document.getElementById('opsPolicyProfileSelect');
         var s = el ? String(el.value || '').trim() : '';
         return s || undefined;
-      })(),
-      telemetryUserObservabilityEnabled: !(function () {
-        var el = document.getElementById('telemetryClientEmissionOff');
-        return el && el.checked;
       })()
     };
     const response = await tasklyFetch(API_URL, {
@@ -2232,7 +2240,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, telemetryRelayBaseUrl: payload.telemetryRelayBaseUrl, telemetryRelayApiKey: payload.telemetryRelayApiKey, telemetryServerPolicyProfileId: payload.telemetryServerPolicyProfileId, telemetryUserObservabilityEnabled: payload.telemetryUserObservabilityEnabled });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, aiGatewayBaseUrl: payload.aiGatewayBaseUrl, aiGatewayApiKey: payload.aiGatewayApiKey, opsPolicyProfileId: payload.opsPolicyProfileId });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
@@ -3002,11 +3010,11 @@ function collectCliSecurityPayload() {
 
 function tasklyTelemetryRelayProfilesRead(callback) {
   chrome.storage.local.get(
-    [TELEMETRY_RELAY_PROFILES_KEY, TELEMETRY_RELAY_ACTIVE_PROFILE_KEY, TELEMETRY_LOG_KINDS_BY_PROFILE_KEY],
+    [TELEMETRY_RELAY_PROFILES_KEY, TELEMETRY_RELAY_ACTIVE_PROFILE_KEY, TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY],
     function (r) {
       var profiles = r[TELEMETRY_RELAY_PROFILES_KEY];
       var activeId = (r[TELEMETRY_RELAY_ACTIVE_PROFILE_KEY] || 'default').trim() || 'default';
-      var kindsMap = r[TELEMETRY_LOG_KINDS_BY_PROFILE_KEY];
+      var kindsMap = r[TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY];
       if (!kindsMap || typeof kindsMap !== 'object') kindsMap = {};
       callback(Array.isArray(profiles) ? profiles : [], activeId, kindsMap);
     }
@@ -3017,13 +3025,13 @@ function tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, done) {
   var o = {};
   o[TELEMETRY_RELAY_PROFILES_KEY] = profiles;
   o[TELEMETRY_RELAY_ACTIVE_PROFILE_KEY] = activeId;
-  o[TELEMETRY_LOG_KINDS_BY_PROFILE_KEY] = kindsMap || {};
+  o[TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY] = kindsMap || {};
   chrome.storage.local.set(o, done || function () {});
 }
 
 function tasklyPersistActiveRelayProfileInputs(profiles, activeId) {
-  var urlEl = document.getElementById('telemetryRelayBaseUrl');
-  var keyEl = document.getElementById('telemetryRelayApiKey');
+  var urlEl = document.getElementById('aiGatewayBaseUrl');
+  var keyEl = document.getElementById('aiGatewayApiKey');
   var base = urlEl ? String(urlEl.value || '').trim() : '';
   var key = keyEl ? String(keyEl.value || '').trim() : '';
   var next = profiles.map(function (p) {
@@ -3034,7 +3042,7 @@ function tasklyPersistActiveRelayProfileInputs(profiles, activeId) {
 }
 
 function tasklyRenderTelemetryRelayProfileSelect(profiles, activeId) {
-  var sel = document.getElementById('telemetryRelayProfileSelect');
+  var sel = document.getElementById('aiGatewayProfileSelect');
   if (!sel) return;
   sel.innerHTML = '';
   profiles.forEach(function (p) {
@@ -3049,16 +3057,16 @@ function tasklyRenderTelemetryRelayProfileSelect(profiles, activeId) {
 
 function tasklyInitTelemetryRelayProfilesAfterServerLoad(serverData) {
   tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-    var srvUrl = String((serverData.telemetryRelayBaseUrl ?? serverData.TelemetryRelayBaseUrl) || '').trim();
-    var srvKey = String((serverData.telemetryRelayApiKey ?? serverData.TelemetryRelayApiKey) || '').trim();
+    var srvUrl = tasklyAiGatewayBaseFromConfig(serverData);
+    var srvKey = tasklyAiGatewayKeyFromConfig(serverData);
     if (!profiles.length) {
       profiles = [{ id: 'default', name: '默认', baseUrl: srvUrl, apiKey: srvKey }];
       activeId = 'default';
     }
     if (!profiles.some(function (p) { return p.id === activeId; })) activeId = profiles[0].id;
     var active = profiles.filter(function (p) { return p.id === activeId; })[0];
-    var urlEl = document.getElementById('telemetryRelayBaseUrl');
-    var keyEl = document.getElementById('telemetryRelayApiKey');
+    var urlEl = document.getElementById('aiGatewayBaseUrl');
+    var keyEl = document.getElementById('aiGatewayApiKey');
     if (urlEl) urlEl.value = active.baseUrl || '';
     if (keyEl) keyEl.value = active.apiKey || '';
     tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, function () {
@@ -3068,8 +3076,8 @@ function tasklyInitTelemetryRelayProfilesAfterServerLoad(serverData) {
   });
 }
 
-function tasklySaveTelemetryLogKindsFromDom(profiles, activeId, kindsMap) {
-  var box = document.getElementById('telemetryLogKindsList');
+function tasklySaveTelemetryEventKindsFromDom(profiles, activeId, kindsMap) {
+  var box = document.getElementById('telemetryEventKindsList');
   if (!box) return;
   var kinds = [];
   box.querySelectorAll('input[type="checkbox"][data-kind]').forEach(function (cb) {
@@ -3089,13 +3097,13 @@ function tasklyFlushTelemetryRelayProfileToStorage() {
   });
 }
 
-function tasklyRenderTelemetryLogKindsList(list, profiles, activeId, kindsMap) {
-  var container = document.getElementById('telemetryLogKindsList');
+function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap) {
+  var container = document.getElementById('telemetryEventKindsList');
   if (!container) return;
   if (!Array.isArray(list)) list = [];
   container.innerHTML = '';
   if (!list.length) {
-    container.textContent = '（请先启用中继并填写 URL / Key，成功拉取聚合策略后显示可选种类）';
+    container.textContent = '（请先启用 AI Gateway 并填写 URL / Key，成功拉取聚合策略后显示可选事件种类）';
     return;
   }
   var selected = kindsMap[activeId];
@@ -3121,7 +3129,7 @@ function tasklyRenderTelemetryLogKindsList(list, profiles, activeId, kindsMap) {
     cb.checked = selected.indexOf(kind) >= 0;
     cb.addEventListener('change', function () {
       tasklyTelemetryRelayProfilesRead(function (pr, aid, km) {
-        tasklySaveTelemetryLogKindsFromDom(pr, aid, km);
+        tasklySaveTelemetryEventKindsFromDom(pr, aid, km);
       });
     });
     row.appendChild(cb);
@@ -3133,18 +3141,18 @@ function tasklyRenderTelemetryLogKindsList(list, profiles, activeId, kindsMap) {
 }
 
 function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultProfileId) {
-  var sel = document.getElementById('telemetryServerPolicyProfileSelect');
+  var sel = document.getElementById('opsPolicyProfileSelect');
   if (!sel) return;
   var list = Array.isArray(policyProfiles) ? policyProfiles : [];
   var defId = (defaultProfileId != null ? String(defaultProfileId) : '').trim();
   var want = (sel.value || '').trim();
   if (!want && fullConfig) {
-    want = String(fullConfig.telemetryServerPolicyProfileId ?? fullConfig.TelemetryServerPolicyProfileId ?? '').trim();
+    want = tasklyOpsPolicyProfileIdFromConfig(fullConfig);
   }
   sel.innerHTML = '';
   var o0 = document.createElement('option');
   o0.value = '';
-  o0.textContent = defId ? '默认（中继：' + defId + '）' : '默认（中继内置）';
+  o0.textContent = defId ? '默认（Gateway：' + defId + '）' : '默认（Gateway 内置）';
   sel.appendChild(o0);
   list.forEach(function (p) {
     var id = (p.id != null ? p.id : p.Id);
@@ -3166,17 +3174,17 @@ function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultP
 }
 
 function refreshTransmissionPolicyHint() {
-  var hint = document.getElementById('telemetryTransmissionPolicyHint');
+  var hint = document.getElementById('aiGatewayPolicyHint');
   if (!hint) return;
-  var urlEl = document.getElementById('telemetryRelayBaseUrl');
-  var keyEl = document.getElementById('telemetryRelayApiKey');
-  var enEl = document.getElementById('telemetryRelayEnabled');
-  var profEl = document.getElementById('telemetryServerPolicyProfileSelect');
+  var urlEl = document.getElementById('aiGatewayBaseUrl');
+  var keyEl = document.getElementById('aiGatewayApiKey');
+  var enEl = document.getElementById('aiGatewayEnabled');
+  var profEl = document.getElementById('opsPolicyProfileSelect');
   var base = (urlEl && urlEl.value || '').trim().replace(/\/+$/, '');
   var key = (keyEl && keyEl.value || '').trim();
   if (!enEl || !enEl.checked || !base || !key) {
     hint.textContent = '';
-    var emptyList = document.getElementById('telemetryLogKindsList');
+    var emptyList = document.getElementById('telemetryEventKindsList');
     if (emptyList) emptyList.innerHTML = '';
     if (profEl) {
       profEl.innerHTML = '';
@@ -3189,49 +3197,53 @@ function refreshTransmissionPolicyHint() {
     return;
   }
   var pid = profEl ? String(profEl.value || '').trim() : '';
-  var u = base + '/policy/aggregated' + (pid ? '?profileId=' + encodeURIComponent(pid) : '');
+  var u = base + '/api/policy/aggregated' + (pid ? '?profileId=' + encodeURIComponent(pid) : '');
   fetch(u, { headers: { Authorization: 'Bearer ' + key } })
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     })
     .then(function (j) {
-      var v = j.schemaVersion != null ? j.schemaVersion : (j.SchemaVersion != null ? j.SchemaVersion : '?');
+      var eff = j.effective != null ? j.effective : (j.Effective != null ? j.Effective : j);
+      var v = eff.schemaVersion != null ? eff.schemaVersion : (eff.SchemaVersion != null ? eff.SchemaVersion : '?');
       var etag = j.etag != null ? j.etag : (j.ETag != null ? j.ETag : '');
+      if (!etag) {
+        etag = eff.etag != null ? eff.etag : (eff.ETag != null ? eff.ETag : '');
+      }
       hint.textContent =
         '当前聚合策略 schemaVersion=' +
         v +
         (etag ? (' etag=' + etag) : '') +
         '（来自 ' +
         u +
-        '）。AI 后台按 user-config 中的 profileId 拉取；成功且含非空 availableLogKinds 后才向 Seq 发结构化遥测。';
+        '）。AI 后台按 user-config 中的 opsPolicyProfileId 拉取；成功且含非空 availableEventKinds 后才向 AI Gateway POST 结构化 AI 流事件（/ingest/spans）。';
       var polProf =
-        j.policyProfiles != null
-          ? j.policyProfiles
-          : j.PolicyProfiles != null
-            ? j.PolicyProfiles
+        eff.policyProfiles != null
+          ? eff.policyProfiles
+          : eff.PolicyProfiles != null
+            ? eff.PolicyProfiles
             : [];
       var defPol =
-        j.defaultPolicyProfileId != null
-          ? j.defaultPolicyProfileId
-          : j.DefaultPolicyProfileId != null
-            ? j.DefaultPolicyProfileId
+        eff.defaultPolicyProfileId != null
+          ? eff.defaultPolicyProfileId
+          : eff.DefaultPolicyProfileId != null
+            ? eff.DefaultPolicyProfileId
             : '';
       tasklyRenderTelemetryServerPolicyProfileSelect(polProf, defPol);
       var kinds =
-        j.availableLogKinds != null
-          ? j.availableLogKinds
-          : j.AvailableLogKinds != null
-            ? j.AvailableLogKinds
+        eff.availableEventKinds != null
+          ? eff.availableEventKinds
+          : eff.AvailableEventKinds != null
+            ? eff.AvailableEventKinds
             : [];
       tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-        tasklyRenderTelemetryLogKindsList(kinds, profiles, activeId, kindsMap);
+        tasklyRenderTelemetryEventKindsList(kinds, profiles, activeId, kindsMap);
       });
     })
     .catch(function () {
       hint.textContent =
-        '无法拉取遥测聚合策略（请检查中继 URL / API Key 与网络）。若 AI 后台亦拉取失败或策略无效，将不向 Seq 发送结构化遥测（fail-closed）。';
-      var emptyList = document.getElementById('telemetryLogKindsList');
+        '无法拉取聚合策略（请检查 AI Gateway URL / API Key 与网络）。若 AI 后台亦拉取失败或策略无效，将不向 Gateway 发送结构化 AI 流事件（fail-closed）。';
+      var emptyList = document.getElementById('telemetryEventKindsList');
       if (emptyList) emptyList.innerHTML = '';
     });
 }
@@ -3288,33 +3300,24 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   var allowPrivEl = document.getElementById('allowPrivateEndpointTests');
   if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
-  var telObsOffEl = document.getElementById('telemetryClientEmissionOff');
-  if (telObsOffEl) {
-    telObsOffEl.addEventListener('change', function () {
-      debouncedSaveConfig();
-      var oo = {};
-      oo[TELEMETRY_CLIENT_EMISSION_KEY] = telObsOffEl.checked ? 'off' : 'on';
-      chrome.storage.local.set(oo);
-    });
-  }
-  var telRelayEn = document.getElementById('telemetryRelayEnabled');
+  var telRelayEn = document.getElementById('aiGatewayEnabled');
   if (telRelayEn) {
     telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayEn.addEventListener('input', function () { debouncedSaveConfig(); });
   }
-  var telRelayUrl = document.getElementById('telemetryRelayBaseUrl');
+  var telRelayUrl = document.getElementById('aiGatewayBaseUrl');
   if (telRelayUrl) {
     telRelayUrl.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayUrl.addEventListener('input', function () { debouncedSaveConfig(); });
     telRelayUrl.addEventListener('blur', function () { refreshTransmissionPolicyHint(); });
   }
-  var telRelayKey = document.getElementById('telemetryRelayApiKey');
+  var telRelayKey = document.getElementById('aiGatewayApiKey');
   if (telRelayKey) {
     telRelayKey.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
     telRelayKey.addEventListener('input', function () { debouncedSaveConfig(); });
     telRelayKey.addEventListener('blur', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
   }
-  var telProfSel = document.getElementById('telemetryRelayProfileSelect');
+  var telProfSel = document.getElementById('aiGatewayProfileSelect');
   if (telProfSel) {
     telProfSel.addEventListener('change', function () {
       var newId = String(telProfSel.value || '').trim();
@@ -3326,8 +3329,8 @@ document.addEventListener('DOMContentLoaded', function () {
           var p = merged.filter(function (x) {
             return x.id === nextActive;
           })[0];
-          var urlEl = document.getElementById('telemetryRelayBaseUrl');
-          var keyEl = document.getElementById('telemetryRelayApiKey');
+          var urlEl = document.getElementById('aiGatewayBaseUrl');
+          var keyEl = document.getElementById('aiGatewayApiKey');
           if (p && urlEl) urlEl.value = p.baseUrl || '';
           if (p && keyEl) keyEl.value = p.apiKey || '';
           tasklyRenderTelemetryRelayProfileSelect(merged, nextActive);
@@ -3337,17 +3340,17 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     });
   }
-  var telSrvPolicy = document.getElementById('telemetryServerPolicyProfileSelect');
+  var telSrvPolicy = document.getElementById('opsPolicyProfileSelect');
   if (telSrvPolicy) {
     telSrvPolicy.addEventListener('change', function () {
       debouncedSaveConfig();
       refreshTransmissionPolicyHint();
     });
   }
-  var telProfAdd = document.getElementById('telemetryRelayAddProfileBtn');
+  var telProfAdd = document.getElementById('aiGatewayAddProfileBtn');
   if (telProfAdd) {
     telProfAdd.addEventListener('click', function () {
-      var name = window.prompt('新配置显示名称', '中继');
+      var name = window.prompt('新配置显示名称', 'Gateway');
       if (name === null) return;
       tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
         var merged = tasklyPersistActiveRelayProfileInputs(profiles, activeId);
@@ -3355,8 +3358,8 @@ document.addEventListener('DOMContentLoaded', function () {
         merged.push({ id: nid, name: (name || '新配置').trim(), baseUrl: '', apiKey: '' });
         tasklyTelemetryRelayProfilesWrite(merged, nid, kindsMap, function () {
           tasklyRenderTelemetryRelayProfileSelect(merged, nid);
-          var urlEl = document.getElementById('telemetryRelayBaseUrl');
-          var keyEl = document.getElementById('telemetryRelayApiKey');
+          var urlEl = document.getElementById('aiGatewayBaseUrl');
+          var keyEl = document.getElementById('aiGatewayApiKey');
           if (urlEl) urlEl.value = '';
           if (keyEl) keyEl.value = '';
           refreshTransmissionPolicyHint();

@@ -396,21 +396,21 @@ public class AppConfig
     /// <summary>本地 HTTP/WebSocket 访问密钥；在扩展选项页保存后写入 user-config.json，各端可从本机引导接口自动同步。</summary>
     public string? WebSocketAuthToken { get; set; }
 
-    /// <summary>为 true 时允许将观测事件写入 Seq（需配置 <c>Telemetry:SeqServerUrl</c>）并从中继拉取策略。</summary>
+    /// <summary>为 true 时从 AI Gateway 拉取策略并允许经 Gateway 转发 LLM（视 effective.routeMode）。</summary>
     [JsonPropertyName("telemetryEnabled")]
     public bool TelemetryEnabled { get; set; }
 
-    /// <summary>遥测中继根 URL（仅用于 <c>GET /policy/aggregated</c>），例如 <c>http://127.0.0.1:8777</c>（不要尾斜杠）。</summary>
-    [JsonPropertyName("telemetryRelayBaseUrl")]
-    public string? TelemetryRelayBaseUrl { get; set; }
+    /// <summary>AI Gateway 根 URL（<c>GET /api/policy/aggregated</c>），例如 <c>http://127.0.0.1:8777</c>（不要尾斜杠）。</summary>
+    [JsonPropertyName("aiGatewayBaseUrl")]
+    public string? AiGatewayBaseUrl { get; set; }
 
-    /// <summary>与遥测中继 <c>Telemetry:ApiKey</c> 一致，用于拉取策略。</summary>
-    [JsonPropertyName("telemetryRelayApiKey")]
-    public string? TelemetryRelayApiKey { get; set; }
+    /// <summary>与 Gateway <c>AiGateway:ApiKey</c> 一致，用于拉取策略与 ingest。</summary>
+    [JsonPropertyName("aiGatewayApiKey")]
+    public string? AiGatewayApiKey { get; set; }
 
-    /// <summary>遥测中继上多组策略之一（与 <c>GET /policy/aggregated?profileId=</c> 一致）；空则中继使用默认配置。</summary>
-    [JsonPropertyName("telemetryServerPolicyProfileId")]
-    public string? TelemetryServerPolicyProfileId { get; set; }
+    /// <summary>运维策略 profile（<c>GET /api/policy/aggregated?profileId=</c>）。</summary>
+    [JsonPropertyName("opsPolicyProfileId")]
+    public string? OpsPolicyProfileId { get; set; }
 
     /// <summary>
     /// 为 <c>false</c> 时：不向 Seq 发送结构化遥测出站（由后台强制过滤，与客户端 WebSocket 是否带 deviceId 无关）。
@@ -767,18 +767,18 @@ public sealed class ConfigService
         ApplyActivePresetIfSet(config);
         MigrateLegacyAiIfNeeded(config);
         MigrateLegacyOcrIfNeeded(config);
-        ApplyDefaultTelemetryRelayBaseUrlIfNeeded(config);
+        ApplyDefaultAiGatewayBaseUrlIfNeeded(config);
     }
 
-    /// <summary>启用遥测且已填中继 API Key 时，若未填根 URL，则默认本机开发中继（与 <see cref="TelemetryRelayDefaults.LocalDevBaseUrl"/> 一致）。</summary>
-    private static void ApplyDefaultTelemetryRelayBaseUrlIfNeeded(AppConfig config)
+    /// <summary>启用且已填 Gateway API Key 时，若未填根 URL，则默认本机 8777。</summary>
+    private static void ApplyDefaultAiGatewayBaseUrlIfNeeded(AppConfig config)
     {
         if (!config.TelemetryEnabled) return;
-        var key = (config.TelemetryRelayApiKey ?? "").Trim();
+        var key = (config.AiGatewayApiKey ?? "").Trim();
         if (string.IsNullOrEmpty(key)) return;
-        var url = (config.TelemetryRelayBaseUrl ?? "").Trim();
+        var url = (config.AiGatewayBaseUrl ?? "").Trim();
         if (!string.IsNullOrEmpty(url)) return;
-        config.TelemetryRelayBaseUrl = TelemetryRelayDefaults.LocalDevBaseUrl;
+        config.AiGatewayBaseUrl = TelemetryRelayDefaults.LocalDevBaseUrl;
     }
 
     private AppConfig CreateDefaultAppConfig()
@@ -1209,15 +1209,15 @@ public sealed class ConfigService
                 if (string.IsNullOrWhiteSpace(newConfig.UiThemeId)) newConfig.UiThemeId = _currentConfig.UiThemeId;
                 if (string.IsNullOrWhiteSpace(newConfig.ChromeExtensionId)) newConfig.ChromeExtensionId = _currentConfig.ChromeExtensionId;
                 if (newConfig.WebSocketAuthToken == null) newConfig.WebSocketAuthToken = _currentConfig.WebSocketAuthToken;
-                if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayBaseUrl))
-                    newConfig.TelemetryRelayBaseUrl = _currentConfig.TelemetryRelayBaseUrl;
-                if (string.IsNullOrWhiteSpace(newConfig.TelemetryRelayApiKey))
-                    newConfig.TelemetryRelayApiKey = _currentConfig.TelemetryRelayApiKey;
-                if (string.IsNullOrWhiteSpace(newConfig.TelemetryServerPolicyProfileId))
-                    newConfig.TelemetryServerPolicyProfileId = _currentConfig.TelemetryServerPolicyProfileId;
+                if (string.IsNullOrWhiteSpace(newConfig.AiGatewayBaseUrl))
+                    newConfig.AiGatewayBaseUrl = _currentConfig.AiGatewayBaseUrl;
+                if (string.IsNullOrWhiteSpace(newConfig.AiGatewayApiKey))
+                    newConfig.AiGatewayApiKey = _currentConfig.AiGatewayApiKey;
+                if (string.IsNullOrWhiteSpace(newConfig.OpsPolicyProfileId))
+                    newConfig.OpsPolicyProfileId = _currentConfig.OpsPolicyProfileId;
                 if (newConfig.TelemetryUserObservabilityEnabled == null)
                     newConfig.TelemetryUserObservabilityEnabled = _currentConfig.TelemetryUserObservabilityEnabled;
-                ApplyDefaultTelemetryRelayBaseUrlIfNeeded(newConfig);
+                ApplyDefaultAiGatewayBaseUrlIfNeeded(newConfig);
                 if (newConfig.SemanticKernel == null)
                     newConfig.SemanticKernel = SemanticKernelFeaturesConfig.Clone(_currentConfig.SemanticKernel);
                 if (newConfig.AiModels == null)

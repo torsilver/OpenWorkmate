@@ -27,13 +27,13 @@ function ensureApiBase() {
 }
 /** 与后端有效密钥一致；通常首次连接会自动从本机引导接口同步，也可手动 localStorage.setItem */
 const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
-/** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier / telemetryIngestLogLevel / telemetryLogKinds（localStorage） */
+/** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier / telemetryIngestLogLevel / telemetryEventKinds（localStorage） */
 const TASKLY_TELEMETRY_DEVICE_ID_KEY = 'tasklyTelemetryDeviceId'
-/** 与 Chrome 选项页一致：以 log 种类筛选为主，不再单独配置档位。 */
+/** 与 Chrome 选项页一致：以 AI 流事件种类筛选为主，不再单独配置档位。 */
 const DEFAULT_TELEMETRY_TIER = 'full'
 const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = 'information'
 const TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'tasklyTelemetryRelayActiveProfileId'
-const TASKLY_TELEMETRY_LOG_KINDS_BY_PROFILE_KEY = 'tasklyTelemetryLogKindsByProfile'
+const TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'tasklyTelemetryEventKindsByProfile'
 /** 对齐 Chrome <code>telemetryClientEmission</code>：<code>on</code> | <code>off</code> */
 const TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = 'tasklyTelemetryClientEmission'
 
@@ -66,16 +66,16 @@ function getTelemetryClientEmission() {
   }
 }
 
-/** 与 Chrome <code>telemetryRelayActiveProfileId</code> + <code>telemetryLogKindsByProfile</code> 同形；未配置时不限制种类。 */
-function getTelemetryLogKindsQueryParam() {
+/** 与 Chrome <code>telemetryRelayActiveProfileId</code> + <code>telemetryEventKindsByProfile</code> 同形；未配置时不限制种类。 */
+function getTelemetryEventKindsQueryParam() {
   try {
     const active = (localStorage.getItem(TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY) || 'default').trim() || 'default'
-    const raw = localStorage.getItem(TASKLY_TELEMETRY_LOG_KINDS_BY_PROFILE_KEY)
+    const raw = localStorage.getItem(TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY)
     if (!raw) return ''
     const map = JSON.parse(raw)
     const kinds = map && map[active]
     if (!Array.isArray(kinds) || kinds.length === 0) return ''
-    return '&telemetryLogKinds=' + encodeURIComponent(kinds.join(','))
+    return '&telemetryEventKinds=' + encodeURIComponent(kinds.join(','))
   } catch {
     return ''
   }
@@ -1348,7 +1348,7 @@ export function useCopilot() {
       qs += '&deviceId=' + encodeURIComponent(getOrCreateTelemetryDeviceId())
       qs += '&telemetryTier=' + encodeURIComponent(tier)
       qs += '&telemetryIngestLogLevel=' + encodeURIComponent(getTelemetryIngestLogLevel())
-      qs += getTelemetryLogKindsQueryParam()
+      qs += getTelemetryEventKindsQueryParam()
     }
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {

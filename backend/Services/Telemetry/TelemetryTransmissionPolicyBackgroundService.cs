@@ -7,22 +7,25 @@ namespace OfficeCopilot.Server.Services.Telemetry;
 
 public interface ITelemetryTransmissionPolicyProvider
 {
-    /// <summary>当前缓存的传输策略（来源：中继 JSON）；观测持久化在 Seq。</summary>
+    /// <summary>当前缓存的传输策略（来源：AI Gateway JSON）。</summary>
     TelemetryTransmissionPolicyFile GetCurrentPolicy();
 
-    /// <summary>最近一次成功从遥测中继拉取并校验通过；<c>false</c> 时结构化遥测 fail-closed（不入队/不写 Seq）。</summary>
+    /// <summary>最近一次成功从 AI Gateway 拉取并校验通过；<c>false</c> 时结构化遥测 fail-closed（不入队/不 POST ingest）。</summary>
     bool IsTelemetryPolicyHealthy { get; }
 
-    /// <summary>远端 <c>availableLogKinds</c> 集合；仅在 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>true</c> 时非空。</summary>
-    IReadOnlySet<string> RelayAllowedLogKinds { get; }
+    /// <summary>Gateway <c>availableEventKinds</c> 集合；仅在 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>true</c> 时非空。</summary>
+    IReadOnlySet<string> RelayAllowedEventKinds { get; }
 
     /// <summary>远端聚合策略中的 <c>ingestLogLevel</c>（error/information/debug 等）；与 WebSocket 会话值取更严一侧；不健康或未拉取时为 <c>null</c>。</summary>
     string? RelayIngestLogLevelCap { get; }
+
+    /// <summary>有效路由 <c>gateway</c> | <c>direct</c>；不健康时视为 <c>direct</c>。</summary>
+    string EffectiveRouteMode { get; }
 }
 
 /// <summary>
-/// 从遥测中继 <c>GET /policy/aggregated</c> 拉取策略并定时刷新（默认 30s + 配置变更）。
-/// 拉取失败、解析失败、<c>telemetryEmissionAllowed=false</c> 或 <c>availableLogKinds</c> 为空时 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>false</c>（fail-closed）。
+/// 从 AI Gateway <c>GET /api/policy/aggregated</c> 拉取策略并定时刷新（默认 30s + 配置变更）。
+/// 拉取失败、解析失败、<c>telemetryEmissionAllowed=false</c> 或 <c>availableEventKinds</c> 为空时 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>false</c>（fail-closed）。
 /// </summary>
 public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundService, ITelemetryTransmissionPolicyProvider
 {
@@ -32,6 +35,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
     private bool _policyHealthy;
     private HashSet<string> _relayAllowedKinds = new(StringComparer.Ordinal);
     private string? _relayIngestCap;
+    private string _effectiveRouteMode = "direct";
 
     private static readonly HashSet<string> EmptyRelayKinds = new(StringComparer.Ordinal);
 
@@ -72,7 +76,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         }
     }
 
-    public IReadOnlySet<string> RelayAllowedLogKinds
+    public IReadOnlySet<string> RelayAllowedEventKinds
     {
         get
         {
@@ -87,6 +91,15 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         {
             lock (_policyLock)
                 return _policyHealthy ? _relayIngestCap : null;
+        }
+    }
+
+    public string EffectiveRouteMode
+    {
+        get
+        {
+            lock (_policyLock)
+                return _effectiveRouteMode;
         }
     }
 
@@ -130,7 +143,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
     private async Task RefreshAsync(CancellationToken ct)
     {
         var cfg = _config.Current;
-        var apiKey = (cfg.TelemetryRelayApiKey ?? "").Trim();
+        var apiKey = (cfg.AiGatewayApiKey ?? "").Trim();
         var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
         if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
         {
@@ -140,6 +153,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
                 _policyHealthy = false;
                 _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
                 _relayIngestCap = null;
+                _effectiveRouteMode = "direct";
             }
 
             return;
@@ -147,8 +161,8 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
 
         try
         {
-            var aggUrl = $"{baseUrl}/policy/aggregated";
-            var profileId = (cfg.TelemetryServerPolicyProfileId ?? "").Trim();
+            var aggUrl = $"{baseUrl}/api/policy/aggregated";
+            var profileId = (cfg.OpsPolicyProfileId ?? "").Trim();
             if (!string.IsNullOrEmpty(profileId))
                 aggUrl += "?profileId=" + Uri.EscapeDataString(profileId);
             using var req = new HttpRequestMessage(HttpMethod.Get, aggUrl);
@@ -163,7 +177,8 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
             }
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            var agg = await JsonSerializer.DeserializeAsync<TelemetryAggregatedPolicyResponse>(stream, JsonOpts, ct).ConfigureAwait(false);
+            var envelope = await JsonSerializer.DeserializeAsync<AggregatedPolicyEnvelope>(stream, JsonOpts, ct).ConfigureAwait(false);
+            var agg = envelope?.Effective;
             if (agg is null)
             {
                 MarkUnhealthy();
@@ -172,9 +187,9 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
 
             var emissionAllowed = agg.TelemetryEmissionAllowed != false;
             var kinds = new HashSet<string>(StringComparer.Ordinal);
-            if (agg.AvailableLogKinds is { Count: > 0 })
+            if (agg.AvailableEventKinds is { Count: > 0 })
             {
-                foreach (var e in agg.AvailableLogKinds)
+                foreach (var e in agg.AvailableEventKinds)
                 {
                     var k = (e.Kind ?? "").Trim();
                     if (k.Length > 0)
@@ -190,6 +205,9 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
             if (string.IsNullOrEmpty(ingestCap))
                 ingestCap = "information";
 
+            var routeMode = (agg.RouteMode ?? "gateway").Trim().ToLowerInvariant();
+            if (routeMode != "gateway" && routeMode != "direct") routeMode = "gateway";
+
             lock (_policyLock)
             {
                 if (healthy)
@@ -198,6 +216,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
                     _relayAllowedKinds = kinds;
                     _policy = mergedTransmission;
                     _relayIngestCap = ingestCap;
+                    _effectiveRouteMode = routeMode;
                 }
                 else
                 {
@@ -205,6 +224,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
                     _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
                     _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
                     _relayIngestCap = null;
+                    _effectiveRouteMode = "direct";
                 }
             }
         }
@@ -227,6 +247,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
             _relayAllowedKinds = new HashSet<string>(StringComparer.Ordinal);
             _policy = TelemetryTransmissionPolicyDefaults.CreateDefault();
             _relayIngestCap = null;
+            _effectiveRouteMode = "direct";
         }
     }
 }

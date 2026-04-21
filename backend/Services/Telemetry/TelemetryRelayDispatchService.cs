@@ -1,19 +1,20 @@
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace OfficeCopilot.Server.Services.Telemetry;
 
 /// <summary>
-/// 从内存队列取出观测事件，经 <see cref="ILogger"/> 结构化写入（Serilog → Seq，由 <c>Telemetry:SeqServerUrl</c> 配置）。
-/// 不再 POST 到中继 <c>/ingest/batch</c>。
+/// 从内存队列取出观测事件，批量 POST 到本机 AI Gateway <c>/ingest/spans</c>（JSONL 落盘）。
 /// </summary>
 public sealed class TelemetryRelayDispatchService : BackgroundService
 {
-    private static int s_seqSkipInfoLogged;
+    private static int s_ingestSkipInfoLogged;
 
-    private static readonly JsonSerializerOptions PayloadJsonOpts = new()
+    private static readonly JsonSerializerOptions IngestJsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -22,21 +23,21 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
 
     private readonly TelemetryRelayQueue _queue;
     private readonly ConfigService _configService;
-    private readonly IConfiguration _configuration;
     private readonly ITelemetryTransmissionPolicyProvider _telemetryPolicy;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<TelemetryRelayDispatchService> _logger;
 
     public TelemetryRelayDispatchService(
         TelemetryRelayQueue queue,
         ConfigService configService,
-        IConfiguration configuration,
         ITelemetryTransmissionPolicyProvider telemetryPolicy,
+        IHttpClientFactory httpFactory,
         ILogger<TelemetryRelayDispatchService> logger)
     {
         _queue = queue;
         _configService = configService;
-        _configuration = configuration;
         _telemetryPolicy = telemetryPolicy;
+        _httpFactory = httpFactory;
         _logger = logger;
     }
 
@@ -66,7 +67,7 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
 
             try
             {
-                FlushToSeq(buffer);
+                await FlushToGatewayAsync(buffer, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -74,23 +75,25 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Telemetry flush to Seq failed (count={Count})", buffer.Count);
+                _logger.LogDebug(ex, "Telemetry flush to AI Gateway failed (count={Count})", buffer.Count);
             }
         }
     }
 
-    private void FlushToSeq(List<TelemetryRelayEvent> buffer)
+    private async Task FlushToGatewayAsync(List<TelemetryRelayEvent> buffer, CancellationToken ct)
     {
         var cfg = _configService.Current;
-        var seqUrl = (_configuration["Telemetry:SeqServerUrl"] ?? "").Trim();
-        if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(seqUrl))
+        var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
+        var apiKey = (cfg.AiGatewayApiKey ?? "").Trim();
+        if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
         {
-            if (Interlocked.CompareExchange(ref s_seqSkipInfoLogged, 1, 0) == 0)
+            if (Interlocked.CompareExchange(ref s_ingestSkipInfoLogged, 1, 0) == 0)
             {
                 _logger.LogInformation(
-                    "Telemetry emission skipped: TelemetryEnabled={Enabled}, SeqServerUrl configured={SeqConfigured}",
+                    "Telemetry span ingest skipped: TelemetryEnabled={Enabled}, gatewayBaseConfigured={BaseOk}, apiKeyConfigured={KeyOk}",
                     cfg.TelemetryEnabled,
-                    !string.IsNullOrEmpty(seqUrl));
+                    !string.IsNullOrEmpty(baseUrl),
+                    !string.IsNullOrEmpty(apiKey));
             }
             return;
         }
@@ -98,34 +101,52 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
         if (!_telemetryPolicy.IsTelemetryPolicyHealthy)
             return;
 
+        var events = new List<SpanIngestDto>(buffer.Count);
         foreach (var e in buffer)
-            EmitOne(e);
+        {
+            events.Add(new SpanIngestDto
+            {
+                SessionId = e.SessionId,
+                DeviceId = e.DeviceId,
+                ClientTier = e.ClientTier,
+                EventType = e.EventType,
+                DetailLevel = e.DetailLevel,
+                ClientType = e.ClientType,
+                ModelId = e.ModelId,
+                Message = e.Message,
+                TimestampUtc = (e.TimestampUtc ?? DateTime.UtcNow).ToString("O"),
+                Payload = e.Payload is { } pe && pe.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null
+                    ? pe
+                    : null
+            });
+        }
+
+        var json = JsonSerializer.Serialize(new { events }, IngestJsonOpts);
+        var ingestUrl = $"{baseUrl.TrimEnd('/')}/ingest/spans";
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, ingestUrl)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var client = _httpFactory.CreateClient("telemetry");
+        using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (!res.IsSuccessStatusCode)
+            _logger.LogDebug("Telemetry span ingest POST status={Status} url={Url}", res.StatusCode, ingestUrl);
     }
 
-    private void EmitOne(TelemetryRelayEvent e)
+    private sealed class SpanIngestDto
     {
-        string? payloadStr = null;
-        if (e.Payload is { } pe && pe.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
-            payloadStr = JsonSerializer.Serialize(pe, PayloadJsonOpts);
-
-        using (_logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["TelemetryDeviceId"] = e.DeviceId,
-            ["TelemetrySessionId"] = e.SessionId,
-            ["TelemetryEventType"] = e.EventType,
-            ["TelemetryDetailLevel"] = e.DetailLevel,
-            ["TelemetryClientTier"] = e.ClientTier,
-            ["TelemetryClientType"] = e.ClientType,
-            ["TelemetryModelId"] = e.ModelId,
-            ["TelemetryTimestampUtc"] = (e.TimestampUtc ?? DateTime.UtcNow).ToString("O"),
-            ["TelemetryPayloadJson"] = payloadStr
-        }))
-        {
-            _logger.LogInformation(
-                "Telemetry {EventType} session={SessionId} tier={Tier}",
-                e.EventType,
-                e.SessionId,
-                e.ClientTier);
-        }
+        public string SessionId { get; set; } = "";
+        public string DeviceId { get; set; } = "";
+        public string ClientTier { get; set; } = "";
+        public string EventType { get; set; } = "";
+        public string DetailLevel { get; set; } = "";
+        public string? ClientType { get; set; }
+        public string? ModelId { get; set; }
+        public string? Message { get; set; }
+        public string TimestampUtc { get; set; } = "";
+        public JsonElement? Payload { get; set; }
     }
 }

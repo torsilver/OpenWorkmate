@@ -9,20 +9,15 @@ namespace backend.Tests.Unit;
 public sealed class TelemetryRelayDefaultsTests
 {
     [Fact]
-    public void LogOutboundRelayConfig_does_not_throw_when_seq_configured()
+    public void LogOutboundRelayConfig_does_not_throw()
     {
         var app = new AppConfig
         {
             TelemetryEnabled = true,
-            TelemetryRelayBaseUrl = TelemetryRelayDefaults.LocalDevBaseUrl,
-            TelemetryRelayApiKey = "test-key"
+            AiGatewayBaseUrl = TelemetryRelayDefaults.LocalDevBaseUrl,
+            AiGatewayApiKey = "test-key"
         };
-        var host = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Telemetry:SeqServerUrl"] = "http://127.0.0.1:5341"
-            })
-            .Build();
+        var host = new ConfigurationBuilder().AddInMemoryCollection().Build();
         TelemetryRelayDefaults.LogOutboundRelayConfig(NullLogger.Instance, app, host);
     }
 }

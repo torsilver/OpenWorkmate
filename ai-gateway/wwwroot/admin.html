@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<!-- 对齐 Chrome 设置页视觉：chrome-extension/options.html（内联样式子集） -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Taskly AI Gateway — 运维配置</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg-primary: #f8fafc;
+      --bg-panel: #ffffff;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      padding: 32px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .console-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .console-header h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .settings-block {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      background: var(--bg-panel);
+      overflow: hidden;
+    }
+    .settings-block > summary {
+      padding: 12px 14px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-primary);
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .settings-block > summary::-webkit-details-marker { display: none; }
+    .settings-block > summary::marker { content: none; }
+    .settings-block[open] > summary {
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-block-inner {
+      padding: 14px 16px 16px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+    }
+
+    input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      max-width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 120px;
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    .help-text code {
+      font-size: 11px;
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .actions.actions--start {
+      justify-content: flex-start;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: auto;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.btn-danger {
+      background: var(--danger);
+    }
+    button.btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+    button.btn-secondary {
+      background: #f1f5f9;
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+    button.btn-secondary:hover:not(:disabled) { background: #e2e8f0; }
+
+    .pre-wrap {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #f8fafc;
+      overflow: auto;
+      margin-top: 8px;
+    }
+    .pre-wrap pre {
+      margin: 0;
+      padding: 12px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .response-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-panel);
+      overflow: hidden;
+    }
+    .response-panel.response-panel--ok {
+      border-color: rgba(16, 185, 129, 0.45);
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.12);
+    }
+    .response-panel.response-panel--err {
+      border-color: rgba(239, 68, 68, 0.55);
+      box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.12);
+    }
+    .response-meta {
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+    }
+    .response-meta strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .response-meta .status-ok { color: var(--success); }
+    .response-meta .status-err { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="console-header">
+      <div>
+        <h1>Taskly AI Gateway — 运维配置</h1>
+        <p class="help-text" style="margin-top: 0; max-width: 42rem;">
+          Admin：本机未设置 <code>AdminApiKey</code> 时仅允许 loopback；否则请求头带 <code>X-Admin-Key</code>。
+        </p>
+      </div>
+    </header>
+
+    <details class="settings-block" open>
+      <summary>X-Admin-Key（可选）</summary>
+      <div class="settings-block-inner">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="adminKey">密钥</label>
+          <input id="adminKey" type="password" autocomplete="off" placeholder="与 appsettings Telemetry:AdminApiKey 一致" />
+          <p class="help-text">留空则仅在本机 loopback 访问 Admin 接口时可用（若服务端未配置密钥）。</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>配置落盘位置（DataRoot）</summary>
+      <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 0;">
+          默认 <code>Telemetry:DataRoot</code> 为 <code>data</code>（相对中继进程工作目录）。全局策略为单文件
+          <code>policy.ops.json</code>（含 <code>allowedRouteModes</code>、<code>transmission</code>、<code>defaults</code>、<code>policyProfiles</code>；可从仓库根 <code>ai-gateway/policy.ops.example.json</code> 复制），
+          另加按设备 <code>devices/&lt;deviceId&gt;/telemetry-override.json</code>。
+          监听地址、API Key、Seq 等非 JSON 项在 <code>appsettings.json</code> 的 <code>Telemetry</code> 节。
+        </p>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>遥测密钥（Telemetry:ApiKey）</summary>
+      <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 10px;">
+          用于 AI 后台 <code>GET /api/policy/aggregated</code>、<code>GET /api/policy/transmission</code> 的 Bearer 或 <code>X-Telemetry-Key</code>。生成后会写入当前目录的 <code>appsettings.json</code>（<code>AiGateway:ApiKey</code>）并<strong>复制到剪贴板</strong>。
+        </p>
+        <div class="btn-row" style="margin-top: 0;">
+          <button type="button" id="genTelemetryApiKey">生成遥测密钥</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>全局策略（policy.ops.json）</summary>
+      <div class="settings-block-inner">
+        <p class="help-text" style="margin-bottom: 10px;">
+          单文件包含 <code>schemaVersion</code>、<code>transmission</code>、<code>defaults</code>、<code>policyProfiles</code>。
+          每组 profile 含 <code>id</code>、<code>name</code>、<code>eventKinds</code>（AI 流事件种类白名单）；可选 <code>ingestLogLevel</code>；可选 <code>transmission</code> 覆盖全局上限。
+          保存为整包覆盖写入 DataRoot；无效 JSON 将返回 400。
+        </p>
+        <div class="form-group">
+          <label for="policyBundleJson">JSON</label>
+          <textarea id="policyBundleJson" style="min-height: 320px;" placeholder='{"schemaVersion":1,"transmission":{},"defaults":{},"policyProfiles":{"schemaVersion":1,"defaultProfileId":"default","profiles":[]}}'></textarea>
+        </div>
+        <div class="actions actions--start" style="margin-top: 0; padding-top: 0; border-top: none;">
+          <button type="button" id="loadPolicyBundle" class="btn-secondary">读取</button>
+          <button type="button" id="savePolicyBundle">保存</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>按设备覆写</summary>
+      <div class="settings-block-inner">
+        <div class="form-group">
+          <label for="deviceId">deviceId（GUID）</label>
+          <input id="deviceId" type="text" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" />
+        </div>
+        <div class="btn-row">
+          <button type="button" id="loadOverride" class="btn-secondary">读取覆写</button>
+          <button type="button" id="saveOverride">保存覆写</button>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="overrideJson">覆写 JSON</label>
+          <textarea id="overrideJson" placeholder='{"sampleRate":1,"p2BodySampleRate":0.1,"effectiveTierCap":"traces","forceTier":null,"notes":""}'></textarea>
+        </div>
+        <div class="btn-row" style="margin-top: 0;">
+          <button type="button" id="delOverride" class="btn-danger">删除覆写（恢复默认）</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>设备列表</summary>
+      <div class="settings-block-inner">
+        <div class="btn-row" style="margin-top: 0;">
+          <button type="button" id="listDevices" class="btn-secondary">扫描 data/devices</button>
+        </div>
+        <div class="pre-wrap">
+          <pre id="devicesOut"></pre>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-block" open>
+      <summary>上次响应</summary>
+      <div class="settings-block-inner" style="padding-top: 12px;">
+        <div id="outPanel" class="response-panel">
+          <div id="outMeta" class="response-meta" style="display: none;"></div>
+          <div class="pre-wrap" style="margin-top: 0; border: none; border-radius: 0; background: #f8fafc;">
+            <pre id="out"></pre>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script>
+    function adminHeaders() {
+      const k = document.getElementById('adminKey').value.trim();
+      const h = { 'Content-Type': 'application/json' };
+      if (k) h['X-Admin-Key'] = k;
+      return h;
+    }
+
+    function formatBodyText(t) {
+      let j;
+      try { j = JSON.parse(t); } catch { return t; }
+      return typeof j === 'object' && j !== null ? JSON.stringify(j, null, 2) : String(j);
+    }
+
+    function applyResponsePanel(res, bodyText) {
+      const panel = document.getElementById('outPanel');
+      const meta = document.getElementById('outMeta');
+      const out = document.getElementById('out');
+      panel.classList.remove('response-panel--ok', 'response-panel--err');
+      if (res.ok) panel.classList.add('response-panel--ok');
+      else panel.classList.add('response-panel--err');
+
+      meta.style.display = 'block';
+      const ok = res.ok;
+      meta.innerHTML =
+        'HTTP <strong>' + res.status + '</strong> ' +
+        '<span class="' + (ok ? 'status-ok' : 'status-err') + '">' + (ok ? 'OK' : 'Error') + '</span>';
+
+      out.textContent = formatBodyText(bodyText);
+    }
+
+    /** @returns {Promise<string>} raw response text */
+    async function show(res) {
+      const t = await res.text();
+      applyResponsePanel(res, t);
+      return t;
+    }
+
+    async function withButton(btn, fn) {
+      if (!btn) return;
+      const prev = btn.disabled;
+      btn.disabled = true;
+      try {
+        await fn();
+      } catch (e) {
+        const panel = document.getElementById('outPanel');
+        const meta = document.getElementById('outMeta');
+        const out = document.getElementById('out');
+        panel.classList.remove('response-panel--ok');
+        panel.classList.add('response-panel--err');
+        meta.style.display = 'block';
+        meta.innerHTML = '<span class="status-err"><strong>请求异常</strong></span>';
+        out.textContent = e && e.message ? String(e.message) : String(e);
+      } finally {
+        btn.disabled = prev;
+      }
+    }
+
+    document.getElementById('loadPolicyBundle').onclick = () => withButton(document.getElementById('loadPolicyBundle'), async () => {
+      const res = await fetch('/api/admin/policy', { headers: adminHeaders() });
+      const t = await show(res);
+      if (res.ok) {
+        try {
+          document.getElementById('policyBundleJson').value = JSON.stringify(JSON.parse(t), null, 2);
+        } catch { /* keep textarea */ }
+      }
+    });
+
+    document.getElementById('savePolicyBundle').onclick = () => withButton(document.getElementById('savePolicyBundle'), async () => {
+      const body = document.getElementById('policyBundleJson').value;
+      const res = await fetch('/api/admin/policy', { method: 'PUT', headers: adminHeaders(), body });
+      await show(res);
+    });
+
+    document.getElementById('loadOverride').onclick = () => withButton(document.getElementById('loadOverride'), async () => {
+      const id = document.getElementById('deviceId').value.trim();
+      const res = await fetch('/api/admin/devices/' + encodeURIComponent(id) + '/override', { headers: adminHeaders() });
+      const t = await show(res);
+      if (res.ok) {
+        try {
+          document.getElementById('overrideJson').value = JSON.stringify(JSON.parse(t), null, 2);
+        } catch { /* keep */ }
+      }
+    });
+
+    document.getElementById('saveOverride').onclick = () => withButton(document.getElementById('saveOverride'), async () => {
+      const id = document.getElementById('deviceId').value.trim();
+      const body = document.getElementById('overrideJson').value;
+      const res = await fetch('/api/admin/devices/' + encodeURIComponent(id) + '/override', { method: 'PUT', headers: adminHeaders(), body });
+      await show(res);
+    });
+
+    document.getElementById('delOverride').onclick = () => withButton(document.getElementById('delOverride'), async () => {
+      const id = document.getElementById('deviceId').value.trim();
+      const res = await fetch('/api/admin/devices/' + encodeURIComponent(id) + '/override', { method: 'DELETE', headers: adminHeaders() });
+      await show(res);
+    });
+
+    document.getElementById('listDevices').onclick = () => withButton(document.getElementById('listDevices'), async () => {
+      const res = await fetch('/api/admin/devices', { headers: adminHeaders() });
+      const t = await res.text();
+      document.getElementById('devicesOut').textContent = t;
+      applyResponsePanel(res, t);
+    });
+
+    document.getElementById('genTelemetryApiKey').onclick = () => withButton(document.getElementById('genTelemetryApiKey'), async () => {
+      const res = await fetch('/api/admin/telemetry/generate-api-key', { method: 'POST', headers: adminHeaders() });
+      const t = await show(res);
+      if (!res.ok) return;
+      try {
+        const j = JSON.parse(t);
+        const key = j && j.apiKey ? String(j.apiKey) : '';
+        if (!key) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(key);
+          const meta = document.getElementById('outMeta');
+          meta.innerHTML =
+            'HTTP <strong>' + res.status + '</strong> ' +
+            '<span class="status-ok">OK</span> · 已复制到剪贴板';
+        }
+      } catch (e) {
+        const meta = document.getElementById('outMeta');
+        meta.innerHTML =
+          'HTTP <strong>' + res.status + '</strong> ' +
+          '<span class="status-ok">OK</span> · 剪贴板复制失败：' + (e && e.message ? String(e.message) : String(e));
+      }
+    });
+  </script>
+</body>
+</html>

@@ -33,9 +33,9 @@ public static class TelemetryRelaySessionExtensions
             return;
         if (!policyProvider.IsTelemetryPolicyHealthy)
             return;
-        var relayAllowed = policyProvider.RelayAllowedLogKinds;
-        var sessionKinds = sessions.GetTelemetryLogKinds(sessionId);
-        var effective = TelemetryEffectiveLogKinds.Compute(relayAllowed, sessionKinds);
+        var relayAllowed = policyProvider.RelayAllowedEventKinds;
+        var sessionKinds = sessions.GetTelemetryEventKinds(sessionId);
+        var effective = TelemetryEffectiveEventKinds.Compute(relayAllowed, sessionKinds);
         if (!effective.Contains(eventType))
             return;
         var policy = policyProvider.GetCurrentPolicy();

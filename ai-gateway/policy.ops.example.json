@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "allowedRouteModes": ["gateway", "direct"],
+  "transmission": {
+    "schemaVersion": 1,
+    "minimal": {
+      "assistantTurnFinalMsgPreviewMax": 240,
+      "toolInvocationEndMsgPreviewMax": 120,
+      "otherEventMsgMax": 8192
+    },
+    "traces": {
+      "msgMax": 500,
+      "payloadMax": 2000
+    },
+    "full": {
+      "msgMax": 50000,
+      "payloadMax": 50000
+    }
+  },
+  "defaults": {
+    "retentionDays": 30,
+    "defaultP2BodySampleRate": 1,
+    "defaultEffectiveTierCap": "full"
+  },
+  "policyProfiles": {
+    "schemaVersion": 1,
+    "defaultProfileId": "default",
+    "profiles": [
+      {
+        "id": "default",
+        "name": "默认（全部 AI 流事件）",
+        "ingestLogLevel": "information",
+        "eventKinds": [
+          { "kind": "assistant_turn_final", "label": "助手轮次结束" },
+          { "kind": "tool_invocation_end", "label": "工具调用结束" },
+          { "kind": "plan_created", "label": "计划创建" },
+          { "kind": "plan_step_read", "label": "计划步骤读取" },
+          { "kind": "plan_completed", "label": "计划完成" }
+        ]
+      },
+      {
+        "id": "tools-only",
+        "name": "仅工具与计划",
+        "ingestLogLevel": "information",
+        "eventKinds": [
+          { "kind": "tool_invocation_end", "label": "工具调用结束" },
+          { "kind": "plan_created", "label": "计划创建" },
+          { "kind": "plan_step_read", "label": "计划步骤读取" },
+          { "kind": "plan_completed", "label": "计划完成" }
+        ]
+      }
+    ]
+  }
+}

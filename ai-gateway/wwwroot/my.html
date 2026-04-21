@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>本机 AI 观测数据</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 920px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 1.25rem; }
+    ul, ol { list-style: none; padding: 0; }
+    li.session { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+    a { color: #2563eb; }
+    .muted { color: #64748b; font-size: 12px; }
+    button { margin-left: 8px; padding: 4px 10px; cursor: pointer; }
+    details.trace { border: 1px dashed #cbd5f5; border-radius: 6px; padding: 8px 10px; margin: 8px 0; background: #f8fafc; }
+    details.trace > summary { cursor: pointer; font-weight: 600; }
+    .evt { padding: 6px 8px; border-left: 3px solid #6366f1; margin: 6px 0; background: #fff; border-radius: 4px; font-size: 12px; }
+    .evt code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+    .feedback { display: inline-flex; align-items: center; gap: 6px; }
+    .feedback input { width: 64px; }
+    .toast { position: fixed; right: 16px; bottom: 16px; background: #111827; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .2s; }
+    .toast.show { opacity: .9; }
+  </style>
+</head>
+<body>
+  <h1>本机已记录的会话</h1>
+  <p class="muted">仅本机 loopback 可访问。点击会话可展开 trace 树；对整轮可写反馈评分（<code>POST /ingest/scores</code>）。</p>
+
+  <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; background: #f8fafc;">
+    <strong>用户策略（policy.user.json）</strong>
+    <span class="muted"> — 影响后台路由：<code>gateway</code> 经 Gateway 中转；<code>direct</code> 直连 LLM。</span>
+    <div style="margin-top: 8px;">
+      <label><input type="radio" name="routeMode" value="gateway" /> gateway（默认）</label>
+      <label style="margin-left: 14px;"><input type="radio" name="routeMode" value="direct" /> direct</label>
+      <button type="button" id="saveUserPolicy" style="margin-left: 14px;">保存</button>
+      <span id="userPolicyStatus" class="muted" style="margin-left: 8px;"></span>
+    </div>
+  </div>
+
+  <ul id="list"></ul>
+  <p><button type="button" id="btnClear">清空全部本机观测数据</button></p>
+  <div class="toast" id="toast"></div>
+  <script>
+    var ENABLE_FEEDBACK = true;
+
+    function escapeHtml(s) {
+      var t = document.createElement('span');
+      t.textContent = s == null ? '' : String(s);
+      return t.innerHTML;
+    }
+    function showToast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(function () { el.classList.remove('show'); }, 1500);
+    }
+
+    async function load() {
+      var res = await fetch('/my/sessions');
+      if (!res.ok) { document.getElementById('list').textContent = '加载失败: ' + res.status; return; }
+      var rows = await res.json();
+      var ul = document.getElementById('list');
+      ul.innerHTML = '';
+      rows.forEach(function (r) {
+        var sid = r.sessionId;
+        var li = document.createElement('li');
+        li.className = 'session';
+        li.innerHTML =
+          '<strong>' + escapeHtml(sid) + '</strong> ' +
+          '<span class="muted">last ' + escapeHtml(r.lastAt || '') + ' · ' + (r.traceCount || 0) + ' traces · ' + (r.sizeBytes || 0) + ' B</span><br/>' +
+          '<a href="/my/sessions/' + encodeURIComponent(sid) + '/export.md" target="_blank">导出 .md</a> ' +
+          '<a href="/my/sessions/' + encodeURIComponent(sid) + '/raw.jsonl" target="_blank">raw jsonl</a>' +
+          '<button type="button" class="btn-expand" data-sid="' + encodeURIComponent(sid) + '">展开 trace 树</button>' +
+          '<button type="button" class="btn-del-sess" data-sid="' + encodeURIComponent(sid) + '">删除会话</button>' +
+          '<div class="tree" data-loaded="0"></div>';
+        ul.appendChild(li);
+      });
+
+      ul.querySelectorAll('button.btn-del-sess').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          var id = decodeURIComponent(btn.getAttribute('data-sid'));
+          if (!confirm('删除会话 ' + id + ' ?')) return;
+          await fetch('/my/sessions/' + encodeURIComponent(id), { method: 'DELETE' });
+          load();
+        });
+      });
+      ul.querySelectorAll('button.btn-expand').forEach(function (btn) {
+        btn.addEventListener('click', function () { toggleTree(btn); });
+      });
+    }
+
+    async function toggleTree(btn) {
+      var sid = decodeURIComponent(btn.getAttribute('data-sid'));
+      var container = btn.parentElement.querySelector('.tree');
+      if (container.getAttribute('data-loaded') === '1') {
+        container.style.display = container.style.display === 'none' ? 'block' : 'none';
+        return;
+      }
+      container.innerHTML = '<em class="muted">加载中…</em>';
+      var res = await fetch('/my/sessions/' + encodeURIComponent(sid));
+      if (!res.ok) { container.innerHTML = '加载失败 ' + res.status; return; }
+      var data = await res.json();
+      renderTree(container, sid, data);
+      container.setAttribute('data-loaded', '1');
+    }
+
+    function renderTree(container, sid, data) {
+      container.innerHTML = '';
+      var traces = data.traces || [];
+      if (!traces.length) {
+        container.innerHTML = '<em class="muted">该会话暂无 trace 事件。</em>';
+        return;
+      }
+      traces.forEach(function (t) {
+        var det = document.createElement('details');
+        det.className = 'trace';
+        var sum = document.createElement('summary');
+        sum.innerHTML = 'trace <code>' + escapeHtml(t.traceId) + '</code> · ' + (t.eventCount || 0) + ' events · ' + escapeHtml(t.startedAt || '');
+        det.appendChild(sum);
+
+        (t.events || []).forEach(function (e) {
+          var div = document.createElement('div');
+          div.className = 'evt';
+          var kind = e.kind || '?';
+          var model = e.model ? ' · model <code>' + escapeHtml(e.model) + '</code>' : '';
+          var lat = (typeof e.latencyMs === 'number') ? ' · ' + e.latencyMs + ' ms' : '';
+          var created = e.createdAt ? ' · ' + escapeHtml(e.createdAt) : '';
+          div.innerHTML = '<strong>' + escapeHtml(kind) + '</strong>' + model + lat + created;
+          det.appendChild(div);
+        });
+
+        if (ENABLE_FEEDBACK) {
+          var fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.innerHTML =
+            '<span class="muted">反馈：</span>' +
+            '<label><input type="radio" name="rating_' + escapeHtml(t.traceId) + '" value="1" /> 👍</label>' +
+            '<label><input type="radio" name="rating_' + escapeHtml(t.traceId) + '" value="-1" /> 👎</label>' +
+            '<input class="note" type="text" placeholder="备注（可选）" />' +
+            '<button type="button" class="btn-fb">提交</button>' +
+            '<button type="button" class="btn-del-trace">删除此 trace</button>';
+          det.appendChild(fb);
+          fb.querySelector('.btn-fb').addEventListener('click', async function () {
+            var radio = fb.querySelector('input[type=radio]:checked');
+            if (!radio) { showToast('请选择 👍 或 👎'); return; }
+            var rating = parseInt(radio.value, 10);
+            var note = fb.querySelector('.note').value.trim();
+            var body = { sessionId: sid, traceId: t.traceId, name: 'user_thumb', value: rating, source: 'user', comment: note || null };
+            var r = await fetch('/ingest/scores', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            showToast(r.ok ? '已记录反馈' : '失败 ' + r.status);
+          });
+          fb.querySelector('.btn-del-trace').addEventListener('click', async function () {
+            if (!confirm('删除该 trace 的所有事件？')) return;
+            var r = await fetch('/my/traces/' + encodeURIComponent(t.traceId) + '?sid=' + encodeURIComponent(sid), { method: 'DELETE' });
+            if (r.ok) { det.remove(); showToast('已删除'); } else { showToast('失败 ' + r.status); }
+          });
+        }
+
+        container.appendChild(det);
+      });
+
+      var orphans = data.orphans || [];
+      if (orphans.length) {
+        var p = document.createElement('p');
+        p.className = 'muted';
+        p.textContent = '（另有 ' + orphans.length + ' 条无 traceId 事件已忽略）';
+        container.appendChild(p);
+      }
+    }
+
+    document.getElementById('btnClear').addEventListener('click', async function () {
+      if (!confirm('清空全部 sessions 与 blobs？')) return;
+      await fetch('/my/sessions', { method: 'DELETE' });
+      load();
+    });
+
+    async function loadUserPolicy() {
+      try {
+        var r = await fetch('/api/policy/user/');
+        if (!r.ok) return;
+        var p = await r.json();
+        var mode = (p && p.routeMode) || 'gateway';
+        var radio = document.querySelector('input[name=routeMode][value="' + mode + '"]');
+        if (radio) radio.checked = true;
+      } catch (_) { /* ignore */ }
+    }
+    document.getElementById('saveUserPolicy').addEventListener('click', async function () {
+      var radio = document.querySelector('input[name=routeMode]:checked');
+      if (!radio) { showToast('请选择 routeMode'); return; }
+      var body = { schemaVersion: 1, routeMode: radio.value };
+      var r = await fetch('/api/policy/user/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      var st = document.getElementById('userPolicyStatus');
+      st.textContent = r.ok ? '已保存（后台下轮策略刷新生效）' : '失败 ' + r.status;
+    });
+    loadUserPolicy();
+    load();
+  </script>
+</body>
+</html>

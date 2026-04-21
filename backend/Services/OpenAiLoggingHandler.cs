@@ -23,10 +23,10 @@ public sealed class OpenAiLoggingHandler : DelegatingHandler
         WriteIndented = false
     };
 
-    public OpenAiLoggingHandler(ILogger<OpenAiLoggingHandler> logger)
+    public OpenAiLoggingHandler(ILogger<OpenAiLoggingHandler> logger, HttpMessageHandler? inner = null)
     {
         _logger = logger;
-        InnerHandler = new HttpClientHandler();
+        InnerHandler = inner ?? new HttpClientHandler();
     }
 
     /// <summary>将 JSON 字符串重新序列化为不转义 Unicode 的格式，便于日志阅读；非 JSON 则原样返回。</summary>

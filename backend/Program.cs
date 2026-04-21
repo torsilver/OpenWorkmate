@@ -60,12 +60,6 @@ try
             .Enrich.FromLogContext()
             .WriteTo.Console()
             .WriteTo.File("logs/office-copilot-.txt", rollingInterval: RollingInterval.Day);
-        var seqUrl = ctx.Configuration["Telemetry:SeqServerUrl"]?.Trim();
-        if (!string.IsNullOrEmpty(seqUrl))
-        {
-            var seqKey = ctx.Configuration["Telemetry:SeqApiKey"]?.Trim();
-            lc.WriteTo.Seq(seqUrl, apiKey: string.IsNullOrEmpty(seqKey) ? null : seqKey);
-        }
     });
 
     builder.Services.AddHttpClient();
@@ -301,15 +295,15 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
     if (string.IsNullOrEmpty(telemetryTier)) telemetryTier = null;
     var telemetryIngestLogLevel = context.Request.Query["telemetryIngestLogLevel"].ToString().Trim();
     if (string.IsNullOrEmpty(telemetryIngestLogLevel)) telemetryIngestLogLevel = null;
-    var telemetryLogKinds = TelemetrySessionLogKindFilter.ParseFromQuery(context.Request.Query);
+    var telemetryEventKinds = TelemetrySessionEventKindFilter.ParseFromQuery(context.Request.Query);
 
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     app.Logger.LogInformation(
-        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId} telemetryTier={TelemetryTier} telemetryIngestLogLevel={IngestLv} telemetryLogKinds={LogKinds}",
+        "Session {SessionId} connected clientType={ClientType} agentProfileId={AgentProfileId} telemetryTier={TelemetryTier} telemetryIngestLogLevel={IngestLv} telemetryEventKinds={EventKinds}",
         sessionId, clientType ?? "(none)", resolvedProfileId, telemetryTier ?? "(none)", telemetryIngestLogLevel ?? "(none)",
-        telemetryLogKinds is { Count: > 0 } c ? string.Join(',', c) : "(any)");
+        telemetryEventKinds is { Count: > 0 } c ? string.Join(',', c) : "(any)");
 
-    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName, telemetryDeviceId, telemetryTier, telemetryIngestLogLevel, telemetryLogKinds);
+    sessions.Add(sessionId, ws, clientType, resolvedProfileId, resolvedDisplayName, telemetryDeviceId, telemetryTier, telemetryIngestLogLevel, telemetryEventKinds);
     try
     {
         var rpcManager = app.Services.GetRequiredService<RpcManager>();
