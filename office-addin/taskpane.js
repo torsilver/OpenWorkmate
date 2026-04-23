@@ -14,8 +14,26 @@
     return tasklyOfficeApiReady;
   }
   var TASKLY_AUTH_TOKEN_KEY = "tasklyLocalServiceAuthToken";
+  var TASKLY_TELEMETRY_DEVICE_ID_KEY = "tasklyTelemetryDeviceId";
+  var TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = "tasklyTelemetryClientEmission";
+  var TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "tasklyTelemetryRelayActiveProfileId";
+  var TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = "tasklyTelemetryEventKindsByProfile";
+  var STORAGE_ACTIVE_AGENT_PROFILE_ID = "activeAgentProfileId";
+
   function getStoredAuthToken() {
     try { return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || "").trim(); } catch (e) { return ""; }
+  }
+  function getStoredAgentProfileId() {
+    try {
+      return (localStorage.getItem(STORAGE_ACTIVE_AGENT_PROFILE_ID) || "default").trim() || "default";
+    } catch (e) {
+      return "default";
+    }
+  }
+  function persistAgentProfileId(id) {
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_AGENT_PROFILE_ID, (id && String(id).trim()) || "default");
+    } catch (e) { /* ignore */ }
   }
   function tasklyFetch(url, init) {
     init = init || {};
@@ -26,15 +44,25 @@
   }
   function ensureBootstrapAuthToken() {
     return tasklyEnsureOfficeApiBase().then(function () {
-    return fetch(API_BASE + "/api/bootstrap/local-service-auth")
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (!j || !j.ok) return;
-        var t = (j.webSocketAuthToken || "").trim();
-        if (!t || getStoredAuthToken()) return;
-        try { localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t); } catch (e) {}
-      })
-      .catch(function () {});
+      return fetch(API_BASE + "/api/bootstrap/local-service-auth")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || !j.ok) return j;
+          try {
+            localStorage.setItem(
+              TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+              j.telemetryUserObservabilityEnabled === false ? "off" : "on"
+            );
+          } catch (e) { /* ignore */ }
+          var t = (j.webSocketAuthToken || "").trim();
+          if (t && !getStoredAuthToken()) {
+            try {
+              localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t);
+            } catch (e2) { /* ignore */ }
+          }
+          return j;
+        })
+        .catch(function () { return null; });
     });
   }
   const RECONNECT_BASE_MS = 1000;
@@ -80,8 +108,21 @@
   const $attachmentsPreview = document.getElementById("attachments-preview");
   const $atModePanel = document.getElementById("at-mode-panel");
   const $atModeList = document.getElementById("at-mode-list");
+  const $agentProfileSelect = document.getElementById("agent-profile-select");
+  const $historyChatBtn = document.getElementById("history-chat-btn");
+  const $settingsBtn = document.getElementById("settings-btn");
+  const $historyOverlay = document.getElementById("history-overlay");
+  const $historyOverlayBackdrop = document.getElementById("history-overlay-backdrop");
+  const $historyOverlayClose = document.getElementById("history-overlay-close");
+  const $historyList = document.getElementById("history-list");
+  const $historyError = document.getElementById("history-error");
+  const $historyLoadMore = document.getElementById("history-load-more");
 
   const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
+  var OFFICE_WELCOME_INNER_HTML =
+    '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel/PowerPoint 文档。完整配置请在 Chrome 扩展 options 页完成。</p></div>';
+  var lastSetContextSig = "";
+  var _suppressOfficeAgentSelectChange = false;
 
   let currentPlanId = null;
   let currentPlanTitle = null;
@@ -128,6 +169,99 @@
       sessionStorage.setItem("copilot_session_id", id);
     }
     return id;
+  }
+
+  function officeHostKindForSetContext() {
+    if (OFFICE_CLIENT_TYPE === "office-word") return "word";
+    if (OFFICE_CLIENT_TYPE === "office-excel") return "et";
+    if (OFFICE_CLIENT_TYPE === "office-powerpoint") return "wpp";
+    return "";
+  }
+
+  function getOfficeDocumentLabelPromise() {
+    return new Promise(function (resolve) {
+      try {
+        var host = Office.context.host;
+        var appName =
+          host === Office.HostType.Word
+            ? "Microsoft Word"
+            : host === Office.HostType.Excel
+              ? "Microsoft Excel"
+              : "Microsoft PowerPoint";
+        var url = "";
+        try {
+          if (Office.context.document && Office.context.document.url) url = String(Office.context.document.url);
+        } catch (e0) { /* ignore */ }
+        var fromUrl = "";
+        if (url) {
+          try {
+            var path = url.split("?")[0];
+            fromUrl = path.replace(/\\/g, "/").split("/").pop() || "";
+          } catch (e1) { /* ignore */ }
+        }
+        function finish(name) {
+          var n = (name && String(name).trim()) || fromUrl || "未保存文档";
+          var line = (appName ? appName + " · " : "") + n;
+          if (line.length > 200) line = line.slice(0, 200);
+          resolve(line);
+        }
+        if (host === Office.HostType.Word && typeof Word !== "undefined") {
+          Word.run(function (context) {
+            var props = context.document.properties;
+            props.load("title");
+            return context.sync().then(function () {
+              var fn = fromUrl;
+              try {
+                var ti = props.title;
+                if (ti && String(ti).trim()) fn = String(ti).trim();
+              } catch (e2) { /* ignore */ }
+              finish(fn);
+            });
+          }).catch(function () { finish(fromUrl); });
+          return;
+        }
+        if (host === Office.HostType.Excel && typeof Excel !== "undefined") {
+          Excel.run(function (context) {
+            context.workbook.load("name");
+            return context.sync().then(function () {
+              finish(context.workbook.name || fromUrl);
+            });
+          }).catch(function () { finish(fromUrl); });
+          return;
+        }
+        if (typeof Office.HostType !== "undefined" && Office.HostType.PowerPoint && host === Office.HostType.PowerPoint && typeof PowerPoint !== "undefined") {
+          PowerPoint.run(function (context) {
+            context.presentation.load("title");
+            return context.sync().then(function () {
+              finish(context.presentation.title || fromUrl);
+            });
+          }).catch(function () { finish(fromUrl); });
+          return;
+        }
+        finish(fromUrl || "");
+      } catch (e) {
+        resolve("");
+      }
+    });
+  }
+
+  function sendOfficeSetContextIfNeeded() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    getOfficeDocumentLabelPromise().then(function (pageTitle) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      var hk = officeHostKindForSetContext();
+      var pt = (pageTitle && String(pageTitle).trim()) || "";
+      if (!hk && !pt) return;
+      var sig = (hk || "") + "\0" + pt;
+      if (sig === lastSetContextSig) return;
+      var payload = { type: "set_context" };
+      if (hk) payload.wpsHostKind = hk;
+      if (pt) payload.pageTitle = pt.length > 200 ? pt.slice(0, 200) : pt;
+      try {
+        ws.send(JSON.stringify(payload));
+        lastSetContextSig = sig;
+      } catch (e) { /* ignore */ }
+    });
   }
 
   function setStatus(connected) {
@@ -641,9 +775,12 @@
 
   function resetOfficeConversation() {
     closeAtMode();
+    closeOfficeHistoryOverlay();
+    closeOfficeAskOptionsOverlay();
     try {
       sessionStorage.removeItem("copilot_session_id");
     } catch (e) { /* ignore */ }
+    lastSetContextSig = "";
     pendingMessages = [];
     crossAgentAutoRunLock = false;
     crossAgentAutoRunQueued = false;
@@ -658,8 +795,7 @@
     planChecklistStatus = {};
     if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
     clearPlanCurrentStepIndex();
-    $messages.innerHTML =
-      '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel 文档。配置请在 Chrome 扩展中完成。</p></div>';
+    $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
     if ($input) $input.value = "";
     if (ws) {
       try {
@@ -1127,34 +1263,58 @@
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
     sessionId = getSessionId();
-    ensureBootstrapAuthToken().then(function () {
-    var tok = getStoredAuthToken();
-    var url = WS_URL + "?sessionId=" + encodeURIComponent(sessionId) + "&clientType=" + encodeURIComponent(OFFICE_CLIENT_TYPE) + (tok ? "&token=" + encodeURIComponent(tok) : "");
-    ws = new WebSocket(url);
-
-    ws.onopen = function () {
-      reconnectDelay = RECONNECT_BASE_MS;
-      setStatus(true);
-      addSystemMessage("已连接到本地服务");
-      while (pendingMessages.length > 0) {
-        const m = pendingMessages.shift();
-        send(m.text, { attachments: m.attachmentsPayload || null });
+    ensureBootstrapAuthToken().then(function (bootstrap) {
+      var tok = getStoredAuthToken();
+      var ap = getStoredAgentProfileId();
+      var qs = "";
+      if (typeof TasklyCopilotHostShared !== "undefined" && TasklyCopilotHostShared.buildWebSocketQueryString) {
+        qs = TasklyCopilotHostShared.buildWebSocketQueryString({
+          sessionId: sessionId,
+          clientType: OFFICE_CLIENT_TYPE,
+          agentProfileId: ap,
+          token: tok,
+          bootstrap: bootstrap,
+          telemetryDeviceIdKey: TASKLY_TELEMETRY_DEVICE_ID_KEY,
+          telemetryClientEmissionKey: TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+          telemetryRelayActiveProfileKey: TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
+          telemetryEventKindsByProfileKey: TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
+        });
+      } else {
+        qs =
+          "?sessionId=" +
+          encodeURIComponent(sessionId) +
+          "&clientType=" +
+          encodeURIComponent(OFFICE_CLIENT_TYPE) +
+          "&agentProfileId=" +
+          encodeURIComponent(ap) +
+          (tok ? "&token=" + encodeURIComponent(tok) : "");
       }
-      flushCrossAgentAutoRunAfterReconnect();
-    };
+      ws = new WebSocket(WS_URL + qs);
 
-    ws.onmessage = function (e) { handleMessage(e.data); };
+      ws.onopen = function () {
+        reconnectDelay = RECONNECT_BASE_MS;
+        setStatus(true);
+        addSystemMessage("已连接到本地服务");
+        sendOfficeSetContextIfNeeded();
+        while (pendingMessages.length > 0) {
+          const m = pendingMessages.shift();
+          send(m.text, { attachments: m.attachmentsPayload || null });
+        }
+        flushCrossAgentAutoRunAfterReconnect();
+      };
 
-    ws.onclose = function () {
-      const wasStreaming = !!currentRoundWrapper;
-      ws = null;
-      setStatus(false);
-      finalizeStream();
-      if (wasStreaming) addBotMessage("连接已断开，请检查网络或稍后重试。", true);
-      scheduleReconnect();
-    };
+      ws.onmessage = function (e) { handleMessage(e.data); };
 
-    ws.onerror = function () { ws.close(); };
+      ws.onclose = function () {
+        const wasStreaming = !!currentRoundWrapper;
+        ws = null;
+        setStatus(false);
+        finalizeStream();
+        if (wasStreaming) addBotMessage("连接已断开，请检查网络或稍后重试。", true);
+        scheduleReconnect();
+      };
+
+      ws.onerror = function () { ws.close(); };
     }).catch(function (err) {
       addSystemMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)));
     });
@@ -1175,6 +1335,7 @@
       addBotMessage("连接已断开，消息未发送。请检查后台是否启动，并在 Chrome 扩展中配置。", true);
       return;
     }
+    sendOfficeSetContextIfNeeded();
     const payload = { type: "text", content: text || "" };
     const skipPlan = sendOpts.skipPlan === true;
     const attachmentsPayload = sendOpts.attachments || null;
@@ -1281,6 +1442,515 @@
     if ($planCancelEditBtn) $planCancelEditBtn.style.display = "none";
   }
 
+  var historySkip = 0;
+  var historyHasMore = true;
+  var historyLoading = false;
+
+  function showOfficeHistoryError(text) {
+    if (!$historyError) return;
+    var t = (text || "").trim();
+    if (!t) {
+      $historyError.style.display = "none";
+      $historyError.textContent = "";
+      return;
+    }
+    $historyError.textContent = t;
+    $historyError.style.display = "block";
+  }
+
+  function updateOfficeHistoryLoadMoreButton() {
+    if (!$historyLoadMore) return;
+    if (!historyHasMore) {
+      $historyLoadMore.textContent = "没有更多了";
+      $historyLoadMore.disabled = true;
+    } else {
+      $historyLoadMore.textContent = "加载更多";
+      $historyLoadMore.disabled = historyLoading;
+    }
+  }
+
+  function closeOfficeHistoryOverlay() {
+    if (!$historyOverlay) return;
+    $historyOverlay.style.display = "none";
+    $historyOverlay.setAttribute("aria-hidden", "true");
+    showOfficeHistoryError("");
+  }
+
+  function appendOfficeHistoryListItem(it, currentSessionId) {
+    if (!$historyList || !it || !it.sessionId) return;
+    var li = document.createElement("li");
+    li.className = "history-list-item" + (it.sessionId === currentSessionId ? " history-list-item--current" : "");
+    li.dataset.sessionId = it.sessionId;
+    if (it.agentProfileId != null && String(it.agentProfileId).trim() !== "")
+      li.dataset.agentProfileId = String(it.agentProfileId).trim();
+    var main = document.createElement("div");
+    main.className = "history-list-item-main";
+    var titleEl = document.createElement("div");
+    titleEl.className = "history-list-item-title";
+    titleEl.textContent = (it.titlePreview && String(it.titlePreview).trim()) || it.sessionId || "（无标题）";
+    var meta = document.createElement("div");
+    meta.className = "history-list-item-meta";
+    if (it.updatedAtUtc) {
+      try {
+        meta.textContent = new Date(it.updatedAtUtc).toLocaleString();
+      } catch (e) {
+        meta.textContent = "";
+      }
+    }
+    main.appendChild(titleEl);
+    main.appendChild(meta);
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "history-list-item-delete";
+    delBtn.textContent = "删除";
+    delBtn.title = "删除此历史对话";
+    delBtn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      void deleteOfficeHistorySession(it.sessionId, li);
+    });
+    li.addEventListener("click", function () {
+      void switchToOfficeHistorySession(it.sessionId, it.agentProfileId);
+    });
+    li.appendChild(main);
+    li.appendChild(delBtn);
+    $historyList.appendChild(li);
+  }
+
+  async function fetchOfficeHistoryPage(append) {
+    if (historyLoading) return;
+    if (append && !historyHasMore) return;
+    historyLoading = true;
+    if ($historyLoadMore) $historyLoadMore.disabled = true;
+    try {
+      await tasklyEnsureOfficeApiBase();
+      await ensureBootstrapAuthToken();
+      var skip = append ? historySkip : 0;
+      if (!append) {
+        historySkip = 0;
+        historyHasMore = true;
+        if ($historyList) $historyList.innerHTML = "";
+      }
+      var ap = getStoredAgentProfileId();
+      var res = await tasklyFetch(
+        API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10&agentProfileId=" + encodeURIComponent(ap)
+      );
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.message || "加载历史列表失败");
+      var items = data.items || [];
+      historyHasMore = !!data.hasMore;
+      historySkip = skip + items.length;
+      var curSid = getSessionId();
+      for (var i = 0; i < items.length; i++) appendOfficeHistoryListItem(items[i], curSid);
+    } catch (e) {
+      showOfficeHistoryError(e.message || String(e));
+    } finally {
+      historyLoading = false;
+      updateOfficeHistoryLoadMoreButton();
+    }
+  }
+
+  async function deleteOfficeHistorySession(sid, liEl) {
+    if (!sid) return;
+    if (!confirm("确定删除此历史对话？本地保存的记录将移除，且无法恢复。")) return;
+    try {
+      await tasklyEnsureOfficeApiBase();
+      await ensureBootstrapAuthToken();
+      var res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        alert(data.message || "删除失败");
+        return;
+      }
+      if (liEl && liEl.parentNode) liEl.parentNode.removeChild(liEl);
+      if (getSessionId() === sid) {
+        try {
+          sessionStorage.removeItem("copilot_session_id");
+        } catch (e) { /* ignore */ }
+        lastSetContextSig = "";
+        currentPlanId = null;
+        currentPlanTitle = null;
+        currentPlanContent = null;
+        currentPlanCreatedBy = null;
+        if ($planPanel) $planPanel.style.display = "none";
+        planChecklistSteps = [];
+        planChecklistStatus = {};
+        if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
+        clearPlanCurrentStepIndex();
+        if ($messages) $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
+        attachments = [];
+        renderAttachmentsPreview();
+        if (ws) {
+          try {
+            ws.close();
+          } catch (e2) { /* ignore */ }
+          ws = null;
+        }
+        connect();
+      }
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  async function switchToOfficeHistorySession(sid, agentProfileIdFromItem) {
+    if (!sid) return;
+    finalizeStream();
+    try {
+      await tasklyEnsureOfficeApiBase();
+      await ensureBootstrapAuthToken();
+      if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== "") {
+        persistAgentProfileId(String(agentProfileIdFromItem).trim());
+        _suppressOfficeAgentSelectChange = true;
+        try {
+          if ($agentProfileSelect) {
+            var ap = getStoredAgentProfileId();
+            var ids = Array.prototype.map.call($agentProfileSelect.options, function (o) { return o.value; });
+            if (ids.indexOf(ap) >= 0) $agentProfileSelect.value = ap;
+          }
+        } finally {
+          _suppressOfficeAgentSelectChange = false;
+        }
+      }
+      var res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        addBotMessage(data.message || "加载该对话消息失败", true);
+        return;
+      }
+      try {
+        sessionStorage.setItem("copilot_session_id", sid);
+      } catch (e) { /* ignore */ }
+      sessionId = sid;
+      lastSetContextSig = "";
+      currentPlanId = null;
+      currentPlanTitle = null;
+      currentPlanContent = null;
+      currentPlanCreatedBy = null;
+      if ($planPanel) $planPanel.style.display = "none";
+      planChecklistSteps = [];
+      planChecklistStatus = {};
+      if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
+      clearPlanCurrentStepIndex();
+      attachments = [];
+      renderAttachmentsPreview();
+      if ($messages) $messages.innerHTML = "";
+      var msgs = data.messages || [];
+      for (var mi = 0; mi < msgs.length; mi++) {
+        var m = msgs[mi];
+        var r = (m.role || "").toLowerCase();
+        if (r === "user") addUserMessage(m.text || "");
+        else addBotMessage(m.text || "", false);
+      }
+      if (msgs.length === 0 && $messages) $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
+      closeOfficeHistoryOverlay();
+      if (ws) {
+        try {
+          ws.close();
+        } catch (e2) { /* ignore */ }
+        ws = null;
+      }
+      connect();
+    } catch (e) {
+      addBotMessage(e.message || String(e), true);
+    }
+  }
+
+  async function openOfficeHistoryOverlay() {
+    if (!$historyOverlay) return;
+    showOfficeHistoryError("");
+    historySkip = 0;
+    historyHasMore = true;
+    if ($historyList) $historyList.innerHTML = "";
+    $historyOverlay.style.display = "flex";
+    $historyOverlay.setAttribute("aria-hidden", "false");
+    updateOfficeHistoryLoadMoreButton();
+    try {
+      await fetchOfficeHistoryPage(false);
+    } catch (e) {
+      showOfficeHistoryError(e.message || String(e));
+    }
+  }
+
+  var officeAskOptionsOverlay = null;
+  var $officeAskOptionsTitle = null;
+  var $officeAskOptionsPrompt = null;
+  var $officeAskOptionsStepIndicator = null;
+  var $officeAskOptionsQuestion = null;
+  var $officeAskOptionsOptions = null;
+  var $officeAskOptionsConfirmBtn = null;
+  var officeAskOptionsRequestId = null;
+  var officeAskOptionsSteps = [];
+  var officeAskOptionsSelections = {};
+  var officeAskOptionsCurrentStepIndex = 0;
+  var officeAskOptionsCurrentSelectedOptionId = null;
+  var officeAskOptionsBound = false;
+  var officeAskOptionsTitleCache = "";
+  var officeAskOptionsPromptCache = "";
+
+  function openOfficeAskOptionsOverlay() {
+    if (!officeAskOptionsOverlay) return;
+    officeAskOptionsOverlay.style.display = "flex";
+    officeAskOptionsOverlay.setAttribute("aria-hidden", "false");
+  }
+
+  function closeOfficeAskOptionsOverlay() {
+    if (!officeAskOptionsOverlay) return;
+    officeAskOptionsOverlay.style.display = "none";
+    officeAskOptionsOverlay.setAttribute("aria-hidden", "true");
+    officeAskOptionsRequestId = null;
+    officeAskOptionsSteps = [];
+    officeAskOptionsSelections = {};
+    officeAskOptionsCurrentStepIndex = 0;
+    officeAskOptionsCurrentSelectedOptionId = null;
+  }
+
+  function setOfficeAskOptionsActiveOption(optionId) {
+    officeAskOptionsCurrentSelectedOptionId = optionId || null;
+    if (!$officeAskOptionsOptions) return;
+    var items = $officeAskOptionsOptions.querySelectorAll(".ask-option-item");
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      var active = el.dataset.optionId === String(optionId || "");
+      el.classList.toggle("ask-option-item--active", active);
+    }
+  }
+
+  function renderOfficeAskOptionsStep(idx) {
+    if (!$officeAskOptionsTitle || !$officeAskOptionsPrompt || !$officeAskOptionsStepIndicator || !$officeAskOptionsQuestion || !$officeAskOptionsOptions) return;
+    if (!Array.isArray(officeAskOptionsSteps) || officeAskOptionsSteps.length === 0) return;
+    var step = officeAskOptionsSteps[idx];
+    if (!step) return;
+    $officeAskOptionsTitle.textContent = String(step.title || "") || String(officeAskOptionsTitleCache || "请选择一个选项");
+    $officeAskOptionsPrompt.textContent = String(officeAskOptionsPromptCache || "");
+    $officeAskOptionsStepIndicator.textContent = "步骤 " + (idx + 1) + "/" + officeAskOptionsSteps.length;
+    $officeAskOptionsQuestion.textContent = String(step.question || "");
+    var selectedOptionId = officeAskOptionsSelections[step.stepId] || null;
+    officeAskOptionsCurrentSelectedOptionId = selectedOptionId;
+    var options = Array.isArray(step.options) ? step.options : [];
+    var html = "";
+    for (var oi = 0; oi < options.length; oi++) {
+      var o = options[oi];
+      var optionId = String(o.optionId != null ? o.optionId : "");
+      var label = String(o.label != null ? o.label : "");
+      var active = selectedOptionId && String(selectedOptionId) === optionId ? "ask-option-item--active" : "";
+      html +=
+        '<div class="ask-option-item ' +
+        active +
+        '" data-option-id="' +
+        escapeHtml(optionId) +
+        '" role="option" aria-selected="' +
+        (active ? "true" : "false") +
+        '"><div class="ask-option-label">' +
+        escapeHtml(label || optionId) +
+        "</div></div>";
+    }
+    $officeAskOptionsOptions.innerHTML = html;
+  }
+
+  function ensureOfficeAskOptionsBound() {
+    if (officeAskOptionsBound) return;
+    officeAskOptionsBound = true;
+    if ($officeAskOptionsOptions) {
+      $officeAskOptionsOptions.addEventListener("click", function (e) {
+        var item = e.target && e.target.closest ? e.target.closest(".ask-option-item") : null;
+        if (!item) return;
+        setOfficeAskOptionsActiveOption(item.dataset.optionId);
+      });
+    }
+    if ($officeAskOptionsConfirmBtn) {
+      $officeAskOptionsConfirmBtn.addEventListener("click", function () {
+        if (!officeAskOptionsRequestId) return;
+        if (!Array.isArray(officeAskOptionsSteps) || officeAskOptionsSteps.length === 0) {
+          sendOfficeAskOptionsResponse();
+          return;
+        }
+        var step = officeAskOptionsSteps[officeAskOptionsCurrentStepIndex];
+        if (!step) return;
+        if (!officeAskOptionsCurrentSelectedOptionId) {
+          alert("请先选择一个选项后再点击确定。");
+          return;
+        }
+        officeAskOptionsSelections[step.stepId] = String(officeAskOptionsCurrentSelectedOptionId);
+        if (officeAskOptionsCurrentStepIndex < officeAskOptionsSteps.length - 1) {
+          officeAskOptionsCurrentStepIndex++;
+          renderOfficeAskOptionsStep(officeAskOptionsCurrentStepIndex);
+        } else {
+          sendOfficeAskOptionsResponse();
+        }
+      });
+    }
+  }
+
+  function sendOfficeAskOptionsResponse() {
+    var id = officeAskOptionsRequestId;
+    var selections = officeAskOptionsSelections || {};
+    if (!id) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addBotMessage("连接已断开，无法提交候选项选择。", true);
+      closeOfficeAskOptionsOverlay();
+      setInputEnabled(true);
+      return;
+    }
+    ws.send(JSON.stringify({ type: "ask_options_response", id: id, selections: selections }));
+    closeOfficeAskOptionsOverlay();
+    setInputEnabled(true);
+    if ($stopBtn) $stopBtn.style.display = "none";
+  }
+
+  function handleOfficeAskOptionsRequest(msg) {
+    try {
+      if (!msg) return;
+      var id = msg.id || msg.requestId;
+      if (!id) return;
+      var steps = Array.isArray(msg.steps) ? msg.steps : [];
+      if (!steps.length) {
+        officeAskOptionsRequestId = id;
+        officeAskOptionsSteps = [];
+        officeAskOptionsSelections = {};
+        officeAskOptionsCurrentStepIndex = 0;
+        officeAskOptionsCurrentSelectedOptionId = null;
+        sendOfficeAskOptionsResponse();
+        return;
+      }
+      officeAskOptionsOverlay = document.getElementById("ask-options-overlay");
+      $officeAskOptionsTitle = document.getElementById("ask-options-title");
+      $officeAskOptionsPrompt = document.getElementById("ask-options-prompt");
+      $officeAskOptionsStepIndicator = document.getElementById("ask-options-step-indicator");
+      $officeAskOptionsQuestion = document.getElementById("ask-options-question");
+      $officeAskOptionsOptions = document.getElementById("ask-options-options");
+      $officeAskOptionsConfirmBtn = document.getElementById("ask-options-confirm-btn");
+      officeAskOptionsRequestId = id;
+      officeAskOptionsSteps = steps;
+      officeAskOptionsSelections = {};
+      officeAskOptionsCurrentStepIndex = 0;
+      officeAskOptionsCurrentSelectedOptionId = null;
+      officeAskOptionsTitleCache = String(msg.title || "");
+      officeAskOptionsPromptCache = String(msg.prompt || "");
+      ensureOfficeAskOptionsBound();
+      openOfficeAskOptionsOverlay();
+      setInputEnabled(false);
+      if ($stopBtn) $stopBtn.style.display = "none";
+      renderOfficeAskOptionsStep(0);
+    } catch (e) {
+      console.error("ask_options_request UI error:", e);
+      addBotMessage("弹出候选项选择失败，请重试。", true);
+      closeOfficeAskOptionsOverlay();
+      setInputEnabled(true);
+    }
+  }
+
+  async function refreshOfficeAgentProfileSelect() {
+    if (!$agentProfileSelect) return;
+    try {
+      await tasklyEnsureOfficeApiBase();
+      await ensureBootstrapAuthToken();
+      var res = await tasklyFetch(API_BASE + "/api/config");
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) return;
+      var list = data.agentProfiles || data.AgentProfiles || [];
+      _suppressOfficeAgentSelectChange = true;
+      $agentProfileSelect.innerHTML = "";
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        var pid = String((p.id != null ? p.id : p.Id) || "").trim();
+        if (!pid) continue;
+        var opt = document.createElement("option");
+        opt.value = pid;
+        opt.textContent = p.displayName || p.DisplayName || pid;
+        $agentProfileSelect.appendChild(opt);
+      }
+      if ($agentProfileSelect.options.length === 0) {
+        var opt2 = document.createElement("option");
+        opt2.value = "default";
+        opt2.textContent = "默认助手";
+        $agentProfileSelect.appendChild(opt2);
+      }
+      var serverDefault = String(data.activeAgentProfileId || data.ActiveAgentProfileId || "default").trim() || "default";
+      var active = getStoredAgentProfileId() || serverDefault;
+      var ids = Array.prototype.map.call($agentProfileSelect.options, function (o) { return o.value; });
+      if (ids.indexOf(active) < 0) active = ids[0] || "default";
+      persistAgentProfileId(active);
+      $agentProfileSelect.value = active;
+      var themeFromServer =
+        (data.uiThemeId && String(data.uiThemeId).trim()) ||
+        (data.UiThemeId && String(data.UiThemeId).trim()) ||
+        "";
+      if (themeFromServer && typeof TasklyTheme !== "undefined") {
+        try {
+          TasklyTheme.setTheme(themeFromServer);
+          if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) {
+      console.warn("refreshOfficeAgentProfileSelect", e);
+    } finally {
+      _suppressOfficeAgentSelectChange = false;
+    }
+  }
+
+  function applyOfficeAgentProfileChange(newId) {
+    persistAgentProfileId(newId);
+    try {
+      sessionStorage.removeItem("copilot_session_id");
+    } catch (e) { /* ignore */ }
+    sessionId = getSessionId();
+    lastSetContextSig = "";
+    pendingMessages = [];
+    crossAgentAutoRunLock = false;
+    crossAgentAutoRunQueued = false;
+    attachments = [];
+    renderAttachmentsPreview();
+    currentPlanId = null;
+    currentPlanTitle = null;
+    currentPlanContent = null;
+    currentPlanCreatedBy = null;
+    if ($planPanel) $planPanel.style.display = "none";
+    planChecklistSteps = [];
+    planChecklistStatus = {};
+    if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
+    clearPlanCurrentStepIndex();
+    if ($messages) $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
+    if ($input) $input.value = "";
+    closeOfficeAskOptionsOverlay();
+    closeOfficeHistoryOverlay();
+    finalizeStream();
+    if (ws) {
+      try {
+        ws.close();
+      } catch (e) { /* ignore */ }
+      ws = null;
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = RECONNECT_BASE_MS;
+    setInputEnabled(true);
+    connect();
+  }
+
+  async function openOfficeCopilotSettingsInChrome() {
+    try {
+      await tasklyEnsureOfficeApiBase();
+      await ensureBootstrapAuthToken();
+      var res = await tasklyFetch(API_BASE + "/api/config");
+      var j = {};
+      if (res.ok) {
+        try {
+          j = await res.json();
+        } catch (eParse) {
+          j = {};
+        }
+      }
+      var id = String(j.chromeExtensionId || j.ChromeExtensionId || "").trim();
+      var url = id ? "chrome-extension://" + id + "/options.html" : "";
+      if (url) window.open(url, "_blank");
+      else addSystemMessage("未写入 Chrome 扩展 ID：请先在 Chrome 中打开本扩展「选项」页一次，或在后台 user-config 中配置 chromeExtensionId。");
+    } catch (e) {
+      addSystemMessage("无法打开设置：" + (e.message || String(e)));
+    }
+  }
+
   function handleMessage(raw) {
     let msg;
     try {
@@ -1378,9 +2048,15 @@
       case "tool_invocation_end": {
         const block = currentRoundToolBlocks[currentToolEndIndex];
         if (block) {
-          const ok = msg.success === true;
+          const contentRaw = (msg.content && String(msg.content).trim()) || "";
+          const looksErr =
+            typeof TasklyCopilotHostShared !== "undefined" &&
+            TasklyCopilotHostShared.toolInvocationContentLooksLikeError
+              ? TasklyCopilotHostShared.toolInvocationContentLooksLikeError(contentRaw)
+              : false;
+          const ok = msg.success === true && !looksErr;
           const name = (msg.plugin || "") + "." + (msg.function || "");
-          const content = (msg.content && String(msg.content).trim()) || "";
+          const content = contentRaw;
           const displayLabel = (block.dataset.label || name).replace(/^正在执行:\s*/i, "");
           block.classList.remove("tool-call--running");
           block.classList.add(ok ? "tool-call--done" : "tool-call--fail");
@@ -1421,6 +2097,9 @@
         break;
       case "confirm_request":
         handleConfirmRequest(msg);
+        break;
+      case "ask_options_request":
+        handleOfficeAskOptionsRequest(msg);
         break;
       case "plan_created": {
         const planId = msg.planId || "";
@@ -2367,6 +3046,37 @@
   }
 
   if ($newChatBtn) $newChatBtn.addEventListener("click", resetOfficeConversation);
+  if ($historyChatBtn) {
+    $historyChatBtn.addEventListener("click", function () { void openOfficeHistoryOverlay(); });
+  }
+  if ($settingsBtn) {
+    $settingsBtn.addEventListener("click", function () { void openOfficeCopilotSettingsInChrome(); });
+  }
+  if ($agentProfileSelect) {
+    $agentProfileSelect.addEventListener("change", function () {
+      if (_suppressOfficeAgentSelectChange) return;
+      applyOfficeAgentProfileChange($agentProfileSelect.value);
+    });
+  }
+  if ($historyOverlayClose) {
+    $historyOverlayClose.addEventListener("click", closeOfficeHistoryOverlay);
+  }
+  if ($historyOverlayBackdrop) {
+    $historyOverlayBackdrop.addEventListener("click", closeOfficeHistoryOverlay);
+  }
+  if ($historyLoadMore) {
+    $historyLoadMore.addEventListener("click", function () { void fetchOfficeHistoryPage(true); });
+  }
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    if ($historyOverlay && $historyOverlay.style.display !== "none" && $historyOverlay.getAttribute("aria-hidden") === "false") {
+      closeOfficeHistoryOverlay();
+    }
+    if (officeAskOptionsOverlay && officeAskOptionsOverlay.style.display !== "none") {
+      closeOfficeAskOptionsOverlay();
+      setInputEnabled(true);
+    }
+  });
   if ($attachBtn && $fileInput) {
     $attachBtn.addEventListener("click", function () {
       $fileInput.click();
@@ -2444,6 +3154,7 @@
       else if (host === Office.HostType.Excel) OFFICE_CLIENT_TYPE = "office-excel";
       else if (typeof Office.HostType.PowerPoint !== "undefined" && host === Office.HostType.PowerPoint) OFFICE_CLIENT_TYPE = "office-powerpoint";
     }
+    void refreshOfficeAgentProfileSelect();
     connect();
   }
 

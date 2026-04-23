@@ -17,6 +17,14 @@
         <h1>Office Copilot</h1>
       </div>
       <div class="header-controls">
+        <label for="agent-profile-select" class="visually-hidden">当前 Agent</label>
+        <select
+          id="agent-profile-select"
+          class="agent-profile-select"
+          title="切换 Agent 将新开会话并重连（与 Chrome 一致）"
+        ></select>
+        <button type="button" id="settings-btn" class="header-btn" title="在 Chrome 中打开扩展选项页">⚙️</button>
+        <button type="button" id="history-chat-btn" class="header-btn" title="历史对话">📜</button>
         <button type="button" id="new-chat-btn" class="header-btn" title="新建对话">💬</button>
         <div id="status" class="status status--disconnected" title="连接状态">
           <span class="status-dot"></span>
@@ -81,6 +89,34 @@
         </div>
       </div>
     </div>
+
+    <div id="ask-options-overlay" class="ask-options-overlay" style="display: none;" aria-hidden="true">
+      <div class="ask-options-card">
+        <p class="ask-options-title" id="ask-options-title"></p>
+        <p class="ask-options-prompt" id="ask-options-prompt"></p>
+        <div class="ask-options-step-indicator" id="ask-options-step-indicator"></div>
+        <div class="ask-options-question" id="ask-options-question"></div>
+        <div class="ask-options-options" id="ask-options-options" role="listbox" aria-label="候选项列表"></div>
+        <div class="ask-options-actions">
+          <button id="ask-options-confirm-btn" type="button" class="ask-options-confirm-btn">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="history-overlay" class="history-overlay" style="display: none;" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="history-overlay-title">
+      <div id="history-overlay-backdrop" class="history-overlay-backdrop" aria-hidden="true"></div>
+      <div class="history-overlay-panel">
+        <div class="history-overlay-header">
+          <h2 id="history-overlay-title" class="history-overlay-title">历史对话</h2>
+          <button type="button" id="history-overlay-close" class="history-overlay-close" aria-label="关闭">✕</button>
+        </div>
+        <p id="history-error" class="history-error" style="display: none;" role="alert"></p>
+        <ul id="history-list" class="history-list"></ul>
+        <div class="history-footer">
+          <button type="button" id="history-load-more" class="history-load-more">加载更多</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -123,6 +159,7 @@
 })();
   </script>
   <script src="local-service-resolve.js"></script>
+  <script src="copilot-host-shared.js"></script>
   <script src="taskpane.js"></script>
 </body>
 </html>

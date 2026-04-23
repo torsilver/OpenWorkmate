@@ -10,6 +10,7 @@ import { getWpsHostKind, assertWpsHost } from '../wps-rpc/hostKind.js'
 import { runWpsExcelRpc } from '../wps-rpc/excelRpc.js'
 import { wordInsertTableWps } from '../wps-rpc/wordTableRpc.js'
 import { wordInsertTextWps } from '../wps-rpc/wordInsertTextRpc.js'
+import { toolInvocationContentLooksLikeError, buildWebSocketQueryString } from '../lib/copilotHostShared.js'
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -29,57 +30,10 @@ function ensureApiBase() {
 const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
 /** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier / telemetryIngestLogLevel / telemetryEventKinds（localStorage） */
 const TASKLY_TELEMETRY_DEVICE_ID_KEY = 'tasklyTelemetryDeviceId'
-/** 与 Chrome 选项页一致：以 AI 流事件种类筛选为主，不再单独配置档位。 */
-const DEFAULT_TELEMETRY_TIER = 'full'
-const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = 'information'
 const TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'tasklyTelemetryRelayActiveProfileId'
 const TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'tasklyTelemetryEventKindsByProfile'
 /** 对齐 Chrome <code>telemetryClientEmission</code>：<code>on</code> | <code>off</code> */
 const TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = 'tasklyTelemetryClientEmission'
-
-function getOrCreateTelemetryDeviceId() {
-  try {
-    let id = (localStorage.getItem(TASKLY_TELEMETRY_DEVICE_ID_KEY) || '').trim()
-    if (!id) {
-      id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'tid-' + String(Date.now())
-      localStorage.setItem(TASKLY_TELEMETRY_DEVICE_ID_KEY, id)
-    }
-    return id
-  } catch {
-    return 'wps-' + String(Date.now())
-  }
-}
-
-function getTelemetryIngestLogLevel() {
-  return DEFAULT_TELEMETRY_INGEST_LOG_LEVEL
-}
-
-function getTelemetryTier() {
-  return DEFAULT_TELEMETRY_TIER
-}
-
-function getTelemetryClientEmission() {
-  try {
-    return (localStorage.getItem(TASKLY_TELEMETRY_CLIENT_EMISSION_KEY) || 'on').trim() || 'on'
-  } catch {
-    return 'on'
-  }
-}
-
-/** 与 Chrome <code>telemetryRelayActiveProfileId</code> + <code>telemetryEventKindsByProfile</code> 同形；未配置时不限制种类。 */
-function getTelemetryEventKindsQueryParam() {
-  try {
-    const active = (localStorage.getItem(TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY) || 'default').trim() || 'default'
-    const raw = localStorage.getItem(TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY)
-    if (!raw) return ''
-    const map = JSON.parse(raw)
-    const kinds = map && map[active]
-    if (!Array.isArray(kinds) || kinds.length === 0) return ''
-    return '&telemetryEventKinds=' + encodeURIComponent(kinds.join(','))
-  } catch {
-    return ''
-  }
-}
 
 function getStoredAuthToken() {
   try {
@@ -94,30 +48,6 @@ function tasklyFetch(url, init = {}) {
   const t = getStoredAuthToken()
   if (t) headers.set('X-OfficeCopilot-Token', t)
   return fetch(url, { ...init, headers })
-}
-
-/** 对齐 Chrome sidepanel.js：tool_invocation_end 在 msg.success 与正文前缀不一致时的兜底判定 */
-function toolInvocationContentLooksLikeError(c) {
-  if (!c) return false
-  return (
-    c.startsWith('[错误]') ||
-    c.startsWith('[保存失败]') ||
-    c.startsWith('[记忆未启用]') ||
-    c.startsWith('[无效]') ||
-    c.startsWith('[MCP Error]') ||
-    c.startsWith('[MCP Client Exception]') ||
-    c.startsWith('[系统拦截]') ||
-    c.startsWith('[检索失败]') ||
-    c.startsWith('[创建失败]') ||
-    c.startsWith('[更新失败]') ||
-    c.startsWith('[生成计划失败]') ||
-    c.startsWith('[执行步骤失败]') ||
-    c.startsWith('[工具调用失败]') ||
-    c.startsWith('[参数绑定失败]') ||
-    c.startsWith('Error: Function failed.') ||
-    c.startsWith('Error: Requested function') ||
-    c.startsWith('Error: Unknown error.')
-  )
 }
 
 /** WPS 内 window.open 常被拦截；尽量把链接写入剪贴板，避免用户手打 chrome-extension URL。 */
@@ -1328,28 +1258,17 @@ export function useCopilot() {
       .then((bootstrap) => {
     const tok = getStoredAuthToken()
     const ap = (activeAgentProfileId.value || 'default').trim() || 'default'
-    let qs =
-      '?sessionId=' +
-      encodeURIComponent(sessionId) +
-      '&clientType=' +
-      encodeURIComponent(CLIENT_TYPE) +
-      '&agentProfileId=' +
-      encodeURIComponent(ap)
-    if (tok) qs += '&token=' + encodeURIComponent(tok)
-    const tier = getTelemetryTier()
-    const clientEmission = getTelemetryClientEmission()
-    let serverAllowsObs = true
-    if (bootstrap && typeof bootstrap.telemetryUserObservabilityEnabled === 'boolean') {
-      serverAllowsObs = bootstrap.telemetryUserObservabilityEnabled
-    } else {
-      serverAllowsObs = clientEmission !== 'off'
-    }
-    if (serverAllowsObs && tier !== 'off') {
-      qs += '&deviceId=' + encodeURIComponent(getOrCreateTelemetryDeviceId())
-      qs += '&telemetryTier=' + encodeURIComponent(tier)
-      qs += '&telemetryIngestLogLevel=' + encodeURIComponent(getTelemetryIngestLogLevel())
-      qs += getTelemetryEventKindsQueryParam()
-    }
+    const qs = buildWebSocketQueryString({
+      sessionId,
+      clientType: CLIENT_TYPE,
+      agentProfileId: ap,
+      token: tok,
+      bootstrap,
+      telemetryDeviceIdKey: TASKLY_TELEMETRY_DEVICE_ID_KEY,
+      telemetryClientEmissionKey: TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+      telemetryRelayActiveProfileKey: TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
+      telemetryEventKindsByProfileKey: TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
+    })
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {
       reconnectDelay = RECONNECT_BASE_MS

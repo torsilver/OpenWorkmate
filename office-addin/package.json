@@ -1,0 +1,15 @@
+{
+  "name": "taskly-office-addin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Taskly Office 加载项（Word / Excel / PPT）本地开发静态托管",
+  "scripts": {
+    "dev": "node scripts/serve-https.cjs",
+    "serve": "node scripts/serve-https.cjs"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "office-addin-dev-certs": "^2.0.7"
+  }
+}

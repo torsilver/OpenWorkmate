@@ -24,10 +24,5 @@
   <DefaultSettings>
     <SourceLocation DefaultValue="https://localhost:3000/taskpane.html" />
   </DefaultSettings>
-  <Requirements>
-    <Sets DefaultMinVersion="1.1">
-      <Set Name="PowerPointApi" MinVersion="1.10" />
-    </Sets>
-  </Requirements>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>
