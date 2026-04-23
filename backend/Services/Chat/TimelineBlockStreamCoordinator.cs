@@ -4,7 +4,7 @@ namespace OfficeCopilot.Server.Services.Chat;
 
 /// <summary>
 /// 每会话、每轮 stream_start 起的推理/正文时间线逻辑段序号（与 WS reasoning_chunk / stream_chunk 的 blockSeq、blockKind 一致）。
-/// 工具开始时清空活动段类型，使工具后续新一轮正文/推理获得新 blockSeq。
+/// 分段边界：① <see cref="OnToolInvocationStart"/>（工具即将执行）；② <see cref="OnMainChatReasoningSourceAttached"/>（主会话新一轮百炼流式补全绑定推理旁路队列），使后续 think/answer 获得新 blockSeq。
 /// </summary>
 public sealed class TimelineBlockStreamCoordinator
 {
@@ -36,6 +36,20 @@ public sealed class TimelineBlockStreamCoordinator
     {
         if (string.IsNullOrEmpty(sessionId)) return;
         if (!_map.TryGetValue(sessionId, out var s)) return;
+        lock (s.Gate)
+        {
+            s.ActiveKind = null;
+        }
+    }
+
+    /// <summary>
+    /// 主会话（非后台）每次发起新的 DashScope 流式 chat/completions 并绑定推理旁路队列时调用；
+    /// 清空活动段类型，使同一用户轮内多轮模型补全之间的推理不再共用同一 blockSeq。
+    /// </summary>
+    public void OnMainChatReasoningSourceAttached(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return;
+        var s = _map.GetOrAdd(sessionId, _ => new State());
         lock (s.Gate)
         {
             s.ActiveKind = null;

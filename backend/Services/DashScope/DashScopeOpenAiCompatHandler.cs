@@ -2,6 +2,7 @@ using System.Linq;
 using System.Net.Http.Headers;
 using OfficeCopilot.Server;
 using OfficeCopilot.Server.Services;
+using OfficeCopilot.Server.Services.Chat;
 
 namespace OfficeCopilot.Server.Services.DashScope;
 
@@ -14,17 +15,20 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
     private readonly ConfigService _configService;
     private readonly string _modelEntryId;
     private readonly ILogger<DashScopeOpenAiCompatHandler>? _logger;
+    private readonly TimelineBlockStreamCoordinator? _timelineBlockCoordinator;
 
     public DashScopeOpenAiCompatHandler(
         ConfigService configService,
         string modelEntryId,
         HttpMessageHandler inner,
-        ILogger<DashScopeOpenAiCompatHandler>? logger = null)
+        ILogger<DashScopeOpenAiCompatHandler>? logger = null,
+        TimelineBlockStreamCoordinator? timelineBlockCoordinator = null)
         : base(inner)
     {
         _configService = configService;
         _modelEntryId = modelEntryId ?? "";
         _logger = logger;
+        _timelineBlockCoordinator = timelineBlockCoordinator;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -71,6 +75,10 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
         var reasoningQueue = DashScopeReasoningContext.PushFrame();
         var bridgeSessionId = SessionContext.GetSessionId();
         DashScopeReasoningSessionBridge.AttachQueue(bridgeSessionId, reasoningQueue);
+        if (!DashScopeCallKindContext.IsBackground
+            && !string.IsNullOrEmpty(bridgeSessionId)
+            && _timelineBlockCoordinator != null)
+            _timelineBlockCoordinator.OnMainChatReasoningSourceAttached(bridgeSessionId);
         try
         {
             var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);

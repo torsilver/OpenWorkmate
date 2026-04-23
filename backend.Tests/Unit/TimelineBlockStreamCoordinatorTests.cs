@@ -55,6 +55,22 @@ public sealed class TimelineBlockStreamCoordinatorTests
     }
 
     [Fact]
+    public void OnMainChatReasoningSourceAttached_after_repeated_think_yields_new_think_blockSeq()
+    {
+        var c = new TimelineBlockStreamCoordinator();
+        c.BeginRound(Sid);
+        var (t0, _) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindThink);
+        Assert.Equal(0, t0);
+        var (t0b, _) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindThink);
+        Assert.Equal(t0, t0b);
+        c.OnMainChatReasoningSourceAttached(Sid);
+        var (t1, k1) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindThink);
+        Assert.Equal(1, t1);
+        Assert.Equal("think", k1);
+        c.EndRound(Sid);
+    }
+
+    [Fact]
     public void WsMessage_json_includes_blockSeq_blockKind_camelCase()
     {
         var msg = new OfficeCopilot.Server.WsMessage

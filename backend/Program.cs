@@ -1481,6 +1481,9 @@ static async Task HandleChatStreamAsync(
     var wsReasoningChunkFrames = 0;
     var wsStreamChunkFrames = 0;
     var reasoningLog = new LogPreview.ReasoningStreamLogState();
+    // 用于 WS 时间线排查：同一 blockSeq 下多 chunk 只在 Information 打一次「进入该块」
+    int? lastLoggedReasoningBlockSeq = null;
+    int? lastLoggedStreamBlockSeq = null;
 
     async Task SendChatStreamWsAsync(string frameType, string content)
     {
@@ -1493,6 +1496,16 @@ static async Task HandleChatStreamAsync(
             wsReasoningChunkFrames++;
             if (!string.IsNullOrEmpty(content))
                 reasoningLog.AppendChunk(content);
+            if (lastLoggedReasoningBlockSeq != bs)
+            {
+                lastLoggedReasoningBlockSeq = bs;
+                logger.LogInformation(
+                    "[{SessionId}] WS reasoning_chunk → new timeline block blockSeq={BlockSeq} blockKind={BlockKind}",
+                    sessionId, bs, bk);
+            }
+            logger.LogDebug(
+                "[{SessionId}] WS reasoning_chunk blockSeq={BlockSeq} blockKind={BlockKind} contentChars={Chars}",
+                sessionId, bs, bk, content?.Length ?? 0);
         }
         else if (frameType == "stream_chunk")
         {
@@ -1500,6 +1513,16 @@ static async Task HandleChatStreamAsync(
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
             wsStreamChunkFrames++;
+            if (lastLoggedStreamBlockSeq != bs)
+            {
+                lastLoggedStreamBlockSeq = bs;
+                logger.LogInformation(
+                    "[{SessionId}] WS stream_chunk → new timeline block blockSeq={BlockSeq} blockKind={BlockKind}",
+                    sessionId, bs, bk);
+            }
+            logger.LogDebug(
+                "[{SessionId}] WS stream_chunk blockSeq={BlockSeq} blockKind={BlockKind} contentChars={Chars}",
+                sessionId, bs, bk, content?.Length ?? 0);
         }
 
         await sessions.SendWsMessageAsync(sessionId, payload);

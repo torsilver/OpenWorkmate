@@ -44,11 +44,12 @@ public sealed partial class ChatService : IDisposable
     private readonly IChatSessionStore _chatSessionStore;
     private readonly IBuiltinTurnCompletionVerifier _builtinTurnCompletionVerifier;
     private readonly SubtaskTimelineBlockCoordinator _subtaskTimelineBlocks;
+    private readonly TimelineBlockStreamCoordinator _timelineBlockCoordinator;
     private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly ITelemetryTransmissionPolicyProvider _telemetryTransmissionPolicy;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ITelemetryRelayQueue? telemetryRelay = null)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, TimelineBlockStreamCoordinator timelineBlockCoordinator, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ITelemetryRelayQueue? telemetryRelay = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -63,6 +64,7 @@ public sealed partial class ChatService : IDisposable
         _chatSessionStore = chatSessionStore;
         _builtinTurnCompletionVerifier = builtinTurnCompletionVerifier;
         _subtaskTimelineBlocks = subtaskTimelineBlocks;
+        _timelineBlockCoordinator = timelineBlockCoordinator;
         _telemetryTransmissionPolicy = telemetryTransmissionPolicy;
         _telemetryRelay = telemetryRelay;
 
@@ -317,7 +319,8 @@ public sealed partial class ChatService : IDisposable
         var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>(), innerChain);
         var dashHandler = new DashScopeOpenAiCompatHandler(
             _configService, entryId, logHandler,
-            _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>());
+            _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>(),
+            _timelineBlockCoordinator);
         var httpClient = new HttpClient(dashHandler);
         var options = new OpenAI.OpenAIClientOptions();
         if (endpointUri != null) options.Endpoint = endpointUri;
