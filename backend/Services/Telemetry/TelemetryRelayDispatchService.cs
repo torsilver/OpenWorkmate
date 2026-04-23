@@ -85,7 +85,7 @@ public sealed class TelemetryRelayDispatchService : BackgroundService
         var cfg = _configService.Current;
         var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
         var apiKey = (cfg.AiGatewayApiKey ?? "").Trim();
-        if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
+        if (!cfg.TelemetryEnabled || cfg.TelemetryUserObservabilityEnabled == false || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
         {
             if (Interlocked.CompareExchange(ref s_ingestSkipInfoLogged, 1, 0) == 0)
             {

@@ -1,0 +1,28 @@
+---
+description: 统一 Taskly 各端称呼与仓库目录对应，避免沟通歧义
+alwaysApply: true
+---
+
+# Taskly 组件称呼（与用户/文档对齐）
+
+在对话、注释与文档中优先使用下列**固定称呼**，并对应到仓库路径：
+
+| 称呼 | 含义 | 仓库路径 |
+|------|------|----------|
+| **AI 后台** | Office Copilot 服务端（.NET） | `backend/` |
+| **遥测端** | AI Gateway（策略、ingest、LLM 代理等） | `ai-gateway/` |
+| **Chrome 端** | 浏览器扩展（选项页、侧栏、Workspace 等） | `chrome-extension/` |
+| **Office 端** | Microsoft Office 加载项（任务窗等） | `office-addin/` |
+| **WPS 端** | WPS 加载项 / 任务窗前端 | `wps-addin-new/` |
+
+## 使用约定
+
+- 用户说「后台」「服务端」且语境为聊天/API/WebSocket/user-config 时，默认指 **AI 后台**（`backend/`），不是遥测端。
+- 用户说「Gateway」「ingest」「聚合策略」「policy.ops」时，默认指 **遥测端**（`ai-gateway/`）。
+- 不要说模糊的「前端」而不带端名；若指浏览器扩展则写 **Chrome 端**，若指 Word/Excel/PowerPoint 任务窗则写 **Office 端**，若指 WPS 则写 **WPS 端**。
+- 英文交流时可写 **AI backend**、`ai-gateway`、**Chrome extension**、**Office add-in**、**WPS add-in**，并与上表路径一致。
+
+## 反例（避免）
+
+- 用「遥测后台」同时指 `backend` 与 `ai-gateway`。
+- 用「客户端」泛指而不说明是 Chrome、Office 还是 WPS。

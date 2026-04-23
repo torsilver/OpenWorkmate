@@ -299,6 +299,7 @@ public sealed partial class ChatService : IDisposable
     {
         var cfg = _configService.Current;
         var gatewayMode = cfg.TelemetryEnabled
+            && cfg.TelemetryUserObservabilityEnabled != false
             && _telemetryTransmissionPolicy.IsTelemetryPolicyHealthy
             && string.Equals(_telemetryTransmissionPolicy.EffectiveRouteMode, "gateway", StringComparison.OrdinalIgnoreCase);
         var gwBase = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);

@@ -73,6 +73,10 @@
       background: #f1f5f9;
       color: var(--text-primary);
     }
+    .telemetry-gateway-subpanel {
+      transition: opacity 0.15s ease;
+    }
+
     .partition-nav-btn.active {
       border-color: var(--accent);
       background: rgba(59, 130, 246, 0.08);
@@ -482,13 +486,19 @@
       <details class="settings-block">
         <summary>AI 观测（事件种类）</summary>
         <div class="settings-block-inner">
-          <p class="help-text" style="margin: 0 0 12px 0;"><strong>deviceId</strong> 与 <strong>事件种类子集</strong>在本扩展 <code>chrome.storage.local</code>，经侧栏 WebSocket 的 <code>deviceId</code>、<code>telemetryEventKinds</code> 传给后台；筛选以 <strong>事件种类</strong>为准（与 Gateway 策略取交集）。<strong>结构化 AI 流事件</strong>由 AI 后台 POST 到本机 <strong>AI Gateway</strong> <code>/ingest/spans</code>（JSONL 落盘）。下方<strong>Gateway 地址与密钥</strong>写入后台 user-config；修改后请看到页顶「已自动保存」再使用侧栏。要完全关闭用户端出站观测，请在 AI Gateway 的 <code>/my.html</code> 将 <code>routeMode</code> 切为 <code>direct</code> 并在后台取消勾选 <code>aiGatewayEnabled</code>。</p>
+          <p class="help-text" style="margin: 0 0 12px 0;">以下与 AI Gateway 相关的遥测与策略：<strong>deviceId</strong>、事件种类等存于扩展 <code>chrome.storage.local</code>，经侧栏 WebSocket 传给后台；后台在允许时拉取聚合策略、筛选事件，并将结构化流事件 POST 到 <code>/ingest/spans</code>。写入 user-config 后见页顶「已自动保存」再使用侧栏。</p>
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 12px;">
+            <input type="checkbox" id="telemetryMasterEnabled" checked style="margin-top: 4px;">
+            <span class="help-text" style="margin: 0;"><strong>遥测总开关</strong>：开启时同时启用 <code>telemetryEnabled</code> 与 <code>telemetryUserObservabilityEnabled</code>（拉取 Gateway 策略、可上报/入队、侧栏附带遥测参数）。<strong>关闭后</strong> AI 端不再拉取策略、不经由遥测路径代理 LLM、不向 Gateway 上报，侧栏也不附带遥测查询参数；下方配置仅保留备查，需重新开启总开关后才会生效。</span>
+          </label>
+          <p class="help-text" style="margin: 0 0 10px 0; font-size: 12px; color: var(--text-secondary);">与<strong>仅 LLM 路由</strong>相关的偏好可在本机 AI Gateway 的 <code>/my.html</code> 调整 <code>routeMode</code>；总开关关闭时后台不会向 Gateway 拉取策略，故经网关的 LLM 代理亦不会启用。</p>
+          <div id="telemetryGatewaySubpanel" class="telemetry-gateway-subpanel">
           <div class="form-group">
             <label for="telemetryDeviceIdDisplay">本机 deviceId（自动生成，只读）</label>
             <input type="text" id="telemetryDeviceIdDisplay" readonly style="max-width: 36rem; width: 100%; font-family: ui-monospace, monospace; font-size: 12px;">
           </div>
           <hr style="margin: 1.25rem 0; border: none; border-top: 1px solid #e2e8f0;" />
-          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，随本页<strong>自动保存</strong>提交。当前选中的配置会同步为 <code>aiGatewayBaseUrl</code> / <code>aiGatewayApiKey</code>；<strong>运维策略 profile</strong>对应 <code>opsPolicyProfileId</code>（AI 后台拉取 <code>/api/policy/aggregated?profileId=…</code>）。</p>
+          <p class="help-text" style="margin: 0 0 10px 0;">以下为<strong>服务端</strong> user-config 字段，随本页<strong>自动保存</strong>提交。当前选中的配置会同步为 <code>aiGatewayBaseUrl</code> / <code>aiGatewayApiKey</code>；<strong>运维策略 profile</strong>写入 <code>opsPolicyProfileId</code>，AI 后台定时请求 <code>/api/policy/aggregated?profileId=…</code>（与下方所选一致）。</p>
           <div class="form-group" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;">
             <div style="flex: 1; min-width: 12rem;">
               <label for="aiGatewayProfileSelect">AI Gateway 配置</label>
@@ -496,10 +506,6 @@
             </div>
             <button type="button" id="aiGatewayAddProfileBtn" class="btn-secondary">+ 添加配置</button>
           </div>
-          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin-bottom: 10px;">
-            <input type="checkbox" id="aiGatewayEnabled" style="margin-top: 4px;">
-            <span class="help-text" style="margin: 0;">启用从 AI Gateway 拉取聚合策略（需填写 Gateway 根 URL 与 API Key；结构化事件由后台 POST 到 Gateway <code>/ingest/spans</code>）</span>
-          </label>
           <div class="form-group">
             <label for="aiGatewayBaseUrl">AI Gateway 根 URL</label>
             <input type="text" id="aiGatewayBaseUrl" placeholder="http://127.0.0.1:8777" style="max-width: 36rem; width: 100%;">
@@ -510,17 +516,18 @@
             <input type="password" id="aiGatewayApiKey" autocomplete="off" style="max-width: 36rem; width: 100%;">
           </div>
           <div class="form-group" style="margin-top: 10px;">
-            <label for="opsPolicyProfileSelect">运维策略 profile（Gateway 上多组之一；空表示使用默认 profile）</label>
+            <label for="opsPolicyProfileSelect">运维策略 profile（由当前 Gateway 返回，有几套即列出几套）</label>
             <select id="opsPolicyProfileSelect" style="max-width: 36rem; width: 100%;" disabled>
               <option value="">（请先填写 URL 与 Key 并成功拉取策略）</option>
             </select>
           </div>
           <div class="form-group" id="telemetryEventKindsGroup" style="margin-top: 10px;">
-            <label>上报事件种类（在所选 Gateway 策略允许的集合内再缩小；与 Gateway 取交集）</label>
+            <label>上报事件种类（当前策略允许的种类内，再自行关闭不需要上报的项；与 Gateway 取交集）</label>
             <div id="telemetryEventKindsList" class="help-text" style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
-            <p class="help-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--text-secondary);">未勾选任何项时不写入侧栏参数（后台视为不限制种类）。首次拉取成功后默认全选。</p>
+            <p class="help-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--text-secondary);">未勾选任何项时不写入侧栏参数（后台视为不限制种类）。切换上方运维策略后会按该策略允许集合重算；首次匹配成功后默认全选。</p>
           </div>
           <p id="aiGatewayPolicyHint" class="help-text" style="margin: 10px 0 0 0; font-size: 12px; color: var(--text-secondary);"></p>
+          </div>
         </div>
       </details>
     </div>

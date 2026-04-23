@@ -25,6 +25,42 @@ function tasklyOpsPolicyProfileIdFromConfig(data) {
   return String((data.opsPolicyProfileId ?? data.OpsPolicyProfileId ?? data.telemetryServerPolicyProfileId ?? data.TelemetryServerPolicyProfileId) || '').trim();
 }
 
+function tasklyTelemetryMasterEl() {
+  return document.getElementById('telemetryMasterEnabled');
+}
+
+function tasklyIsTelemetryMasterOn() {
+  var el = tasklyTelemetryMasterEl();
+  return !!(el && el.checked);
+}
+
+/** 遥测总开关关闭时灰显并禁用 Gateway 子面板（不发起策略拉取、不可编辑子项）。 */
+function tasklyApplyTelemetryMasterSubpanelState() {
+  var on = tasklyIsTelemetryMasterOn();
+  var wrap = document.getElementById('telemetryGatewaySubpanel');
+  if (wrap) {
+    wrap.style.opacity = on ? '1' : '0.48';
+    wrap.style.pointerEvents = on ? '' : 'none';
+    wrap.setAttribute('aria-disabled', on ? 'false' : 'true');
+  }
+  function setDis(id, dis) {
+    var e = document.getElementById(id);
+    if (e) e.disabled = dis;
+  }
+  setDis('aiGatewayProfileSelect', !on);
+  setDis('aiGatewayAddProfileBtn', !on);
+  setDis('aiGatewayBaseUrl', !on);
+  setDis('aiGatewayApiKey', !on);
+  var ops = document.getElementById('opsPolicyProfileSelect');
+  if (ops && !on) ops.disabled = true;
+  var list = document.getElementById('telemetryEventKindsList');
+  if (list) {
+    list.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+      cb.disabled = !on;
+    });
+  }
+}
+
 function tasklySetOptionsApiUrls(apiBase) {
   var b = TasklyLocalService.normalizeBase(apiBase);
   API_URL = b + "/api/config";
@@ -1828,8 +1864,11 @@ async function loadConfig() {
     const data = fullConfig;
     var apEl = document.getElementById('allowPrivateEndpointTests');
     if (apEl) apEl.checked = !!(data.allowPrivateEndpointTests ?? data.AllowPrivateEndpointTests);
-    var telEn = document.getElementById('aiGatewayEnabled');
-    if (telEn) telEn.checked = !!(data.telemetryEnabled ?? data.TelemetryEnabled);
+    var masterEl = document.getElementById('telemetryMasterEnabled');
+    var telOn = !!(data.telemetryEnabled ?? data.TelemetryEnabled);
+    var obsRaw = data.telemetryUserObservabilityEnabled ?? data.TelemetryUserObservabilityEnabled;
+    var masterOn = telOn && obsRaw !== false;
+    if (masterEl) masterEl.checked = masterOn;
     var telUrl = document.getElementById('aiGatewayBaseUrl');
     if (telUrl) telUrl.value = tasklyAiGatewayBaseFromConfig(data);
     var telKey = document.getElementById('aiGatewayApiKey');
@@ -1838,12 +1877,13 @@ async function loadConfig() {
     if (telSrvProf) {
       telSrvProf.value = tasklyOpsPolicyProfileIdFromConfig(data);
     }
-    var obsEnabled = data.telemetryUserObservabilityEnabled ?? data.TelemetryUserObservabilityEnabled;
+    var obsEnabled = masterOn;
     try {
       var oSync = {};
-      oSync[TELEMETRY_CLIENT_EMISSION_KEY] = obsEnabled === false ? 'off' : 'on';
+      oSync[TELEMETRY_CLIENT_EMISSION_KEY] = obsEnabled ? 'on' : 'off';
       chrome.storage.local.set(oSync);
     } catch (e) { /* ignore */ }
+    tasklyApplyTelemetryMasterSubpanelState();
     var srvTok = String((data.webSocketAuthToken ?? data.WebSocketAuthToken) ?? '').trim();
     var tokInp = document.getElementById('localServiceAuthToken');
     if (tokInp) {
@@ -1932,6 +1972,8 @@ async function loadConfig() {
     } catch (syncErr) {
       console.warn('同步 chromeExtensionId 异常:', syncErr);
     }
+    tasklyApplyTelemetryMasterSubpanelState();
+    refreshTransmissionPolicyHint();
   } catch (err) {
     var friendly = messageForBackendUnreachable(err);
     if (friendly) console.warn(friendly);
@@ -2214,7 +2256,8 @@ async function saveConfig() {
         var rid = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
         return rid || undefined;
       })(),
-      telemetryEnabled: !!(document.getElementById('aiGatewayEnabled') && document.getElementById('aiGatewayEnabled').checked),
+      telemetryEnabled: tasklyIsTelemetryMasterOn(),
+      telemetryUserObservabilityEnabled: tasklyIsTelemetryMasterOn(),
       aiGatewayBaseUrl: (function () {
         var el = document.getElementById('aiGatewayBaseUrl');
         var s = el ? String(el.value || '').trim() : '';
@@ -2240,7 +2283,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, aiGatewayBaseUrl: payload.aiGatewayBaseUrl, aiGatewayApiKey: payload.aiGatewayApiKey, opsPolicyProfileId: payload.opsPolicyProfileId });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, telemetryUserObservabilityEnabled: payload.telemetryUserObservabilityEnabled, aiGatewayBaseUrl: payload.aiGatewayBaseUrl, aiGatewayApiKey: payload.aiGatewayApiKey, opsPolicyProfileId: payload.opsPolicyProfileId });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
@@ -3072,6 +3115,7 @@ function tasklyInitTelemetryRelayProfilesAfterServerLoad(serverData) {
     tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, function () {
       tasklyRenderTelemetryRelayProfileSelect(profiles, activeId);
       refreshTransmissionPolicyHint();
+      tasklyApplyTelemetryMasterSubpanelState();
     });
   });
 }
@@ -3103,7 +3147,8 @@ function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap)
   if (!Array.isArray(list)) list = [];
   container.innerHTML = '';
   if (!list.length) {
-    container.textContent = '（请先启用 AI Gateway 并填写 URL / Key，成功拉取聚合策略后显示可选事件种类）';
+    container.textContent = '（请先打开遥测总开关并填写 Gateway URL / Key，成功拉取聚合策略后显示可选事件种类）';
+    tasklyApplyTelemetryMasterSubpanelState();
     return;
   }
   var selected = kindsMap[activeId];
@@ -3138,6 +3183,19 @@ function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap)
     row.appendChild(span);
     container.appendChild(row);
   });
+  tasklyApplyTelemetryMasterSubpanelState();
+}
+
+/** 拉取聚合策略时使用的 profileId：优先下拉当前值（含未保存的切换），否则已加载的 user-config，再否则留空（Gateway 使用其默认 profile）。 */
+function tasklyResolveOpsPolicyProfileIdForFetch() {
+  var sel = document.getElementById('opsPolicyProfileSelect');
+  var fromSel = sel && sel.value ? String(sel.value).trim() : '';
+  if (fromSel) return fromSel;
+  if (fullConfig) {
+    var fromCfg = tasklyOpsPolicyProfileIdFromConfig(fullConfig);
+    if (fromCfg) return String(fromCfg).trim();
+  }
+  return '';
 }
 
 function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultProfileId) {
@@ -3145,15 +3203,27 @@ function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultP
   if (!sel) return;
   var list = Array.isArray(policyProfiles) ? policyProfiles : [];
   var defId = (defaultProfileId != null ? String(defaultProfileId) : '').trim();
-  var want = (sel.value || '').trim();
-  if (!want && fullConfig) {
-    want = tasklyOpsPolicyProfileIdFromConfig(fullConfig);
+  var wantSaved = fullConfig ? tasklyOpsPolicyProfileIdFromConfig(fullConfig).trim() : '';
+  var wantInteractive = (sel.value || '').trim();
+  var want = wantInteractive || wantSaved;
+  function listHasId(id) {
+    id = String(id || '').trim();
+    if (!id) return false;
+    return list.some(function (p) {
+      var pid = p.id != null ? p.id : p.Id;
+      return pid != null && String(pid).trim() === id;
+    });
   }
   sel.innerHTML = '';
-  var o0 = document.createElement('option');
-  o0.value = '';
-  o0.textContent = defId ? '默认（Gateway：' + defId + '）' : '默认（Gateway 内置）';
-  sel.appendChild(o0);
+  if (!list.length) {
+    var oEmpty = document.createElement('option');
+    oEmpty.value = '';
+    oEmpty.textContent = '（Gateway 未返回任何运维策略 profile）';
+    oEmpty.disabled = true;
+    sel.appendChild(oEmpty);
+    sel.disabled = true;
+    return;
+  }
   list.forEach(function (p) {
     var id = (p.id != null ? p.id : p.Id);
     id = id != null ? String(id).trim() : '';
@@ -3166,11 +3236,17 @@ function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultP
     sel.appendChild(opt);
   });
   sel.disabled = false;
-  if (want && Array.prototype.some.call(sel.options, function (o) { return o.value === want; })) {
-    sel.value = want;
-  } else {
-    sel.value = '';
-  }
+  var firstId = (function () {
+    var p0 = list[0];
+    var i0 = p0 && (p0.id != null ? p0.id : p0.Id);
+    return i0 != null ? String(i0).trim() : '';
+  })();
+  var pick = '';
+  if (want && listHasId(want)) pick = want;
+  else if (defId && listHasId(defId)) pick = defId;
+  else if (firstId) pick = firstId;
+  if (pick && Array.prototype.some.call(sel.options, function (o) { return o.value === pick; })) sel.value = pick;
+  else sel.selectedIndex = 0;
 }
 
 function refreshTransmissionPolicyHint() {
@@ -3178,11 +3254,10 @@ function refreshTransmissionPolicyHint() {
   if (!hint) return;
   var urlEl = document.getElementById('aiGatewayBaseUrl');
   var keyEl = document.getElementById('aiGatewayApiKey');
-  var enEl = document.getElementById('aiGatewayEnabled');
   var profEl = document.getElementById('opsPolicyProfileSelect');
   var base = (urlEl && urlEl.value || '').trim().replace(/\/+$/, '');
   var key = (keyEl && keyEl.value || '').trim();
-  if (!enEl || !enEl.checked || !base || !key) {
+  if (!tasklyIsTelemetryMasterOn() || !base || !key) {
     hint.textContent = '';
     var emptyList = document.getElementById('telemetryEventKindsList');
     if (emptyList) emptyList.innerHTML = '';
@@ -3190,14 +3265,15 @@ function refreshTransmissionPolicyHint() {
       profEl.innerHTML = '';
       var od = document.createElement('option');
       od.value = '';
-      od.textContent = '（请先启用并填写 URL 与 Key）';
+      od.textContent = !tasklyIsTelemetryMasterOn() ? '（遥测总开关已关闭）' : '（请先开启遥测并填写 URL 与 Key）';
       profEl.appendChild(od);
       profEl.disabled = true;
     }
+    tasklyApplyTelemetryMasterSubpanelState();
     return;
   }
-  var pid = profEl ? String(profEl.value || '').trim() : '';
-  var u = base + '/api/policy/aggregated' + (pid ? '?profileId=' + encodeURIComponent(pid) : '');
+  var fetchProfileId = tasklyResolveOpsPolicyProfileIdForFetch();
+  var u = base + '/api/policy/aggregated' + (fetchProfileId ? '?profileId=' + encodeURIComponent(fetchProfileId) : '');
   fetch(u, { headers: { Authorization: 'Bearer ' + key } })
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -3245,6 +3321,7 @@ function refreshTransmissionPolicyHint() {
         '无法拉取聚合策略（请检查 AI Gateway URL / API Key 与网络）。若 AI 后台亦拉取失败或策略无效，将不向 Gateway 发送结构化 AI 流事件（fail-closed）。';
       var emptyList = document.getElementById('telemetryEventKindsList');
       if (emptyList) emptyList.innerHTML = '';
+      tasklyApplyTelemetryMasterSubpanelState();
     });
 }
 
@@ -3300,10 +3377,25 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   var allowPrivEl = document.getElementById('allowPrivateEndpointTests');
   if (allowPrivEl) allowPrivEl.addEventListener('change', function () { debouncedSaveConfig(); });
-  var telRelayEn = document.getElementById('aiGatewayEnabled');
-  if (telRelayEn) {
-    telRelayEn.addEventListener('change', function () { debouncedSaveConfig(); refreshTransmissionPolicyHint(); });
-    telRelayEn.addEventListener('input', function () { debouncedSaveConfig(); });
+  var telMaster = document.getElementById('telemetryMasterEnabled');
+  if (telMaster) {
+    function syncTelemetryMasterToStorage() {
+      try {
+        var o = {};
+        o[TELEMETRY_CLIENT_EMISSION_KEY] = telMaster.checked ? 'on' : 'off';
+        chrome.storage.local.set(o);
+      } catch (e) { /* ignore */ }
+    }
+    telMaster.addEventListener('change', function () {
+      syncTelemetryMasterToStorage();
+      tasklyApplyTelemetryMasterSubpanelState();
+      refreshTransmissionPolicyHint();
+      debouncedSaveConfig();
+    });
+    telMaster.addEventListener('input', function () {
+      syncTelemetryMasterToStorage();
+      debouncedSaveConfig();
+    });
   }
   var telRelayUrl = document.getElementById('aiGatewayBaseUrl');
   if (telRelayUrl) {

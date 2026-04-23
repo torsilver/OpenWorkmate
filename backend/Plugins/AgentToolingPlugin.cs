@@ -29,7 +29,8 @@ public sealed class AgentToolingPlugin
     [Description(
         "在「当前客户端允许」的工具列表中按关键词检索。每行以 OpenAPI/工具协议中的裸函数名为准，括号内为插件 Id。"
         + "发起 tool_calls 时必须使用裸函数名（与 schema 中 name 一致），勿使用 Plugin.function 形式。"
-        + "若 system 列出已启用用户技能且任务可能依赖规范/文风/流程，建议先按需完成技能链（search_available_skills 等）再调用本工具；否则可直接检索。须 activate_tools 后再以裸名调用业务工具。")]
+        + "若 system 含「渐进式用户技能」元数据，推荐在首次调用本工具之前先 search_available_skills（可空 query），再走本检索与 activate_tools，避免门控拦截。"
+        + "须 activate_tools 后再以裸名调用业务工具。")]
     public Task<string> SearchAvailableToolsAsync(
         [Description("检索关键词，可多个词；应尽量具体（空串时仍会返回若干项，含本轮引导工具优先）")] string query,
         [Description("最多返回条数，默认 8")] int topK = 8,
@@ -41,7 +42,17 @@ public sealed class AgentToolingPlugin
             return Task.FromResult("[search_available_tools] 当前不在动态工具模式，忽略。");
 
         if (state.SearchInvocationCount >= state.Config.MaxSearchPerTurn)
-            return Task.FromResult($"[search_available_tools] 已达本轮检索上限（{state.Config.MaxSearchPerTurn}），请直接 activate_tools 或调用已激活工具。");
+        {
+            var max = state.Config.MaxSearchPerTurn;
+            if (state.SkillCatalog.Entries.Count > 0)
+            {
+                return Task.FromResult(
+                    $"[search_available_tools] 已达本轮检索上限（{max}）。若仍需扩容业务工具：请先确认本轮已调用 search_available_skills（若尚未调用），再 activate_tools；或直接调用已激活工具。");
+            }
+
+            return Task.FromResult(
+                $"[search_available_tools] 已达本轮检索上限（{max}），请 activate_tools 或调用已激活工具。");
+        }
 
         state.SearchInvocationCount++;
         var k = Math.Clamp(topK, 1, 32);
@@ -60,6 +71,13 @@ public sealed class AgentToolingPlugin
             sb.Append('\n');
             i++;
         }
+
+        if (state.SkillCatalog.Entries.Count > 0)
+        {
+            sb.Append(
+                "\n【顺序与门控】当前存在已启用用户技能：在本轮已执行本检索后，若要 activate_tools，请先至少调用一次 search_available_skills（query 可为空），再 activate_tools。\n");
+        }
+
         sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"run_builtin_page_script\"]。");
         var collisions = _runtime.ToolRegistry.GetBareFunctionNameCollisions();
         if (collisions.Count > 0)
@@ -82,9 +100,10 @@ public sealed class AgentToolingPlugin
 
     [ToolFunction(DynamicToolingConstants.ActivateFunctionName)]
     [Description(
-        "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。可传裸函数名或 Plugin.function；toolNames 为数组，支持一次激活多个工具，建议把本轮需要的业务工具尽量放在同一次调用中，避免只激活一部分导致后续 tool_calls 报 Function not found。"
+        "将业务工具加入本轮「已激活」集合（与 search_available_tools 配合）。"
+        + "固定协议（优先阅读）：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
+        + " 可传裸函数名或 Plugin.function；toolNames 为数组，支持一次激活多个工具，建议把本轮需要的业务工具尽量放在同一次调用中，避免只激活一部分导致后续 tool_calls 报 Function not found。"
         + " 推荐在首次 search_available_tools 之前已按需走通技能链（见 system「动态工具」）。"
-        + " 固定协议：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
         + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_builtin_page_script\"]。")]
     public Task<string> ActivateToolsAsync(
         [Description("要激活的工具函数名列表（裸函数名或 Plugin.function）")] string[] toolNames,
@@ -102,7 +121,15 @@ public sealed class AgentToolingPlugin
             return Task.FromResult($"[activate_tools] 已达本轮激活次数上限（{state.Config.MaxActivatePerTurn}）。");
 
         if (DynamicToolingActivateSkillGate.ShouldBlock(state, out var skillGateMsg))
+        {
+            _logger.LogInformation(
+                "[activate_tools] blocked=skill_gate session={SessionId} searchInvocationCount={Search} skillSearchInvocationCount={SkillSearch} skillCatalogEntries={Entries}",
+                SessionContext.GetSessionId() ?? "",
+                state.SearchInvocationCount,
+                state.SkillSearchInvocationCount,
+                state.SkillCatalog.Entries.Count);
             return Task.FromResult(skillGateMsg);
+        }
 
         state.ActivateInvocationCount++;
         var registry = _runtime.ToolRegistry;

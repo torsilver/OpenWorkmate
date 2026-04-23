@@ -5,7 +5,7 @@
 1. **LLM 代理**：按运维 + 用户策略把 OfficeCopilot 后台的聊天请求转发给上游供应商（`POST /llm/v1/chat/completions`），或由后台 **直连**（见 `routeMode`）。
 2. **结构化观测落盘**：后台通过 `POST /ingest/spans`（JSON 批量）把 trace/span 写入 Gateway；Gateway 以 **每会话一行 JSONL** 形式存到 `DataRoot/sessions/<sid>.jsonl`，大负载写入 `DataRoot/blobs/`。
 3. **策略与管理 UI**：
-   - 聚合策略：`GET /api/policy/aggregated[?profileId=…]`（Bearer / `X-Telemetry-Key` = `AiGateway:ApiKey`），返回 `{effective, ops, user, userOverlayViolations, eTag, …}`。后台定时拉取（约 30s + 变更触发）。
+   - 聚合策略：`GET /api/policy/aggregated[?profileId=…]`（Bearer / `X-Telemetry-Key` = `AiGateway:ApiKey`），返回 `{effective, ops, user, userOverlayViolations, eTag, …}`。OfficeCopilot 后台进程启动时拉一次，之后约每 1 小时拉一次（不因 user-config 保存而额外拉取）。
    - 运维面板：`/admin.html`（写 `DataRoot/policy.ops.json`）。
    - 本机我的数据：`/my.html`（loopback 专属，展开 trace 树、删除、导出 .md、反馈评分、切换 `routeMode`）。
 
@@ -29,7 +29,7 @@
 
 - 合法值 `gateway` | `direct`。默认 `gateway`。
 - 运维策略里声明"允许的集合"；用户策略选择当前值。若用户值不在允许集合内，聚合策略将其回落并记入 `userOverlayViolations`。
-- 用户可通过 `/my.html` 保存 `routeMode`，下轮 30s 聚合策略刷新后后台生效。
+- 用户可通过 `/my.html` 保存 `routeMode`；后台在下一轮定时拉取聚合策略（最长约 1 小时）后才会用上新策略。修改 `user-config` 中的遥测相关项同理，重启进程可立刻重新拉取。
 
 ## 反馈（`/ingest/scores`）
 

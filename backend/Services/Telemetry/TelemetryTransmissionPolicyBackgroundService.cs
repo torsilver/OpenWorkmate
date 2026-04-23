@@ -24,7 +24,7 @@ public interface ITelemetryTransmissionPolicyProvider
 }
 
 /// <summary>
-/// 从 AI Gateway <c>GET /api/policy/aggregated</c> 拉取策略并定时刷新（默认 30s + 配置变更）。
+/// 从 AI Gateway <c>GET /api/policy/aggregated</c> 拉取策略：进程启动时拉一次，之后默认每 1 小时拉一次。
 /// 拉取失败、解析失败、<c>telemetryEmissionAllowed=false</c> 或 <c>availableEventKinds</c> 为空时 <see cref="IsTelemetryPolicyHealthy"/> 为 <c>false</c>（fail-closed）。
 /// </summary>
 public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundService, ITelemetryTransmissionPolicyProvider
@@ -105,38 +105,11 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        void OnConfigChanged()
+        await RefreshAsync(stoppingToken).ConfigureAwait(false);
+        while (!stoppingToken.IsCancellationRequested)
         {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await RefreshAsync(stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // ignore
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Telemetry policy refresh on config change failed");
-                }
-            }, stoppingToken);
-        }
-
-        _config.OnConfigChanged += OnConfigChanged;
-        try
-        {
+            await Task.Delay(TimeSpan.FromHours(1), stoppingToken).ConfigureAwait(false);
             await RefreshAsync(stoppingToken).ConfigureAwait(false);
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
-                await RefreshAsync(stoppingToken).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            _config.OnConfigChanged -= OnConfigChanged;
         }
     }
 
@@ -145,7 +118,7 @@ public sealed class TelemetryTransmissionPolicyBackgroundService : BackgroundSer
         var cfg = _config.Current;
         var apiKey = (cfg.AiGatewayApiKey ?? "").Trim();
         var baseUrl = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
-        if (!cfg.TelemetryEnabled || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
+        if (!cfg.TelemetryEnabled || cfg.TelemetryUserObservabilityEnabled == false || string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey))
         {
             lock (_policyLock)
             {
