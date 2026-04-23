@@ -86,6 +86,10 @@ public class AiModelEntry
     /// <summary>为 true 时，用户通过附件上传的图片在同轮对话中会以 <c>ImageContent</c> 注入聊天 API（需模型与端点支持视觉）。仍为 <c>attachment:</c> 引用，OCR 等工具可用。</summary>
     [JsonPropertyName("supportsVision")]
     public bool SupportsVision { get; set; }
+
+    /// <summary>可选；指向 <c>ModelProfiles</c> 合并表中的 profileKey（如 <c>moonshot/kimi-k2.6</c>、<c>dashscope/qwen3-max</c>）。空则不走能力表合并。</summary>
+    [JsonPropertyName("modelProfileKey")]
+    public string ModelProfileKey { get; set; } = "";
 }
 
 /// <summary>Embedding 模型列表中的单条；仅支持 Remote 远程 API。</summary>

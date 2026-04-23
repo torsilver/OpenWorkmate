@@ -41,6 +41,7 @@
   <ItemGroup>
     <Content Remove="Skills\**\*" />
     <Content Include="Skills\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="ModelProfiles\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- 预构建工具索引 DB：存在则随输出/发布一并复制，便于发布包自带内置工具向量 -->
   <ItemGroup Condition="Exists('Data\rag.db')">

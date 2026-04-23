@@ -1,0 +1,16 @@
+{
+  "moonshot/kimi-k2.6": {
+    "requiresReasoningEchoWithTools": true,
+    "suppressUpstreamThinkingWithTools": true,
+    "recommendedEnableThinking": null,
+    "recommendedThinkingBudget": null,
+    "notes": "Kimi：thinking 开启且 assistant 含 tool_calls 时上游可能要求历史中携带 reasoning_content。当前默认 suppressUpstreamThinkingWithTools=true，在检测到缺 reasoning 的工具延续请求上强制 thinking=false。网关经 /llm/v1 转发时由 ModelProfileChatRequestMergeHandler 处理。"
+  },
+  "dashscope/qwen3-max": {
+    "requiresReasoningEchoWithTools": false,
+    "suppressUpstreamThinkingWithTools": false,
+    "recommendedEnableThinking": null,
+    "recommendedThinkingBudget": 8192,
+    "notes": "百炼 Qwen3-Max（LiteLLM 键 dashscope/qwen3-max）。控制台 modelId 常为 qwen3-max 等；与 profileKey 不同时请在 AiModelEntry.modelProfileKey 仍指向本键以使用能力表。enable_thinking 等仍由 AiModelEntry 与 DashScopeChatRequestMerge 负责。"
+  }
+}

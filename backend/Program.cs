@@ -132,6 +132,13 @@ try
     builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
         sp.GetRequiredService<ILogger<AgentDebugStatsService>>(),
         sp.GetRequiredService<IHostApplicationLifetime>()));
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry>(sp =>
+    {
+        var reg = new OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry(
+            sp.GetService<ILogger<OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry>>());
+        reg.Reload();
+        return reg;
+    });
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {

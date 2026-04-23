@@ -20,6 +20,7 @@ using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Services.Subagent;
 using OfficeCopilot.Server.Services.LlmRouting;
+using OfficeCopilot.Server.Services.ModelProfiles;
 using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Logging;
 
@@ -47,9 +48,10 @@ public sealed partial class ChatService : IDisposable
     private readonly TimelineBlockStreamCoordinator _timelineBlockCoordinator;
     private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly ITelemetryTransmissionPolicyProvider _telemetryTransmissionPolicy;
+    private readonly ModelProfileRegistry _modelProfiles;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, TimelineBlockStreamCoordinator timelineBlockCoordinator, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ITelemetryRelayQueue? telemetryRelay = null)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, TimelineBlockStreamCoordinator timelineBlockCoordinator, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ModelProfileRegistry modelProfiles, ITelemetryRelayQueue? telemetryRelay = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -67,6 +69,7 @@ public sealed partial class ChatService : IDisposable
         _timelineBlockCoordinator = timelineBlockCoordinator;
         _telemetryTransmissionPolicy = telemetryTransmissionPolicy;
         _telemetryRelay = telemetryRelay;
+        _modelProfiles = modelProfiles;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -103,6 +106,7 @@ public sealed partial class ChatService : IDisposable
     /// <summary>重建 Kernel（内置插件 + 用户 Skill + MCP）。</summary>
     public async Task RebuildRuntimeAsync()
     {
+        _modelProfiles.Reload();
         var config = _configService.Current;
         var entries = GetModelEntriesToRegister();
         var chatClients = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
@@ -276,7 +280,35 @@ public sealed partial class ChatService : IDisposable
                 _logger.LogError(ex, "Failed to bind MCP server {Name}", mcpConfig.Name);
             }
         }
-        
+
+        foreach (var entry in entries)
+        {
+            var pKey = (entry.ModelProfileKey ?? "").Trim();
+            if (pKey.Length == 0) continue;
+            if (!_modelProfiles.TryGetMerged(pKey, out var prof) || prof is null)
+            {
+                _logger.LogWarning("AiModelEntry {EntryId} modelProfileKey={ProfileKey} not found in ModelProfileRegistry.", entry.Id, pKey);
+                continue;
+            }
+
+            _logger.LogInformation(
+                "ModelProfile bound: entry={EntryId} profileKey={ProfileKey} maxInputTokens={MaxIn} supportsVisionProfile={ProfVision} supportsVisionEntry={EntryVision} suppressThinkingTools={Suppress}",
+                entry.Id, prof.ProfileKey, prof.MaxInputTokens, prof.SupportsVision, entry.SupportsVision, prof.SuppressUpstreamThinkingWithTools);
+            if (entry.SupportsVision != prof.SupportsVision)
+            {
+                _logger.LogWarning(
+                    "ModelProfile vs AiModelEntry SupportsVision mismatch: entry={EntryId} profileKey={ProfileKey} profile={ProfVision} entry={EntryVision}",
+                    entry.Id, prof.ProfileKey, prof.SupportsVision, entry.SupportsVision);
+            }
+
+            if (entry.ContextLength is null && prof.MaxInputTokens is int maxIn)
+            {
+                _logger.LogInformation(
+                    "ModelProfile hint: entry={EntryId} ContextLength unset; excerpt suggests max_input_tokens≈{MaxIn} (not auto-applied).",
+                    entry.Id, maxIn);
+            }
+        }
+
         var activeEntry = GetActiveModelEntry();
         var activeId = config.AiModels != null && config.AiModels.Count > 0
             ? (config.ActiveModelId ?? "").Trim()
@@ -294,6 +326,15 @@ public sealed partial class ChatService : IDisposable
 
         _logger.LogInformation("Runtime rebuilt. ActiveModel: {ActiveId}, Plugins: {PluginCount}, UserSkills: {SkillCount}, MCPs: {McpCount}, ToolRegistry: {ToolCount}",
             _activeModelId, pluginInstances.Count, skillCount, mcpCount, toolRegistry.GetAllTools().Count);
+
+        if (activeEntry != null
+            && _modelProfiles.TryGetMergedForModelEntry(activeEntry, out var activeProf)
+            && activeProf is not null)
+        {
+            _logger.LogInformation(
+                "Active model ModelProfile: profileKey={ProfileKey} requiresReasoningEcho={Echo} suppressUpstreamThinkingTools={Suppress}",
+                activeProf.ProfileKey, activeProf.RequiresReasoningEchoWithTools, activeProf.SuppressUpstreamThinkingWithTools);
+        }
     }
 
     /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
@@ -321,7 +362,13 @@ public sealed partial class ChatService : IDisposable
             _configService, entryId, logHandler,
             _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>(),
             _timelineBlockCoordinator);
-        var httpClient = new HttpClient(dashHandler);
+        var profileMergeHandler = new ModelProfileChatRequestMergeHandler(
+            _configService,
+            entryId,
+            _modelProfiles,
+            dashHandler,
+            _loggerFactory.CreateLogger<ModelProfileChatRequestMergeHandler>());
+        var httpClient = new HttpClient(profileMergeHandler);
         var options = new OpenAI.OpenAIClientOptions();
         if (endpointUri != null) options.Endpoint = endpointUri;
         options.Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient);
