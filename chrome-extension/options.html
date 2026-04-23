@@ -550,12 +550,12 @@
         <form id="aiModelForm">
           <div class="form-group">
             <label for="aiModelDisplayName">展示名称</label>
-            <input type="text" id="aiModelDisplayName" name="displayName" placeholder="例如: 我的 GPT-4">
+            <input type="text" id="aiModelDisplayName" name="displayName" placeholder="例如: 百炼主用 / Kimi 备用">
           </div>
           <div class="form-group">
             <label for="aiModelVendor">AI 供应商</label>
             <select id="aiModelVendor"></select>
-            <div class="help-text" id="aiModelVendorHelp">对接类型已按供应商自动设置；选择「其他（自行填写地址）」时须指定对接类型。展开下方「高级」可手动覆盖对接类型。</div>
+            <div class="help-text" id="aiModelVendorHelp">产品仅提供通义百炼与月之暗面 Kimi 两家；对接类型已按供应商自动设为 OpenAI 兼容。展开下方「高级」可手动覆盖对接类型或 Endpoint。</div>
           </div>
           <div class="form-group" id="aiModelProviderPrimaryRow" style="display: none;">
             <label for="aiModelProvider">对接类型</label>
@@ -699,7 +699,7 @@
             </div>
             <div class="form-group">
               <label for="embeddingEditorDisplayName">展示名称</label>
-              <input type="text" id="embeddingEditorDisplayName" placeholder="例如: OpenAI text-embedding">
+              <input type="text" id="embeddingEditorDisplayName" placeholder="例如: text-embedding-3-small（与 Endpoint 一致）">
             </div>
             <div class="form-group">
               <label for="embeddingEditorVendor">供应商（与对话列表一致，可选）</label>
@@ -1086,7 +1086,7 @@ postgresql://localhost/mydb"></textarea>
       <details class="settings-block">
         <summary>模型优化策略</summary>
         <div class="settings-block-inner">
-      <p class="help-text" style="margin-bottom: 12px;">选择上下文优化预设（如公司内部 64K、Kimi K2.5），或新建自定义预设。切换后会话/上下文/计划确认参数将随之生效。</p>
+      <p class="help-text" style="margin-bottom: 12px;">选择上下文优化预设（如公司内部 64K、Kimi K2.6、通义 Qwen3.6 百炼），或新建自定义预设。切换后会话/上下文/计划确认参数将随之生效。</p>
       <div class="form-group">
         <label for="activeContextPreset">当前优化预设</label>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">

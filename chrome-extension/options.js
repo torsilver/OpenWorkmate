@@ -320,7 +320,7 @@ function mountChatProviderSelect(mode) {
 /** @param {boolean} resetProviderToPreset true 时按供应商预设覆盖对接类型（切换供应商）；false 时尽量保留当前已选值 */
 function updateChatProviderUi(resetProviderToPreset) {
   var vendorEl = document.getElementById('aiModelVendor');
-  var vid = (vendorEl && vendorEl.value) || 'other_auto';
+  var vid = (vendorEl && vendorEl.value) || 'aliyun_bailian';
   var preset = findChatPreset(vid);
   var choices = getChatPresetProviderChoices(preset);
   var multi = choices.length > 1;
@@ -394,7 +394,7 @@ function initVendorPresetSelects() {
 }
 
 function resolveChatVendorId(entry) {
-  if (!entry) return 'other_auto';
+  if (!entry) return 'aliyun_bailian';
   var vid = String(entry.vendorId || entry.VendorId || '').trim();
   if (vid) return vid;
   var ep = String(entry.endpoint || entry.Endpoint || '').trim().toLowerCase().replace(/\/$/, '');
@@ -405,9 +405,9 @@ function resolveChatVendorId(entry) {
     var de = String(preset.defaultEndpoint || '').trim().toLowerCase().replace(/\/$/, '');
     if (de && ep && (ep === de || ep.indexOf(de + '/') === 0) && (!preset.provider || preset.provider === prov)) return preset.id;
   }
-  if (prov === 'Azure') return 'azure_openai';
-  if (prov === 'Ollama') return 'ollama';
-  return 'other_auto';
+  if (ep.indexOf('dashscope') >= 0) return 'aliyun_bailian';
+  if (ep.indexOf('moonshot.cn') >= 0) return 'moonshot';
+  return 'aliyun_bailian';
 }
 
 function resolveOcrVendorId(entry) {
@@ -426,7 +426,7 @@ function resolveOcrVendorId(entry) {
     if (de && ep.indexOf(de) >= 0) return list[i].id;
   }
   if (ep.indexOf('dashscope') >= 0) return 'aliyun_bailian';
-  if (ep.indexOf('openai.com') >= 0) return 'openai';
+  if (ep.indexOf('openai.com') >= 0 || ep.indexOf('azure') >= 0) return 'other_auto';
   return 'other_auto';
 }
 
@@ -988,7 +988,7 @@ function openEmbeddingEditor(id) {
   if (keyEl) keyEl.value = entry ? (entry.apiKey || entry.ApiKey || '') : '';
   if (modelEl) modelEl.value = entry ? (entry.modelId || entry.ModelId || '') : '';
   var evEl = document.getElementById('embeddingEditorVendor');
-  if (evEl) evEl.value = entry ? resolveChatVendorId(entry) : 'other_auto';
+  if (evEl) evEl.value = entry ? resolveChatVendorId(entry) : 'aliyun_bailian';
   var statusEl = document.getElementById('testEmbeddingStatus');
   if (statusEl) statusEl.textContent = '';
   if (editorEl) editorEl.style.display = 'block';
@@ -1010,7 +1010,7 @@ function saveEmbeddingFromEditor() {
   var endpoint = (endEl && endEl.value && endEl.value.trim()) || '';
   var apiKey = (keyEl && keyEl.value) || '';
   var modelId = (modelEl && modelEl.value && modelEl.value.trim()) || '';
-  var embVendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto';
+  var embVendorId = (vendorEl && vendorEl.value) ? vendorEl.value : 'aliyun_bailian';
   if (!modelId) {
     alert('请填写模型 ID');
     return;
@@ -1595,8 +1595,8 @@ function openAiModelEditor(existingId) {
     els.aiModelSystemPrompt.value = '';
     var svVisionNew = document.getElementById('aiModelSupportsVision');
     if (svVisionNew) svVisionNew.checked = false;
-    if (vendorSelect) vendorSelect.value = 'other_auto';
-    testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'other_auto' };
+    if (vendorSelect) vendorSelect.value = 'aliyun_bailian';
+    testConnectionFields = { endpoint: '', modelId: '', apiKey: '', provider: 'OpenAI', deploymentName: '', vendorId: 'aliyun_bailian' };
   }
   updateChatProviderUi(!existingId);
   var vSel = document.getElementById('aiModelVendor');
@@ -1674,7 +1674,7 @@ function saveAiModelFromEditor() {
     modelId: (els.aiModelModelId && els.aiModelModelId.value.trim()) || '',
     systemPrompt: (els.aiModelSystemPrompt && els.aiModelSystemPrompt.value.trim()) || '',
     enabled: prevEntry ? (prevEntry.enabled !== false && prevEntry.Enabled !== false) : true,
-    vendorId: (vendorEl && vendorEl.value) ? vendorEl.value : 'other_auto'
+    vendorId: (vendorEl && vendorEl.value) ? vendorEl.value : 'aliyun_bailian'
   };
   var svEl = document.getElementById('aiModelSupportsVision');
   entry.supportsVision = !!(svEl && svEl.checked);
@@ -2177,7 +2177,7 @@ function updatePresetRenameDeleteVisibility(activePresetId, presets) {
   }
   renameBtn.style.display = 'inline-block';
   var id = (activePresetId || '').toLowerCase();
-  var isBuiltIn = id === 'internal-64k' || id === 'kimi-k25' || id === 'qwen35-plus';
+  var isBuiltIn = id === 'internal-64k' || id === 'kimi-k26' || id === 'qwen36-bailian-plus';
   deleteBtn.style.display = isBuiltIn ? 'none' : 'inline-block';
 }
 
@@ -2386,7 +2386,7 @@ if (deleteContextPresetBtn) {
     var presets = getPresets();
     if (!activeId || !presets.length) return;
     var id = (activeId || '').toLowerCase();
-    if (id === 'internal-64k' || id === 'kimi-k25' || id === 'qwen35-plus') return;
+    if (id === 'internal-64k' || id === 'kimi-k26' || id === 'qwen36-bailian-plus') return;
     if (!confirm('确定删除该预设？')) return;
     var next = presets.filter(function (p) { return (p.id || p.Id) !== activeId; });
     fullConfig = fullConfig || {};

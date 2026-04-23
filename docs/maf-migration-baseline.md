@@ -1,11 +1,11 @@
 # MAF 迁移基线
 
-生成时间：Phase J 完成后更新。
+生成时间：Phase J 完成后更新；测试计数与包版本以本文「测试基线」「当前 NuGet 依赖」为准，变更代码后请本地复跑/核对。
 
 ## 测试基线
 
 - 命令：`dotnet test backend.Tests/backend.Tests.csproj`
-- **最近一次全绿计数**：524（`net10.0`，Unit + Integration，2026-04-15 校验）；后续以本地 `dotnet test backend.Tests/backend.Tests.csproj` 输出为准。
+- **最近一次全绿计数**：583（`net10.0`，Unit + Integration，2026-04-23 校验）；后续以本地 `dotnet test backend.Tests/backend.Tests.csproj` 输出为准。
 
 ## 完全 MAF 迁移进度（摘要）
 
@@ -36,7 +36,7 @@
 | `Microsoft.Agents.AI` | 1.0.0 |
 | `Microsoft.Agents.AI.OpenAI` | 1.0.0 |
 | `Microsoft.Agents.AI.Workflows` | 1.0.0 |
-| `Microsoft.Extensions.AI` | 10.4.0 |
+| `Microsoft.Extensions.AI` | 10.5.0 |
 
 ## DashScope / 推理流（迁移时需逐项对照）
 

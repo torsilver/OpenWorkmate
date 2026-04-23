@@ -169,7 +169,7 @@ public class ContextWindowConfig
     public string? SessionAuditDirectory { get; set; }
 }
 
-/// <summary>上下文优化预设：一组 ContextWindow + Session，用于切换「公司内部 64K」「Kimi K2.5」或自定义。</summary>
+/// <summary>上下文优化预设：一组 ContextWindow + Session，用于切换「公司内部 64K」「Kimi K2.6」、通义 Qwen3.6（百炼）或自定义。</summary>
 public class ContextOptimizationPreset
 {
     public string Id { get; set; } = "";
@@ -329,7 +329,7 @@ public class AppConfig
     public SessionConfig? Session { get; set; }
     /// <summary>上下文窗口配置（64K 优化、预留、摘要、重试等）；未配置时使用默认值。</summary>
     public ContextWindowConfig? ContextWindow { get; set; }
-    /// <summary>上下文优化预设列表（内置 64K/Kimi K2.5 + 用户自定义）；空时在加载时注入内置两条。</summary>
+    /// <summary>上下文优化预设列表（内置 64K/Kimi K2.6/通义 Qwen3.6 等 + 用户自定义）；空时在加载时注入。</summary>
     public List<ContextOptimizationPreset>? ContextOptimizationPresets { get; set; }
     /// <summary>当前生效的预设 Id；非空且存在于 Presets 时，加载后用该预设覆盖 Session/ContextWindow。</summary>
     public string? ActiveContextPresetId { get; set; }
@@ -760,11 +760,11 @@ public sealed class ConfigService
             config.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
         else
         {
-            var hasQwen35 = config.ContextOptimizationPresets.Exists(p =>
-                string.Equals((p.Id ?? "").Trim(), "qwen35-plus", StringComparison.OrdinalIgnoreCase));
-            if (!hasQwen35)
+            var hasQwen36 = config.ContextOptimizationPresets.Exists(p =>
+                string.Equals((p.Id ?? "").Trim(), "qwen36-bailian-plus", StringComparison.OrdinalIgnoreCase));
+            if (!hasQwen36)
             {
-                var add = GetBuiltInPresets().Find(p => string.Equals(p.Id, "qwen35-plus", StringComparison.OrdinalIgnoreCase));
+                var add = GetBuiltInPresets().Find(p => string.Equals(p.Id, "qwen36-bailian-plus", StringComparison.OrdinalIgnoreCase));
                 if (add != null) config.ContextOptimizationPresets.Add(add);
             }
         }
@@ -911,7 +911,7 @@ public sealed class ConfigService
         }
     }
 
-    /// <summary>内置预设：公司内部 64K、Kimi K2.5（256K）、通义 Qwen3.5-Plus（百炼 1M 思考模式规格）。</summary>
+    /// <summary>内置预设：公司内部 64K、Kimi K2.6（26 万级上下文）、通义 Qwen3.6-Plus 百炼（大窗口规格，与对话模型 ID 解耦）。</summary>
     private static List<ContextOptimizationPreset> GetBuiltInPresets()
     {
         return new List<ContextOptimizationPreset>
@@ -946,11 +946,11 @@ public sealed class ConfigService
             },
             new ContextOptimizationPreset
             {
-                Id = "kimi-k25",
-                DisplayName = "Kimi K2.5",
+                Id = "kimi-k26",
+                DisplayName = "Kimi K2.6",
                 ContextWindow = new ContextWindowConfig
                 {
-                    MaxContextTokens = 256_000,
+                    MaxContextTokens = 262_144,
                     ReservedSystemTokens = 16_000,
                     ReservedToolsTokens = 16_000,
                     ReservedOutputTokens = 8_192,
@@ -974,11 +974,11 @@ public sealed class ConfigService
             },
             new ContextOptimizationPreset
             {
-                Id = "qwen35-plus",
-                DisplayName = "通义 Qwen3.5-Plus（百炼）",
+                Id = "qwen36-bailian-plus",
+                DisplayName = "通义 Qwen3.6-Plus（百炼）",
                 ContextWindow = new ContextWindowConfig
                 {
-                    // 与阿里云百炼模型表一致（思考模式）：上下文 1M、最大输入 983616、思维链上限 81920、最大输出 65536。
+                    // 与百炼大上下文规格同量级：用于预设窗口与预留；与 AiModelEntry.modelId（如 qwen3.6-plus）独立。
                     MaxContextTokens = 1_000_000,
                     ReservedSystemTokens = 20_000,
                     ReservedToolsTokens = 24_000,

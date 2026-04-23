@@ -34,6 +34,7 @@
 |------|------|
 | [动态工具与技能选择实现说明.md](./动态工具与技能选择实现说明.md) | `ToolCatalogIndex`、bootstrap、`DynamicToolingTurnState` 与 MAF 主路径 |
 | [模型运行时服务约定.md](./模型运行时服务约定.md) | 后端对工具调用客户端的义务：错误回传、动态工具同步、可观测性与安全 |
+| [ai-gateway.md](./ai-gateway.md) | 本机 AI Gateway：LLM 代理、`/ingest/spans` 落盘、聚合策略、`routeMode`、健康与 fail-closed |
 | [多模型兼容与能力表.md](./多模型兼容与能力表.md) | OpenAI 兼容≠语义一致；thinking/工具/网关；LiteLLM 摘录 + overlay、`modelProfileKey`、出站 thinking 补救 |
 | [应用内AI插件列表.md](./应用内AI插件列表.md) | 内置/动态插件名与 `ClientTypeToolFilter` 可见性（含 WPS `wpsHostKind`） |
 
