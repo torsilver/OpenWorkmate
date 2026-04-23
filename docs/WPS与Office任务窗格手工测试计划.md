@@ -1,8 +1,11 @@
-# WPS 加载项手工测试计划
+# WPS 与 Office 任务窗格手工测试计划
 
-> **范围**：**金山 WPS** 内通过 **[wps-addin-new/](../wps-addin-new/)** 任务窗格连接本机 **Office Copilot Server**（`clientType=wps`）。  
-> **不包含**：Chrome 扩展独有能力（**`Browser`**、侧栏会议监听等）。**`File` / `CLI` / `System` / `UserOptions`** 在 `clientType=wps` 下与 `IsCommonPlugin` 一致**会暴露**（见 `ClientTypeToolFilter`）；`get_attachment_path` 仍依赖 Chrome 侧附件落盘链，WPS 上可能不适用。本文也不替代 `docs/Chrome端手工测试计划.md`。  
-> **权威对照**：端侧 RPC 与宿主守卫见 `wps-addin-new/src/composables/useCopilot.js`（`handleRpcRequest`）、`wps-addin-new/src/wps-rpc/hostKind.js`；工具名与过滤见 `backend/Plugins/CurrentDocumentPlugin.cs`、`backend/Services/ClientTypeToolFilter.cs`；WPS 与 `wpsHostKind` 见 `docs/应用内AI插件列表.md` §三、`docs/WPS插件调试指南.md` §3.1。
+> **范围**：**任务窗格**（应用内加载项）连接本机 **Office Copilot Server**。  
+> **本文操作步骤与表格**：按 **金山 WPS**、目录 **[wps-addin-new/](../wps-addin-new/)**、`clientType=wps` 编写（含 `wpsHostKind`、`npx wpsjs debug`、文中「WPS 文字/表格/演示」称谓及 §七 `wps_*` 预置脚本等）。  
+> **Microsoft Office 加载项（[office-addin/](../office-addin/)）**：`clientType` 为 `office-word` / `office-excel` / `office-powerpoint`；**服务端工具过滤、§二负向/正向通用插件、§四～§六同名 `current_*` 工具、§八～§十可与 WPS 对照执行**。差异：`set_context` 为 Office 宿主上下文（非 `wpsHostKind`）；§三 RPC 守卫提示为 Word/Excel/PowerPoint 环境（见 `office-addin/taskpane.js`）；§七预置脚本以 `DOCUMENT_SCRIPTS` 为准（如 `office_doc_meta`），与 WPS 侧 `wps_*` 白名单不对表逐一相同；调试以 `office-addin/Start-OfficeAddinDev.ps1` + 旁加载 `manifest.xml` 为准，见 `office-addin/README.md`。  
+> **不包含**：Chrome 扩展独有能力（**`Browser`**、侧栏会议监听等）。**`File` / `CLI` / `System` / `UserOptions`** 在 `clientType=wps` 或 `office-*` 下与 `IsCommonPlugin` 一致**会暴露**（见 `ClientTypeToolFilter`）；`get_attachment_path` 仍依赖 Chrome 侧附件落盘链，任务窗格上可能不适用。本文也不替代 `docs/Chrome端手工测试计划.md`。  
+> **权威对照（WPS）**：`wps-addin-new/src/composables/useCopilot.js`（`handleRpcRequest`）、`wps-addin-new/src/wps-rpc/hostKind.js`；工具名与过滤见 `backend/Plugins/CurrentDocumentPlugin.cs`、`backend/Services/ClientTypeToolFilter.cs`；`wpsHostKind` 见 `docs/应用内AI插件列表.md` §三、`docs/WPS插件调试指南.md` §3.1。  
+> **权威对照（Office）**：`office-addin/taskpane.js`、`office-addin/manifest.xml`；后端同上。
 
 **通过标准（每条用例）**：行为与下表「预期」一致；失败时工具返回或 UI 中可见**明确原因**（含 RPC `error` 回包、后端 `message`），符合项目错误可见性约定。
 
@@ -182,8 +185,8 @@ wpsjs / 加载项构建方式：
 
 ## 十二、维护说明
 
-- **增删 RPC 分支**（`handleRpcRequest` 新方法或改 `getWpsHostKind`）时，同步本文 **§三～§六** 与 `docs/WPS插件调试指南.md` §3.1。  
-- **增删 `DOCUMENT_SCRIPTS`** 时，同步 **§七** 与 `CurrentDocumentPlugin` 工具描述。  
-- **改 `ClientTypeToolFilter`（含 WPS 收窄）** 时，同步 **§一 C3/C4** 与 `docs/应用内AI插件列表.md` §三。
+- **增删 RPC 分支**（WPS：`useCopilot.js` / `getWpsHostKind`；Office：`office-addin/taskpane.js`）时，同步本文 **§三～§六** 与 `docs/WPS插件调试指南.md` §3.1（WPS）、`office-addin/README.md`（Office）。  
+- **增删 `DOCUMENT_SCRIPTS` / 预置脚本** 时，同步 **§七** 与 `CurrentDocumentPlugin` 工具描述（两端白名单分别维护）。  
+- **改 `ClientTypeToolFilter`（含任务窗格宿主收窄）** 时，同步 **§一 C3/C4** 与 `docs/应用内AI插件列表.md` §三。
 
-*校准日期：2026-04-15（对齐 `wps-addin-new` 任务窗格 RPC 与后端 `CurrentDocument` / `ClientTypeToolFilter`）。*
+*校准日期：2026-04-15（对齐 `wps-addin-new` 任务窗格 RPC 与后端 `CurrentDocument` / `ClientTypeToolFilter`）；2026-04-23 增补 Office 对照说明与文档更名。*

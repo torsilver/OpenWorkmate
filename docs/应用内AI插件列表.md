@@ -173,7 +173,7 @@
 | 动态工具 / 检索 | `backend/Services/DynamicTooling/`、`backend/Plugins/AgentToolingPlugin.cs` |
 | 技能撰写 | `backend/Plugins/SkillAuthorPlugin.cs` |
 | Chrome 端逐工具手工测 | `docs/Chrome端手工测试计划.md` |
-| WPS 端 CurrentDocument / RPC 手工测 | `docs/WPS端手工测试计划.md` |
+| WPS / Office 任务窗格 CurrentDocument / RPC 手工测 | `docs/WPS与Office任务窗格手工测试计划.md` |
 
 ---
 

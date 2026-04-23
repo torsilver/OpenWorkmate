@@ -861,6 +861,8 @@
   let openThinkSeg = null;
   let openDigestSeg = null;
   let openIntentSeg = null;
+  /** 与 Chrome 侧栏一致：流式 tool_call_delta 挂在「工具参数（生成中）」时间线段内 */
+  let openToolDraftSeg = null;
   let openAnswerSeg = null;
   const TIMELINE_TAIL_MAX = 100;
   let currentRoundToolBlocks = [];
@@ -1049,6 +1051,44 @@
     closeOpenAnswerSegment();
   }
 
+  function clearToolDraftTimeline() {
+    if (openToolDraftSeg && openToolDraftSeg.details && openToolDraftSeg.details.parentNode) {
+      openToolDraftSeg.details.remove();
+    }
+    openToolDraftSeg = null;
+  }
+
+  function ensureToolDraftSeg() {
+    if (openToolDraftSeg) return openToolDraftSeg;
+    if (!currentRoundWrapper) beginStream();
+    ensureTimeline();
+    const seg = newTimelineSeg("tool-draft", "工具参数（生成中）");
+    seg.details.classList.add("timeline-seg--tool-draft");
+    openToolDraftSeg = { details: seg.details, pre: seg.pre, tail: seg.tail, lastCallId: "" };
+    return openToolDraftSeg;
+  }
+
+  function appendToolCallDelta(msg) {
+    const callIdRaw = msg.toolCallId != null ? String(msg.toolCallId).trim() : "";
+    const callId = callIdRaw || "_";
+    const name = msg.toolName != null ? String(msg.toolName) : "";
+    const delta = msg.argumentsDelta != null ? String(msg.argumentsDelta) : "";
+    if (!delta && !name.trim()) return;
+    // Office 任务窗格未实现子任务工具容器：子任务增量也挂主时间线，避免落入 default 整段 JSON
+    if (!currentRoundWrapper) beginStream();
+    ensureTimeline();
+    const d = ensureToolDraftSeg();
+    if (d.lastCallId !== callId) {
+      if (d.pre.textContent) d.pre.textContent += "\n\n";
+      d.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
+      d.lastCallId = callId;
+    }
+    d.pre.textContent += delta;
+    d.tail.textContent = formatActivityTail(d.pre.textContent, TIMELINE_TAIL_MAX);
+    d.details.title = (d.pre.textContent || "").slice(0, 500);
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
   function collapseAllOpenPhases() {
     collapseSeg(openPrepSeg);
     openPrepSeg = null;
@@ -1123,6 +1163,7 @@
     openThinkSeg = null;
     openDigestSeg = null;
     openIntentSeg = null;
+    openToolDraftSeg = null;
     openAnswerSeg = null;
     timelineThinkCells = new Map();
     timelineAnswerCells = new Map();
@@ -1217,6 +1258,7 @@
   }
 
   function finalizeStream() {
+    clearToolDraftTimeline();
     collapseAllOpenPhases();
     openAnswerSeg = null;
     if (timelineRoot) {
@@ -1980,6 +2022,9 @@
       case "reasoning_chunk":
         appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind);
         break;
+      case "tool_call_delta":
+        appendToolCallDelta(msg);
+        break;
       case "agent_phase": {
         const phase = (msg.phase && String(msg.phase)) || "";
         const c = (msg.content && String(msg.content).trim()) || "";
@@ -2023,6 +2068,7 @@
       case "subtask_end":
         break;
       case "tool_invocation_start": {
+        clearToolDraftTimeline();
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, "in_progress");
         }

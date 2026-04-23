@@ -42,7 +42,7 @@
 |------|------|
 | [Chrome端手工测试计划.md](./Chrome端手工测试计划.md) | Chrome 扩展 + 本机服务的逐项手工回归 |
 | [Chrome端手工测试-Playwright无法覆盖清单.md](./Chrome端手工测试-Playwright无法覆盖清单.md) | E2E 未覆盖、仍需手工的条目（与主计划配套） |
-| [WPS端手工测试计划.md](./WPS端手工测试计划.md) | WPS 任务窗格 + `CurrentDocument` RPC / 宿主守卫 / 动态工具手工回归 |
+| [WPS与Office任务窗格手工测试计划.md](./WPS与Office任务窗格手工测试计划.md) | WPS / Office 任务窗格 + `CurrentDocument` RPC / 宿主守卫 / 动态工具手工回归（正文以 WPS 操作为主，Office 可对照） |
 | [WPS插件调试指南.md](./WPS插件调试指南.md) | 官方加载项调试要点与 `wps-addin-new` 下 `wpsjs debug` 实践 |
 | [对话测试清单.md](./对话测试清单.md) | 对话侧按功能复制的测试话术 |
 

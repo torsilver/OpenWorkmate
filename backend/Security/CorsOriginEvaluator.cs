@@ -18,6 +18,9 @@ public static class CorsOriginEvaluator
         {
             if (origin.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase)) return true;
             if (origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase)) return true;
+            // Office 旁加载开发：taskpane 由 https://localhost:PORT 托管（见 office-addin），须放行否则 fetch/ws 报 Failed to fetch
+            if (origin.StartsWith("https://127.0.0.1", StringComparison.OrdinalIgnoreCase)) return true;
+            if (origin.StartsWith("https://localhost", StringComparison.OrdinalIgnoreCase)) return true;
         }
 
         if (origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase)) return true;

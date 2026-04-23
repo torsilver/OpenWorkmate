@@ -293,6 +293,17 @@ html, body {
   font-size: 11px;
 }
 
+.timeline-seg.timeline-seg--tool-draft .timeline-seg__body {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
 .msg--stream-warning {
   padding: 8px 12px;
   margin-bottom: 6px;
