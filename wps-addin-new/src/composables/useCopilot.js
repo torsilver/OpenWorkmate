@@ -1143,6 +1143,33 @@ export function useCopilot() {
     inputEnabled.value = false
   }
 
+  /** OpenAI 兼容流：usage / finish_reason / role / 首包 meta（与 stream_chunk 同级主时间线） */
+  function appendOpenAiStreamDiagSeg(wsType, content, blockSeq, blockKind) {
+    const body = content != null ? String(content).trim() : ''
+    if (!body) return
+    const r = ensureRound()
+    const meta =
+      wsType === 'stream_usage'
+        ? { kind: 'streamUsage', title: 'Token 用量' }
+        : wsType === 'stream_finish'
+          ? { kind: 'streamFinish', title: '结束原因' }
+          : wsType === 'stream_role'
+            ? { kind: 'streamRole', title: '角色' }
+            : wsType === 'stream_meta'
+              ? { kind: 'streamMeta', title: '响应元数据' }
+              : null
+    if (!meta) return
+    const useOrdered =
+      typeof blockSeq === 'number' &&
+      Number.isFinite(blockSeq) &&
+      (blockKind === 'usage' || blockKind === 'finish' || blockKind === 'role' || blockKind === 'meta')
+    const seg = useOrdered
+      ? newTimelineSegOrdered(meta.kind, meta.title, blockSeq)
+      : newTimelineSeg(meta.kind, meta.title)
+    seg.body = body
+    seg.tail = formatActivityTail(body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
+  }
+
   function appendStreamChunk(text, blockSeq, blockKind) {
     if (!currentRound.value) beginStream()
     const r = currentRound.value
@@ -1410,6 +1437,18 @@ export function useCopilot() {
       }
       case 'stream_chunk':
         appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind)
+        break
+      case 'stream_usage':
+        appendOpenAiStreamDiagSeg('stream_usage', msg.content, msg.blockSeq, msg.blockKind)
+        break
+      case 'stream_finish':
+        appendOpenAiStreamDiagSeg('stream_finish', msg.content, msg.blockSeq, msg.blockKind)
+        break
+      case 'stream_role':
+        appendOpenAiStreamDiagSeg('stream_role', msg.content, msg.blockSeq, msg.blockKind)
+        break
+      case 'stream_meta':
+        appendOpenAiStreamDiagSeg('stream_meta', msg.content, msg.blockSeq, msg.blockKind)
         break
       case 'stream_end':
         finalizeStream()

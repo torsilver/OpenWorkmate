@@ -119,4 +119,20 @@ public sealed class DashScopeChatRequestMergeTests
         var r = DashScopeChatRequestDiagnostics.HeadTailOmitMiddle("abcdefgh", 3, 3);
         Assert.Equal("abc …[omitted 2 chars]… fgh", r);
     }
+
+    [Theory]
+    [InlineData("https://dashscope.aliyuncs.com/compatible-mode/v1", true)]
+    [InlineData("https://dashscope.aliyuncs.com/compatible-mode/v1/", true)]
+    [InlineData("https://api.openai.com/v1", false)]
+    [InlineData("https://relay.example.com/llm/v1", false)]
+    public void ShouldAttachDashScopeOpenAiCompatHandler_probes_chat_completions_path(string baseUrl, bool expected)
+    {
+        Assert.Equal(expected, DashScopeChatRequestMerge.ShouldAttachDashScopeOpenAiCompatHandler(new Uri(baseUrl)));
+    }
+
+    [Fact]
+    public void ShouldAttachDashScopeOpenAiCompatHandler_null_returns_false()
+    {
+        Assert.False(DashScopeChatRequestMerge.ShouldAttachDashScopeOpenAiCompatHandler(null));
+    }
 }

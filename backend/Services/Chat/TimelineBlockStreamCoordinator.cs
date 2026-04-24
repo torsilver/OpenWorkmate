@@ -10,6 +10,10 @@ public sealed class TimelineBlockStreamCoordinator
 {
     public const string KindThink = "think";
     public const string KindAnswer = "answer";
+    public const string KindUsage = "usage";
+    public const string KindFinish = "finish";
+    public const string KindRole = "role";
+    public const string KindMeta = "meta";
 
     private sealed class State
     {
@@ -67,8 +71,15 @@ public sealed class TimelineBlockStreamCoordinator
     {
         if (string.IsNullOrEmpty(sessionId))
             throw new ArgumentException("sessionId required", nameof(sessionId));
-        if (requestedKind != KindThink && requestedKind != KindAnswer)
-            throw new ArgumentException("kind must be think or answer", nameof(requestedKind));
+        if (requestedKind != KindThink
+            && requestedKind != KindAnswer
+            && requestedKind != KindUsage
+            && requestedKind != KindFinish
+            && requestedKind != KindRole
+            && requestedKind != KindMeta)
+            throw new ArgumentException(
+                "kind must be think, answer, usage, finish, role, or meta",
+                nameof(requestedKind));
 
         var s = _map.GetOrAdd(sessionId, _ => new State());
         lock (s.Gate)

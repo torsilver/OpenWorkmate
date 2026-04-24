@@ -28,6 +28,20 @@ public static class DashScopeChatRequestMerge
     }
 
     /// <summary>
+    /// 根据 OpenAI 客户端所用的基址（配置或网关重写后），判断是否应挂载 <see cref="DashScopeOpenAiCompatHandler"/>。
+    /// 配置中的基址通常不含 <c>chat/completions</c>，故通过拼接探测路径复用 <see cref="IsDashScopeChatCompletions"/>。
+    /// </summary>
+    public static bool ShouldAttachDashScopeOpenAiCompatHandler(Uri? openAiClientBaseEndpoint)
+    {
+        if (openAiClientBaseEndpoint == null || !openAiClientBaseEndpoint.IsAbsoluteUri)
+            return false;
+        var abs = openAiClientBaseEndpoint.AbsoluteUri.TrimEnd('/');
+        if (!Uri.TryCreate(abs + "/chat/completions", UriKind.Absolute, out var probe))
+            return false;
+        return IsDashScopeChatCompletions(probe);
+    }
+
+    /// <summary>
     /// 将百炼相关字段合并进已有 JSON 请求体。返回 null 表示无需替换原文。
     /// 后台调用且 <see cref="AiModelEntry.DisableThinkingForBackgroundCalls"/> 为 true 时强制 <c>enable_thinking: false</c>。
     /// </summary>

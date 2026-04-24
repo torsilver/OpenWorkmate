@@ -1177,6 +1177,54 @@
 
   function updateExecutionLogCount() {}
 
+  function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
+    const body = (content != null && String(content).trim()) || "";
+    if (!body) return;
+    if (!currentRoundWrapper) beginStream();
+    ensureTimeline();
+    const titles = {
+      stream_usage: "Token 用量",
+      stream_finish: "结束原因",
+      stream_role: "角色",
+      stream_meta: "响应元数据"
+    };
+    const kinds = {
+      stream_usage: "stream-usage",
+      stream_finish: "stream-finish",
+      stream_role: "stream-role",
+      stream_meta: "stream-meta"
+    };
+    const title = titles[wsType] || "流事件";
+    const kind = kinds[wsType] || "stream-meta";
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--" + kind;
+    d.dataset.kind = kind;
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = title;
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const pre = document.createElement("pre");
+    pre.className = "timeline-seg__body";
+    pre.textContent = body;
+    d.appendChild(sum);
+    d.appendChild(pre);
+    tail.textContent = formatActivityTail(body.replace(/\s+/g, " ").trim(), TIMELINE_TAIL_MAX);
+    d.title = body.slice(0, 500);
+    const useOrder =
+      typeof blockSeq === "number" &&
+      Number.isFinite(blockSeq) &&
+      (blockKind === "usage" || blockKind === "finish" || blockKind === "role" || blockKind === "meta");
+    if (useOrder) insertTimelineBlockInOrder(d, blockSeq);
+    else timelineRoot.appendChild(d);
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
   function appendStreamWarning(text) {
     if (!currentRoundWrapper) beginStream();
     const wrap = currentRoundWrapper;
@@ -2049,6 +2097,18 @@
       }
       case "stream_chunk":
         appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
+        break;
+      case "stream_usage":
+        appendOpenAiStreamMetaSeg("stream_usage", msg.content, msg.blockSeq, msg.blockKind);
+        break;
+      case "stream_finish":
+        appendOpenAiStreamMetaSeg("stream_finish", msg.content, msg.blockSeq, msg.blockKind);
+        break;
+      case "stream_role":
+        appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);
+        break;
+      case "stream_meta":
+        appendOpenAiStreamMetaSeg("stream_meta", msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_warning":
         appendStreamWarning(msg.content);

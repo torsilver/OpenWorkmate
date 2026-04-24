@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OfficeCopilot.Server.Services.DashScope;
+using OfficeCopilot.Server.Services.OpenAiCompat;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
@@ -85,6 +86,7 @@ public static class MafAgentGroupChatSessionRunner
         var toolCallArgBudget = new Dictionary<string, int>(StringComparer.Ordinal);
         var callState = new Dictionary<string, (string Name, string ArgsSoFar)>(StringComparer.Ordinal);
         var hostSb = new StringBuilder();
+        var metaState = new MafStreamDeltaMetadataState();
 
         await using var run = await InProcessExecution.RunStreamingAsync(workflow, msgs, cancellationToken: ct).ConfigureAwait(false);
         await foreach (var evt in run.WatchStreamAsync(ct).ConfigureAwait(false))
@@ -111,6 +113,15 @@ public static class MafAgentGroupChatSessionRunner
 
                     foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
                         yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+
+                    foreach (var usageJson in OpenAiStreamUsageSessionBridge.DrainForSession(sessionId))
+                    {
+                        if (!string.IsNullOrEmpty(usageJson))
+                            yield return new StreamItem(IsWarning: false, Content: usageJson, Kind: StreamSegmentKind.StreamUsage);
+                    }
+
+                    foreach (var metaItem in MafChatResponseStreamMetadataExtractor.ExtractFromAgentUpdate(streaming, metaState))
+                        yield return metaItem;
 
                     if (streaming.Text is { Length: > 0 } text)
                         yield return new StreamItem(IsWarning: false, Content: text);

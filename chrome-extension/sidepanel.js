@@ -1932,6 +1932,55 @@ function updateExecutionLogCount() {
   /* 工具块已直接挂在时间线，无需单独计数 summary */
 }
 
+/** usage / finish / role / stream meta：主时间线与正文同级，按 blockSeq 插入 */
+function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
+  const body = (content != null && String(content).trim()) || "";
+  if (!body) return;
+  if (!currentRoundWrapper) beginStream();
+  ensureTimeline();
+  const titles = {
+    stream_usage: "Token 用量",
+    stream_finish: "结束原因",
+    stream_role: "角色",
+    stream_meta: "响应元数据"
+  };
+  const kinds = {
+    stream_usage: "stream-usage",
+    stream_finish: "stream-finish",
+    stream_role: "stream-role",
+    stream_meta: "stream-meta"
+  };
+  const title = titles[wsType] || "流事件";
+  const kind = kinds[wsType] || "stream-meta";
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--" + kind;
+  d.dataset.kind = kind;
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = title;
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const pre = document.createElement("pre");
+  pre.className = "timeline-seg__body";
+  pre.textContent = body;
+  d.appendChild(sum);
+  d.appendChild(pre);
+  tail.textContent = timelineTail(body.replace(/\s+/g, " ").trim(), TIMELINE_TAIL_MAX);
+  d.title = body.slice(0, 500);
+  const useOrder =
+    typeof blockSeq === "number" &&
+    Number.isFinite(blockSeq) &&
+    (blockKind === "usage" || blockKind === "finish" || blockKind === "role" || blockKind === "meta");
+  if (useOrder) insertTimelineBlockInOrder(d, blockSeq);
+  else timelineRoot.appendChild(d);
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
+}
+
 function appendStreamWarning(text) {
   if (!currentRoundWrapper) beginStream();
   ensureTimeline();
@@ -2370,7 +2419,7 @@ document.addEventListener("keydown", function (ev) {
 // ───── Message handling ─────
 // 主会话「一问一答」中，助手侧一轮 = msg--round：内含 msg--agent-timeline（时间线）与流式块。
 // 已进时间线的 WS：stream_start→空壳；reasoning_chunk→推理；tool_call_delta→工具参数草稿；agent_status/agent_trace→准备/状态；
-// agent_phase→计划·意图 / 处理工具结果；stream_chunk→助手回复；stream_warning→服务端提示；subtask_* / tool_invocation_*→子任务与工具块。
+// agent_phase→计划·意图 / 处理工具结果；stream_chunk→助手回复；stream_usage|finish|role|meta→OpenAI 流元数据；stream_warning→服务端提示；subtask_* / tool_invocation_*→子任务与工具块。
 // 未进时间线（刻意分栏）：用户气泡 msg--user；echo/text/error→msg--bot；plan_* / cross_agent→msg--system；confirm_request / ask_options→遮罩；
 // rpc_request→后台执行；pong / ui_theme_changed 非对话内容。
 
@@ -2437,6 +2486,19 @@ function handleMessage(raw) {
 
     case "stream_chunk":
       appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
+      break;
+
+    case "stream_usage":
+      appendOpenAiStreamMetaSeg("stream_usage", msg.content, msg.blockSeq, msg.blockKind);
+      break;
+    case "stream_finish":
+      appendOpenAiStreamMetaSeg("stream_finish", msg.content, msg.blockSeq, msg.blockKind);
+      break;
+    case "stream_role":
+      appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);
+      break;
+    case "stream_meta":
+      appendOpenAiStreamMetaSeg("stream_meta", msg.content, msg.blockSeq, msg.blockKind);
       break;
 
     case "stream_warning":
