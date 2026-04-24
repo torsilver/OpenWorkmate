@@ -10,7 +10,14 @@ import { getWpsHostKind, assertWpsHost } from '../wps-rpc/hostKind.js'
 import { runWpsExcelRpc } from '../wps-rpc/excelRpc.js'
 import { wordInsertTableWps } from '../wps-rpc/wordTableRpc.js'
 import { wordInsertTextWps } from '../wps-rpc/wordInsertTextRpc.js'
-import { toolInvocationContentLooksLikeError, buildWebSocketQueryString } from '../lib/copilotHostShared.js'
+import {
+  decodeJsonStyleUnicodeEscapes,
+  toolInvocationContentLooksLikeError,
+  buildWebSocketQueryString,
+  parseStreamUsagePayload,
+  usagePromptFillRatio,
+  buildStreamUsageRingTitle
+} from '../lib/copilotHostShared.js'
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -332,6 +339,16 @@ export function useCopilot() {
   const inputText = ref('')
   const inputEnabled = ref(true)
 
+  /** 与 Chrome / Office 输入区圆环一致：SVG stroke-dasharray 用周长 */
+  const CONTEXT_USAGE_RING_R = 13
+  const contextUsageRingC = 2 * Math.PI * CONTEXT_USAGE_RING_R
+  const contextUsageRing = ref({
+    show: false,
+    dashArray: contextUsageRingC,
+    dashOffset: contextUsageRingC,
+    title: ''
+  })
+
   const planPanelVisible = ref(false)
   const planId = ref(null)
   const planTitle = ref('')
@@ -454,6 +471,7 @@ export function useCopilot() {
   }
 
   function resetConversation() {
+    clearContextUsageRing()
     closeAtMode()
     // Chrome 侧边栏的“新建对话”语义：清空当前对话会话，重连 WS，并清除附件/计划绑定。
     try {
@@ -630,14 +648,44 @@ export function useCopilot() {
     }
   }
 
-  function clearToolDraftSegments(r) {
+  /** 折叠某类工具参数草稿并去掉标题「（生成中）」——保留时间线顺序，不删段（对齐 Chrome finalizeOpenToolDraftSeg） */
+  function finalizeToolDraftSegmentsOfKind(r, kind) {
     if (!r || !Array.isArray(r.timelineSegments)) return
-    r.timelineSegments = r.timelineSegments.filter((s) => s.kind !== 'tool-draft')
+    for (const s of r.timelineSegments) {
+      if (s.kind !== kind) continue
+      if (s.body != null && typeof s.body === 'string') {
+        s.body = decodeJsonStyleUnicodeEscapes(s.body)
+      }
+      s.open = false
+      if (s.title && String(s.title).includes('生成中')) {
+        s.title = String(s.title).replace('（生成中）', '')
+      }
+      if (s.body != null && typeof s.body === 'string') {
+        s.tail = formatActivityTail(s.body, TIMELINE_TAIL_MAX)
+      }
+    }
   }
 
-  function clearSubtaskToolDraftSegments(r) {
-    if (!r || !Array.isArray(r.timelineSegments)) return
-    r.timelineSegments = r.timelineSegments.filter((s) => s.kind !== 'subtask-tool-draft')
+  function finalizeSingleToolDraftSeg(seg) {
+    if (!seg) return
+    if (seg.kind !== 'tool-draft' && seg.kind !== 'subtask-tool-draft') return
+    if (seg.body != null && typeof seg.body === 'string') {
+      seg.body = decodeJsonStyleUnicodeEscapes(seg.body)
+      seg.tail = formatActivityTail(seg.body, TIMELINE_TAIL_MAX)
+    }
+    seg.open = false
+    if (seg.title && String(seg.title).includes('生成中')) {
+      seg.title = String(seg.title).replace('（生成中）', '')
+    }
+  }
+
+  function findOpenToolDraftSeg(r, kind) {
+    const arr = r.timelineSegments || []
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const s = arr[i]
+      if (s.kind === kind && s.open) return s
+    }
+    return null
   }
 
   function appendToolCallDelta(msg) {
@@ -650,12 +698,18 @@ export function useCopilot() {
     const isSub = msg.isSubtask === true
     const kind = isSub ? 'subtask-tool-draft' : 'tool-draft'
     const title = isSub ? '子任务 · 工具参数（生成中）' : '工具参数（生成中）'
-    let seg = r.timelineSegments.filter((s) => s.kind === kind).pop()
+    let seg = findOpenToolDraftSeg(r, kind)
     if (!seg) {
       seg = newTimelineSeg(kind, title)
       seg.lastCallId = ''
     }
-    if (seg.lastCallId !== callId) {
+    const idChanged = seg.lastCallId !== callId
+    if (idChanged && String(seg.body || '').trim().length) {
+      finalizeSingleToolDraftSeg(seg)
+      seg = newTimelineSeg(kind, title)
+      seg.lastCallId = ''
+    }
+    if (idChanged) {
       if (seg.body) seg.body += '\n\n'
       seg.body += '[' + callId + ']' + (String(name).trim() ? ' ' + String(name).trim() : '') + '\n'
       seg.lastCallId = callId
@@ -1143,6 +1197,55 @@ export function useCopilot() {
     inputEnabled.value = false
   }
 
+  function clearContextUsageRing() {
+    const c = 2 * Math.PI * CONTEXT_USAGE_RING_R
+    contextUsageRing.value = { show: false, dashArray: c, dashOffset: c, title: '' }
+  }
+
+  /** Token 用量改在输入区圆环展示，不再写入时间线。 */
+  function applyStreamUsageRing(content) {
+    const c = 2 * Math.PI * CONTEXT_USAGE_RING_R
+    const parsed = parseStreamUsagePayload(content)
+    if (!parsed) {
+      contextUsageRing.value = { show: false, dashArray: c, dashOffset: c, title: '' }
+      return
+    }
+    const fill = usagePromptFillRatio(parsed)
+    if (fill == null) {
+      contextUsageRing.value = { show: false, dashArray: c, dashOffset: c, title: '' }
+      return
+    }
+    contextUsageRing.value = {
+      show: true,
+      dashArray: c,
+      dashOffset: c * (1 - Math.min(1, Math.max(0, fill))),
+      title: buildStreamUsageRingTitle(parsed)
+    }
+  }
+
+  /** OpenAI 兼容流：role / 首包 meta 入时间线；usage 见圆环；finish_reason 不展示。 */
+  function appendOpenAiStreamDiagSeg(wsType, content, blockSeq, blockKind) {
+    const body = content != null ? String(content).trim() : ''
+    if (!body) return
+    const r = ensureRound()
+    const meta =
+      wsType === 'stream_role'
+        ? { kind: 'streamRole', title: '角色' }
+        : wsType === 'stream_meta'
+          ? { kind: 'streamMeta', title: '响应元数据' }
+          : null
+    if (!meta) return
+    const useOrdered =
+      typeof blockSeq === 'number' &&
+      Number.isFinite(blockSeq) &&
+      (blockKind === 'role' || blockKind === 'meta')
+    const seg = useOrdered
+      ? newTimelineSegOrdered(meta.kind, meta.title, blockSeq)
+      : newTimelineSeg(meta.kind, meta.title)
+    seg.body = body
+    seg.tail = formatActivityTail(body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
+  }
+
   function appendStreamChunk(text, blockSeq, blockKind) {
     if (!currentRound.value) beginStream()
     const r = currentRound.value
@@ -1213,6 +1316,8 @@ export function useCopilot() {
       flushSubtaskUiToTimeline()
       collapseAllOpenPhases()
       round.openAnswer = null
+      finalizeToolDraftSegmentsOfKind(round, 'tool-draft')
+      finalizeToolDraftSegmentsOfKind(round, 'subtask-tool-draft')
       round.timelineSegments.forEach((s) => {
         s.open = false
       })
@@ -1380,6 +1485,7 @@ export function useCopilot() {
     }
     switch (msg.type) {
       case 'stream_start':
+        clearContextUsageRing()
         beginStream()
         break
       case 'reasoning_chunk':
@@ -1411,6 +1517,17 @@ export function useCopilot() {
       case 'stream_chunk':
         appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind)
         break
+      case 'stream_usage':
+        applyStreamUsageRing(msg.content)
+        break
+      case 'stream_finish':
+        break
+      case 'stream_role':
+        appendOpenAiStreamDiagSeg('stream_role', msg.content, msg.blockSeq, msg.blockKind)
+        break
+      case 'stream_meta':
+        appendOpenAiStreamDiagSeg('stream_meta', msg.content, msg.blockSeq, msg.blockKind)
+        break
       case 'stream_end':
         finalizeStream()
         break
@@ -1430,7 +1547,7 @@ export function useCopilot() {
       }
       case 'subtask_start': {
         const r0 = currentRound.value
-        if (r0) clearSubtaskToolDraftSegments(r0)
+        if (r0) finalizeToolDraftSegmentsOfKind(r0, 'subtask-tool-draft')
         const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || '子任务'
         const titleLen = 48
         const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + '…'
@@ -1461,7 +1578,7 @@ export function useCopilot() {
       }
       case 'subtask_end': {
         const rEnd = currentRound.value
-        if (rEnd) clearSubtaskToolDraftSegments(rEnd)
+        if (rEnd) finalizeToolDraftSegmentsOfKind(rEnd, 'subtask-tool-draft')
         flushSubtaskUiToTimeline()
         break
       }
@@ -1473,7 +1590,7 @@ export function useCopilot() {
         const label = msg.summary || '正在执行: ' + (msg.plugin || '') + '.' + (msg.function || '')
         const invStart = msg.invocationId != null ? String(msg.invocationId).trim() : ''
         if (msg.isSubtask === true) {
-          clearSubtaskToolDraftSegments(r)
+          finalizeToolDraftSegmentsOfKind(r, 'subtask-tool-draft')
           collapsePhasesForToolStart()
           if (r.subtaskUi) {
             r.subtaskUi.tools.push({
@@ -1489,7 +1606,7 @@ export function useCopilot() {
           }
           break
         }
-        clearToolDraftSegments(r)
+        finalizeToolDraftSegmentsOfKind(r, 'tool-draft')
         collapsePhasesForToolStart()
         const seg = newTimelineSeg('tool', label)
         seg.status = 'running'
@@ -1520,7 +1637,7 @@ export function useCopilot() {
             const contentRaw = (msg.content && String(msg.content).trim()) || ''
             const ok = msg.success === true && !toolInvocationContentLooksLikeError(contentRaw)
             t.status = ok ? 'done' : 'fail'
-            t.output = contentRaw
+            t.output = decodeJsonStyleUnicodeEscapes(contentRaw)
           }
           if (msg.planStepIndex) {
             updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
@@ -1543,9 +1660,9 @@ export function useCopilot() {
           const contentRaw = (msg.content && String(msg.content).trim()) || ''
           const ok = msg.success === true && !toolInvocationContentLooksLikeError(contentRaw)
           block.status = ok ? 'done' : 'fail'
-          block.output = contentRaw
+          block.output = decodeJsonStyleUnicodeEscapes(contentRaw)
           block.displayLabel = (block.label || '').replace(/^正在执行:\s*/i, '')
-          block.open = false
+          block.open = true
         }
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, msg.success === true ? 'done' : 'pending')
@@ -2935,6 +3052,7 @@ export function useCopilot() {
     currentRound,
     inputText,
     inputEnabled,
+    contextUsageRing,
     attachments,
     planPanelVisible,
     planId,

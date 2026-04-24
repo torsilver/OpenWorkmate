@@ -774,6 +774,7 @@
   }
 
   function resetOfficeConversation() {
+    resetContextUsageRingOffice();
     closeAtMode();
     closeOfficeHistoryOverlay();
     closeOfficeAskOptionsOverlay();
@@ -869,6 +870,13 @@
   let currentToolEndIndex = 0;
   let timelineThinkCells = new Map();
   let timelineAnswerCells = new Map();
+
+  function decodeJsonStyleUnicodeEscapes(s) {
+    if (typeof TasklyCopilotHostShared !== "undefined" && TasklyCopilotHostShared.decodeJsonStyleUnicodeEscapes) {
+      return TasklyCopilotHostShared.decodeJsonStyleUnicodeEscapes(s);
+    }
+    return s;
+  }
 
   function insertTimelineBlockInOrder(detailsEl, blockSeq) {
     ensureTimeline();
@@ -1051,9 +1059,25 @@
     closeOpenAnswerSegment();
   }
 
-  function clearToolDraftTimeline() {
+  function finalizeOpenToolDraftSeg() {
     if (openToolDraftSeg && openToolDraftSeg.details && openToolDraftSeg.details.parentNode) {
-      openToolDraftSeg.details.remove();
+      try {
+        const pre = openToolDraftSeg.pre;
+        if (pre) {
+          pre.textContent = decodeJsonStyleUnicodeEscapes(pre.textContent || "");
+        }
+        const tail = openToolDraftSeg.tail;
+        if (tail && pre) {
+          tail.textContent = formatActivityTail(pre.textContent || "", TIMELINE_TAIL_MAX);
+        }
+      } catch (e) { /* ignore */ }
+      openToolDraftSeg.details.open = false;
+      try {
+        const lab = openToolDraftSeg.details.querySelector(".timeline-seg__label");
+        if (lab && lab.textContent && lab.textContent.indexOf("生成中") !== -1) {
+          lab.textContent = lab.textContent.replace("（生成中）", "");
+        }
+      } catch (e) { /* ignore */ }
     }
     openToolDraftSeg = null;
   }
@@ -1077,12 +1101,17 @@
     // Office 任务窗格未实现子任务工具容器：子任务增量也挂主时间线，避免落入 default 整段 JSON
     if (!currentRoundWrapper) beginStream();
     ensureTimeline();
-    const d = ensureToolDraftSeg();
-    if (d.lastCallId !== callId) {
+    let d = ensureToolDraftSeg();
+    const idChanged = d.lastCallId !== callId;
+    if (idChanged && d.pre.textContent) {
+      finalizeOpenToolDraftSeg();
+      d = ensureToolDraftSeg();
+    }
+    if (idChanged) {
       if (d.pre.textContent) d.pre.textContent += "\n\n";
       d.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
-      d.lastCallId = callId;
     }
+    d.lastCallId = callId;
     d.pre.textContent += delta;
     d.tail.textContent = formatActivityTail(d.pre.textContent, TIMELINE_TAIL_MAX);
     d.details.title = (d.pre.textContent || "").slice(0, 500);
@@ -1177,6 +1206,91 @@
 
   function updateExecutionLogCount() {}
 
+  function contextUsageRingCircumferenceOffice() {
+    return 2 * Math.PI * 13;
+  }
+
+  function resetContextUsageRingOffice() {
+    const wrap = document.getElementById("context-usage-ring-wrap");
+    const prog = document.getElementById("context-usage-ring-progress");
+    if (!wrap || !prog) return;
+    const c = contextUsageRingCircumferenceOffice();
+    wrap.hidden = true;
+    wrap.removeAttribute("title");
+    prog.style.strokeDasharray = String(c);
+    prog.style.strokeDashoffset = String(c);
+  }
+
+  function applyStreamUsageToContextRingOffice(content) {
+    const H = typeof TasklyCopilotHostShared !== "undefined" ? TasklyCopilotHostShared : null;
+    const wrap = document.getElementById("context-usage-ring-wrap");
+    const prog = document.getElementById("context-usage-ring-progress");
+    if (!wrap || !prog || !H || !H.parseStreamUsagePayload || !H.usagePromptFillRatio) return;
+    const c = contextUsageRingCircumferenceOffice();
+    const parsed = H.parseStreamUsagePayload(content);
+    if (!parsed) {
+      wrap.hidden = true;
+      prog.style.strokeDashoffset = String(c);
+      return;
+    }
+    const fill = H.usagePromptFillRatio(parsed);
+    if (fill == null) {
+      wrap.hidden = true;
+      prog.style.strokeDashoffset = String(c);
+      return;
+    }
+    wrap.hidden = false;
+    if (H.buildStreamUsageRingTitle) wrap.title = H.buildStreamUsageRingTitle(parsed);
+    prog.style.strokeDasharray = String(c);
+    prog.style.strokeDashoffset = String(c * (1 - Math.min(1, Math.max(0, fill))));
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
+  /** role / meta 入时间线；stream_usage 仅圆环；stream_finish 不展示 */
+  function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
+    const body = (content != null && String(content).trim()) || "";
+    if (!body) return;
+    if (!currentRoundWrapper) beginStream();
+    ensureTimeline();
+    const titles = {
+      stream_role: "角色",
+      stream_meta: "响应元数据"
+    };
+    const kinds = {
+      stream_role: "stream-role",
+      stream_meta: "stream-meta"
+    };
+    const title = titles[wsType] || "流事件";
+    const kind = kinds[wsType] || "stream-meta";
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--" + kind;
+    d.dataset.kind = kind;
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = title;
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const pre = document.createElement("pre");
+    pre.className = "timeline-seg__body";
+    pre.textContent = body;
+    d.appendChild(sum);
+    d.appendChild(pre);
+    tail.textContent = formatActivityTail(body.replace(/\s+/g, " ").trim(), TIMELINE_TAIL_MAX);
+    d.title = body.slice(0, 500);
+    const useOrder =
+      typeof blockSeq === "number" &&
+      Number.isFinite(blockSeq) &&
+      (blockKind === "role" || blockKind === "meta");
+    if (useOrder) insertTimelineBlockInOrder(d, blockSeq);
+    else timelineRoot.appendChild(d);
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
   function appendStreamWarning(text) {
     if (!currentRoundWrapper) beginStream();
     const wrap = currentRoundWrapper;
@@ -1258,7 +1372,7 @@
   }
 
   function finalizeStream() {
-    clearToolDraftTimeline();
+    finalizeOpenToolDraftSeg();
     collapseAllOpenPhases();
     openAnswerSeg = null;
     if (timelineRoot) {
@@ -1270,15 +1384,16 @@
         }
       });
       if (typeof mermaid !== "undefined") runMermaidInTimeline(timelineRoot);
-      const allD = timelineRoot.querySelectorAll("details");
-      for (let di = 0; di < allD.length; di++) allD[di].open = false;
+      timelineRoot.querySelectorAll(":scope > details.timeline-seg").forEach(function (el) {
+        el.open = false;
+      });
       const ans = timelineRoot.querySelectorAll(".timeline-seg.timeline-seg--answer");
       if (ans.length) ans[ans.length - 1].open = true;
+      timelineRoot.querySelectorAll(":scope > .tool-call-block").forEach(function (el) {
+        el.open = false;
+      });
     }
     currentBotMessageRaw = "";
-    if (currentRoundToolBlocks.length > 0) {
-      currentRoundToolBlocks.forEach(function (b) { b.open = false; });
-    }
     currentRoundWrapper = null;
     timelineRoot = null;
     currentRoundToolBlocks = [];
@@ -2009,6 +2124,7 @@
         break;
       }
       case "stream_start":
+        resetContextUsageRingOffice();
         beginStream();
         break;
       case "agent_status": {
@@ -2050,6 +2166,17 @@
       case "stream_chunk":
         appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
         break;
+      case "stream_usage":
+        applyStreamUsageToContextRingOffice(msg.content);
+        break;
+      case "stream_finish":
+        break;
+      case "stream_role":
+        appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);
+        break;
+      case "stream_meta":
+        appendOpenAiStreamMetaSeg("stream_meta", msg.content, msg.blockSeq, msg.blockKind);
+        break;
       case "stream_warning":
         appendStreamWarning(msg.content);
         break;
@@ -2068,7 +2195,7 @@
       case "subtask_end":
         break;
       case "tool_invocation_start": {
-        clearToolDraftTimeline();
+        finalizeOpenToolDraftSeg();
         if (msg.planStepIndex) {
           updateChecklistStep(msg.planStepIndex, "in_progress");
         }
@@ -2110,7 +2237,7 @@
           if (sum) sum.innerHTML = "<span class=\"tool-status-icon\">" + (ok ? "✓" : "✗") + "</span> " + escapeHtml(displayLabel);
           const out = block.querySelector(".tool-call-output");
           if (out) {
-            out.textContent = content || "";
+            out.textContent = decodeJsonStyleUnicodeEscapes(content || "");
             out.style.display = content ? "block" : "none";
           }
         }

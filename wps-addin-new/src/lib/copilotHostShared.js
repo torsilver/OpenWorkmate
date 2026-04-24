@@ -7,6 +7,27 @@ const DEFAULT_TELEMETRY_TIER = 'full'
 const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = 'information'
 
 /** 与 Chrome sidepanel：tool_invocation_end 兜底判定 */
+/**
+ * 将文本里 JSON 常见的字面量 `\uXXXX`（可多层转义）还原为 Unicode 字符，便于时间线展示工具参数/结果。
+ * 仅做安全子集替换，不解析整段 JSON。
+ * 注意：流式 `tool_call_delta` 时不要每包对整段调用（易卡顿、看起来像整块出现）；在草稿折叠/结束处对整段调用一次即可。
+ * @param {string} s
+ * @returns {string}
+ */
+export function decodeJsonStyleUnicodeEscapes(s) {
+  if (s == null || typeof s !== 'string') return s
+  if (s.indexOf('\\u') === -1) return s
+  let t = s
+  let prev = ''
+  let guard = 0
+  while (t !== prev && t.indexOf('\\u') !== -1 && guard < 24) {
+    prev = t
+    t = t.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    guard++
+  }
+  return t
+}
+
 export function toolInvocationContentLooksLikeError(c) {
   if (!c) return false
   return (
@@ -116,4 +137,67 @@ export function buildWebSocketQueryString(o) {
   }
 
   return '?' + qs.toString()
+}
+
+/**
+ * 用于「上下文占用」圆环：`prompt_tokens` 相对固定预算的比例（上游不返回 max context 时的务实默认）。
+ * 与 Chrome sidepanel / Office taskpane 中同名常量保持一致。
+ */
+export const DEFAULT_CONTEXT_TOKEN_BUDGET = 131072
+
+/**
+ * 解析 WS <code>stream_usage</code> 的 <code>content</code>（通常为 usage 对象的 JSON 字符串）。
+ * @returns {{ promptTokens: number|null, completionTokens: number|null, totalTokens: number|null }|null}
+ */
+export function parseStreamUsagePayload(content) {
+  try {
+    const raw = typeof content === 'string' ? content : String(content || '')
+    if (!raw.trim()) return null
+    const u = JSON.parse(raw)
+    const prompt =
+      typeof u.prompt_tokens === 'number'
+        ? u.prompt_tokens
+        : typeof u.PromptTokens === 'number'
+          ? u.PromptTokens
+          : null
+    const completion =
+      typeof u.completion_tokens === 'number'
+        ? u.completion_tokens
+        : typeof u.CompletionTokens === 'number'
+          ? u.CompletionTokens
+          : null
+    const total =
+      typeof u.total_tokens === 'number'
+        ? u.total_tokens
+        : typeof u.TotalTokens === 'number'
+          ? u.TotalTokens
+          : null
+    return { promptTokens: prompt, completionTokens: completion, totalTokens: total }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * @param {ReturnType<typeof parseStreamUsagePayload>} parsed
+ * @param {number} [budget]
+ * @returns {number|null} 0..1
+ */
+export function usagePromptFillRatio(parsed, budget = DEFAULT_CONTEXT_TOKEN_BUDGET) {
+  if (!parsed || parsed.promptTokens == null || parsed.promptTokens < 0 || !budget || budget <= 0) return null
+  return Math.min(1, parsed.promptTokens / budget)
+}
+
+/**
+ * @param {ReturnType<typeof parseStreamUsagePayload>} parsed
+ * @param {number} [budget]
+ */
+export function buildStreamUsageRingTitle(parsed, budget = DEFAULT_CONTEXT_TOKEN_BUDGET) {
+  if (!parsed) return ''
+  const parts = []
+  if (parsed.promptTokens != null) parts.push(`输入 tokens: ${parsed.promptTokens}`)
+  if (parsed.completionTokens != null) parts.push(`输出 tokens: ${parsed.completionTokens}`)
+  if (parsed.totalTokens != null) parts.push(`合计: ${parsed.totalTokens}`)
+  parts.push(`圆环：输入 / 参考预算 ${budget}（模型真实上限以服务商为准）`)
+  return parts.join('\n')
 }

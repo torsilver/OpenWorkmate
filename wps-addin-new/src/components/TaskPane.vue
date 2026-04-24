@@ -99,7 +99,7 @@
           <div v-if="msg.timelineSegments && msg.timelineSegments.length" class="msg--agent-timeline">
             <template v-for="seg in msg.timelineSegments" :key="seg.id">
               <details
-                v-if="seg.kind !== 'tool'"
+                v-if="seg.kind !== 'tool' && seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
                 class="timeline-seg"
                 :class="'timeline-seg--' + seg.kind"
                 :open="!!seg.open"
@@ -147,7 +147,7 @@
         <div v-if="currentRound.timelineSegments && currentRound.timelineSegments.length" class="msg--agent-timeline">
           <template v-for="seg in currentRound.timelineSegments" :key="seg.id">
             <details
-              v-if="seg.kind !== 'tool'"
+              v-if="seg.kind !== 'tool' && seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
               class="timeline-seg"
               :class="'timeline-seg--' + seg.kind"
               :open="seg.open"
@@ -166,7 +166,7 @@
             <details
               v-else
               :class="['tool-call-block', 'tool-call--' + seg.status]"
-              :open="seg.status === 'running'"
+              :open="!!seg.open"
             >
               <summary>
                 <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
@@ -251,21 +251,55 @@
           @keyup="onChatKeyup"
           @input="onChatInput"
         ></textarea>
-        <button
-          v-show="!inputEnabled && !askOptionsVisible"
-          type="button"
-          class="stop-btn"
-          title="停止生成"
-          @click="stopStream"
-        >■</button>
-        <button
-          v-show="inputEnabled && !askOptionsVisible"
-          type="button"
-          class="send-btn"
-          title="发送"
-          :disabled="!inputEnabled"
-          @click="handleSend"
-        >发送</button>
+        <div class="input-row-trailing" v-show="!askOptionsVisible">
+          <div
+            v-show="contextUsageRing.show"
+            class="context-usage-ring-wrap"
+            :title="contextUsageRing.title"
+            aria-label="上下文 token 占用（悬停查看数值）"
+          >
+            <svg class="context-usage-ring" viewBox="0 0 32 32" aria-hidden="true">
+              <circle
+                class="context-usage-ring__track"
+                cx="16"
+                cy="16"
+                r="13"
+                fill="none"
+                stroke="currentColor"
+                stroke-opacity="0.22"
+                stroke-width="2.5"
+              />
+              <circle
+                class="context-usage-ring__progress"
+                cx="16"
+                cy="16"
+                r="13"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                :stroke-dasharray="contextUsageRing.dashArray"
+                :stroke-dashoffset="contextUsageRing.dashOffset"
+                transform="rotate(-90 16 16)"
+              />
+            </svg>
+          </div>
+          <button
+            v-show="!inputEnabled"
+            type="button"
+            class="stop-btn"
+            title="停止生成"
+            @click="stopStream"
+          >■</button>
+          <button
+            v-show="inputEnabled"
+            type="button"
+            class="send-btn"
+            title="发送"
+            :disabled="!inputEnabled"
+            @click="handleSend"
+          >发送</button>
+        </div>
       </div>
 
       <div v-show="atModeOpen" class="at-mode-panel" role="dialog" aria-label="工具与技能选择">
@@ -933,6 +967,37 @@ export default {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 11px;
+}
+
+.timeline-seg--streamRole,
+.timeline-seg--streamMeta {
+  border-color: rgba(108, 140, 255, 0.35);
+}
+
+.input-row-trailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.context-usage-ring-wrap {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--copilot-text-secondary, #999);
+  flex-shrink: 0;
+}
+
+.context-usage-ring {
+  width: 24px;
+  height: 24px;
+}
+
+.context-usage-ring__progress {
+  opacity: 0.92;
 }
 
 .msg--stream-warning {

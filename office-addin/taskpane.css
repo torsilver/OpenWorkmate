@@ -508,6 +508,35 @@ html, body {
 }
 .input-row:focus-within { border-color: var(--accent); }
 
+.input-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.context-usage-ring-wrap {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.context-usage-ring-wrap[hidden] {
+  display: none !important;
+}
+
+.context-usage-ring {
+  width: 24px;
+  height: 24px;
+}
+
+.context-usage-ring__progress {
+  opacity: 0.92;
+}
+
 .input-box {
   flex: 1;
   border: none;

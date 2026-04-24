@@ -5,6 +5,23 @@
 (function (g) {
   "use strict";
 
+  /** 将 JSON 字面量 \\uXXXX 还原为字符（工具参数/结果里常见 ASCII-only JSON） */
+  function decodeJsonStyleUnicodeEscapes(s) {
+    if (s == null || typeof s !== "string") return s;
+    if (s.indexOf("\\u") === -1) return s;
+    var t = s;
+    var prev = "";
+    var guard = 0;
+    while (t !== prev && t.indexOf("\\u") !== -1 && guard < 24) {
+      prev = t;
+      t = t.replace(/\\u([0-9a-fA-F]{4})/g, function (_, h) {
+        return String.fromCharCode(parseInt(h, 16));
+      });
+      guard++;
+    }
+    return t;
+  }
+
   /** 与 Chrome sidepanel / WPS useCopilot 同源：tool_invocation_end 兜底判定 */
   function toolInvocationContentLooksLikeError(c) {
     if (!c) return false;
@@ -116,8 +133,61 @@
     return "?" + qs.toString();
   }
 
+  var DEFAULT_CONTEXT_TOKEN_BUDGET = 131072;
+
+  function parseStreamUsagePayload(content) {
+    try {
+      var raw = typeof content === "string" ? content : String(content || "");
+      if (!raw.trim()) return null;
+      var u = JSON.parse(raw);
+      var prompt =
+        typeof u.prompt_tokens === "number"
+          ? u.prompt_tokens
+          : typeof u.PromptTokens === "number"
+            ? u.PromptTokens
+            : null;
+      var completion =
+        typeof u.completion_tokens === "number"
+          ? u.completion_tokens
+          : typeof u.CompletionTokens === "number"
+            ? u.CompletionTokens
+            : null;
+      var total =
+        typeof u.total_tokens === "number"
+          ? u.total_tokens
+          : typeof u.TotalTokens === "number"
+            ? u.TotalTokens
+            : null;
+      return { promptTokens: prompt, completionTokens: completion, totalTokens: total };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function usagePromptFillRatio(parsed, budget) {
+    budget = budget || DEFAULT_CONTEXT_TOKEN_BUDGET;
+    if (!parsed || parsed.promptTokens == null || parsed.promptTokens < 0 || !budget || budget <= 0) return null;
+    return Math.min(1, parsed.promptTokens / budget);
+  }
+
+  function buildStreamUsageRingTitle(parsed, budget) {
+    budget = budget || DEFAULT_CONTEXT_TOKEN_BUDGET;
+    if (!parsed) return "";
+    var parts = [];
+    if (parsed.promptTokens != null) parts.push("输入 tokens: " + parsed.promptTokens);
+    if (parsed.completionTokens != null) parts.push("输出 tokens: " + parsed.completionTokens);
+    if (parsed.totalTokens != null) parts.push("合计: " + parsed.totalTokens);
+    parts.push("圆环：输入 / 参考预算 " + budget + "（模型真实上限以服务商为准）");
+    return parts.join("\n");
+  }
+
   g.TasklyCopilotHostShared = {
+    decodeJsonStyleUnicodeEscapes: decodeJsonStyleUnicodeEscapes,
     toolInvocationContentLooksLikeError: toolInvocationContentLooksLikeError,
-    buildWebSocketQueryString: buildWebSocketQueryString
+    buildWebSocketQueryString: buildWebSocketQueryString,
+    DEFAULT_CONTEXT_TOKEN_BUDGET: DEFAULT_CONTEXT_TOKEN_BUDGET,
+    parseStreamUsagePayload: parseStreamUsagePayload,
+    usagePromptFillRatio: usagePromptFillRatio,
+    buildStreamUsageRingTitle: buildStreamUsageRingTitle
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -225,6 +225,7 @@ const WELCOME_INNER_HTML_NEW_CHAT =
 // ───── New conversation ─────
 if ($newChatBtn) {
   $newChatBtn.addEventListener("click", () => {
+    resetContextUsageRingChrome();
     sessionStorage.removeItem("copilot_session_id");
     clearConversationTitleStorage();
     setCurrentPlan(null, null);
@@ -243,6 +244,7 @@ if ($agentProfileSelect) {
     const o = {};
     o[STORAGE_ACTIVE_AGENT_PROFILE_ID] = v;
     chrome.storage.local.set(o, function () {
+      resetContextUsageRingChrome();
       sessionStorage.removeItem("copilot_session_id");
       clearConversationTitleStorage();
       setCurrentPlan(null, null);
@@ -997,6 +999,23 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
+/** 工具参数/结果里 ASCII-only JSON 的字面量 \\uXXXX → 可读字符（与 WPS copilotHostShared 同源） */
+function decodeJsonStyleUnicodeEscapes(s) {
+  if (s == null || typeof s !== "string") return s;
+  if (s.indexOf("\\u") === -1) return s;
+  let t = s;
+  let prev = "";
+  let guard = 0;
+  while (t !== prev && t.indexOf("\\u") !== -1 && guard < 24) {
+    prev = t;
+    t = t.replace(/\\u([0-9a-fA-F]{4})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+    guard++;
+  }
+  return t;
+}
+
 async function refreshAgentProfileSelector() {
   if (!$agentProfileSelect) return;
   try {
@@ -1640,16 +1659,44 @@ function collapseAllOpenPhases() {
   closeOpenAnswerSegment();
 }
 
-function clearToolDraftTimeline() {
+/** 结束当前「工具参数」草稿：保留 DOM 与时间线顺序，仅折叠并去掉「生成中」标题（符合时间串不删块） */
+function finalizeOpenToolDraftSeg() {
   if (openToolDraftSeg && openToolDraftSeg.details && openToolDraftSeg.details.parentNode) {
-    openToolDraftSeg.details.remove();
+    try {
+      const pre = openToolDraftSeg.pre;
+      if (pre) {
+        const dec = decodeJsonStyleUnicodeEscapes(pre.textContent || "");
+        pre.textContent = dec;
+      }
+      const tail = openToolDraftSeg.tail;
+      if (tail && pre) {
+        tail.textContent = timelineTail(pre.textContent || "", TIMELINE_TAIL_MAX);
+      }
+    } catch (_) { /* ignore */ }
+    openToolDraftSeg.details.open = false;
+    try {
+      const lab = openToolDraftSeg.details.querySelector(".timeline-seg__label");
+      if (lab && lab.textContent && lab.textContent.indexOf("生成中") !== -1) {
+        lab.textContent = lab.textContent.replace("（生成中）", "");
+      }
+    } catch (_) { /* ignore */ }
   }
   openToolDraftSeg = null;
 }
 
-function clearSubtaskToolDraft() {
+function finalizeOpenSubtaskToolDraft() {
   if (openSubtaskToolDraft && openSubtaskToolDraft.wrap && openSubtaskToolDraft.wrap.parentNode) {
-    openSubtaskToolDraft.wrap.remove();
+    try {
+      const pre = openSubtaskToolDraft.pre;
+      if (pre) pre.textContent = decodeJsonStyleUnicodeEscapes(pre.textContent || "");
+    } catch (_) { /* ignore */ }
+    openSubtaskToolDraft.wrap.open = false;
+    try {
+      const sum = openSubtaskToolDraft.wrap.querySelector("summary");
+      if (sum && sum.textContent && sum.textContent.indexOf("生成中") !== -1) {
+        sum.textContent = sum.textContent.replace("（生成中）", "");
+      }
+    } catch (_) { /* ignore */ }
   }
   openSubtaskToolDraft = null;
 }
@@ -1691,25 +1738,36 @@ function appendToolCallDelta(msg) {
   if (msg.isSubtask === true) {
     if (!currentRoundWrapper) beginStream();
     if (!currentSubtaskToolsEl) return;
-    const sd = ensureSubtaskToolDraft();
+    let sd = ensureSubtaskToolDraft();
     if (!sd) return;
-    if (sd.lastCallId !== callId) {
+    const idChanged = sd.lastCallId !== callId;
+    if (idChanged && sd.pre.textContent) {
+      finalizeOpenSubtaskToolDraft();
+      sd = ensureSubtaskToolDraft();
+      if (!sd) return;
+    }
+    if (idChanged) {
       if (sd.pre.textContent) sd.pre.textContent += "\n\n";
       sd.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
-      sd.lastCallId = callId;
     }
+    sd.lastCallId = callId;
     sd.pre.textContent += delta;
     if ($messages) $messages.scrollTop = $messages.scrollHeight;
     return;
   }
   if (!currentRoundWrapper) beginStream();
   ensureTimeline();
-  const d = ensureToolDraftSeg();
-  if (d.lastCallId !== callId) {
+  let d = ensureToolDraftSeg();
+  const idChanged = d.lastCallId !== callId;
+  if (idChanged && d.pre.textContent) {
+    finalizeOpenToolDraftSeg();
+    d = ensureToolDraftSeg();
+  }
+  if (idChanged) {
     if (d.pre.textContent) d.pre.textContent += "\n\n";
     d.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
-    d.lastCallId = callId;
   }
+  d.lastCallId = callId;
   d.pre.textContent += delta;
   d.tail.textContent = timelineTail(d.pre.textContent, TIMELINE_TAIL_MAX);
   d.details.title = (d.pre.textContent || "").slice(0, 500);
@@ -1898,7 +1956,7 @@ function beginStream() {
   cancelReasoningRaf();
   _reasoningPendingText = "";
   removeThinkingIndicator();
-  clearSubtaskToolDraft();
+  finalizeOpenSubtaskToolDraft();
   const welcome = $messages.querySelector(".welcome");
   if (welcome) welcome.remove();
 
@@ -1930,6 +1988,139 @@ function beginStream() {
 
 function updateExecutionLogCount() {
   /* 工具块已直接挂在时间线，无需单独计数 summary */
+}
+
+/** 与 wps-addin-new/src/lib/copilotHostShared.js 保持同名语义 */
+const DEFAULT_CONTEXT_TOKEN_BUDGET_CHROME = 131072;
+const CONTEXT_USAGE_RING_R_CHROME = 13;
+
+function contextUsageRingCircumferenceChrome() {
+  return 2 * Math.PI * CONTEXT_USAGE_RING_R_CHROME;
+}
+
+function parseStreamUsagePayloadChrome(content) {
+  try {
+    const raw = content != null ? String(content) : "";
+    if (!raw.trim()) return null;
+    const u = JSON.parse(raw);
+    const prompt =
+      typeof u.prompt_tokens === "number"
+        ? u.prompt_tokens
+        : typeof u.PromptTokens === "number"
+          ? u.PromptTokens
+          : null;
+    const completion =
+      typeof u.completion_tokens === "number"
+        ? u.completion_tokens
+        : typeof u.CompletionTokens === "number"
+          ? u.CompletionTokens
+          : null;
+    const total =
+      typeof u.total_tokens === "number"
+        ? u.total_tokens
+        : typeof u.TotalTokens === "number"
+          ? u.TotalTokens
+          : null;
+    return { promptTokens: prompt, completionTokens: completion, totalTokens: total };
+  } catch (_) {
+    return null;
+  }
+}
+
+function usagePromptFillRatioChrome(parsed) {
+  if (!parsed || parsed.promptTokens == null || parsed.promptTokens < 0) return null;
+  const b = DEFAULT_CONTEXT_TOKEN_BUDGET_CHROME;
+  if (!b || b <= 0) return null;
+  return Math.min(1, parsed.promptTokens / b);
+}
+
+function buildStreamUsageRingTitleChrome(parsed) {
+  if (!parsed) return "";
+  const parts = [];
+  if (parsed.promptTokens != null) parts.push("输入 tokens: " + parsed.promptTokens);
+  if (parsed.completionTokens != null) parts.push("输出 tokens: " + parsed.completionTokens);
+  if (parsed.totalTokens != null) parts.push("合计: " + parsed.totalTokens);
+  parts.push("圆环：输入 / 参考预算 " + DEFAULT_CONTEXT_TOKEN_BUDGET_CHROME + "（模型真实上限以服务商为准）");
+  return parts.join("\n");
+}
+
+function resetContextUsageRingChrome() {
+  const wrap = document.getElementById("context-usage-ring-wrap");
+  const prog = document.getElementById("context-usage-ring-progress");
+  if (!wrap || !prog) return;
+  const c = contextUsageRingCircumferenceChrome();
+  wrap.hidden = true;
+  wrap.removeAttribute("title");
+  prog.style.strokeDasharray = String(c);
+  prog.style.strokeDashoffset = String(c);
+}
+
+function applyStreamUsageToContextRingChrome(content) {
+  const wrap = document.getElementById("context-usage-ring-wrap");
+  const prog = document.getElementById("context-usage-ring-progress");
+  if (!wrap || !prog) return;
+  const c = contextUsageRingCircumferenceChrome();
+  const parsed = parseStreamUsagePayloadChrome(content);
+  if (!parsed) {
+    wrap.hidden = true;
+    prog.style.strokeDashoffset = String(c);
+    return;
+  }
+  const fill = usagePromptFillRatioChrome(parsed);
+  if (fill == null) {
+    wrap.hidden = true;
+    prog.style.strokeDashoffset = String(c);
+    return;
+  }
+  wrap.hidden = false;
+  wrap.title = buildStreamUsageRingTitleChrome(parsed);
+  prog.style.strokeDasharray = String(c);
+  prog.style.strokeDashoffset = String(c * (1 - Math.min(1, Math.max(0, fill))));
+}
+
+/** finish / role / stream meta：主时间线与正文同级，按 blockSeq 插入（usage 仅圆环） */
+function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
+  const body = (content != null && String(content).trim()) || "";
+  if (!body) return;
+  if (!currentRoundWrapper) beginStream();
+  ensureTimeline();
+  const titles = {
+    stream_role: "角色",
+    stream_meta: "响应元数据"
+  };
+  const kinds = {
+    stream_role: "stream-role",
+    stream_meta: "stream-meta"
+  };
+  const title = titles[wsType] || "流事件";
+  const kind = kinds[wsType] || "stream-meta";
+  const d = document.createElement("details");
+  d.className = "timeline-seg timeline-seg--" + kind;
+  d.dataset.kind = kind;
+  d.open = true;
+  const sum = document.createElement("summary");
+  const lab = document.createElement("span");
+  lab.className = "timeline-seg__label";
+  lab.textContent = title;
+  const tail = document.createElement("span");
+  tail.className = "timeline-seg__tail";
+  sum.appendChild(lab);
+  sum.appendChild(document.createTextNode(" "));
+  sum.appendChild(tail);
+  const pre = document.createElement("pre");
+  pre.className = "timeline-seg__body";
+  pre.textContent = body;
+  d.appendChild(sum);
+  d.appendChild(pre);
+  tail.textContent = timelineTail(body.replace(/\s+/g, " ").trim(), TIMELINE_TAIL_MAX);
+  d.title = body.slice(0, 500);
+  const useOrder =
+    typeof blockSeq === "number" &&
+    Number.isFinite(blockSeq) &&
+    (blockKind === "role" || blockKind === "meta");
+  if (useOrder) insertTimelineBlockInOrder(d, blockSeq);
+  else timelineRoot.appendChild(d);
+  if ($messages) $messages.scrollTop = $messages.scrollHeight;
 }
 
 function appendStreamWarning(text) {
@@ -2038,8 +2229,8 @@ function finalizeStream() {
     }
   }
   const wrap = currentRoundWrapper;
-  clearToolDraftTimeline();
-  clearSubtaskToolDraft();
+  finalizeOpenToolDraftSeg();
+  finalizeOpenSubtaskToolDraft();
   flushSubtaskReasoningPendingSync();
   cancelSubtaskReasoningRaf();
   openSubtaskThinkSeg = null;
@@ -2057,11 +2248,15 @@ function finalizeStream() {
       }
     });
     if (typeof mermaid !== "undefined") runMermaidInTimeline(timelineRoot);
-    timelineRoot.querySelectorAll("details").forEach(function (el) {
+    // 勿对 .tool-call-block / .subtask-block 执行 open=false：它们不是 .timeline-seg，且折叠后会「看不到」工具结果正文。
+    timelineRoot.querySelectorAll(":scope > details.timeline-seg").forEach(function (el) {
       el.open = false;
     });
     const answerDetails = timelineRoot.querySelectorAll(".timeline-seg.timeline-seg--answer");
     if (answerDetails.length) answerDetails[answerDetails.length - 1].open = true;
+    timelineRoot.querySelectorAll(":scope > .tool-call-block").forEach(function (el) {
+      el.open = false;
+    });
     try {
       const segs = [];
       timelineRoot.querySelectorAll(".timeline-seg").forEach(function (el) {
@@ -2080,9 +2275,6 @@ function finalizeStream() {
   }
 
   currentBotMessageRaw = "";
-  if (currentRoundToolBlocks.length > 0) {
-    currentRoundToolBlocks.forEach(function (b) { b.open = false; });
-  }
   currentRoundWrapper = null;
   timelineRoot = null;
   openToolDraftSeg = null;
@@ -2370,7 +2562,7 @@ document.addEventListener("keydown", function (ev) {
 // ───── Message handling ─────
 // 主会话「一问一答」中，助手侧一轮 = msg--round：内含 msg--agent-timeline（时间线）与流式块。
 // 已进时间线的 WS：stream_start→空壳；reasoning_chunk→推理；tool_call_delta→工具参数草稿；agent_status/agent_trace→准备/状态；
-// agent_phase→计划·意图 / 处理工具结果；stream_chunk→助手回复；stream_warning→服务端提示；subtask_* / tool_invocation_*→子任务与工具块。
+// agent_phase→计划·意图 / 处理工具结果；stream_chunk→助手回复；stream_usage→输入区圆环；stream_role|meta→时间线；stream_finish 忽略；stream_warning→服务端提示；subtask_* / tool_invocation_*→子任务与工具块。
 // 未进时间线（刻意分栏）：用户气泡 msg--user；echo/text/error→msg--bot；plan_* / cross_agent→msg--system；confirm_request / ask_options→遮罩；
 // rpc_request→后台执行；pong / ui_theme_changed 非对话内容。
 
@@ -2393,6 +2585,7 @@ function handleMessage(raw) {
 
   switch (msg.type) {
     case "stream_start":
+      resetContextUsageRingChrome();
       beginStream();
       break;
 
@@ -2439,6 +2632,18 @@ function handleMessage(raw) {
       appendStreamChunk(msg.content, msg.blockSeq, msg.blockKind);
       break;
 
+    case "stream_usage":
+      applyStreamUsageToContextRingChrome(msg.content);
+      break;
+    case "stream_finish":
+      break;
+    case "stream_role":
+      appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);
+      break;
+    case "stream_meta":
+      appendOpenAiStreamMetaSeg("stream_meta", msg.content, msg.blockSeq, msg.blockKind);
+      break;
+
     case "stream_warning":
       appendStreamWarning(msg.content);
       break;
@@ -2451,7 +2656,7 @@ function handleMessage(raw) {
 
     case "subtask_start": {
       if (!currentRoundWrapper) beginStream();
-      clearSubtaskToolDraft();
+      finalizeOpenSubtaskToolDraft();
       ensureTimeline();
       if (!timelineRoot) break;
       cancelSubtaskReasoningRaf();
@@ -2531,7 +2736,7 @@ function handleMessage(raw) {
     }
 
     case "subtask_end": {
-      clearSubtaskToolDraft();
+      finalizeOpenSubtaskToolDraft();
       flushSubtaskReasoningPendingSync();
       cancelSubtaskReasoningRaf();
       openSubtaskThinkSeg = null;
@@ -2557,8 +2762,8 @@ function handleMessage(raw) {
     }
 
     case "tool_invocation_start": {
-      if (msg.isSubtask === true) clearSubtaskToolDraft();
-      else clearToolDraftTimeline();
+      if (msg.isSubtask === true) finalizeOpenSubtaskToolDraft();
+      else finalizeOpenToolDraftSeg();
       if (msg.plugin === "Plan" && msg.function === "execute_plan_step" && msg.planStepIndex) {
         const planId = getCurrentPlanId();
         if (planId) {
@@ -2636,7 +2841,7 @@ function handleMessage(raw) {
         if (sum) sum.innerHTML = `<span class="tool-status-icon">${ok ? "✓" : "✗"}</span> ${escapeHtml(displayLabel)}`;
         const out = block.querySelector(".tool-call-output");
         if (out) {
-          out.textContent = content || "";
+          out.textContent = decodeJsonStyleUnicodeEscapes(content || "");
           out.style.display = content ? "block" : "none";
         }
         if (!ok && content && (content.includes("未配置") || content.includes("请在设置") || content.includes("API Key") || content.includes("API_KEY"))) {
@@ -3910,8 +4115,8 @@ async function extractAndRenderCanvas(rawText) {
   if (msgs.length) domPatchEl = msgs[msgs.length - 1];
   else if (rounds.length) {
     const lastRound = rounds[rounds.length - 1];
-    domPatchEl =
-      lastRound.querySelector(".timeline-seg--answer .timeline-seg__body--md") || lastRound;
+    const mdBodies = lastRound.querySelectorAll(".timeline-seg--answer .timeline-seg__body--md");
+    domPatchEl = mdBodies.length ? mdBodies[mdBodies.length - 1] : null;
   }
 
   const startIdx = text.indexOf("<html_canvas>");
@@ -3920,7 +4125,8 @@ async function extractAndRenderCanvas(rawText) {
   let htmlCode = null;
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
     htmlCode = text.substring(startIdx + 13, endIdx).trim();
-    if (domPatchEl) {
+    // 禁止对整轮 .msg--round 写 innerHTML，否则会清空时间线（含工具块）。
+    if (domPatchEl && domPatchEl.classList && domPatchEl.classList.contains("timeline-seg__body--md")) {
       const displayHtml = domPatchEl.innerHTML.replace(
         /&lt;html_canvas&gt;[\s\S]*?&lt;\/html_canvas&gt;|<html_canvas>[\s\S]*?<\/html_canvas>/g,
         "<i>[交互式图表已生成在展示板]</i>"
