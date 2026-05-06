@@ -1246,17 +1246,21 @@
     $messages.scrollTop = $messages.scrollHeight;
   }
 
-  /** role / meta 入时间线；stream_usage 仅圆环；stream_finish 不展示 */
+  /** usage / finish / role / meta：时间线；stream_usage 同时更新输入区圆环 */
   function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
     const body = (content != null && String(content).trim()) || "";
     if (!body) return;
     if (!currentRoundWrapper) beginStream();
     ensureTimeline();
     const titles = {
+      stream_usage: "Token 用量",
+      stream_finish: "结束原因",
       stream_role: "角色",
       stream_meta: "响应元数据"
     };
     const kinds = {
+      stream_usage: "stream-usage",
+      stream_finish: "stream-finish",
       stream_role: "stream-role",
       stream_meta: "stream-meta"
     };
@@ -1285,7 +1289,7 @@
     const useOrder =
       typeof blockSeq === "number" &&
       Number.isFinite(blockSeq) &&
-      (blockKind === "role" || blockKind === "meta");
+      (blockKind === "usage" || blockKind === "finish" || blockKind === "role" || blockKind === "meta");
     if (useOrder) insertTimelineBlockInOrder(d, blockSeq);
     else timelineRoot.appendChild(d);
     $messages.scrollTop = $messages.scrollHeight;
@@ -2168,8 +2172,10 @@
         break;
       case "stream_usage":
         applyStreamUsageToContextRingOffice(msg.content);
+        appendOpenAiStreamMetaSeg("stream_usage", msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_finish":
+        appendOpenAiStreamMetaSeg("stream_finish", msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_role":
         appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);

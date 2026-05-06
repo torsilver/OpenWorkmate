@@ -1,33 +1,28 @@
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Net.Http.Headers;
 using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.OpenAiCompat;
+using OfficeCopilot.Server.Services.DashScope;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OfficeCopilot.Server.Services.OpenAiCompat;
 
 /// <summary>
-/// 百炼 OpenAI 兼容：合并 chat/completions 请求体中的扩展字段，并对流式 SSE 响应旁路解析 <c>reasoning_content</c>。
-/// 每个对话模型条目使用独立 <see cref="HttpClient"/> 挂载本 Handler，以便按 <see cref="OfficeCopilot.Server.AiModelEntry"/> 区分。
+/// 非百炼 OpenAI 兼容 <c>chat/completions</c> 流式响应：不改写请求体，仅挂 SSE 旁路解析
+/// <c>reasoning_content</c> 与顶层 <c>usage</c>（与 <see cref="DashScopeOpenAiCompatHandler"/> 共享解析与队列模型）。
 /// </summary>
-internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
+internal sealed class OpenAiReasoningSseTapDelegatingHandler : DelegatingHandler
 {
-    private readonly ConfigService _configService;
     private readonly string _modelEntryId;
-    private readonly ILogger<DashScopeOpenAiCompatHandler>? _logger;
+    private readonly ILogger<OpenAiReasoningSseTapDelegatingHandler>? _logger;
     private readonly TimelineBlockStreamCoordinator? _timelineBlockCoordinator;
 
-    public DashScopeOpenAiCompatHandler(
-        ConfigService configService,
+    public OpenAiReasoningSseTapDelegatingHandler(
         string modelEntryId,
         HttpMessageHandler inner,
-        ILogger<DashScopeOpenAiCompatHandler>? logger = null,
+        ILogger<OpenAiReasoningSseTapDelegatingHandler>? logger = null,
         TimelineBlockStreamCoordinator? timelineBlockCoordinator = null)
         : base(inner)
     {
-        _configService = configService;
         _modelEntryId = modelEntryId ?? "";
         _logger = logger;
         _timelineBlockCoordinator = timelineBlockCoordinator;
@@ -35,42 +30,21 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (!DashScopeChatRequestMerge.IsDashScopeChatCompletions(request.RequestUri))
+        if (request.Method != HttpMethod.Post
+            || request.RequestUri is null
+            || !request.RequestUri.IsAbsoluteUri
+            || !request.RequestUri.AbsolutePath.Contains("chat/completions", StringComparison.OrdinalIgnoreCase))
+        {
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
 
         byte[]? bodyBytes = null;
         if (request.Content != null)
             bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 
-        var entry = ResolveEntry();
-        var merged = DashScopeChatRequestMerge.MergeChatCompletionUtf8Body(bodyBytes.AsSpan(), entry);
-        if (merged != null)
-        {
-            var newContent = new ByteArrayContent(merged);
-            if (request.Content?.Headers != null)
-            {
-                foreach (var h in request.Content.Headers)
-                    newContent.Headers.TryAddWithoutValidation(h.Key, h.Value);
-            }
-
-            request.Content = newContent;
-        }
-
-        var effectiveBody = merged ?? bodyBytes ?? Array.Empty<byte>();
-        DashScopeChatRequestDiagnostics.LogOutgoingBody(
-            _logger,
-            _modelEntryId,
-            DashScopeCallKindContext.IsBackground,
-            entry,
-            effectiveBody,
-            merged != null);
-
         var isStream = bodyBytes != null && DashScopeChatRequestMerge.RequestBodyIndicatesStream(bodyBytes);
         if (!isStream)
         {
-            _logger?.LogWarning(
-                "[DashScope] stream=false in outbound body (SSE reasoning tap will NOT run) entry={Entry}",
-                _modelEntryId);
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
@@ -83,6 +57,7 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
             && !string.IsNullOrEmpty(bridgeSessionId)
             && _timelineBlockCoordinator != null)
             _timelineBlockCoordinator.OnMainChatReasoningSourceAttached(bridgeSessionId);
+
         try
         {
             var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -91,8 +66,8 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger?.LogInformation(
-                    "[DashScope] resp entry={Entry} status={Status} contentType={Ct} (no SSE tap)",
+                _logger?.LogDebug(
+                    "[OpenAiSseTap] entry={Entry} status={Status} contentType={Ct} (no tap)",
                     _modelEntryId, (int)response.StatusCode, contentTypeHdr);
                 DashScopeReasoningSessionBridge.TryDetachQueue(bridgeSessionId, reasoningQueue);
                 OpenAiStreamUsageSessionBridge.TryDetachQueue(bridgeSessionId, usageQueue);
@@ -102,17 +77,14 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
 
             if (!isEvent)
             {
-                _logger?.LogWarning(
-                    "[DashScope] resp entry={Entry} contentType={Ct} isNotEventStream=true — SSE reasoning tap SKIPPED (reasoning_content will not be parsed)",
-                    _modelEntryId, contentTypeHdr);
                 DashScopeReasoningSessionBridge.TryDetachQueue(bridgeSessionId, reasoningQueue);
                 OpenAiStreamUsageSessionBridge.TryDetachQueue(bridgeSessionId, usageQueue);
                 DashScopeReasoningContext.PopFrame();
                 return response;
             }
 
-            _logger?.LogInformation(
-                "[DashScope] resp entry={Entry} contentType={Ct} attaching SSE reasoning tap",
+            _logger?.LogDebug(
+                "[OpenAiSseTap] entry={Entry} contentType={Ct} attaching SSE reasoning+usage tap",
                 _modelEntryId, contentTypeHdr);
 
             try
@@ -138,23 +110,12 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
                 {
                     DashScopeReasoningSessionBridge.TryDetachQueue(bridgeSessionId, reasoningQueue);
                     OpenAiStreamUsageSessionBridge.TryDetachQueue(bridgeSessionId, usageQueue);
-                    _logger?.LogInformation(
-                        "[DashScope] SSE tap closed entry={Entry}: sseDataLines={DataLines} choiceChunks={Choices} reasoningParsed={Parsed} jsonErrors={JsonErr} enqueueDroppedNoFrame={Dropped}",
+                    _logger?.LogDebug(
+                        "[OpenAiSseTap] closed entry={Entry}: sseDataLines={DataLines} reasoningParsed={Parsed} jsonErrors={JsonErr}",
                         _modelEntryId,
                         telemetry.SseDataLines,
-                        telemetry.ChoiceChunksSeen,
                         telemetry.ReasoningFragmentsParsed,
-                        telemetry.JsonParseErrors,
-                        telemetry.EnqueueDroppedNoAsyncLocalFrame);
-                    for (var i = 0; i < telemetry.SsePayloadPreviews.Count; i++)
-                    {
-                        _logger?.LogInformation(
-                            "[DashScope] resp entry={Entry} ssePayloadPreview[{Index}]={Chunk}",
-                            _modelEntryId,
-                            i,
-                            telemetry.SsePayloadPreviews[i]);
-                    }
-
+                        telemetry.JsonParseErrors);
                     DashScopeReasoningContext.PopFrame();
                 });
                 var newBody = new StreamContent(wrapped);
@@ -164,7 +125,7 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "DashScope SSE wrap failed for model entry {EntryId}", _modelEntryId);
+                _logger?.LogWarning(ex, "OpenAi SSE tap wrap failed for model entry {EntryId}", _modelEntryId);
                 DashScopeReasoningSessionBridge.TryDetachQueue(bridgeSessionId, reasoningQueue);
                 OpenAiStreamUsageSessionBridge.TryDetachQueue(bridgeSessionId, usageQueue);
                 DashScopeReasoningContext.PopFrame();
@@ -180,14 +141,6 @@ internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
             DashScopeReasoningContext.PopFrame();
             throw;
         }
-    }
-
-    private AiModelEntry? ResolveEntry()
-    {
-        var list = _configService.Current.AiModels;
-        if (list == null || list.Count == 0)
-            return null;
-        return list.FirstOrDefault(e => string.Equals(e.Id, _modelEntryId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsEventStream(HttpResponseMessage response)

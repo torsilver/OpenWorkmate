@@ -147,7 +147,7 @@ internal sealed class OpenAiReasoningEchoHandler : DelegatingHandler
                     reasoningQueue.Enqueue(fragment);
                 },
                 telemetry,
-                jsonLine =>
+                onSseJsonLine: jsonLine =>
                 {
                     if (OpenAiReasoningEchoSseHelpers.JsonLineIndicatesToolCalls(jsonLine))
                         sawToolCalls = true;

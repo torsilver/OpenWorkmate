@@ -139,6 +139,8 @@ try
         reg.Reload();
         return reg;
     });
+    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ModelAdapters.IChatClientPipelineFactory,
+        OfficeCopilot.Server.Services.ModelAdapters.DefaultChatClientPipelineFactory>();
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {
@@ -1531,6 +1533,30 @@ static async Task HandleChatStreamAsync(
                 "[{SessionId}] WS stream_chunk blockSeq={BlockSeq} blockKind={BlockKind} contentChars={Chars}",
                 sessionId, bs, bk, content?.Length ?? 0);
         }
+        else if (frameType == "stream_usage")
+        {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindUsage);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
+        }
+        else if (frameType == "stream_finish")
+        {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindFinish);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
+        }
+        else if (frameType == "stream_role")
+        {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindRole);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
+        }
+        else if (frameType == "stream_meta")
+        {
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindMeta);
+            payload.BlockSeq = bs;
+            payload.BlockKind = bk;
+        }
 
         await sessions.SendWsMessageAsync(sessionId, payload);
     }
@@ -1594,6 +1620,37 @@ static async Task HandleChatStreamAsync(
                 });
                 continue;
             }
+
+            if (item.Kind == StreamSegmentKind.StreamUsage)
+            {
+                if (!string.IsNullOrEmpty(item.Content))
+                    await SendChatStreamWsAsync("stream_usage", item.Content);
+                continue;
+            }
+
+            if (item.Kind == StreamSegmentKind.StreamFinish)
+            {
+                if (!string.IsNullOrEmpty(item.Content))
+                    await SendChatStreamWsAsync("stream_finish", item.Content);
+                continue;
+            }
+
+            if (item.Kind == StreamSegmentKind.StreamRole)
+            {
+                if (!string.IsNullOrEmpty(item.Content))
+                    await SendChatStreamWsAsync("stream_role", item.Content);
+                continue;
+            }
+
+            if (item.Kind == StreamSegmentKind.StreamMeta)
+            {
+                if (!string.IsNullOrEmpty(item.Content))
+                    await SendChatStreamWsAsync("stream_meta", item.Content);
+                continue;
+            }
+
+            if (item.Kind != StreamSegmentKind.Normal)
+                continue;
 
             foreach (var part in reasoningParser.Append(item.Content))
             {

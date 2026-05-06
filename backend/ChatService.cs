@@ -19,9 +19,9 @@ using OfficeCopilot.Server.Services.Chat;
 using OfficeCopilot.Server.Services.DynamicTooling;
 using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Services.Subagent;
-using OfficeCopilot.Server.Services.LlmRouting;
 using OfficeCopilot.Server.Services.ModelProfiles;
 using OfficeCopilot.Server.Services.OpenAiCompat;
+using OfficeCopilot.Server.Services.ModelAdapters;
 using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Logging;
 
@@ -50,9 +50,10 @@ public sealed partial class ChatService : IDisposable
     private readonly ITelemetryRelayQueue? _telemetryRelay;
     private readonly ITelemetryTransmissionPolicyProvider _telemetryTransmissionPolicy;
     private readonly ModelProfileRegistry _modelProfiles;
+    private readonly IChatClientPipelineFactory _chatClientPipelineFactory;
     private readonly object _runtimeLock = new();
 
-    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, TimelineBlockStreamCoordinator timelineBlockCoordinator, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ModelProfileRegistry modelProfiles, ITelemetryRelayQueue? telemetryRelay = null)
+    public ChatService(IConfiguration config, ILogger<ChatService> logger, ILoggerFactory loggerFactory, ConfigService configService, SkillService skillService, McpClientManager mcpManager, IServiceProvider serviceProvider, IChatRuntimeAccessor runtimeAccessor, EmbeddingProvider embeddingProvider, IPlanStore planStore, AgentDebugStatsService agentDebugStats, IChatSessionStore chatSessionStore, IBuiltinTurnCompletionVerifier builtinTurnCompletionVerifier, SubtaskTimelineBlockCoordinator subtaskTimelineBlocks, TimelineBlockStreamCoordinator timelineBlockCoordinator, ITelemetryTransmissionPolicyProvider telemetryTransmissionPolicy, ModelProfileRegistry modelProfiles, IChatClientPipelineFactory chatClientPipelineFactory, ITelemetryRelayQueue? telemetryRelay = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -71,6 +72,7 @@ public sealed partial class ChatService : IDisposable
         _telemetryTransmissionPolicy = telemetryTransmissionPolicy;
         _telemetryRelay = telemetryRelay;
         _modelProfiles = modelProfiles;
+        _chatClientPipelineFactory = chatClientPipelineFactory;
 
         var session = configService.Current.Session ?? new SessionConfig();
         var cleanupInterval = session.CleanupIntervalMinutes;
@@ -138,7 +140,7 @@ public sealed partial class ChatService : IDisposable
                     modelId = deployment;
                 }
 
-                chatClients[entry.Id] = CreateDirectChatClient(entry.Id, modelId, apiKey, endpointUri, entry);
+                chatClients[entry.Id] = _chatClientPipelineFactory.CreateChatClient(entry, modelId, endpointUri, apiKey);
             }
             catch (Exception ex)
             {
@@ -337,64 +339,6 @@ public sealed partial class ChatService : IDisposable
                 activeProf.ProfileKey, activeProf.RequiresReasoningEchoWithTools, activeProf.SuppressUpstreamThinkingWithTools,
                 activeProf.DisableReasoningHttpEcho, activeProf.UseThinkingKeepAll);
         }
-    }
-
-    /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IChatClient"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>
-    private IChatClient CreateDirectChatClient(string entryId, string modelId, string apiKey, Uri? endpointUri, AiModelEntry entry)
-    {
-        var cfg = _configService.Current;
-        var gatewayMode = cfg.TelemetryEnabled
-            && cfg.TelemetryUserObservabilityEnabled != false
-            && _telemetryTransmissionPolicy.IsTelemetryPolicyHealthy
-            && string.Equals(_telemetryTransmissionPolicy.EffectiveRouteMode, "gateway", StringComparison.OrdinalIgnoreCase);
-        var gwBase = TelemetryRelayDefaults.GetEffectiveRelayBaseUrl(cfg);
-        var endpointTrimmed = (entry.Endpoint ?? "").Trim();
-        HttpMessageHandler innerChain = new HttpClientHandler();
-        if (gatewayMode && !string.IsNullOrEmpty(gwBase))
-        {
-            var upstream = endpointTrimmed.Length > 0
-                ? endpointTrimmed.TrimEnd('/')
-                : "https://dashscope.aliyuncs.com/compatible-mode/v1";
-            innerChain = new LlmGatewayHeadersHandler(upstream, innerChain);
-            endpointUri = new Uri(gwBase.TrimEnd('/') + "/llm/v1");
-        }
-
-        var logHandler = new OpenAiLoggingHandler(_loggerFactory.CreateLogger<OpenAiLoggingHandler>(), innerChain);
-        var dashHandler = new DashScopeOpenAiCompatHandler(
-            _configService, entryId, logHandler,
-            _loggerFactory.CreateLogger<DashScopeOpenAiCompatHandler>(),
-            _timelineBlockCoordinator);
-        var profileMergeHandler = new ModelProfileChatRequestMergeHandler(
-            _configService,
-            entryId,
-            _modelProfiles,
-            dashHandler,
-            _loggerFactory.CreateLogger<ModelProfileChatRequestMergeHandler>());
-        var reasoningEchoHandler = new OpenAiReasoningEchoHandler(
-            _configService,
-            entryId,
-            _modelProfiles,
-            profileMergeHandler,
-            _timelineBlockCoordinator,
-            _loggerFactory.CreateLogger<OpenAiReasoningEchoHandler>());
-        var httpClient = new HttpClient(reasoningEchoHandler);
-        var options = new OpenAI.OpenAIClientOptions();
-        if (endpointUri != null) options.Endpoint = endpointUri;
-        options.Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient);
-        var credential = new System.ClientModel.ApiKeyCredential(
-            string.IsNullOrEmpty(apiKey) ? "placeholder" : apiKey);
-        var openAiClient = new OpenAI.OpenAIClient(credential, options);
-        var inner = openAiClient.GetChatClient(modelId).AsIChatClient();
-        // 动态工具：activate_tools 后刷新 ToolListMutationTarget，但 MEAI ChatOptions.Clone 会复制 Tools 列表，导致 FunctionInvokingChatClient.FindTool 仍见旧表；在发往模型前用当前快照覆盖 options.Tools。
-        inner = new DynamicToolingChatOptionsSyncChatClient(
-            inner,
-            _loggerFactory.CreateLogger<DynamicToolingChatOptionsSyncChatClient>());
-        // ChatClientAgent 仅在内层未含 FunctionInvokingChatClient 时才会再包一层；此处显式包裹以便开启 IncludeDetailedErrors，
-        // 使工具异常信息进入 FunctionResultContent / 与 ToolSemanticFailureMarkers 中 MEAI Error: 前缀对齐（Harness：时间块与日志一致）。
-        return new FunctionInvokingChatClient(inner, _loggerFactory, null)
-        {
-            IncludeDetailedErrors = true
-        };
     }
 
     /// <summary>从 OpenAI SDK 创建 MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>（经 <c>Microsoft.Extensions.AI.OpenAI</c> 适配），不经过 SK。</summary>

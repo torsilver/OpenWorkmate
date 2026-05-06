@@ -84,4 +84,24 @@ public sealed class TimelineBlockStreamCoordinatorTests
         Assert.Contains("\"blockSeq\":1", json);
         Assert.Contains("\"blockKind\":\"answer\"", json);
     }
+
+    [Fact]
+    public void Usage_finish_role_meta_increment_blockSeq()
+    {
+        var c = new TimelineBlockStreamCoordinator();
+        c.BeginRound(Sid);
+        var (u, ku) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindUsage);
+        Assert.Equal(0, u);
+        Assert.Equal("usage", ku);
+        var (f, kf) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindFinish);
+        Assert.Equal(1, f);
+        Assert.Equal("finish", kf);
+        var (r, kr) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindRole);
+        Assert.Equal(2, r);
+        Assert.Equal("role", kr);
+        var (m, km) = c.EnsureChunkBlock(Sid, TimelineBlockStreamCoordinator.KindMeta);
+        Assert.Equal(3, m);
+        Assert.Equal("meta", km);
+        c.EndRound(Sid);
+    }
 }

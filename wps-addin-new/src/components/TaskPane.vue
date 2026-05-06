@@ -969,6 +969,8 @@ export default {
   font-size: 11px;
 }
 
+.timeline-seg--streamUsage,
+.timeline-seg--streamFinish,
 .timeline-seg--streamRole,
 .timeline-seg--streamMeta {
   border-color: rgba(108, 140, 255, 0.35);

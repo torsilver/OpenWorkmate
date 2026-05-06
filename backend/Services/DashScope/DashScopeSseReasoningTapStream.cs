@@ -12,21 +12,25 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
     private readonly Stream _inner;
     private readonly Action<string> _onReasoning;
     private readonly Action<string>? _onSseJsonLine;
+    private readonly Action<string>? _onUsageJson;
     private readonly DashScopeSseTapTelemetry? _telemetry;
     private readonly List<byte> _lineBuf = new(512);
     private bool _disposed;
 
     /// <param name="onSseJsonLine">每条 <c>data:</c> JSON 负载（不含 <c>[DONE]</c>）解析前回调；供 OpenAI 兼容链检测 tool_calls 等。</param>
+    /// <param name="onUsageJson">顶层 <c>usage</c> 对象 JSON 文本（OpenAI 兼容末包等）。</param>
     public DashScopeSseReasoningTapStream(
         Stream inner,
         Action<string> onReasoning,
         DashScopeSseTapTelemetry? telemetry = null,
-        Action<string>? onSseJsonLine = null)
+        Action<string>? onSseJsonLine = null,
+        Action<string>? onUsageJson = null)
     {
         _inner = inner;
         _onReasoning = onReasoning;
         _telemetry = telemetry;
         _onSseJsonLine = onSseJsonLine;
+        _onUsageJson = onUsageJson;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -118,6 +122,28 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
 
         _onSseJsonLine?.Invoke(text);
         TryExtractReasoningContent(text, _onReasoning, _telemetry);
+        if (_onUsageJson != null)
+            TryExtractTopLevelUsageJson(text, _onUsageJson, _telemetry);
+    }
+
+    /// <summary>OpenAI 兼容流末包常见顶层 <c>usage</c>（<c>choices</c> 可为空数组）。</summary>
+    internal static void TryExtractTopLevelUsageJson(string jsonLine, Action<string> emit, DashScopeSseTapTelemetry? tel = null)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonLine);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("usage", out var u) || u.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                return;
+            if (u.ValueKind != JsonValueKind.Object)
+                return;
+            emit(u.GetRawText());
+        }
+        catch (JsonException)
+        {
+            if (tel != null)
+                tel.JsonParseErrors++;
+        }
     }
 
     private bool LineStartsWithDataColon()

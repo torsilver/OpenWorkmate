@@ -8,6 +8,7 @@ using OfficeCopilot.Server.Diagnostics;
 using OfficeCopilot.Server.Services;
 using OfficeCopilot.Server.Services.DashScope;
 using OfficeCopilot.Server.Services.DynamicTooling;
+using OfficeCopilot.Server.Services.OpenAiCompat;
 using OfficeCopilot.Server.Services.ToolInvocation;
 
 namespace OfficeCopilot.Server.Services.Maf;
@@ -116,6 +117,7 @@ public static class MafMainSessionStreamRunner
                 toolList.Count);
         }
 
+        var metaState = new MafStreamDeltaMetadataState();
         try
         {
             await foreach (var update in agent.RunStreamingAsync(history, session, runOpts, ct).ConfigureAwait(false))
@@ -130,6 +132,15 @@ public static class MafMainSessionStreamRunner
 
                 foreach (var reasoningDelta in DashScopeReasoningContext.DrainCurrentFrame())
                     yield return new StreamItem(IsWarning: false, Content: reasoningDelta, Kind: StreamSegmentKind.Reasoning);
+
+                foreach (var usageJson in OpenAiStreamUsageSessionBridge.DrainForSession(sessionId))
+                {
+                    if (!string.IsNullOrEmpty(usageJson))
+                        yield return new StreamItem(IsWarning: false, Content: usageJson, Kind: StreamSegmentKind.StreamUsage);
+                }
+
+                foreach (var metaItem in MafChatResponseStreamMetadataExtractor.ExtractFromAgentUpdate(update, metaState))
+                    yield return metaItem;
 
                 var text = update.Text;
                 if (text is { Length: > 0 })
