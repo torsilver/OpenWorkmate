@@ -1202,7 +1202,7 @@ export function useCopilot() {
     contextUsageRing.value = { show: false, dashArray: c, dashOffset: c, title: '' }
   }
 
-  /** Token 用量：输入区圆环 + 可选时间线段（由 WS handler 调用 appendOpenAiStreamDiagSeg）。 */
+  /** Token 用量：仅输入区圆环（对齐 Chrome：不写入时间线）。 */
   function applyStreamUsageRing(content) {
     const c = 2 * Math.PI * CONTEXT_USAGE_RING_R
     const parsed = parseStreamUsagePayload(content)
@@ -1223,26 +1223,22 @@ export function useCopilot() {
     }
   }
 
-  /** OpenAI 兼容流：usage / finish / role / meta（与 stream_chunk 同级主时间线）。 */
+  /** OpenAI 兼容流：stream_role / stream_meta 入主时间线（对齐 Chrome：stream_usage 仅圆环、stream_finish 不展示）。 */
   function appendOpenAiStreamDiagSeg(wsType, content, blockSeq, blockKind) {
     const body = content != null ? String(content).trim() : ''
     if (!body) return
-    const r = ensureRound()
+    ensureRound()
     const meta =
-      wsType === 'stream_usage'
-        ? { kind: 'streamUsage', title: 'Token 用量' }
-        : wsType === 'stream_finish'
-          ? { kind: 'streamFinish', title: '结束原因' }
-          : wsType === 'stream_role'
-            ? { kind: 'streamRole', title: '角色' }
-            : wsType === 'stream_meta'
-              ? { kind: 'streamMeta', title: '响应元数据' }
-              : null
+      wsType === 'stream_role'
+        ? { kind: 'streamRole', title: '角色' }
+        : wsType === 'stream_meta'
+          ? { kind: 'streamMeta', title: '响应元数据' }
+          : null
     if (!meta) return
     const useOrdered =
       typeof blockSeq === 'number' &&
       Number.isFinite(blockSeq) &&
-      (blockKind === 'usage' || blockKind === 'finish' || blockKind === 'role' || blockKind === 'meta')
+      (blockKind === 'role' || blockKind === 'meta')
     const seg = useOrdered
       ? newTimelineSegOrdered(meta.kind, meta.title, blockSeq)
       : newTimelineSeg(meta.kind, meta.title)
@@ -1523,10 +1519,8 @@ export function useCopilot() {
         break
       case 'stream_usage':
         applyStreamUsageRing(msg.content)
-        appendOpenAiStreamDiagSeg('stream_usage', msg.content, msg.blockSeq, msg.blockKind)
         break
       case 'stream_finish':
-        appendOpenAiStreamDiagSeg('stream_finish', msg.content, msg.blockSeq, msg.blockKind)
         break
       case 'stream_role':
         appendOpenAiStreamDiagSeg('stream_role', msg.content, msg.blockSeq, msg.blockKind)

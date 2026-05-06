@@ -99,7 +99,18 @@
           <div v-if="msg.timelineSegments && msg.timelineSegments.length" class="msg--agent-timeline">
             <template v-for="seg in msg.timelineSegments" :key="seg.id">
               <details
-                v-if="seg.kind !== 'tool' && seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
+                v-if="seg.kind === 'tool'"
+                :class="['tool-call-block', 'tool-call--' + seg.status]"
+                :open="!!seg.open"
+              >
+                <summary>
+                  <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
+                  {{ escapeHtml(seg.displayLabel || seg.label) }}
+                </summary>
+                <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
+              </details>
+              <details
+                v-else-if="seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
                 class="timeline-seg"
                 :class="'timeline-seg--' + seg.kind"
                 :open="!!seg.open"
@@ -114,17 +125,6 @@
                   class="timeline-seg__body timeline-seg__body--md markdown-body"
                   v-html="seg.parsedHtml || escapeHtml(seg.body)"
                 ></div>
-              </details>
-              <details
-                v-else
-                :class="['tool-call-block', 'tool-call--' + seg.status]"
-                :open="!!seg.open"
-              >
-                <summary>
-                  <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
-                  {{ escapeHtml(seg.displayLabel || seg.label) }}
-                </summary>
-                <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
               </details>
             </template>
           </div>
@@ -147,7 +147,18 @@
         <div v-if="currentRound.timelineSegments && currentRound.timelineSegments.length" class="msg--agent-timeline">
           <template v-for="seg in currentRound.timelineSegments" :key="seg.id">
             <details
-              v-if="seg.kind !== 'tool' && seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
+              v-if="seg.kind === 'tool'"
+              :class="['tool-call-block', 'tool-call--' + seg.status]"
+              :open="!!seg.open"
+            >
+              <summary>
+                <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
+                {{ escapeHtml(seg.displayLabel || seg.label) }}
+              </summary>
+              <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
+            </details>
+            <details
+              v-else-if="seg.kind !== 'streamUsage' && seg.kind !== 'streamFinish'"
               class="timeline-seg"
               :class="'timeline-seg--' + seg.kind"
               :open="seg.open"
@@ -162,17 +173,6 @@
                 class="timeline-seg__body timeline-seg__body--md markdown-body"
                 v-html="seg.parsedHtml || escapeHtml(seg.body)"
               ></div>
-            </details>
-            <details
-              v-else
-              :class="['tool-call-block', 'tool-call--' + seg.status]"
-              :open="!!seg.open"
-            >
-              <summary>
-                <span class="tool-status-icon">{{ seg.status === 'running' ? '⏳' : seg.status === 'done' ? '✓' : '✗' }}</span>
-                {{ escapeHtml(seg.displayLabel || seg.label) }}
-              </summary>
-              <pre v-show="seg.output" class="tool-call-output">{{ seg.output }}</pre>
             </details>
           </template>
         </div>
