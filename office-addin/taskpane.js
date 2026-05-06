@@ -392,7 +392,38 @@
       planChecklistStatus[s.index] = "pending";
     });
     setPlanCurrentStepIndex(1);
+    planChecklistLoadedPlanId = currentPlanId || planChecklistLoadedPlanId;
     renderPlanChecklist();
+  }
+
+  /** 对齐 chrome-extension/sidepanel.js ensurePlanChecklistLoaded：执行计划某步前确保步骤列表已解析 */
+  function ensurePlanChecklistLoaded(planId) {
+    return Promise.resolve().then(function () {
+      if (!planId) return;
+      if (planChecklistSteps.length > 0 && planChecklistLoadedPlanId === planId) return;
+      planChecklistLoadedPlanId = planId;
+      return tasklyEnsureOfficeApiBase()
+        .then(function () {
+          return tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+        })
+        .then(function (res) {
+          if (!res.ok) return null;
+          return res.json();
+        })
+        .then(function (data) {
+          if (!data) return;
+          var content = data.content || "";
+          planChecklistSteps = parsePlanStepsFromContent(content);
+          planChecklistStatus = {};
+          planChecklistSteps.forEach(function (s) {
+            planChecklistStatus[s.index] = "pending";
+          });
+          renderPlanChecklist();
+        })
+        .catch(function (e) {
+          console.warn("Failed to load plan for checklist", e);
+        });
+    });
   }
 
   function renderAttachmentsPreview() {
@@ -794,6 +825,7 @@
     if ($planPanel) $planPanel.style.display = "none";
     planChecklistSteps = [];
     planChecklistStatus = {};
+    planChecklistLoadedPlanId = null;
     if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
     clearPlanCurrentStepIndex();
     $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
@@ -868,6 +900,24 @@
   const TIMELINE_TAIL_MAX = 100;
   let currentRoundToolBlocks = [];
   let currentToolEndIndex = 0;
+  /** 与 chrome-extension/sidepanel.js：同一计划执行进度条在未打开计划正文时按需拉取 */
+  let planChecklistLoadedPlanId = null;
+  /** tool_invocation 耗时刷新定时器 */
+  const toolBlockElapsedTimers = new Map();
+  /** 子代理（Sub-Agent）时间线：对齐 Chrome / WPS WebSocket 帧 */
+  let currentSubtaskBlock = null;
+  let currentSubtaskStreamEl = null;
+  let currentSubtaskToolsEl = null;
+  let currentSubtaskReasoningRoot = null;
+  let currentSubtaskToolBlocks = [];
+  let currentSubtaskToolEndIndex = 0;
+  let openSubtaskToolDraft = null;
+  let subtaskThinkCells = new Map();
+  let openSubtaskThinkSeg = null;
+  let _subtaskReasoningPendingText = "";
+  let _subtaskReasoningPendingSeq = null;
+  let _subtaskReasoningFlushPending = false;
+  let _subtaskReasoningRafId = null;
   let timelineThinkCells = new Map();
   let timelineAnswerCells = new Map();
 
@@ -903,6 +953,156 @@
       const s = parseInt(raw, 10);
       if (Number.isFinite(s) && s < answerSeq) el.open = false;
     });
+  }
+
+  /** 对齐 chrome-extension/sidepanel.js：tool_invocation_start 后刷新耗时 */
+  function startToolElapsedTimer(block) {
+    if (!block) return;
+    const sum = block.querySelector("summary");
+    if (!sum) return;
+    const out = block.querySelector(".tool-call-output");
+    const span = document.createElement("span");
+    span.className = "tool-elapsed";
+    sum.appendChild(span);
+    const t0 = Date.now();
+    const id = setInterval(function () {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      span.textContent = " · 已执行 " + s + "s";
+      if (out) out.textContent = "执行中，请稍候… 已耗时 " + s + "s";
+    }, 1000);
+    toolBlockElapsedTimers.set(block, id);
+  }
+
+  function clearToolElapsedTimer(block) {
+    if (!block) return;
+    const id = toolBlockElapsedTimers.get(block);
+    if (id) clearInterval(id);
+    toolBlockElapsedTimers.delete(block);
+  }
+
+  function clearAllRunningToolTimers() {
+    const wrap = currentRoundWrapper;
+    if (!wrap) return;
+    wrap.querySelectorAll(".tool-call-block.tool-call--running").forEach(function (b) {
+      clearToolElapsedTimer(b);
+    });
+  }
+
+  function finalizeOpenSubtaskToolDraft() {
+    if (openSubtaskToolDraft && openSubtaskToolDraft.wrap && openSubtaskToolDraft.wrap.parentNode) {
+      try {
+        const pre = openSubtaskToolDraft.pre;
+        if (pre) pre.textContent = decodeJsonStyleUnicodeEscapes(pre.textContent || "");
+      } catch (e) { /* ignore */ }
+      openSubtaskToolDraft.wrap.open = false;
+      try {
+        const sum = openSubtaskToolDraft.wrap.querySelector("summary");
+        if (sum && sum.textContent && sum.textContent.indexOf("生成中") !== -1) {
+          sum.textContent = sum.textContent.replace("（生成中）", "");
+        }
+      } catch (e2) { /* ignore */ }
+    }
+    openSubtaskToolDraft = null;
+  }
+
+  function ensureSubtaskToolDraft() {
+    if (openSubtaskToolDraft) return openSubtaskToolDraft;
+    if (!currentSubtaskToolsEl || !currentSubtaskToolsEl.parentNode) return null;
+    const inner = currentSubtaskToolsEl.parentNode;
+    const wrap = document.createElement("details");
+    wrap.className = "subtask-tool-draft-wrap";
+    wrap.open = true;
+    const sum = document.createElement("summary");
+    sum.textContent = "工具参数（生成中）";
+    const pre = document.createElement("pre");
+    pre.className = "subtask-tool-draft-body";
+    wrap.appendChild(sum);
+    wrap.appendChild(pre);
+    inner.insertBefore(wrap, currentSubtaskToolsEl);
+    openSubtaskToolDraft = { wrap: wrap, pre: pre, lastCallId: "" };
+    return openSubtaskToolDraft;
+  }
+
+  function insertSubtaskThinkBlockInOrder(detailsEl, blockSeq) {
+    if (!currentSubtaskReasoningRoot) return;
+    detailsEl.dataset.blockSeq = String(blockSeq);
+    const nodes = currentSubtaskReasoningRoot.children;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const raw = node.dataset && node.dataset.blockSeq;
+      if (raw == null || raw === "") continue;
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n) && n > blockSeq) {
+        currentSubtaskReasoningRoot.insertBefore(detailsEl, node);
+        return;
+      }
+    }
+    currentSubtaskReasoningRoot.appendChild(detailsEl);
+  }
+
+  function ensureSubtaskThinkTimelineBlock(blockSeq) {
+    let cell = subtaskThinkCells.get(blockSeq);
+    if (cell) return cell;
+    if (!currentSubtaskReasoningRoot) return null;
+    const d = document.createElement("details");
+    d.className = "timeline-seg timeline-seg--think timeline-seg--subtask-nested";
+    d.dataset.kind = "think";
+    d.open = true;
+    const sum = document.createElement("summary");
+    const lab = document.createElement("span");
+    lab.className = "timeline-seg__label";
+    lab.textContent = "推理";
+    const tail = document.createElement("span");
+    tail.className = "timeline-seg__tail";
+    sum.appendChild(lab);
+    sum.appendChild(document.createTextNode(" "));
+    sum.appendChild(tail);
+    const pre = document.createElement("pre");
+    pre.className = "timeline-seg__body";
+    d.appendChild(sum);
+    d.appendChild(pre);
+    insertSubtaskThinkBlockInOrder(d, blockSeq);
+    cell = { details: d, pre: pre, tail: tail };
+    subtaskThinkCells.set(blockSeq, cell);
+    return cell;
+  }
+
+  function cancelSubtaskReasoningRaf() {
+    if (_subtaskReasoningRafId != null) {
+      cancelAnimationFrame(_subtaskReasoningRafId);
+      _subtaskReasoningRafId = null;
+    }
+    _subtaskReasoningFlushPending = false;
+  }
+
+  function flushSubtaskReasoningPendingToDom() {
+    _subtaskReasoningFlushPending = false;
+    _subtaskReasoningRafId = null;
+    const buf = _subtaskReasoningPendingText;
+    _subtaskReasoningPendingText = "";
+    if (!buf || !openSubtaskThinkSeg) return;
+    openSubtaskThinkSeg.pre.textContent += buf;
+    openSubtaskThinkSeg.tail.textContent = formatActivityTail(openSubtaskThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+    openSubtaskThinkSeg.details.title = openSubtaskThinkSeg.pre.textContent;
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+
+  function scheduleSubtaskReasoningFlush() {
+    if (_subtaskReasoningFlushPending) return;
+    _subtaskReasoningFlushPending = true;
+    _subtaskReasoningRafId = requestAnimationFrame(flushSubtaskReasoningPendingToDom);
+  }
+
+  function flushSubtaskReasoningPendingSync() {
+    cancelSubtaskReasoningRaf();
+    if (_subtaskReasoningPendingText && openSubtaskThinkSeg) {
+      openSubtaskThinkSeg.pre.textContent += _subtaskReasoningPendingText;
+      _subtaskReasoningPendingText = "";
+      openSubtaskThinkSeg.tail.textContent = formatActivityTail(openSubtaskThinkSeg.pre.textContent, TIMELINE_TAIL_MAX);
+      openSubtaskThinkSeg.details.title = openSubtaskThinkSeg.pre.textContent;
+    } else {
+      _subtaskReasoningPendingText = "";
+    }
   }
 
   function ensureThinkTimelineBlock(blockSeq) {
@@ -1098,7 +1298,26 @@
     const name = msg.toolName != null ? String(msg.toolName) : "";
     const delta = msg.argumentsDelta != null ? String(msg.argumentsDelta) : "";
     if (!delta && !name.trim()) return;
-    // Office 任务窗格未实现子任务工具容器：子任务增量也挂主时间线，避免落入 default 整段 JSON
+    if (msg.isSubtask === true) {
+      if (!currentRoundWrapper) beginStream();
+      if (!currentSubtaskToolsEl) return;
+      let sd = ensureSubtaskToolDraft();
+      if (!sd) return;
+      const idChanged = sd.lastCallId !== callId;
+      if (idChanged && sd.pre.textContent) {
+        finalizeOpenSubtaskToolDraft();
+        sd = ensureSubtaskToolDraft();
+        if (!sd) return;
+      }
+      if (idChanged) {
+        if (sd.pre.textContent) sd.pre.textContent += "\n\n";
+        sd.pre.textContent += "[" + callId + "]" + (name.trim() ? " " + name.trim() : "") + "\n";
+      }
+      sd.lastCallId = callId;
+      sd.pre.textContent += delta;
+      $messages.scrollTop = $messages.scrollHeight;
+      return;
+    }
     if (!currentRoundWrapper) beginStream();
     ensureTimeline();
     let d = ensureToolDraftSeg();
@@ -1159,10 +1378,51 @@
     appendAgentStatusLine(block);
   }
 
-  function appendReasoningChunk(text, blockSeq, blockKind) {
+  function appendReasoningChunk(text, blockSeq, blockKind, isSubtask) {
     const t = text != null ? String(text) : "";
     if (!t) return;
     if (!currentRoundWrapper) beginStream();
+    if (isSubtask === true) {
+      if (!currentSubtaskReasoningRoot) return;
+      const useBlock =
+        typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
+      if (useBlock) {
+        if (_subtaskReasoningPendingSeq !== null && _subtaskReasoningPendingSeq !== blockSeq)
+          flushSubtaskReasoningPendingSync();
+        const cell = ensureSubtaskThinkTimelineBlock(blockSeq);
+        if (!cell) return;
+        openSubtaskThinkSeg = cell;
+        _subtaskReasoningPendingSeq = blockSeq;
+        _subtaskReasoningPendingText += t;
+        scheduleSubtaskReasoningFlush();
+        return;
+      }
+      _subtaskReasoningPendingSeq = null;
+      if (!openSubtaskThinkSeg) {
+        const d = document.createElement("details");
+        d.className = "timeline-seg timeline-seg--think timeline-seg--subtask-nested";
+        d.dataset.kind = "think";
+        d.open = true;
+        const sum = document.createElement("summary");
+        const lab = document.createElement("span");
+        lab.className = "timeline-seg__label";
+        lab.textContent = "推理";
+        const tail = document.createElement("span");
+        tail.className = "timeline-seg__tail";
+        sum.appendChild(lab);
+        sum.appendChild(document.createTextNode(" "));
+        sum.appendChild(tail);
+        const pre = document.createElement("pre");
+        pre.className = "timeline-seg__body";
+        d.appendChild(sum);
+        d.appendChild(pre);
+        currentSubtaskReasoningRoot.appendChild(d);
+        openSubtaskThinkSeg = { details: d, pre: pre, tail: tail };
+      }
+      _subtaskReasoningPendingText += t;
+      scheduleSubtaskReasoningFlush();
+      return;
+    }
     const useBlock =
       typeof blockSeq === "number" && Number.isFinite(blockSeq) && blockKind === "think";
     if (useBlock) {
@@ -1184,6 +1444,14 @@
   function beginStream() {
     const welcome = $messages.querySelector(".welcome");
     if (welcome) welcome.remove();
+
+    finalizeOpenSubtaskToolDraft();
+    cancelSubtaskReasoningRaf();
+    _subtaskReasoningPendingText = "";
+    _subtaskReasoningPendingSeq = null;
+    openSubtaskThinkSeg = null;
+    subtaskThinkCells = new Map();
+    currentSubtaskReasoningRoot = null;
 
     currentRoundWrapper = document.createElement("div");
     currentRoundWrapper.className = "msg msg--round";
@@ -1246,7 +1514,7 @@
     $messages.scrollTop = $messages.scrollHeight;
   }
 
-  /** usage / finish / role / meta：时间线；stream_usage 同时更新输入区圆环 */
+  /** stream_role / stream_meta：挂时间线诊断段（stream_usage / stream_finish 仅圆环或忽略，对齐 Chrome） */
   function appendOpenAiStreamMetaSeg(wsType, content, blockSeq, blockKind) {
     const body = (content != null && String(content).trim()) || "";
     if (!body) return;
@@ -1377,6 +1645,13 @@
 
   function finalizeStream() {
     finalizeOpenToolDraftSeg();
+    finalizeOpenSubtaskToolDraft();
+    flushSubtaskReasoningPendingSync();
+    cancelSubtaskReasoningRaf();
+    openSubtaskThinkSeg = null;
+    subtaskThinkCells = new Map();
+    currentSubtaskReasoningRoot = null;
+    clearAllRunningToolTimers();
     collapseAllOpenPhases();
     openAnswerSeg = null;
     if (timelineRoot) {
@@ -1400,8 +1675,15 @@
     currentBotMessageRaw = "";
     currentRoundWrapper = null;
     timelineRoot = null;
+    openToolDraftSeg = null;
+    openSubtaskToolDraft = null;
     currentRoundToolBlocks = [];
     currentToolEndIndex = 0;
+    currentSubtaskBlock = null;
+    currentSubtaskStreamEl = null;
+    currentSubtaskToolsEl = null;
+    currentSubtaskToolBlocks = [];
+    currentSubtaskToolEndIndex = 0;
     setInputEnabled(true);
     if (crossAgentAutoRunLock) {
       crossAgentAutoRunLock = false;
@@ -1735,6 +2017,7 @@
         if ($planPanel) $planPanel.style.display = "none";
         planChecklistSteps = [];
         planChecklistStatus = {};
+        planChecklistLoadedPlanId = null;
         if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
         clearPlanCurrentStepIndex();
         if ($messages) $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
@@ -1790,6 +2073,7 @@
       if ($planPanel) $planPanel.style.display = "none";
       planChecklistSteps = [];
       planChecklistStatus = {};
+      planChecklistLoadedPlanId = null;
       if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
       clearPlanCurrentStepIndex();
       attachments = [];
@@ -2068,6 +2352,7 @@
     if ($planPanel) $planPanel.style.display = "none";
     planChecklistSteps = [];
     planChecklistStatus = {};
+    planChecklistLoadedPlanId = null;
     if ($planChecklistWrap) $planChecklistWrap.style.display = "none";
     clearPlanCurrentStepIndex();
     if ($messages) $messages.innerHTML = OFFICE_WELCOME_INNER_HTML;
@@ -2140,7 +2425,7 @@
         appendAgentTrace(msg);
         break;
       case "reasoning_chunk":
-        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind);
+        appendReasoningChunk(msg.content, msg.blockSeq, msg.blockKind, msg.isSubtask === true);
         break;
       case "tool_call_delta":
         appendToolCallDelta(msg);
@@ -2172,10 +2457,8 @@
         break;
       case "stream_usage":
         applyStreamUsageToContextRingOffice(msg.content);
-        appendOpenAiStreamMetaSeg("stream_usage", msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_finish":
-        appendOpenAiStreamMetaSeg("stream_finish", msg.content, msg.blockSeq, msg.blockKind);
         break;
       case "stream_role":
         appendOpenAiStreamMetaSeg("stream_role", msg.content, msg.blockSeq, msg.blockKind);
@@ -2191,42 +2474,194 @@
         break;
       case "subtask_start": {
         if (!currentRoundWrapper) beginStream();
+        finalizeOpenSubtaskToolDraft();
+        ensureTimeline();
+        if (!timelineRoot) break;
+        cancelSubtaskReasoningRaf();
+        _subtaskReasoningPendingText = "";
+        _subtaskReasoningPendingSeq = null;
+        openSubtaskThinkSeg = null;
+        subtaskThinkCells = new Map();
         const taskDesc = (msg.taskDescription && String(msg.taskDescription).trim()) || "子任务";
         const titleLen = 48;
         const summaryLabel = taskDesc.length <= titleLen ? taskDesc : taskDesc.slice(0, titleLen) + "…";
-        appendAgentStatusLine("子代理：" + summaryLabel);
+        const presetRaw = msg.subtaskPreset != null ? String(msg.subtaskPreset).trim() : "";
+        const presetTag =
+          presetRaw === "explore"
+            ? "（探索）"
+            : presetRaw === "cliShell"
+              ? "（CLI）"
+              : presetRaw === "browser"
+                ? "（浏览器）"
+                : "";
+        const block = document.createElement("details");
+        block.className = "subtask-block tool-call-block tool-call--running";
+        block.dataset.label = "子代理" + presetTag + "：" + summaryLabel;
+        block.dataset.subtaskPresetTag = presetTag;
+        block.open = false;
+        const sum = document.createElement("summary");
+        sum.innerHTML =
+          "<span class=\"tool-status-icon\">⏳</span> 子代理" + escapeHtml(presetTag) + "：" + escapeHtml(summaryLabel);
+        block.appendChild(sum);
+        const inner = document.createElement("div");
+        inner.className = "subtask-inner";
+        const thread = document.createElement("div");
+        thread.className = "subtask-thread";
+        const rail = document.createElement("div");
+        rail.className = "subtask-thread__rail";
+        rail.setAttribute("aria-hidden", "true");
+        const threadBody = document.createElement("div");
+        threadBody.className = "subtask-thread__body";
+        const reasoningStack = document.createElement("div");
+        reasoningStack.className = "subtask-reasoning-stack";
+        threadBody.appendChild(reasoningStack);
+        if (msg.taskDescription) {
+          const taskEl = document.createElement("div");
+          taskEl.className = "subtask-task";
+          taskEl.textContent = "任务：" + String(msg.taskDescription).trim();
+          threadBody.appendChild(taskEl);
+        }
+        if (msg.constraints && String(msg.constraints).trim()) {
+          const conEl = document.createElement("div");
+          conEl.className = "subtask-constraints";
+          conEl.textContent = "约束：" + String(msg.constraints).trim();
+          threadBody.appendChild(conEl);
+        }
+        const streamEl = document.createElement("pre");
+        streamEl.className = "subtask-stream";
+        threadBody.appendChild(streamEl);
+        const toolsWrap = document.createElement("div");
+        toolsWrap.className = "subtask-tools";
+        threadBody.appendChild(toolsWrap);
+        thread.appendChild(rail);
+        thread.appendChild(threadBody);
+        inner.appendChild(thread);
+        block.appendChild(inner);
+        timelineRoot.appendChild(block);
+        currentSubtaskBlock = block;
+        currentSubtaskReasoningRoot = reasoningStack;
+        currentSubtaskStreamEl = streamEl;
+        currentSubtaskToolsEl = toolsWrap;
+        currentSubtaskToolBlocks = [];
+        currentSubtaskToolEndIndex = 0;
+        updateExecutionLogCount();
         break;
       }
-      case "subtask_chunk":
-      case "subtask_end":
-        break;
-      case "tool_invocation_start": {
-        finalizeOpenToolDraftSeg();
-        if (msg.planStepIndex) {
-          updateChecklistStep(msg.planStepIndex, "in_progress");
+      case "subtask_chunk": {
+        if (!currentSubtaskBlock || !currentSubtaskStreamEl) break;
+        const t = msg.content != null ? String(msg.content) : "";
+        if (t) {
+          currentSubtaskStreamEl.textContent += t;
+          if (currentSubtaskBlock.open) {
+            currentSubtaskStreamEl.scrollTop = currentSubtaskStreamEl.scrollHeight;
+          }
         }
+        break;
+      }
+      case "subtask_end": {
+        finalizeOpenSubtaskToolDraft();
+        flushSubtaskReasoningPendingSync();
+        cancelSubtaskReasoningRaf();
+        openSubtaskThinkSeg = null;
+        subtaskThinkCells = new Map();
+        currentSubtaskReasoningRoot = null;
+        if (currentSubtaskBlock) {
+          const sum0 = currentSubtaskBlock.querySelector("summary");
+          const doneTag = currentSubtaskBlock.dataset.subtaskPresetTag || "";
+          if (sum0) {
+            sum0.innerHTML =
+              "<span class=\"tool-status-icon\">✓</span> 子代理" + escapeHtml(doneTag) + "（已完成）";
+          }
+          currentSubtaskBlock.classList.remove("tool-call--running");
+          currentSubtaskBlock.classList.add("tool-call--done");
+          if (msg.content && String(msg.content).trim() && currentSubtaskStreamEl) {
+            const existing = currentSubtaskStreamEl.textContent.trim();
+            if (!existing) currentSubtaskStreamEl.textContent = String(msg.content).trim();
+          }
+        }
+        currentSubtaskBlock = null;
+        currentSubtaskStreamEl = null;
+        currentSubtaskToolsEl = null;
+        currentSubtaskToolBlocks = [];
+        currentSubtaskToolEndIndex = 0;
+        break;
+      }
+      case "tool_invocation_start": {
+        if (msg.isSubtask === true) finalizeOpenSubtaskToolDraft();
+        else finalizeOpenToolDraftSeg();
+        if (msg.planStepIndex) {
+          if (msg.plugin === "Plan" && msg.function === "execute_plan_step") {
+            const pid = currentPlanId;
+            if (pid) {
+              ensurePlanChecklistLoaded(pid).then(function () {
+                updateChecklistStep(msg.planStepIndex, "in_progress");
+              });
+            } else {
+              updateChecklistStep(msg.planStepIndex, "in_progress");
+            }
+          } else {
+            updateChecklistStep(msg.planStepIndex, "in_progress");
+          }
+        }
+        const label = msg.summary || "正在执行: " + (msg.plugin || "") + "." + (msg.function || "");
+        const isSubtask = msg.isSubtask === true;
         collapsePhasesForToolStart();
         ensureTimeline();
-        if (!timelineRoot) break;
-        const label = msg.summary || "正在执行: " + (msg.plugin || "") + "." + (msg.function || "");
+        const parentBody = isSubtask ? currentSubtaskToolsEl : timelineRoot;
+        if (!parentBody) break;
         const block = document.createElement("details");
-        block.className = "tool-call-block tool-call--running";
+        block.className = "tool-call-block tool-call--running" + (isSubtask ? " subtask-tool-block" : "");
         block.dataset.label = label;
+        const invStart = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+        if (invStart) block.dataset.invocationId = invStart;
         const sum = document.createElement("summary");
         sum.innerHTML = "<span class=\"tool-status-icon\">⏳</span> " + escapeHtml(label);
         block.appendChild(sum);
         const out = document.createElement("pre");
         out.className = "tool-call-output";
+        out.textContent = "执行中，请稍候…";
+        out.style.display = "block";
         block.appendChild(out);
-        timelineRoot.appendChild(block);
-        currentRoundToolBlocks.push(block);
-        block.open = true;
+        parentBody.appendChild(block);
+        startToolElapsedTimer(block);
+        if (isSubtask) {
+          currentSubtaskToolBlocks.push(block);
+        } else {
+          currentRoundToolBlocks.push(block);
+          block.open = true;
+        }
         updateExecutionLogCount();
         break;
       }
       case "tool_invocation_end": {
-        const block = currentRoundToolBlocks[currentToolEndIndex];
+        if (msg.planStepIndex) {
+          if (msg.plugin === "Plan" && msg.function === "execute_plan_step") {
+            updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
+            if (msg.success === true) {
+              setPlanCurrentStepIndex(msg.planStepIndex + 1);
+            }
+          } else {
+            updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
+          }
+        }
+        const isSubtask = msg.isSubtask === true;
+        let block = null;
+        const invEnd = msg.invocationId != null ? String(msg.invocationId).trim() : "";
+        if (invEnd) {
+          const scope = isSubtask ? currentSubtaskToolsEl : timelineRoot;
+          if (scope && typeof scope.querySelector === "function") {
+            var esc =
+              typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function"
+                ? CSS.escape(invEnd)
+                : invEnd.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            block = scope.querySelector('[data-invocation-id="' + esc + '"]');
+          }
+        }
+        if (!block) {
+          block = isSubtask ? currentSubtaskToolBlocks[currentSubtaskToolEndIndex] : currentRoundToolBlocks[currentToolEndIndex];
+        }
         if (block) {
+          clearToolElapsedTimer(block);
           const contentRaw = (msg.content && String(msg.content).trim()) || "";
           const looksErr =
             typeof TasklyCopilotHostShared !== "undefined" &&
@@ -2247,18 +2682,8 @@
             out.style.display = content ? "block" : "none";
           }
         }
-        if (msg.planStepIndex) {
-          updateChecklistStep(msg.planStepIndex, msg.success === true ? "done" : "pending");
-        }
-        if (
-          msg.plugin === "Plan" &&
-          msg.function === "execute_plan_step" &&
-          msg.planStepIndex &&
-          msg.success === true
-        ) {
-          setPlanCurrentStepIndex(msg.planStepIndex + 1);
-        }
-        currentToolEndIndex++;
+        if (isSubtask) currentSubtaskToolEndIndex++;
+        else currentToolEndIndex++;
         break;
       }
       case "echo":

@@ -396,6 +396,103 @@ html, body {
 .tool-call-block.tool-call--done summary { color: var(--success); }
 .tool-call-block.tool-call--fail summary { color: var(--danger); }
 
+.tool-call-block .tool-elapsed {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.tool-call-block.tool-call--running {
+  animation: taskly-tool-pulse 1.6s ease-in-out infinite;
+}
+@keyframes taskly-tool-pulse {
+  0%, 100% { border-color: var(--border); }
+  50% { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+}
+
+/* 子代理 / 子任务：对齐 chrome-extension/sidepanel.css */
+.subtask-tool-draft-wrap {
+  margin-bottom: 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.subtask-tool-draft-wrap summary {
+  padding: 5px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.subtask-tool-draft-wrap summary::-webkit-details-marker { display: none; }
+.subtask-tool-draft-body {
+  margin: 0;
+  padding: 8px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+.subtask-thread {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 6px;
+}
+.subtask-thread__rail {
+  flex: 0 0 3px;
+  align-self: stretch;
+  min-height: 1.25em;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent, #6c8cff) 40%, var(--border));
+  opacity: 0.9;
+}
+.subtask-thread__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.subtask-reasoning-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.msg--agent-timeline .timeline-seg.timeline-seg--subtask-nested {
+  font-size: 11px;
+  background: color-mix(in srgb, var(--bg-tertiary) 90%, var(--bg-primary));
+}
+.msg--agent-timeline .timeline-seg.timeline-seg--subtask-nested .timeline-seg__body {
+  max-height: 180px;
+}
+.tool-call-block .tool-call-output {
+  max-height: min(55vh, 480px);
+}
+.subtask-inner { margin-top: 4px; }
+.subtask-task, .subtask-constraints { font-size: 11px; color: var(--text-secondary); line-height: 1.45; }
+.subtask-stream {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+.subtask-tools { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+
 .msg--error {
   border-color: rgba(248, 113, 113, 0.4);
   background: rgba(248, 113, 113, 0.08);
