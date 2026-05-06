@@ -21,6 +21,7 @@ using OfficeCopilot.Server.Services.Maf;
 using OfficeCopilot.Server.Services.Subagent;
 using OfficeCopilot.Server.Services.LlmRouting;
 using OfficeCopilot.Server.Services.ModelProfiles;
+using OfficeCopilot.Server.Services.OpenAiCompat;
 using OfficeCopilot.Server.Services.Telemetry;
 using OfficeCopilot.Server.Logging;
 
@@ -332,8 +333,9 @@ public sealed partial class ChatService : IDisposable
             && activeProf is not null)
         {
             _logger.LogInformation(
-                "Active model ModelProfile: profileKey={ProfileKey} requiresReasoningEcho={Echo} suppressUpstreamThinkingTools={Suppress}",
-                activeProf.ProfileKey, activeProf.RequiresReasoningEchoWithTools, activeProf.SuppressUpstreamThinkingWithTools);
+                "Active model ModelProfile: profileKey={ProfileKey} requiresReasoningEcho={Echo} suppressUpstreamThinkingTools={Suppress} disableReasoningHttpEcho={DisableEcho} useThinkingKeepAll={KeepAll}",
+                activeProf.ProfileKey, activeProf.RequiresReasoningEchoWithTools, activeProf.SuppressUpstreamThinkingWithTools,
+                activeProf.DisableReasoningHttpEcho, activeProf.UseThinkingKeepAll);
         }
     }
 
@@ -368,7 +370,14 @@ public sealed partial class ChatService : IDisposable
             _modelProfiles,
             dashHandler,
             _loggerFactory.CreateLogger<ModelProfileChatRequestMergeHandler>());
-        var httpClient = new HttpClient(profileMergeHandler);
+        var reasoningEchoHandler = new OpenAiReasoningEchoHandler(
+            _configService,
+            entryId,
+            _modelProfiles,
+            profileMergeHandler,
+            _timelineBlockCoordinator,
+            _loggerFactory.CreateLogger<OpenAiReasoningEchoHandler>());
+        var httpClient = new HttpClient(reasoningEchoHandler);
         var options = new OpenAI.OpenAIClientOptions();
         if (endpointUri != null) options.Endpoint = endpointUri;
         options.Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient);

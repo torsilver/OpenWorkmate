@@ -1,10 +1,12 @@
 {
   "moonshot/kimi-k2.6": {
     "requiresReasoningEchoWithTools": true,
-    "suppressUpstreamThinkingWithTools": true,
+    "suppressUpstreamThinkingWithTools": false,
+    "useThinkingKeepAll": true,
+    "disableReasoningHttpEcho": false,
     "recommendedEnableThinking": null,
     "recommendedThinkingBudget": null,
-    "notes": "Kimi：thinking 开启且 assistant 含 tool_calls 时上游可能要求历史中携带 reasoning_content。当前默认 suppressUpstreamThinkingWithTools=true，在检测到缺 reasoning 的工具延续请求上强制 thinking=false。网关经 /llm/v1 转发时由 ModelProfileChatRequestMergeHandler 处理。"
+    "notes": "Kimi：多轮工具需历史中 assistant+tool_calls 带 reasoning_content。主路径由 OpenAiReasoningEchoHandler 默认解析 SSE 并注入；useThinkingKeepAll 合并 thinking.keep；不再依赖 suppress thinking=false。"
   },
   "dashscope/qwen3-max": {
     "requiresReasoningEchoWithTools": false,

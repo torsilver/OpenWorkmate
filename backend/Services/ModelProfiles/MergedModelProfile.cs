@@ -17,6 +17,12 @@ public sealed class MergedModelProfile
     /// <summary>在检测到 assistant tool_calls 且缺少 reasoning_content 时，出站请求顶层写入 <c>thinking: false</c>。</summary>
     public bool SuppressUpstreamThinkingWithTools { get; init; }
 
+    /// <summary>为 true 时跳过 <see cref="OfficeCopilot.Server.Services.OpenAiCompat.OpenAiReasoningEchoHandler"/>（不 patch、不解析 SSE reasoning）。</summary>
+    public bool DisableReasoningHttpEcho { get; init; }
+
+    /// <summary>Kimi 等：出站合并 <c>thinking: { type: enabled, keep: all }</c>，与历史 <c>reasoning_content</c> 联用。</summary>
+    public bool UseThinkingKeepAll { get; init; }
+
     public bool? RecommendedEnableThinking { get; init; }
     public int? RecommendedThinkingBudget { get; init; }
     public string? Notes { get; init; }

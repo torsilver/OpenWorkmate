@@ -149,6 +149,8 @@ public sealed class ModelProfileRegistry
 
         var requiresEcho = overlay.ValueKind == JsonValueKind.Object && ReadBool(overlay, "requiresReasoningEchoWithTools");
         var suppressThinking = overlay.ValueKind == JsonValueKind.Object && ReadBool(overlay, "suppressUpstreamThinkingWithTools");
+        var disableReasoningEcho = overlay.ValueKind == JsonValueKind.Object && ReadBool(overlay, "disableReasoningHttpEcho");
+        var useThinkingKeepAll = overlay.ValueKind == JsonValueKind.Object && ReadBool(overlay, "useThinkingKeepAll");
         var recThink = overlay.ValueKind == JsonValueKind.Object ? ReadNullableBool(overlay, "recommendedEnableThinking") : null;
         var recBudget = overlay.ValueKind == JsonValueKind.Object ? ReadInt(overlay, "recommendedThinkingBudget") : null;
         var notes = overlay.ValueKind == JsonValueKind.Object ? ReadString(overlay, "notes") : null;
@@ -163,6 +165,8 @@ public sealed class ModelProfileRegistry
             SupportsReasoning = ReadBool(lite, "supports_reasoning"),
             RequiresReasoningEchoWithTools = requiresEcho,
             SuppressUpstreamThinkingWithTools = suppressThinking,
+            DisableReasoningHttpEcho = disableReasoningEcho,
+            UseThinkingKeepAll = useThinkingKeepAll,
             RecommendedEnableThinking = recThink,
             RecommendedThinkingBudget = recBudget,
             Notes = notes

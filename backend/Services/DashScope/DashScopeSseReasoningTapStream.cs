@@ -11,15 +11,22 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
 {
     private readonly Stream _inner;
     private readonly Action<string> _onReasoning;
+    private readonly Action<string>? _onSseJsonLine;
     private readonly DashScopeSseTapTelemetry? _telemetry;
     private readonly List<byte> _lineBuf = new(512);
     private bool _disposed;
 
-    public DashScopeSseReasoningTapStream(Stream inner, Action<string> onReasoning, DashScopeSseTapTelemetry? telemetry = null)
+    /// <param name="onSseJsonLine">每条 <c>data:</c> JSON 负载（不含 <c>[DONE]</c>）解析前回调；供 OpenAI 兼容链检测 tool_calls 等。</param>
+    public DashScopeSseReasoningTapStream(
+        Stream inner,
+        Action<string> onReasoning,
+        DashScopeSseTapTelemetry? telemetry = null,
+        Action<string>? onSseJsonLine = null)
     {
         _inner = inner;
         _onReasoning = onReasoning;
         _telemetry = telemetry;
+        _onSseJsonLine = onSseJsonLine;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -109,6 +116,7 @@ internal sealed class DashScopeSseReasoningTapStream : Stream
             }
         }
 
+        _onSseJsonLine?.Invoke(text);
         TryExtractReasoningContent(text, _onReasoning, _telemetry);
     }
 
