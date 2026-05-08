@@ -10,7 +10,7 @@
   若指定则 dotnet publish 使用 --self-contained false（体积小，目标机需安装 .NET 运行时）。默认打自包含包。
 
 .PARAMETER BackendTargetFramework
-  AI 后台（OfficeCopilot.Server）目标框架：net10.0-windows（托盘、单实例、Office COM/Interop，默认，适合 MSI/桌面）或 net10.0（无上述 Windows 专用代码，适合纯控制台/无托盘场景）。Gateway、StaticHost 仍为各自项目的单 TFM。
+  AI 后台（OfficeCopilot.Server）目标框架：net10.0-windows（托盘、单实例、Office COM/Interop，默认，适合 MSI/桌面）或 net10.0（无上述 Windows 专用代码，适合纯控制台/无托盘场景）。StaticHost 仍为单一 TFM（用户安装包不含 ai-gateway）。
 #>
 param(
   [string]$RepoRoot = "",
@@ -36,7 +36,6 @@ $RepoRoot = (Resolve-Path $RepoRoot).Path
 $packagingRoot = Join-Path $RepoRoot 'windows-packaging'
 $stageRoot = Join-Path $packagingRoot 'stage'
 $backendProj = Join-Path $RepoRoot 'backend\OfficeCopilot.Server.csproj'
-$gatewayProj = Join-Path $RepoRoot 'ai-gateway\Taskly.AI.Gateway.csproj'
 $staticHostProj = Join-Path $packagingRoot 'runtime\Taskly.StaticHost\Taskly.StaticHost.csproj'
 $officeSrc = Join-Path $RepoRoot 'office-addin'
 $wpsRoot = Join-Path $RepoRoot 'wps-addin-new'
@@ -62,11 +61,6 @@ $scArg = if ($sc) { @('--self-contained', 'true') } else { @('--self-contained',
 Invoke-Step "dotnet publish backend ($BackendTargetFramework)" {
   $out = Join-Path $stageRoot 'OfficeCopilot.Server'
   dotnet publish $backendProj -c $Configuration -f $BackendTargetFramework -r $Runtime @scArg -o $out --nologo
-}
-
-Invoke-Step "dotnet publish AI Gateway" {
-  $out = Join-Path $stageRoot 'Taskly.AI.Gateway'
-  dotnet publish $gatewayProj -c $Configuration -r $Runtime @scArg -o $out --nologo
 }
 
 Invoke-Step "dotnet publish Taskly.StaticHost" {
@@ -164,6 +158,11 @@ Write-Host 'OK. Fully quit Chrome and reopen, then open chrome://policy to verif
   if (Test-Path $clientSetupSrc) {
     Copy-Item -Path $clientSetupSrc -Destination (Join-Path $stageRoot 'Taskly-ClientSetup.html') -Force
   }
+
+  $installClientsSrc = Join-Path $packagingRoot 'installer\launchers\Install-TasklyClients.ps1'
+  if (Test-Path $installClientsSrc) {
+    Copy-Item -Path $installClientsSrc -Destination (Join-Path $stageRoot 'Install-TasklyClients.ps1') -Force
+  }
 }
 
 if ($BackendTargetFramework -eq 'net10.0-windows') {
@@ -173,15 +172,12 @@ if ($BackendTargetFramework -eq 'net10.0-windows') {
 `$root = Split-Path -Parent `$MyInvocation.MyCommand.Path
 Set-Location `$root
 `$be = Join-Path `$root 'OfficeCopilot.Server\OfficeCopilot.Server.exe'
-`$gw = Join-Path `$root 'Taskly.AI.Gateway\Taskly.AI.Gateway.exe'
 `$hs = Join-Path `$root 'Taskly.StaticHost\Taskly.StaticHost.exe'
 `$wdBe = Join-Path `$root 'OfficeCopilot.Server'
-`$wdGw = Join-Path `$root 'Taskly.AI.Gateway'
 `$wdHs = Join-Path `$root 'Taskly.StaticHost'
 # Backend: net10.0-windows (tray + single-instance + Office interop)
 Start-Process -WindowStyle Hidden -FilePath `$be -WorkingDirectory `$wdBe -ArgumentList '--tray'
 Start-Sleep -Seconds 1
-Start-Process -WindowStyle Hidden -FilePath `$gw -WorkingDirectory `$wdGw
 Start-Process -WindowStyle Hidden -FilePath `$hs -WorkingDirectory `$wdHs
 "@
 }
@@ -192,15 +188,12 @@ else {
 `$root = Split-Path -Parent `$MyInvocation.MyCommand.Path
 Set-Location `$root
 `$be = Join-Path `$root 'OfficeCopilot.Server\OfficeCopilot.Server.exe'
-`$gw = Join-Path `$root 'Taskly.AI.Gateway\Taskly.AI.Gateway.exe'
 `$hs = Join-Path `$root 'Taskly.StaticHost\Taskly.StaticHost.exe'
 `$wdBe = Join-Path `$root 'OfficeCopilot.Server'
-`$wdGw = Join-Path `$root 'Taskly.AI.Gateway'
 `$wdHs = Join-Path `$root 'Taskly.StaticHost'
 # Backend: net10.0 (no tray / no Office COM interop in this build)
 Start-Process -WindowStyle Hidden -FilePath `$be -WorkingDirectory `$wdBe
 Start-Sleep -Seconds 1
-Start-Process -WindowStyle Hidden -FilePath `$gw -WorkingDirectory `$wdGw
 Start-Process -WindowStyle Hidden -FilePath `$hs -WorkingDirectory `$wdHs
 "@
 }
@@ -216,12 +209,14 @@ if ($BuildInstaller) {
   if (-not $wixCmd) {
     throw "WiX CLI not found. Install: dotnet tool install --global wix`nThen re-open the terminal, or skip MSI with: -BuildInstaller:`$false"
   }
-  $wxs = Join-Path $packagingRoot 'installer\Taskly.wxs'
+  $wxsMain = Join-Path $packagingRoot 'installer\Taskly.wxs'
+  $wxsUiFork = Join-Path $packagingRoot 'installer\WixUI_Taskly_InstallDir.wxs'
+  $wxsDialogs = Join-Path $packagingRoot 'installer\Taskly-Dialogs.wxs'
   $distDir = Join-Path $packagingRoot 'dist'
   New-Item -ItemType Directory -Force -Path $distDir | Out-Null
   $msiOut = Join-Path $distDir 'Taskly.msi'
   $launcherDir = Join-Path $packagingRoot 'installer\launchers'
-  & wix build $wxs `
+  & wix build $wxsMain $wxsUiFork $wxsDialogs `
     -ext WixToolset.UI.wixext `
     -bindpath "stage=$stageRoot" `
     -bindpath "launcher=$launcherDir" `

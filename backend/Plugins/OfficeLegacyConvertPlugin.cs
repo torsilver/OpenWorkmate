@@ -26,7 +26,7 @@ public sealed class OfficeLegacyConvertPlugin
         [Description("超时毫秒数，默认 90000")] int timeoutMs = DefaultTimeoutMs,
         CancellationToken cancellationToken = default)
     {
-#if !NET10_0_WINDOWS
+#if !WINDOWS
         return "[错误] 当前 Taskly 后台未以 net10.0-windows 构建，未启用 Microsoft Office COM 转换。请使用 Windows 专用发行版后台。";
 #else
         if (!OperatingSystem.IsWindows())

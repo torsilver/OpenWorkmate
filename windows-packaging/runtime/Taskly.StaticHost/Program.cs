@@ -15,7 +15,7 @@ var chromeRoot = builder.Configuration["StaticHost:ChromeRoot"] ?? "";
 
 if (string.IsNullOrWhiteSpace(officeRoot) || !Directory.Exists(officeRoot))
 {
-    Console.Error.WriteLine("StaticHost:OfficeRoot 未设置或目录不存在。");
+    TryWriteStaticHostDiag("StaticHost:OfficeRoot 未设置或目录不存在。");
     return 1;
 }
 
@@ -38,6 +38,24 @@ builder.WebHost.ConfigureKestrel(options =>
         }
     });
 });
+
+static void TryWriteStaticHostDiag(string message)
+{
+    try
+    {
+        var dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Taskly", "logs");
+        Directory.CreateDirectory(dir);
+        File.AppendAllText(
+            Path.Combine(dir, "static-host.txt"),
+            $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
+    }
+    catch
+    {
+        /* ignore */
+    }
+}
 
 static X509Certificate2 GetDevCertificate()
 {
@@ -81,9 +99,12 @@ if (!string.IsNullOrWhiteSpace(chromeRoot) && Directory.Exists(chromeRoot))
     });
 }
 
-Console.WriteLine($"Taskly.StaticHost HTTPS https://localhost:{port}/ （Office 根：{officeRoot}）");
-if (Directory.Exists(wpsRoot)) Console.WriteLine($"  WPS 静态：/wps → {wpsRoot}");
-if (Directory.Exists(chromeRoot)) Console.WriteLine($"  Chrome 更新：/taskly-chrome → {chromeRoot}");
+var bootMsg =
+    $"Taskly.StaticHost HTTPS https://localhost:{port}/ （Office 根：{officeRoot}）";
+if (Directory.Exists(wpsRoot)) bootMsg += $"{Environment.NewLine}  WPS 静态：/wps → {wpsRoot}";
+if (Directory.Exists(chromeRoot)) bootMsg += $"{Environment.NewLine}  Chrome 更新：/taskly-chrome → {chromeRoot}";
+TryWriteStaticHostDiag(bootMsg);
+app.Logger.LogInformation("{Boot}", bootMsg);
 
 app.Run();
 return 0;

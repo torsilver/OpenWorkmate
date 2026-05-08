@@ -30,6 +30,8 @@ internal static class LocalListenUrlConfigurer
         var chosen = LocalListenPortSelector.TryFindFirstAvailablePort(IPAddress.Loopback, basePort, tryCount);
         if (chosen < 0)
         {
+            StartupTrace.Write(
+                $"LocalListenUrlConfigurer: no free port in {basePort}..{basePort + tryCount - 1} on loopback; exiting.");
             Log.Fatal(
                 "无法在 {Start}..{End} 内绑定本机监听端口。请关闭占用进程、在 appsettings 中调整 WebSocket:Port / PortFallbackCount，或通过环境变量 ASPNETCORE_URLS 指定监听地址。",
                 basePort, basePort + tryCount - 1);

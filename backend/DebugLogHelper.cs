@@ -4,14 +4,19 @@ using System.Text.RegularExpressions;
 
 namespace OfficeCopilot.Server;
 
-/// <summary>本机调试：解析 Serilog 滚动日志路径并安全读取尾部（仅允许 office-copilot-*.txt）。</summary>
+/// <summary>本机调试：解析 Serilog 滚动日志路径并安全读取尾部（仅允许 office-copilot-*.txt）。目录与 <c>Program.cs</c> 中 Serilog File sink 一致。</summary>
 public static class DebugLogHelper
 {
     private static readonly Regex SafeLogName = new(
         @"^office-copilot-\d{8}(_\d+)?\.txt$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    public static string LogsDirectory => Path.Combine(Directory.GetCurrentDirectory(), "logs");
+    /// <summary>%LocalAppData%\OfficeCopilot\logs（与当前工作目录无关，避免 MSI/快捷方式下 cwd 落在 Program Files 时读不到日志）。</summary>
+    public static string LogsDirectory =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OfficeCopilot",
+            "logs");
 
     public static bool IsDebugLogLoopback(HttpContext ctx)
     {

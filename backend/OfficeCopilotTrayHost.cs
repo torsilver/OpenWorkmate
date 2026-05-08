@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Threading;
 using OfficeCopilot.Server.Services;
 using Microsoft.Extensions.Hosting;
 
@@ -11,9 +12,35 @@ internal static class OfficeCopilotTrayHost
 {
     public static void Run(WebApplication app, string logViewerUrl)
     {
-        ApplicationConfiguration.Initialize();
-        using var ctx = new TrayAppContext(app, logViewerUrl);
-        Application.Run(ctx);
+        // 主线程多为 MTA，无法改为 STA。WinForms/NotifyIcon 必须在 STA 上：单独起一条未启动的线程并先 SetApartmentState(STA)（须在 Start 之前）。
+        Exception? uiThreadError = null;
+        using var uiStarted = new ManualResetEventSlim(false);
+        var uiThread = new Thread(() =>
+        {
+            try
+            {
+                ApplicationConfiguration.Initialize();
+                using var ctx = new TrayAppContext(app, logViewerUrl);
+                uiStarted.Set();
+                Application.Run(ctx);
+            }
+            catch (Exception ex)
+            {
+                uiThreadError = ex;
+                uiStarted.Set();
+            }
+        })
+        {
+            IsBackground = false,
+            Name = "OfficeCopilotTraySta"
+        };
+        uiThread.SetApartmentState(ApartmentState.STA);
+        uiThread.Start();
+        uiStarted.Wait();
+        if (uiThreadError != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(uiThreadError).Throw();
+
+        uiThread.Join();
     }
 
     private sealed class TrayAppContext : ApplicationContext
@@ -175,13 +202,23 @@ internal static class OfficeCopilotTrayHost
 
         private void ExitFromMenu()
         {
+            const string title = "Office Copilot";
+            var confirm = MessageBox.Show(
+                "确定要退出后台吗？\n退出后将停止 AI 服务。",
+                title,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+                return;
+
             try
             {
                 _app.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
             }
             catch (Exception ex)
             {
-                MessageBox.Show("停止服务时出错：\n" + ex.Message, "Office Copilot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("停止服务时出错：\n" + ex.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 ExitThreadCore();
             }
         }

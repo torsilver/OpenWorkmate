@@ -33,11 +33,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows-packaging\scripts\
 | `-BuildInstaller` | 默认 **`$true`**（生成 **`windows-packaging/dist/Taskly.msi`**）；**`-BuildInstaller:$false`** 跳过 WiX、只打 stage |
 | `-StaticHostPort 3000` | 安装版 Office manifest 与 Chrome 更新 URL 中的 HTTPS 端口（默认 3000） |
 
-输出目录：**`windows-packaging/stage/`**（中间产物：后端、Gateway、`Taskly.StaticHost`、Office/WPS 静态文件、`taskly-chrome` 等）。
+输出目录：**`windows-packaging/stage/`**（中间产物：后端、`Taskly.StaticHost`、Office/WPS 静态文件、`taskly-chrome` 等；不含 `ai-gateway`）。
 
 **MSI**：默认安装到 **`Program Files\Taskly`**（`perMachine`），通常需要管理员权限。
 
-- **Start Taskly**：以**隐藏窗口**启动 Gateway、HTTPS 静态站；AI 后台使用 **`--tray` 托盘模式**（不再弹出多个黑色控制台窗口；若仍偶现闪窗，与 .NET 控制台子进程有关，可再迭代）。
+- 安装向导在「选择目标目录」与「准备安装」之间增加 **「客户端自动配置」** 页，可勾选 Chrome / Office / WPS；安装结束（若勾选）会异步执行 `Install-TasklyClients.ps1` 尝试注册策略与旁加载（WPS 仅写入指引文件，全自动程度有限）。
+- **Start Taskly**：以**隐藏窗口**启动 HTTPS 静态站；AI 后台使用 **`--tray` 托盘模式**（不再弹出多个黑色控制台窗口；若仍偶现闪窗，与 .NET 控制台子进程有关，可再迭代）。
 - **Taskly client setup (Office Chrome WPS)**：打开本机说明页 `Taskly-ClientSetup.html`，按步骤完成 Office 旁加载、Chrome 策略脚本、WPS 指引。**MSI 无法在无交互下自动完成浏览器/Office 商店式安装**，需各端一次性配置。
 - **Install-ChromePolicy.ps1**（打包含 CRX 时生成）：在安装目录运行一次，写入 Chrome `ExtensionInstallForcelist`（需先启动 Taskly 以便拉取 `updates.xml`）。
 

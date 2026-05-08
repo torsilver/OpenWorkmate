@@ -1,0 +1,27 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <UI>
+      <Dialog Id="TasklyClientDlg" Width="370" Height="270" Title="Taskly 客户端" NoMinimize="yes">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="InstallDirDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}客户端自动配置" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="36" Transparent="yes" NoPrefix="yes" Text="勾选在安装结束时尝试自动完成的步骤。Chrome/Office 作用于当前 Windows 用户；未检测到对应软件时会跳过并记入日志。" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="373" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="373" Height="0" />
+
+        <Control Id="ChromeCb" Type="CheckBox" X="20" Y="78" Width="330" Height="17" Property="TASKLY_AUTO_CHROME" Text="Chrome：写入 ExtensionInstallForcelist（当前用户）" CheckBoxValue="1" />
+        <Control Id="OfficeCb" Type="CheckBox" X="20" Y="102" Width="330" Height="17" Property="TASKLY_AUTO_OFFICE" Text="Office：注册 Web 加载项旁加载（当前用户）" CheckBoxValue="1" />
+        <Control Id="WpsCb" Type="CheckBox" X="20" Y="126" Width="330" Height="17" Property="TASKLY_AUTO_WPS" Text="WPS：写入加载项路径指引（全自动程度有限）" CheckBoxValue="1" />
+      </Dialog>
+    </UI>
+  </Fragment>
+</Wix>

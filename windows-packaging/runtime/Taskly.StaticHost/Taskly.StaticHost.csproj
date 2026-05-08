@@ -6,7 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Taskly.StaticHost</RootNamespace>
     <AssemblyName>Taskly.StaticHost</AssemblyName>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe：安装目录启动时不弹出控制台黑框（仍可通过 aspnetcore 日志诊断） -->
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
 
 </Project>

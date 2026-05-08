@@ -698,7 +698,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task GetDebugLogTail_WithSyntheticFile_ReturnsLines()
     {
-        var logsDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+        var logsDir = DebugLogHelper.LogsDirectory;
         Directory.CreateDirectory(logsDir);
         const string name = "office-copilot-20990101.txt";
         var path = Path.Combine(logsDir, name);

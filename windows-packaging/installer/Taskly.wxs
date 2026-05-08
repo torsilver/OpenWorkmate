@@ -17,17 +17,17 @@
       UpgradeCode="{B1A37021-8E4C-4F2D-9B81-0E2F3C4D5E6F}"
       Scope="perMachine"
       Codepage="936">
-    <SummaryInformation Description="Taskly local AI stack (backend, Gateway, HTTPS static host, Office/WPS/Chrome assets)" />
+    <SummaryInformation Description="Taskly local AI stack (backend, HTTPS static host, Office/WPS/Chrome assets)" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of Taskly is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
-    <!-- WixUI_InstallDir: welcome, license, destination folder, progress, exit -->
-    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <!-- Fork: WixUI_Taskly_InstallDir.wxs（在目标目录与「准备安装」之间插入客户端勾选页） -->
+    <ui:WixUI Id="Taskly_WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
 
     <!-- Exit dialog: optional checkbox to start services -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="启动 Taskly（AI 后台、Gateway、HTTPS 静态站）" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="启动 Taskly（AI 后台、HTTPS 静态站）" />
 
     <!-- Type 50: Property = path to exe; SetProperty expands [System64Folder] (plain Property Value cannot). -->
     <SetProperty
@@ -35,6 +35,13 @@
         Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
         After="LaunchConditions"
         Sequence="both" />
+    <CustomAction
+        Id="InstallTasklyClientsAfterFinish"
+        Property="TasklyPowershellExe"
+        ExeCommand="-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Install-TasklyClients.ps1&quot; -InstallRoot &quot;[INSTALLFOLDER]&quot; -Chrome &quot;[TASKLY_AUTO_CHROME]&quot; -Office &quot;[TASKLY_AUTO_OFFICE]&quot; -Wps &quot;[TASKLY_AUTO_WPS]&quot;"
+        Impersonate="yes"
+        Execute="immediate"
+        Return="asyncNoWait" />
     <CustomAction
         Id="LaunchTasklyAfterInstall"
         Property="TasklyPowershellExe"
@@ -48,9 +55,16 @@
           Dialog="ExitDialog"
           Control="Finish"
           Event="DoAction"
+          Value="InstallTasklyClientsAfterFinish"
+          Condition='TASKLY_AUTO_CHROME="1" OR TASKLY_AUTO_OFFICE="1" OR TASKLY_AUTO_WPS="1"'
+          Order="1" />
+      <Publish
+          Dialog="ExitDialog"
+          Control="Finish"
+          Event="DoAction"
           Value="LaunchTasklyAfterInstall"
           Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1"
-          Order="1" />
+          Order="2" />
     </UI>
 
     <Feature Id="Main" Title="Taskly" Level="1">

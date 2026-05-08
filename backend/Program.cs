@@ -25,6 +25,19 @@ using Serilog;
 
 try
 {
+    StartupTrace.Write($"enter pid={Environment.ProcessId} args={string.Join(' ', args)}");
+
+    var logDir = DebugLogHelper.LogsDirectory;
+    try
+    {
+        Directory.CreateDirectory(logDir);
+        StartupTrace.Write($"log dir ok: {logDir}");
+    }
+    catch (Exception ex)
+    {
+        StartupTrace.Write($"log dir create failed: {ex.Message}");
+    }
+
     var allowSecondInstance =
         args.Any(a => string.Equals(a, "--allow-second-instance", StringComparison.OrdinalIgnoreCase));
     var useTray = args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
@@ -39,6 +52,7 @@ try
     {
         if (!OfficeCopilotSingleInstance.TryAcquire())
         {
+            StartupTrace.Write("single-instance: mutex not acquired, exiting (another instance may be running)");
             System.Windows.Forms.MessageBox.Show(
                 "已有 Office Copilot 后台实例在运行。",
                 "Office Copilot",
@@ -48,19 +62,22 @@ try
         }
     }
 
-    if (useTray && OperatingSystem.IsWindows())
-        Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
 #endif
 
+    // 托盘/WinForms 需 STA，但主入口线程常为 MTA，不可对当前线程 SetApartmentState；由 OfficeCopilotTrayHost 在专用 STA 线程上跑消息循环。
+
     var builder = WebApplication.CreateBuilder(hostArgs);
-    LocalListenUrlConfigurer.Apply(builder);
+
     builder.Host.UseSerilog((ctx, services, lc) =>
     {
         lc.MinimumLevel.Debug()
             .Enrich.FromLogContext()
             .WriteTo.Console()
-            .WriteTo.File("logs/office-copilot-.txt", rollingInterval: RollingInterval.Day);
+            .WriteTo.File(Path.Combine(logDir, "office-copilot-.txt"), rollingInterval: RollingInterval.Day);
     });
+
+    LocalListenUrlConfigurer.Apply(builder);
+    StartupTrace.Write("LocalListenUrlConfigurer.Apply OK");
 
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("telemetry", client => client.Timeout = TimeSpan.FromSeconds(12));
@@ -214,6 +231,10 @@ try
     builder.Services.AddHostedService<ScheduledTaskRunnerService>();
 
     var app = builder.Build();
+
+#if WINDOWS
+    TasklyPackagedStaticHostShutdown.Register(app);
+#endif
 
     {
         var ws0 = app.Configuration.GetSection("WebSocket");
@@ -1345,7 +1366,15 @@ else
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "Application terminated unexpectedly");
+    StartupTrace.Write($"fatal: {ex.GetType().Name}: {ex.Message}");
+    try
+    {
+        Log.Fatal(ex, "Application terminated unexpectedly");
+    }
+    catch
+    {
+        /* Serilog 可能尚未就绪 */
+    }
 }
 finally
 {
