@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 /// <summary>落盘与 AI 出站共用的传输上限（<c>DataRoot/telemetry-relay-policy.json</c> 内 <c>transmission</c>，与缺省合并后由 GET /policy/transmission 等返回）。观测持久化在 Seq。</summary>
 public sealed class TelemetryTransmissionPolicyFile

@@ -2,15 +2,15 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>根据对话意图生成并保存用户技能（SKILL.md），与设置页技能列表同源。</summary>
-[CopilotPluginId("SkillAuthor")]
+[OpenWorkmatePluginId("SkillAuthor")]
 public sealed class SkillAuthorPlugin
 {
     private readonly SkillService _skillService;
@@ -134,7 +134,7 @@ public sealed class SkillAuthorPlugin
     private static string BuildSkillGenerationSystemPrompt()
     {
         return """
-你是 Office Copilot 用户技能（Agent Skill）撰写助手。根据用户给出的「目标」与可选「上下文」，输出一份 **完整** 的 SKILL.md 文件内容。
+你是 Open Workmate 用户技能（Agent Skill）撰写助手。根据用户给出的「目标」与可选「上下文」，输出一份 **完整** 的 SKILL.md 文件内容。
 
 ## 输出格式（必须严格遵守）
 1. 第一行起为 YAML frontmatter：以单独一行的 --- 开始，接着若干行键值，再以单独一行的 --- 结束。

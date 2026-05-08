@@ -5,20 +5,20 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Text;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Plugins;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Memory;
-using OfficeCopilot.Server.Services.Plan;
-using OfficeCopilot.Server.Services.ScheduledTask;
-using OfficeCopilot.Server.Services.CrossAgentTask;
-using OfficeCopilot.Server.Services.Stt;
-using OfficeCopilot.Server.Services.Ocr;
-using OfficeCopilot.Server.Services.Telemetry;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Mcp;
-using OfficeCopilot.Server.Security;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Plugins;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Memory;
+using OpenWorkmate.Server.Services.Plan;
+using OpenWorkmate.Server.Services.ScheduledTask;
+using OpenWorkmate.Server.Services.CrossAgentTask;
+using OpenWorkmate.Server.Services.Stt;
+using OpenWorkmate.Server.Services.Ocr;
+using OpenWorkmate.Server.Services.Telemetry;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Mcp;
+using OpenWorkmate.Server.Security;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -50,12 +50,12 @@ try
 #if WINDOWS
     if (OperatingSystem.IsWindows() && !allowSecondInstance)
     {
-        if (!OfficeCopilotSingleInstance.TryAcquire())
+        if (!OpenWorkmateSingleInstance.TryAcquire())
         {
             StartupTrace.Write("single-instance: mutex not acquired, exiting (another instance may be running)");
             System.Windows.Forms.MessageBox.Show(
-                "已有 Office Copilot 后台实例在运行。",
-                "Office Copilot",
+                "已有 Open Workmate 后台实例在运行。",
+                "Open Workmate",
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
             return;
@@ -64,7 +64,7 @@ try
 
 #endif
 
-    // 托盘/WinForms 需 STA，但主入口线程常为 MTA，不可对当前线程 SetApartmentState；由 OfficeCopilotTrayHost 在专用 STA 线程上跑消息循环。
+    // 托盘/WinForms 需 STA，但主入口线程常为 MTA，不可对当前线程 SetApartmentState；由 OpenWorkmateTrayHost 在专用 STA 线程上跑消息循环。
 
     var builder = WebApplication.CreateBuilder(hostArgs);
 
@@ -81,30 +81,30 @@ try
 
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("telemetry", client => client.Timeout = TimeSpan.FromSeconds(12));
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayQueue>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(sp =>
-        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayQueue>());
-    builder.Services.AddHostedService<OfficeCopilot.Server.Services.Telemetry.TelemetryRelayDispatchService>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(sp =>
-        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.TelemetryRelayQueue>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.ITelemetryRelayQueue>(sp =>
+        sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.TelemetryRelayQueue>());
+    builder.Services.AddHostedService<OpenWorkmate.Server.Services.Telemetry.TelemetryRelayDispatchService>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(sp =>
+        sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
     builder.Services.AddHostedService(sp =>
-        sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
+        sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());
     builder.Services.AddSingleton<ConfigService>();
     builder.Services.AddSingleton<SkillService>();
     builder.Services.AddSingleton<ClawhubScriptRunner>();
     builder.Services.AddSingleton<McpClientManager>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline, OfficeCopilot.Server.Services.ToolInvocation.SecurityPipeline>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier, OfficeCopilot.Server.Services.ToolInvocation.ToolStatusNotifier>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ToolInvocation.ToolInvocationPipelineServices>(sp =>
-        new OfficeCopilot.Server.Services.ToolInvocation.ToolInvocationPipelineServices
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.ToolInvocation.ISecurityPipeline, OpenWorkmate.Server.Services.ToolInvocation.SecurityPipeline>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.ToolInvocation.IToolStatusNotifier, OpenWorkmate.Server.Services.ToolInvocation.ToolStatusNotifier>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.ToolInvocation.ToolInvocationPipelineServices>(sp =>
+        new OpenWorkmate.Server.Services.ToolInvocation.ToolInvocationPipelineServices
         {
             ConfigService = sp.GetRequiredService<ConfigService>(),
-            SecurityPipeline = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.ISecurityPipeline>(),
-            ToolStatus = sp.GetRequiredService<OfficeCopilot.Server.Services.ToolInvocation.IToolStatusNotifier>(),
+            SecurityPipeline = sp.GetRequiredService<OpenWorkmate.Server.Services.ToolInvocation.ISecurityPipeline>(),
+            ToolStatus = sp.GetRequiredService<OpenWorkmate.Server.Services.ToolInvocation.IToolStatusNotifier>(),
             SessionManager = sp.GetRequiredService<SessionManager>(),
-            TelemetryRelay = sp.GetService<OfficeCopilot.Server.Services.Telemetry.ITelemetryRelayQueue>(),
-            TelemetryTransmissionPolicy = sp.GetRequiredService<OfficeCopilot.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(),
+            TelemetryRelay = sp.GetService<OpenWorkmate.Server.Services.Telemetry.ITelemetryRelayQueue>(),
+            TelemetryTransmissionPolicy = sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(),
             Logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("DynamicTooling")
         });
     builder.Services.AddSingleton<IChatRuntimeAccessor, ChatRuntimeAccessor>();
@@ -121,7 +121,7 @@ try
                 path = "rag.db";
             path = Environment.ExpandEnvironmentVariables(path);
             if (!Path.IsPathRooted(path))
-                path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OfficeCopilot", path);
+                path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenWorkmate", path);
             return new SqliteVectorStore("Data Source=" + path);
         }
         return new InMemoryVectorStore();
@@ -142,22 +142,22 @@ try
     builder.Services.AddSingleton<ITranscribeService, TranscribeService>();
     builder.Services.AddSingleton<IOcrService, OcrService>();
     builder.Services.AddSingleton<StreamCancelService>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.SubtaskTimelineBlockCoordinator>();
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.Chat.WorkflowHitlBridge>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Chat.SubtaskTimelineBlockCoordinator>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.Chat.WorkflowHitlBridge>();
     builder.Services.AddSingleton<ContextManager>();
     builder.Services.AddSingleton<AgentDebugStatsService>(sp => new AgentDebugStatsService(
         sp.GetRequiredService<ILogger<AgentDebugStatsService>>(),
         sp.GetRequiredService<IHostApplicationLifetime>()));
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry>(sp =>
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.ModelProfiles.ModelProfileRegistry>(sp =>
     {
-        var reg = new OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry(
-            sp.GetService<ILogger<OfficeCopilot.Server.Services.ModelProfiles.ModelProfileRegistry>>());
+        var reg = new OpenWorkmate.Server.Services.ModelProfiles.ModelProfileRegistry(
+            sp.GetService<ILogger<OpenWorkmate.Server.Services.ModelProfiles.ModelProfileRegistry>>());
         reg.Reload();
         return reg;
     });
-    builder.Services.AddSingleton<OfficeCopilot.Server.Services.ModelAdapters.IChatClientPipelineFactory,
-        OfficeCopilot.Server.Services.ModelAdapters.DefaultChatClientPipelineFactory>();
+    builder.Services.AddSingleton<OpenWorkmate.Server.Services.ModelAdapters.IChatClientPipelineFactory,
+        OpenWorkmate.Server.Services.ModelAdapters.DefaultChatClientPipelineFactory>();
     builder.Services.AddSingleton<ChatService>();
     builder.Services.AddSingleton<IPlanStore>(sp =>
     {
@@ -166,7 +166,7 @@ try
         if (string.IsNullOrEmpty(dir))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            dir = Path.Combine(appData, "OfficeCopilot", "Plans");
+            dir = Path.Combine(appData, "OpenWorkmate", "Plans");
         }
         else
         {
@@ -181,7 +181,7 @@ try
     builder.Services.AddSingleton<ICrossAgentTaskStore>(sp =>
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(appData, "OfficeCopilot");
+        var dir = Path.Combine(appData, "OpenWorkmate");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "CrossAgentTasks.db");
         return new SqliteCrossAgentTaskStore("Data Source=" + path);
@@ -193,7 +193,7 @@ try
         if (string.IsNullOrEmpty(dir))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            dir = Path.Combine(appData, "OfficeCopilot", "ScheduledTasks");
+            dir = Path.Combine(appData, "OpenWorkmate", "ScheduledTasks");
         }
         else
         {
@@ -207,13 +207,13 @@ try
     {
         var cfg = sp.GetRequiredService<IConfiguration>();
         var appCfg = sp.GetRequiredService<ConfigService>().Current;
-        var dir = (cfg["OfficeCopilot:ChatSessionsDirectory"] ?? "").Trim();
+        var dir = (cfg["OpenWorkmate:ChatSessionsDirectory"] ?? "").Trim();
         if (string.IsNullOrEmpty(dir))
             dir = (appCfg.ChatSessionsDirectory ?? "").Trim();
         if (string.IsNullOrEmpty(dir))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            dir = Path.Combine(appData, "OfficeCopilot", "ChatSessions");
+            dir = Path.Combine(appData, "OpenWorkmate", "ChatSessions");
         }
         else
         {
@@ -233,7 +233,7 @@ try
     var app = builder.Build();
 
 #if WINDOWS
-    TasklyPackagedStaticHostShutdown.Register(app);
+    OpenWorkmatePackagedStaticHostShutdown.Register(app);
 #endif
 
     {
@@ -341,7 +341,7 @@ app.Map(wsPath, async (HttpContext context, SessionManager sessions, ChatService
         var userOptionsManager = app.Services.GetRequiredService<UserOptionsManager>();
         var streamCancelService = app.Services.GetRequiredService<StreamCancelService>();
         var attachmentCache = app.Services.GetRequiredService<AttachmentCacheService>();
-        var timelineBlockCoordinator = app.Services.GetRequiredService<OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator>();
+        var timelineBlockCoordinator = app.Services.GetRequiredService<OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator>();
         await HandleSessionAsync(ws, sessionId, sessions, chatService, rpcManager, hitlManager, userOptionsManager, streamCancelService, attachmentCache, timelineBlockCoordinator, app.Logger);
     }
     finally
@@ -968,7 +968,7 @@ app.MapGet("/api/memory", async (string? sessionId, string? scope, string? agent
 {
     // 列表不依赖 Embedding，未配置时也可返回已存在的记忆
     var filterSessionId = (scope ?? "").Trim().ToLowerInvariant() == "shared"
-        ? OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId
+        ? OpenWorkmate.Server.Services.Memory.MemoryScopes.SharedSessionId
         : (scope == "all" ? null : sessionId);
     var agentNameFilter = string.IsNullOrWhiteSpace(agentName) ? null : agentName.Trim();
     var list = await memory.ListAsync(filterSessionId, Math.Max(0, skip), Math.Clamp(take, 1, 100), agentNameFilter).ConfigureAwait(false);
@@ -1005,8 +1005,8 @@ app.MapPut("/api/memory/{id}", async (string id, HttpContext ctx, IMemoryStoreSe
     var sessionId = existing?.SessionId;
     var isShared = body.ScopeShared.HasValue
         ? body.ScopeShared.Value
-        : string.Equals(sessionId, OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal);
-    if (body.ScopeShared == false && string.Equals(sessionId, OfficeCopilot.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal))
+        : string.Equals(sessionId, OpenWorkmate.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal);
+    if (body.ScopeShared == false && string.Equals(sessionId, OpenWorkmate.Server.Services.Memory.MemoryScopes.SharedSessionId, StringComparison.Ordinal))
         sessionId = null;
     var metadata = string.IsNullOrWhiteSpace(body.Tags) ? null : new Dictionary<string, string> { ["tags"] = body.Tags };
     await memory.SaveAsync(id, body.Text.Trim(), sessionId, metadata, isShared).ConfigureAwait(false);
@@ -1098,7 +1098,7 @@ static string GetAccurateDataDirectory(ConfigService configService)
     if (string.IsNullOrEmpty(dir))
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        dir = Path.Combine(appData, "OfficeCopilot", "AccurateData");
+        dir = Path.Combine(appData, "OpenWorkmate", "AccurateData");
     }
     else
     {
@@ -1328,7 +1328,7 @@ if (bindUnsafeMsg != null)
     Environment.Exit(1);
 }
 
-app.Logger.LogInformation("Office Copilot Server starting on {Urls}", app.Urls);
+app.Logger.LogInformation("Open Workmate Server starting on {Urls}", app.Urls);
 try
 {
     var cfgSvc = app.Services.GetRequiredService<ConfigService>();
@@ -1358,7 +1358,7 @@ catch
 var logViewerUrl = $"http://127.0.0.1:{logPort}/debug/logs.html";
 #if WINDOWS
 if (useTray && OperatingSystem.IsWindows())
-    OfficeCopilotTrayHost.Run(app, logViewerUrl);
+    OpenWorkmateTrayHost.Run(app, logViewerUrl);
 else
 #endif
     app.Run();
@@ -1383,7 +1383,7 @@ finally
 
 static async Task HandleSessionAsync(
     WebSocket ws, string sessionId, SessionManager sessions,
-    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, RpcManager rpcManager, HitlManager hitlManager, UserOptionsManager userOptionsManager, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
 {
     var buffer = new byte[4096];
 
@@ -1513,7 +1513,7 @@ static async Task HandleSessionAsync(
 
 static async Task HandleChatStreamAsync(
     string sessionId, WsMessage incoming, SessionManager sessions,
-    ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
+    ChatService chatService, StreamCancelService streamCancelService, AttachmentCacheService attachmentCache, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator timelineBlockCoordinator, Microsoft.Extensions.Logging.ILogger logger)
 {
     var streamEndedByError = false;
     var wsReasoningChunkFrames = 0;
@@ -1528,7 +1528,7 @@ static async Task HandleChatStreamAsync(
         WsMessage payload = new() { Type = frameType, Content = content };
         if (frameType == "reasoning_chunk")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindThink);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindThink);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
             wsReasoningChunkFrames++;
@@ -1547,7 +1547,7 @@ static async Task HandleChatStreamAsync(
         }
         else if (frameType == "stream_chunk")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindAnswer);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindAnswer);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
             wsStreamChunkFrames++;
@@ -1564,25 +1564,25 @@ static async Task HandleChatStreamAsync(
         }
         else if (frameType == "stream_usage")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindUsage);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindUsage);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
         }
         else if (frameType == "stream_finish")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindFinish);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindFinish);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
         }
         else if (frameType == "stream_role")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindRole);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindRole);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
         }
         else if (frameType == "stream_meta")
         {
-            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OfficeCopilot.Server.Services.Chat.TimelineBlockStreamCoordinator.KindMeta);
+            var (bs, bk) = timelineBlockCoordinator.EnsureChunkBlock(sessionId, OpenWorkmate.Server.Services.Chat.TimelineBlockStreamCoordinator.KindMeta);
             payload.BlockSeq = bs;
             payload.BlockKind = bk;
         }

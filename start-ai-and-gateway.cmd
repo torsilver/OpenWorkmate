@@ -5,7 +5,7 @@ set "ROOT=%~dp0"
 cd /d "%ROOT%"
 
 echo.
-echo [Taskly] 启动 AI 后台 (http://localhost:8765)、AI Gateway (http://127.0.0.1:8777)、Office 加载项 HTTPS (https://localhost:3000)
+echo [OpenWorkmate] 启动 AI 后台 (http://localhost:8765)、AI Gateway (http://127.0.0.1:8777)、Office 加载项 HTTPS (https://localhost:3000)
 echo Gateway：策略 GET /api/policy/aggregated、LLM 转发 POST /llm/v1/chat/completions、观测落盘 data/sessions/*.jsonl
 echo AI 后台（调试）：目标框架 net10.0（不含 net10.0-windows 专用代码路径）。
 echo Office：taskpane/manifest 由 office-addin\Start-OfficeAddinDev.ps1 托管（需 Node.js/npm）。
@@ -28,17 +28,17 @@ if not errorlevel 1 (
   echo.
 )
 
-start "Taskly AI Backend :8765" cmd /k cd /d "%ROOT%backend" ^&^& dotnet run --framework net10.0 --launch-profile OfficeCopilot
-start "Taskly AI Gateway :8777" cmd /k cd /d "%ROOT%ai-gateway" ^&^& dotnet run --launch-profile http
+start "OpenWorkmate AI Backend :8765" cmd /k cd /d "%ROOT%backend" ^&^& dotnet run --framework net10.0 --launch-profile OpenWorkmate
+start "OpenWorkmate AI Gateway :8777" cmd /k cd /d "%ROOT%ai-gateway" ^&^& dotnet run --launch-profile http
 
-start "Taskly Office Add-in HTTPS :3000" powershell.exe -NoExit -ExecutionPolicy Bypass -File "%ROOT%office-addin\Start-OfficeAddinDev.ps1"
+start "OpenWorkmate Office Add-in HTTPS :3000" powershell.exe -NoExit -ExecutionPolicy Bypass -File "%ROOT%office-addin\Start-OfficeAddinDev.ps1"
 
 REM ---------------------------------------------------------------------------
 REM WPS 加载项调试（默认关闭）：需在 wps-addin-new 目录执行，依赖本机已安装 WPS 与 npm。
 REM 启用：去掉下一行开头的 REM（会多开一个控制台跑 npx wpsjs debug）。
 REM 文档：docs\WPS插件调试指南.md
 REM ---------------------------------------------------------------------------
-REM start "Taskly WPS Add-in (wpsjs debug)" cmd /k cd /d "%ROOT%wps-addin-new" ^&^& npx wpsjs debug
+REM start "OpenWorkmate WPS Add-in (wpsjs debug)" cmd /k cd /d "%ROOT%wps-addin-new" ^&^& npx wpsjs debug
 
 echo.
 echo 已打开：AI 后台、AI Gateway、Office 加载项 HTTPS 共三个控制台窗口（WPS 行默认注释）。

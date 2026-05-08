@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Subagent;
+namespace OpenWorkmate.Server.Services.Subagent;
 
 /// <summary>内置子代理预设：与通用 <c>run_subtask</c> 共用执行管线，通过 system 与工具白名单收窄职责。</summary>
 public enum SubagentBuiltinPreset

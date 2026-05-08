@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 public sealed class TelemetryRelayEvent
 {

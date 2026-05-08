@@ -1,8 +1,8 @@
 using System.Text.Json;
 
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 public static class TelemetryRelaySessionExtensions
 {

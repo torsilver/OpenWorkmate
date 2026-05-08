@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>限制「测试连接」类接口的服务端出站目标，降低 SSRF 风险。</summary>
 public static class TestEndpointSecurity

@@ -1,16 +1,16 @@
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.Plan;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.Plan;
+using OpenWorkmate.Server.Services.Telemetry;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>计划插件：生成计划、读取/更新计划、按步骤执行计划。</summary>
-[CopilotPluginId("Plan")]
+[OpenWorkmatePluginId("Plan")]
 public sealed class PlanPlugin
 {
     private readonly IPlanStore _store;

@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Services.ScheduledTask;
+using OpenWorkmate.Server.Services.ScheduledTask;
 using Xunit;
 
 namespace backend.Tests.Unit;

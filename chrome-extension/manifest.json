@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Office Copilot",
+  "name": "Open Workmate",
   "version": "0.1.0",
   "description": "AI-powered local office automation assistant",
   "minimum_chrome_version": "135",
@@ -27,7 +27,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Open Office Copilot"
+    "default_title": "Open Workmate"
   },
   "options_page": "options.html"
 }

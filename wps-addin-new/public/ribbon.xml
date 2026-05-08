@@ -2,7 +2,7 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="ribbon.OnAddinLoad">
   <ribbon startFromScratch="false">
     <tabs>
-      <tab id="tab_office_copilot" label="Office Copilot" getVisible="ribbon.OnGetVisible">
+      <tab id="tab_office_copilot" label="Open Workmate" getVisible="ribbon.OnGetVisible">
         <group id="grp_copilot" label="AI 助手">
           <button id="btn_open_taskpane" label="打开 Copilot" size="large" onAction="ribbon.OnAction" getVisible="ribbon.OnGetVisible" getEnabled="ribbon.OnGetEnabled" supertip="打开 AI 侧边栏，与后台对话并操作当前文档"/>
         </group>

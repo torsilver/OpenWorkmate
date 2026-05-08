@@ -1,16 +1,16 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 准确数据插件：以文件形式持久化与按 id 读取规范数据，供 AI 写入与精确检索。
-/// 目录由 ConfigService.AccurateDataDirectory 配置，为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。
+/// 目录由 ConfigService.AccurateDataDirectory 配置，为空时使用 %LocalAppData%/OpenWorkmate/AccurateData。
 /// </summary>
-[CopilotPluginId("AccurateData")]
+[OpenWorkmatePluginId("AccurateData")]
 public sealed class AccurateDataPlugin
 {
     private readonly ConfigService _configService;
@@ -28,7 +28,7 @@ public sealed class AccurateDataPlugin
         if (string.IsNullOrEmpty(dir))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            dir = Path.Combine(appData, "OfficeCopilot", "AccurateData");
+            dir = Path.Combine(appData, "OpenWorkmate", "AccurateData");
         }
         else
         {

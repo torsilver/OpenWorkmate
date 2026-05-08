@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 public class JsonRpcRequest
 {

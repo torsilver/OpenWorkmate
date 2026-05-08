@@ -2,8 +2,8 @@ using System.Reflection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Unit;

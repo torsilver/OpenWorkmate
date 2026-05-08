@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 短时缓存整页截图（PNG 字节），键为 screenshot:guid，避免把 base64 传入 AI 上下文。

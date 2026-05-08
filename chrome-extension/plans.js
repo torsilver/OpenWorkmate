@@ -2,7 +2,7 @@
   "use strict";
 
   let API_BASE = "http://127.0.0.1:8765";
-  let tasklyPlansApiReady = null;
+  let openWorkmatePlansApiReady = null;
   const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
   const STORAGE_EXECUTE_PLAN_ID = "copilot_execute_plan_id";
   const STORAGE_EXECUTE_PLAN_TITLE = "copilot_execute_plan_title";
@@ -43,7 +43,7 @@
   }
 
   /** 与侧栏 / 选项页一致：请求头携带本地服务密钥（user-config webSocketAuthToken）。 */
-  function tasklyFetch(url, init) {
+  function openWorkmateFetch(url, init) {
     init = init ? Object.assign({}, init) : {};
     return new Promise(function (resolve) {
       if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
@@ -53,7 +53,7 @@
       chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
         var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
         var headers = Object.assign({}, init.headers || {});
-        if (t) headers["X-OfficeCopilot-Token"] = t;
+        if (t) headers["X-OpenWorkmate-Token"] = t;
         init.headers = headers;
         resolve(fetch(url, init));
       });
@@ -138,7 +138,7 @@
     }
     showLoading(true);
     try {
-      const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+      const res = await openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || (res.status === 404 ? "未找到该计划" : res.statusText));
@@ -179,7 +179,7 @@
       if (!currentPlanId) return;
       const content = $contentEdit.value;
       try {
-        const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
+        const res = await openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })
@@ -274,55 +274,55 @@
     });
   }
 
-  function tasklyRefreshHljsLink() {
-    var link = document.getElementById("taskly-hljs-theme");
-    if (link && typeof TasklyTheme !== "undefined") {
-      link.href = TasklyTheme.getHljsStylesheetHref(document.documentElement.getAttribute("data-theme") || "dark");
+  function openWorkmateRefreshHljsLink() {
+    var link = document.getElementById("OpenWorkmate-hljs-theme");
+    if (link && typeof OpenWorkmateTheme !== "undefined") {
+      link.href = OpenWorkmateTheme.getHljsStylesheetHref(document.documentElement.getAttribute("data-theme") || "dark");
     }
   }
 
   window.addEventListener("storage", function (e) {
-    if (e.key !== "tasklyUiTheme") return;
-    if (typeof TasklyTheme !== "undefined") {
-      TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+    if (e.key !== "openWorkmateUiTheme") return;
+    if (typeof OpenWorkmateTheme !== "undefined") {
+      OpenWorkmateTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
     }
-    tasklyRefreshHljsLink();
+    openWorkmateRefreshHljsLink();
   });
 
-  tasklyRefreshHljsLink();
+  openWorkmateRefreshHljsLink();
 
-  function tasklyEnsurePlansApiBase() {
-    if (tasklyPlansApiReady) return tasklyPlansApiReady;
-    tasklyPlansApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+  function openWorkmateEnsurePlansApiBase() {
+    if (openWorkmatePlansApiReady) return openWorkmatePlansApiReady;
+    openWorkmatePlansApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(
       typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
     )
       .then(function (r) {
-        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+        API_BASE = OpenWorkmateLocalService.normalizeBase(r.baseUrl);
       })
       .catch(function (err) {
-        tasklyPlansApiReady = null;
+        openWorkmatePlansApiReady = null;
         throw err;
       });
-    return tasklyPlansApiReady;
+    return openWorkmatePlansApiReady;
   }
 
   const planId = getPlanIdFromUrl();
-  tasklyEnsurePlansApiBase()
+  openWorkmateEnsurePlansApiBase()
     .then(function () {
       return ensureLocalServiceTokenFromBootstrap(API_BASE).then(function () {
-        tasklyFetch(API_BASE + "/api/config")
+        openWorkmateFetch(API_BASE + "/api/config")
           .then(function (res) { return res.ok ? res.json() : null; })
           .then(function (j) {
-            if (!j || typeof TasklyTheme === "undefined") return;
+            if (!j || typeof OpenWorkmateTheme === "undefined") return;
             var id = j.uiThemeId || j.UiThemeId;
-            if (id) TasklyTheme.setTheme(id);
-            tasklyRefreshHljsLink();
+            if (id) OpenWorkmateTheme.setTheme(id);
+            openWorkmateRefreshHljsLink();
           })
           .catch(function () {});
         return loadPlan(planId);
       });
     })
     .catch(function (err) {
-      showError(err.message || "无法连接本机 Office Copilot 服务。");
+      showError(err.message || "无法连接本机 Open Workmate 服务。");
     });
 })();

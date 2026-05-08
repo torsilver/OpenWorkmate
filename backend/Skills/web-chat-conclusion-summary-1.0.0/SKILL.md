@@ -2,13 +2,13 @@
 name: web_chat_conclusion_summary
 title: 网页对话结论总结
 version: 1.1.0
-description: 用户在外站网页（免费版 ChatGPT/Claude/Gemini 等）与 AI 长聊后，用 Taskly 总结：须从浏览器当前标签页读取 DOM 文本（run_builtin_page_script：chat_page_tail_glance、get_visible_text 等）。检索：外站 总结 网页 AI 对话 读页面 当前标签页 摘录。
+description: 用户在外站网页（免费版 ChatGPT/Claude/Gemini 等）与 AI 长聊后，用 OpenWorkmate 总结：须从浏览器当前标签页读取 DOM 文本（run_builtin_page_script：chat_page_tail_glance、get_visible_text 等）。检索：外站 总结 网页 AI 对话 读页面 当前标签页 摘录。
 metadata: {"clawdbot":{"emoji":"📝","os":["linux","darwin","win32"]}}
 ---
 
-## Taskly（本仓库）— 场景说明
+## OpenWorkmate（本仓库）— 场景说明
 
-- **典型场景**：用户先在**别的网站**的 AI 对话框里聊了很久（常见为免费网页版），再在 **Taskly（Chrome 扩展侧栏）**里请你做**最终总结**。此时事实来源是 **Chrome 当前活动标签页里的页面内容**，**不是** Taskly 侧栏里你与用户新开的这几条消息（除非用户明确说「就总结我们这边刚聊的」）。
+- **典型场景**：用户先在**别的网站**的 AI 对话框里聊了很久（常见为免费网页版），再在 **OpenWorkmate（Chrome 扩展侧栏）**里请你做**最终总结**。此时事实来源是 **Chrome 当前活动标签页里的页面内容**，**不是** OpenWorkmate 侧栏里你与用户新开的这几条消息（除非用户明确说「就总结我们这边刚聊的」）。
 - **能力前提**：读页依赖 **`Browser`** 插件的 **`run_builtin_page_script`** / **`run_custom_javascript_in_page`**，由扩展在**当前活动标签页**注入执行。请确认会话为 **Chrome 端**且扩展已连接；执行读页脚本可能触发安全/HITL 确认，需引导用户**同意**后再继续。
 - **用户操作**：总结前应请用户**切换到外站 AI 对话所在标签**，并尽量滚到对话底部（懒加载消息常见）；必要时由你用脚本 **`scroll_to_bottom`** 再读。
 
@@ -27,7 +27,7 @@ metadata: {"clawdbot":{"emoji":"📝","os":["linux","darwin","win32"]}}
 ## 总结输出（在成功取到页面文本之后）
 
 - 先确认一句：总结依据为**当前标签页**在某某标题/URL 下抓取到的文本（可从 `get_page_outline` 或用户口述对齐）。
-- 按用户要的风格输出（极简 / 纪要 / 只要待办），结构见下；**不得**把 Taskly 推理流当外站结论。
+- 按用户要的风格输出（极简 / 纪要 / 只要待办），结构见下；**不得**把 OpenWorkmate 推理流当外站结论。
 - **极简**：一段话结论 + 3～5 条要点。
 - **纪要**：背景 / 结论 / 决策与理由 / **待办** / **风险与未决** / 可选「下一步」。
 - **可执行项**：分「立即可做 / 需用户确认 / 需外部信息」。
@@ -36,14 +36,14 @@ metadata: {"clawdbot":{"emoji":"📝","os":["linux","darwin","win32"]}}
 
 - **`save_memory`**：用户要求长期记住本总结且已配置 Embedding 时；失败须转述原因。
 - **`word_document_create`**：用户要可分享稿时落盘（`paragraphs` 为 **`string[]`**）；正式中文排版可叠加 **`word_cn_default_formal`**。
-- **`compact_conversation`**：仅用于 **Taskly 本会话**上下文过长、且用户已拿到总结后要换话题时；**不能**代替从网页读外站对话。
+- **`compact_conversation`**：仅用于 **OpenWorkmate 本会话**上下文过长、且用户已拿到总结后要换话题时；**不能**代替从网页读外站对话。
 - **`generate_user_skill`**：用户想把「我常要的读页+总结结构」固化时。
 
 ## 不要做的事
 
 - **不要**在未调用读页工具（或调用失败）时，假装已「读完」外站全文并写总结。
 - **不要**把本技能当成绕过外站付费/登录的手段；是否合规以**各平台服务条款**及用户授权为准，模型可提示用户自行判断。
-- **不要**用 `compact_conversation` 从网页拉取外站历史——它只处理 **Taskly 会话**内的消息列表。
+- **不要**用 `compact_conversation` 从网页拉取外站历史——它只处理 **OpenWorkmate 会话**内的消息列表。
 
 ## 与其它技能的关系
 

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>与 AI Gateway 聚合策略 <c>effective</c> 对象对齐（camelCase）。</summary>
 public sealed class TelemetryAggregatedPolicyResponse

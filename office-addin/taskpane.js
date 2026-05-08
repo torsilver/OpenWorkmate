@@ -3,25 +3,25 @@
 
   var WS_URL = "ws://127.0.0.1:8765/ws";
   var API_BASE = "http://127.0.0.1:8765";
-  var tasklyOfficeApiReady = null;
-  function tasklyEnsureOfficeApiBase() {
-    if (tasklyOfficeApiReady) return tasklyOfficeApiReady;
-    tasklyOfficeApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(null).then(function (r) {
-      var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+  var openWorkmateOfficeApiReady = null;
+  function openWorkmateEnsureOfficeApiBase() {
+    if (openWorkmateOfficeApiReady) return openWorkmateOfficeApiReady;
+    openWorkmateOfficeApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(null).then(function (r) {
+      var hw = OpenWorkmateLocalService.openWorkmateHttpWsFromBase(r.baseUrl);
       API_BASE = hw.apiBase;
       WS_URL = hw.wsUrl;
     });
-    return tasklyOfficeApiReady;
+    return openWorkmateOfficeApiReady;
   }
-  var TASKLY_AUTH_TOKEN_KEY = "tasklyLocalServiceAuthToken";
-  var TASKLY_TELEMETRY_DEVICE_ID_KEY = "tasklyTelemetryDeviceId";
-  var TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = "tasklyTelemetryClientEmission";
-  var TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "tasklyTelemetryRelayActiveProfileId";
-  var TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = "tasklyTelemetryEventKindsByProfile";
+  var openWorkmate_AUTH_TOKEN_KEY = "OpenWorkmateLocalServiceAuthToken";
+  var openWorkmate_TELEMETRY_DEVICE_ID_KEY = "openWorkmateTelemetryDeviceId";
+  var openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY = "openWorkmateTelemetryClientEmission";
+  var openWorkmate_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "openWorkmateTelemetryRelayActiveProfileId";
+  var openWorkmate_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = "openWorkmateTelemetryEventKindsByProfile";
   var STORAGE_ACTIVE_AGENT_PROFILE_ID = "activeAgentProfileId";
 
   function getStoredAuthToken() {
-    try { return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || "").trim(); } catch (e) { return ""; }
+    try { return (localStorage.getItem(openWorkmate_AUTH_TOKEN_KEY) || "").trim(); } catch (e) { return ""; }
   }
   function getStoredAgentProfileId() {
     try {
@@ -35,29 +35,29 @@
       localStorage.setItem(STORAGE_ACTIVE_AGENT_PROFILE_ID, (id && String(id).trim()) || "default");
     } catch (e) { /* ignore */ }
   }
-  function tasklyFetch(url, init) {
+  function openWorkmateFetch(url, init) {
     init = init || {};
     var headers = new Headers(init.headers || {});
     var t = getStoredAuthToken();
-    if (t) headers.set("X-OfficeCopilot-Token", t);
+    if (t) headers.set("X-OpenWorkmate-Token", t);
     return fetch(url, Object.assign({}, init, { headers: headers }));
   }
   function ensureBootstrapAuthToken() {
-    return tasklyEnsureOfficeApiBase().then(function () {
+    return openWorkmateEnsureOfficeApiBase().then(function () {
       return fetch(API_BASE + "/api/bootstrap/local-service-auth")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j || !j.ok) return j;
           try {
             localStorage.setItem(
-              TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+              openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY,
               j.telemetryUserObservabilityEnabled === false ? "off" : "on"
             );
           } catch (e) { /* ignore */ }
           var t = (j.webSocketAuthToken || "").trim();
           if (t && !getStoredAuthToken()) {
             try {
-              localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t);
+              localStorage.setItem(openWorkmate_AUTH_TOKEN_KEY, t);
             } catch (e2) { /* ignore */ }
           }
           return j;
@@ -70,16 +70,16 @@
 
   let OFFICE_CLIENT_TYPE = "office"; // set after Office.onReady to office-word | office-excel | office-powerpoint
 
-  (function tasklySyncThemeFromBackend() {
+  (function openWorkmateSyncThemeFromBackend() {
     try {
-      tasklyEnsureOfficeApiBase().then(function () {
-      tasklyFetch(API_BASE + "/api/config")
+      openWorkmateEnsureOfficeApiBase().then(function () {
+      openWorkmateFetch(API_BASE + "/api/config")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
-          if (!j || typeof TasklyTheme === "undefined") return;
+          if (!j || typeof OpenWorkmateTheme === "undefined") return;
           var id = j.uiThemeId || j.UiThemeId;
-          if (id) TasklyTheme.setTheme(id);
-          if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+          if (id) OpenWorkmateTheme.setTheme(id);
+          if (typeof window.openWorkmateOfficeRefreshEmbedThemes === "function") window.openWorkmateOfficeRefreshEmbedThemes();
         })
         .catch(function () {});
       }).catch(function () {});
@@ -120,7 +120,7 @@
 
   const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
   var OFFICE_WELCOME_INNER_HTML =
-    '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel/PowerPoint 文档。完整配置请在 Chrome 扩展 options 页完成。</p></div>';
+    '<div class="welcome"><p class="welcome-title">你好，我是 Open Workmate 👋</p><p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel/PowerPoint 文档。完整配置请在 Chrome 扩展 options 页完成。</p></div>';
   var lastSetContextSig = "";
   var _suppressOfficeAgentSelectChange = false;
 
@@ -402,9 +402,9 @@
       if (!planId) return;
       if (planChecklistSteps.length > 0 && planChecklistLoadedPlanId === planId) return;
       planChecklistLoadedPlanId = planId;
-      return tasklyEnsureOfficeApiBase()
+      return openWorkmateEnsureOfficeApiBase()
         .then(function () {
-          return tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+          return openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
         })
         .then(function (res) {
           if (!res.ok) return null;
@@ -538,10 +538,10 @@
   function loadAtModeCandidates() {
     if (atModeLoaded) return Promise.resolve();
     if (atModeLoadingPromise) return atModeLoadingPromise;
-    atModeLoadingPromise = tasklyEnsureOfficeApiBase().then(function () {
-    return tasklyFetch(API_BASE + "/api/tools/builtin")
+    atModeLoadingPromise = openWorkmateEnsureOfficeApiBase().then(function () {
+    return openWorkmateFetch(API_BASE + "/api/tools/builtin")
       .then(function (builtinRes) {
-        return tasklyFetch(API_BASE + "/api/skills").then(function (skillsRes) {
+        return openWorkmateFetch(API_BASE + "/api/skills").then(function (skillsRes) {
           return { builtinRes: builtinRes, skillsRes: skillsRes };
         });
       })
@@ -922,8 +922,8 @@
   let timelineAnswerCells = new Map();
 
   function decodeJsonStyleUnicodeEscapes(s) {
-    if (typeof TasklyCopilotHostShared !== "undefined" && TasklyCopilotHostShared.decodeJsonStyleUnicodeEscapes) {
-      return TasklyCopilotHostShared.decodeJsonStyleUnicodeEscapes(s);
+    if (typeof openWorkmateHostShared !== "undefined" && openWorkmateHostShared.decodeJsonStyleUnicodeEscapes) {
+      return openWorkmateHostShared.decodeJsonStyleUnicodeEscapes(s);
     }
     return s;
   }
@@ -1490,7 +1490,7 @@
   }
 
   function applyStreamUsageToContextRingOffice(content) {
-    const H = typeof TasklyCopilotHostShared !== "undefined" ? TasklyCopilotHostShared : null;
+    const H = typeof openWorkmateHostShared !== "undefined" ? openWorkmateHostShared : null;
     const wrap = document.getElementById("context-usage-ring-wrap");
     const prog = document.getElementById("context-usage-ring-progress");
     if (!wrap || !prog || !H || !H.parseStreamUsagePayload || !H.usagePromptFillRatio) return;
@@ -1710,17 +1710,17 @@
       var tok = getStoredAuthToken();
       var ap = getStoredAgentProfileId();
       var qs = "";
-      if (typeof TasklyCopilotHostShared !== "undefined" && TasklyCopilotHostShared.buildWebSocketQueryString) {
-        qs = TasklyCopilotHostShared.buildWebSocketQueryString({
+      if (typeof openWorkmateHostShared !== "undefined" && openWorkmateHostShared.buildWebSocketQueryString) {
+        qs = openWorkmateHostShared.buildWebSocketQueryString({
           sessionId: sessionId,
           clientType: OFFICE_CLIENT_TYPE,
           agentProfileId: ap,
           token: tok,
           bootstrap: bootstrap,
-          telemetryDeviceIdKey: TASKLY_TELEMETRY_DEVICE_ID_KEY,
-          telemetryClientEmissionKey: TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
-          telemetryRelayActiveProfileKey: TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
-          telemetryEventKindsByProfileKey: TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
+          telemetryDeviceIdKey: openWorkmate_TELEMETRY_DEVICE_ID_KEY,
+          telemetryClientEmissionKey: openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY,
+          telemetryRelayActiveProfileKey: openWorkmate_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
+          telemetryEventKindsByProfileKey: openWorkmate_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
         });
       } else {
         qs =
@@ -1759,7 +1759,7 @@
 
       ws.onerror = function () { ws.close(); };
     }).catch(function (err) {
-      addSystemMessage("找不到本机 Office Copilot：" + (err && err.message ? err.message : String(err)));
+      addSystemMessage("找不到本机 Open Workmate：" + (err && err.message ? err.message : String(err)));
     });
   }
 
@@ -1839,8 +1839,8 @@
   async function fetchPlanAndShow(planId, title, createdBy) {
     if (createdBy !== OFFICE_CLIENT_TYPE) return;
     try {
-      await tasklyEnsureOfficeApiBase();
-      const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+      await openWorkmateEnsureOfficeApiBase();
+      const res = await openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
       if (!res.ok) return;
       const data = await res.json();
       currentPlanId = planId;
@@ -1965,7 +1965,7 @@
     historyLoading = true;
     if ($historyLoadMore) $historyLoadMore.disabled = true;
     try {
-      await tasklyEnsureOfficeApiBase();
+      await openWorkmateEnsureOfficeApiBase();
       await ensureBootstrapAuthToken();
       var skip = append ? historySkip : 0;
       if (!append) {
@@ -1974,7 +1974,7 @@
         if ($historyList) $historyList.innerHTML = "";
       }
       var ap = getStoredAgentProfileId();
-      var res = await tasklyFetch(
+      var res = await openWorkmateFetch(
         API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10&agentProfileId=" + encodeURIComponent(ap)
       );
       var data = await res.json().catch(function () { return {}; });
@@ -1996,9 +1996,9 @@
     if (!sid) return;
     if (!confirm("确定删除此历史对话？本地保存的记录将移除，且无法恢复。")) return;
     try {
-      await tasklyEnsureOfficeApiBase();
+      await openWorkmateEnsureOfficeApiBase();
       await ensureBootstrapAuthToken();
-      var res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
+      var res = await openWorkmateFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) {
         alert(data.message || "删除失败");
@@ -2040,7 +2040,7 @@
     if (!sid) return;
     finalizeStream();
     try {
-      await tasklyEnsureOfficeApiBase();
+      await openWorkmateEnsureOfficeApiBase();
       await ensureBootstrapAuthToken();
       if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== "") {
         persistAgentProfileId(String(agentProfileIdFromItem).trim());
@@ -2055,7 +2055,7 @@
           _suppressOfficeAgentSelectChange = false;
         }
       }
-      var res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
+      var res = await openWorkmateFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) {
         addBotMessage(data.message || "加载该对话消息失败", true);
@@ -2287,9 +2287,9 @@
   async function refreshOfficeAgentProfileSelect() {
     if (!$agentProfileSelect) return;
     try {
-      await tasklyEnsureOfficeApiBase();
+      await openWorkmateEnsureOfficeApiBase();
       await ensureBootstrapAuthToken();
-      var res = await tasklyFetch(API_BASE + "/api/config");
+      var res = await openWorkmateFetch(API_BASE + "/api/config");
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) return;
       var list = data.agentProfiles || data.AgentProfiles || [];
@@ -2320,10 +2320,10 @@
         (data.uiThemeId && String(data.uiThemeId).trim()) ||
         (data.UiThemeId && String(data.UiThemeId).trim()) ||
         "";
-      if (themeFromServer && typeof TasklyTheme !== "undefined") {
+      if (themeFromServer && typeof OpenWorkmateTheme !== "undefined") {
         try {
-          TasklyTheme.setTheme(themeFromServer);
-          if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+          OpenWorkmateTheme.setTheme(themeFromServer);
+          if (typeof window.openWorkmateOfficeRefreshEmbedThemes === "function") window.openWorkmateOfficeRefreshEmbedThemes();
         } catch (e) { /* ignore */ }
       }
     } catch (e) {
@@ -2375,11 +2375,11 @@
     connect();
   }
 
-  async function openOfficeCopilotSettingsInChrome() {
+  async function openOpenWorkmateSettingsInChrome() {
     try {
-      await tasklyEnsureOfficeApiBase();
+      await openWorkmateEnsureOfficeApiBase();
       await ensureBootstrapAuthToken();
-      var res = await tasklyFetch(API_BASE + "/api/config");
+      var res = await openWorkmateFetch(API_BASE + "/api/config");
       var j = {};
       if (res.ok) {
         try {
@@ -2408,8 +2408,8 @@
     switch (msg.type) {
       case "ui_theme_changed": {
         const tid = (msg.uiThemeId && String(msg.uiThemeId).trim()) || "";
-        if (tid && typeof TasklyTheme !== "undefined") TasklyTheme.setTheme(tid);
-        if (typeof window.tasklyOfficeRefreshEmbedThemes === "function") window.tasklyOfficeRefreshEmbedThemes();
+        if (tid && typeof OpenWorkmateTheme !== "undefined") OpenWorkmateTheme.setTheme(tid);
+        if (typeof window.openWorkmateOfficeRefreshEmbedThemes === "function") window.openWorkmateOfficeRefreshEmbedThemes();
         break;
       }
       case "stream_start":
@@ -2664,9 +2664,9 @@
           clearToolElapsedTimer(block);
           const contentRaw = (msg.content && String(msg.content).trim()) || "";
           const looksErr =
-            typeof TasklyCopilotHostShared !== "undefined" &&
-            TasklyCopilotHostShared.toolInvocationContentLooksLikeError
-              ? TasklyCopilotHostShared.toolInvocationContentLooksLikeError(contentRaw)
+            typeof openWorkmateHostShared !== "undefined" &&
+            openWorkmateHostShared.toolInvocationContentLooksLikeError
+              ? openWorkmateHostShared.toolInvocationContentLooksLikeError(contentRaw)
               : false;
           const ok = msg.success === true && !looksErr;
           const name = (msg.plugin || "") + "." + (msg.function || "");
@@ -2752,8 +2752,8 @@
       if (!currentPlanId) return;
       const content = $planContentEdit.value;
       try {
-        await tasklyEnsureOfficeApiBase();
-        const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
+        await openWorkmateEnsureOfficeApiBase();
+        const res = await openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(currentPlanId), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content })
@@ -3654,7 +3654,7 @@
     $historyChatBtn.addEventListener("click", function () { void openOfficeHistoryOverlay(); });
   }
   if ($settingsBtn) {
-    $settingsBtn.addEventListener("click", function () { void openOfficeCopilotSettingsInChrome(); });
+    $settingsBtn.addEventListener("click", function () { void openOpenWorkmateSettingsInChrome(); });
   }
   if ($agentProfileSelect) {
     $agentProfileSelect.addEventListener("change", function () {

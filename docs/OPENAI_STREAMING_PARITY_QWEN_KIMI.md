@@ -8,7 +8,7 @@
 
 ## 上游 chunk 常见字段（SSE `data:` JSON）
 
-| 种类 | 典型 JSON 路径 | Taskly `StreamSegmentKind` | 到 UI 的 WS `type` |
+| 种类 | 典型 JSON 路径 | OpenWorkmate `StreamSegmentKind` | 到 UI 的 WS `type` |
 |------|----------------|---------------------------|-------------------|
 | 正文增量 | `choices[0].delta.content` | `Normal` | `stream_chunk`（经 `ReasoningTagStreamParser`） |
 | 推理增量 | `choices[0].delta.reasoning_content`（及少数别名） | `Reasoning` | `reasoning_chunk` |

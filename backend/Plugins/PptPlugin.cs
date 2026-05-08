@@ -7,13 +7,13 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
-[CopilotPluginId("Ppt")]
+[OpenWorkmatePluginId("Ppt")]
 public sealed class PptPlugin
 {
     private readonly ILogger<PptPlugin>? _logger;

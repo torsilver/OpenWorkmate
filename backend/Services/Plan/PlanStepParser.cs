@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Services.Plan;
+namespace OpenWorkmate.Server.Services.Plan;
 
 /// <summary>按约定格式解析计划正文为步骤序列，便于按步注入、不截断。支持「## 步骤 N」标题式与「---」分隔符式。</summary>
 public static class PlanStepParser

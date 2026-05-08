@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
-using Taskly.AI.Gateway;
+using OpenWorkmate.AI.Gateway;
 
-namespace Taskly.AI.Gateway.Storage;
+namespace OpenWorkmate.AI.Gateway.Storage;
 
 public sealed class BlobStore
 {

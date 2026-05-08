@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Logging;
+namespace OpenWorkmate.Server.Logging;
 
 /// <summary>日志里展示长字符串时的统一截断（单行化、头尾、带省略字数）。</summary>
 public static class LogPreview

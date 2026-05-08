@@ -1,6 +1,6 @@
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Ocr;
+namespace OpenWorkmate.Server.Services.Ocr;
 
 public enum OcrBackendKind
 {

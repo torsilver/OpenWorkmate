@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>由 Program 在解析监听 URL 后写入，供引导接口与发现文件使用。</summary>
 public static class LocalServiceListenOptions

@@ -1,7 +1,7 @@
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// HITL / 白名单安全检查：run_command、run_builtin_page_script（扩展 RPC 与 HITL hitlKind 同名）、current_run_document_script、

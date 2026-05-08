@@ -1,6 +1,6 @@
 /**
  * Office 加载项与 Chrome/WPS 共用的纯函数（无宿主依赖）。
- * WPS 侧 ESM 镜像：wps-addin-new/src/lib/copilotHostShared.js（修改时请对齐两端）。
+ * WPS 侧 ESM 镜像：wps-addin-new/src/lib/openWorkmateHostShared.js（修改时请对齐两端）。
  */
 (function (g) {
   "use strict";
@@ -22,7 +22,7 @@
     return t;
   }
 
-  /** 与 Chrome sidepanel / WPS useCopilot 同源：tool_invocation_end 兜底判定 */
+  /** 与 Chrome sidepanel / WPS useOpenWorkmate 同源：tool_invocation_end 兜底判定 */
   function toolInvocationContentLooksLikeError(c) {
     if (!c) return false;
     return (
@@ -81,10 +81,10 @@
       } catch (e3) { /* ignore */ }
     }
 
-    var deviceKey = o.telemetryDeviceIdKey || "tasklyTelemetryDeviceId";
-    var emissionKey = o.telemetryClientEmissionKey || "tasklyTelemetryClientEmission";
-    var relayActiveKey = o.telemetryRelayActiveProfileKey || "tasklyTelemetryRelayActiveProfileId";
-    var kindsByProfileKey = o.telemetryEventKindsByProfileKey || "tasklyTelemetryEventKindsByProfile";
+    var deviceKey = o.telemetryDeviceIdKey || "openWorkmateTelemetryDeviceId";
+    var emissionKey = o.telemetryClientEmissionKey || "openWorkmateTelemetryClientEmission";
+    var relayActiveKey = o.telemetryRelayActiveProfileKey || "openWorkmateTelemetryRelayActiveProfileId";
+    var kindsByProfileKey = o.telemetryEventKindsByProfileKey || "openWorkmateTelemetryEventKindsByProfile";
 
     var devId = get(deviceKey);
     if (!devId) {
@@ -181,7 +181,7 @@
     return parts.join("\n");
   }
 
-  g.TasklyCopilotHostShared = {
+  g.openWorkmateHostShared = {
     decodeJsonStyleUnicodeEscapes: decodeJsonStyleUnicodeEscapes,
     toolInvocationContentLooksLikeError: toolInvocationContentLooksLikeError,
     buildWebSocketQueryString: buildWebSocketQueryString,

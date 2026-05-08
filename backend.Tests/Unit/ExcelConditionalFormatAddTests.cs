@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -11,7 +11,7 @@ public class ExcelConditionalFormatAddTests
     [Fact]
     public void ConditionalFormatAdd_WhenWorksheetHasPageMargins_insertsConditionalFormattingBeforePageMargins()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"taskly-cf-{Guid.NewGuid():N}.xlsx");
+        var path = Path.Combine(Path.GetTempPath(), $"OpenWorkmate-cf-{Guid.NewGuid():N}.xlsx");
         try
         {
             var plugin = new ExcelPlugin();

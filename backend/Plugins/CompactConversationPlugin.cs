@@ -1,11 +1,11 @@
 using System.ComponentModel;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>上下文管理：提供 compact_conversation 工具，供模型在换任务或已总结完时主动压缩对话以释放上下文。</summary>
-[CopilotPluginId("Context")]
+[OpenWorkmatePluginId("Context")]
 public sealed class CompactConversationPlugin
 {
     private readonly ChatService _chatService;

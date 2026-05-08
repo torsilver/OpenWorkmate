@@ -13,8 +13,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Integration;
@@ -30,11 +30,11 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         _tempUserConfigPath = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
-        // 空 ScheduledTasksDirectory 会回退到 LocalAppData\OfficeCopilot\ScheduledTasks，与正式环境共用目录；集成测试必须隔离。
+            "OpenWorkmate.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+        // 空 ScheduledTasksDirectory 会回退到 LocalAppData\OpenWorkmate\ScheduledTasks，与正式环境共用目录；集成测试必须隔离。
         _tempScheduledTasksDir = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
+            "OpenWorkmate.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
         IntegrationTestUserConfigWriter.Write(_tempUserConfigPath, _tempScheduledTasksDir, webSocketAuthToken: "");
 
@@ -45,7 +45,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["OfficeCopilot:UserConfigPath"] = _tempUserConfigPath,
+                    ["OpenWorkmate:UserConfigPath"] = _tempUserConfigPath,
                 });
             });
         });
@@ -757,7 +757,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         {
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+                "OpenWorkmate", "MeetingTranscripts", sid + ".jsonl");
             if (File.Exists(path))
                 File.Delete(path);
         }
@@ -796,7 +796,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         {
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+                "OpenWorkmate", "MeetingTranscripts", sid + ".jsonl");
             if (File.Exists(path))
                 File.Delete(path);
         }

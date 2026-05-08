@@ -1,6 +1,6 @@
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.Chat;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.Chat;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -73,7 +73,7 @@ public sealed class TimelineBlockStreamCoordinatorTests
     [Fact]
     public void WsMessage_json_includes_blockSeq_blockKind_camelCase()
     {
-        var msg = new OfficeCopilot.Server.WsMessage
+        var msg = new OpenWorkmate.Server.WsMessage
         {
             Type = "stream_chunk",
             Content = "x",

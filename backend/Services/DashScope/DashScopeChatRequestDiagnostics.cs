@@ -3,10 +3,10 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>百炼 chat/completions 出站 JSON 关键字段快照（仅用于日志）。</summary>
 internal static class DashScopeChatRequestDiagnostics

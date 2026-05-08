@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>按 clientType 过滤暴露给模型的工具集：Chrome 不暴露 CurrentDocument；Office/WPS 暴露 CurrentDocument + 通用插件 + Pdf（路径须为后端进程可读）。通用插件含 <c>AgentTooling</c>（动态工具引导）、与本机能力对齐的 <c>CLI</c>、<c>File</c>、<c>System</c>、<c>UserOptions</c> 等。仍不暴露 <c>Browser</c>（仅 Chrome 任务上下文）及磁盘型 Word/Excel/Ppt/OfficeLegacy 插件（与 <c>CurrentDocument</c> RPC 区分）。</summary>
 public static class ClientTypeToolFilter

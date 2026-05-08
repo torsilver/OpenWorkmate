@@ -1,7 +1,7 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   MSI 结束页异步调用：按勾选尝试注册 Chrome 策略、Office 旁加载、WPS 指引。
-  对齐 Chrome：policies/Set-TasklyChromeExtensionPolicy.ps1（HKCU ExtensionInstallForcelist）
+  对齐 Chrome：policies/Set-OpenWorkmateChromeExtensionPolicy.ps1（HKCU ExtensionInstallForcelist）
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$logPath = Join-Path $InstallRoot 'Install-TasklyClients.log'
+$logPath = Join-Path $InstallRoot 'Install-OpenWorkmateClients.log'
 
 function Write-Log([string]$message) {
   $line = '{0} {1}' -f (Get-Date -Format 'o'), $message
@@ -21,7 +21,7 @@ function Write-Log([string]$message) {
 }
 
 function Read-StaticHostPort {
-  $pack = Join-Path $InstallRoot 'Taskly.StaticHost\appsettings.Pack.json'
+  $pack = Join-Path $InstallRoot 'OpenWorkmate.StaticHost\appsettings.Pack.json'
   if (-not (Test-Path $pack)) { return 3000 }
   try {
     $j = Get-Content -LiteralPath $pack -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -45,11 +45,11 @@ function Format-OfficeRegistryId([string]$id) {
   return $g.ToString('B').ToUpperInvariant()
 }
 
-Write-Log "Start Install-TasklyClients.ps1 Chrome=$Chrome Office=$Office Wps=$Wps"
+Write-Log "Start Install-OpenWorkmateClients.ps1 Chrome=$Chrome Office=$Office Wps=$Wps"
 
 $port = Read-StaticHostPort
 $baseUrl = "https://localhost:$port"
-$updatesUrl = "$baseUrl/taskly-chrome/updates.xml"
+$updatesUrl = "$baseUrl/OpenWorkmate-chrome/updates.xml"
 
 # --- Chrome ---
 if ($Chrome -eq '1') {
@@ -66,12 +66,12 @@ if ($Chrome -eq '1') {
     Write-Log "Chrome: 检测到 $chromeExe"
   }
 
-  $idFile = Join-Path $InstallRoot 'taskly-chrome\extension-id.txt'
+  $idFile = Join-Path $InstallRoot 'OpenWorkmate-chrome\extension-id.txt'
   if (-not (Test-Path $idFile)) {
-    Write-Log 'Chrome: 未找到 taskly-chrome\extension-id.txt（打包时是否跳过 CRX？），已跳过。'
+    Write-Log 'Chrome: 未找到 OpenWorkmate-chrome\extension-id.txt（打包时是否跳过 CRX？），已跳过。'
   } else {
     $eid = (Get-Content -LiteralPath $idFile -Raw).Trim()
-    $setPol = Join-Path $InstallRoot 'policies\Set-TasklyChromeExtensionPolicy.ps1'
+    $setPol = Join-Path $InstallRoot 'policies\Set-OpenWorkmateChromeExtensionPolicy.ps1'
     if (-not (Test-Path $setPol)) {
       Write-Log "Chrome: 缺少 $setPol"
     } else {
@@ -137,8 +137,8 @@ if ($Wps -eq '1') {
   @(
     'WPS add-in cannot be fully silent like Chrome policy; open WPS load-addin / dev tools and point to the folder below.',
     "构建产物路径: $wpsRoot",
-    "HTTPS 静态资源（若已 Start Taskly）: $baseUrl/wps/",
-    '仓库约定开发调试使用 wpsjs debug；安装版请参阅 Taskly-ClientSetup.html。'
+    "HTTPS 静态资源（若已 Start OpenWorkmate）: $baseUrl/wps/",
+    '仓库约定开发调试使用 wpsjs debug；安装版请参阅 OpenWorkmate-ClientSetup.html。'
   ) | Set-Content -LiteralPath $hintFile -Encoding UTF8
   Write-Log "WPS: 已写入 $hintFile"
 }

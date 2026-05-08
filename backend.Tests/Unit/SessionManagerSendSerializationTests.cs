@@ -1,6 +1,6 @@
 using System.Net.WebSockets;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Xunit;
 
 namespace backend.Tests.Unit;

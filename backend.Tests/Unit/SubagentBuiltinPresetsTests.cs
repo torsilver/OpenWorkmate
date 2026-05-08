@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Subagent;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Subagent;
 using Xunit;
 
 namespace backend.Tests.Unit;

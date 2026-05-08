@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>
 /// 透传下游 SSE 字节流，同时从 <c>data:</c> 行中解析 <c>choices[0].delta.reasoning_content</c>（百炼 OpenAI 兼容）。

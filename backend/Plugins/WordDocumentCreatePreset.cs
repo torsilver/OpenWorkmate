@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary><see cref="WordPlugin.WordDocumentCreate"/> 的版式预设：default 保持历史西式默认；cnGovGbt9704 为中文正式稿默认（GB/T 9704 常用归纳，依赖本机字体）。</summary>
 public enum WordDocumentCreatePreset

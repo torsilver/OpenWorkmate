@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>agent_trace 详情截断与多行详情拼装（供单元测试覆盖）。</summary>
 public static class AgentTraceFormatter

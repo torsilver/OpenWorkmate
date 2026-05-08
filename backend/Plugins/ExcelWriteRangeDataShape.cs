@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>解析 current_excel_write_range 的 data 是否为 JSON 二维数组并统计行列（供日志与单测）。</summary>
 internal static class ExcelWriteRangeDataShape

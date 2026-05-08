@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>WebSocket 会话：clientType、Agent 身份（来自配置 + WS query）、set_context 的页签/展示名与 WPS 宿主类型。</summary>
 public sealed class SessionManager

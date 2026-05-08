@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>语音转文字（百炼实时 ASR 文件通道），供 POST /api/transcribe 与 MCP_STT transcribe_audio 复用。</summary>
 public interface ITranscribeService

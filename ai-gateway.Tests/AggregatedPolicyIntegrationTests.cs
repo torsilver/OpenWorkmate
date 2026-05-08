@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace Taskly.AI.Gateway.Tests;
+namespace OpenWorkmate.AI.Gateway.Tests;
 
 public sealed class AggregatedPolicyIntegrationTests : IClassFixture<GatewayWebApplicationFactory>, IDisposable
 {

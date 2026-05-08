@@ -1,6 +1,6 @@
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.LlmRouting;
+namespace OpenWorkmate.Server.Services.LlmRouting;
 
 /// <summary>
 /// LLM 请求经本机 AI Gateway 转发时注入路由头；上游 OpenAI 兼容 base（含 /v1）由 <see cref="X-AI-Upstream-Base"/> 传给 Gateway。

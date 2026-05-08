@@ -1,7 +1,7 @@
-using OfficeCopilot.Server.Services.Chat;
+using OpenWorkmate.Server.Services.Chat;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 public sealed class StreamingToolCallDeltaHelperTests
 {

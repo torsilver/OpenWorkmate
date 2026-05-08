@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text.Json;
-using Taskly.AI.Gateway;
-using Taskly.AI.Gateway.Storage;
+using OpenWorkmate.AI.Gateway;
+using OpenWorkmate.AI.Gateway.Storage;
 
-namespace Taskly.AI.Gateway.Endpoints;
+namespace OpenWorkmate.AI.Gateway.Endpoints;
 
 public static class IngestEndpoints
 {

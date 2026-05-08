@@ -2,13 +2,13 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>渐进式用户技能：元数据由 system 块提供；正文与附属文件经本插件按需读盘，与业务工具检索分离。</summary>
-[CopilotPluginId("UserSkillProgressive")]
+[OpenWorkmatePluginId("UserSkillProgressive")]
 public sealed class UserSkillProgressivePlugin
 {
     private const int MaxInstructionChars = 65536;

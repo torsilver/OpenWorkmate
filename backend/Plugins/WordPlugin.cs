@@ -9,13 +9,13 @@ using DocumentFormat.OpenXml.Packaging;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using DocumentFormat.OpenXml.Wordprocessing;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
-[CopilotPluginId("Word")]
+[OpenWorkmatePluginId("Word")]
 public sealed class WordPlugin
 {
     private readonly ILogger<WordPlugin>? _logger;

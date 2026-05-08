@@ -3,7 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 public sealed record AskOptionsStep(string StepId, string Question, List<AskOptionsOption> Options);
 

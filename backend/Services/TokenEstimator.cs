@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using SharpToken;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>根据配置估算文本 token 数，用于上下文窗口预算（CharsRatio 或 Tiktoken）。</summary>
 public static class TokenEstimator

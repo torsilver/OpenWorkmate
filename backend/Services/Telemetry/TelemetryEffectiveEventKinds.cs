@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>Gateway <c>availableEventKinds</c> 与 WebSocket <c>telemetryEventKinds</c> 的交集；用户未选时等于 Gateway 全集。</summary>
 public static class TelemetryEffectiveEventKinds

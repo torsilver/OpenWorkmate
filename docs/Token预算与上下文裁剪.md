@@ -24,17 +24,17 @@
 ## 观测
 
 - 每用户轮生成 **`RoundId`**（`StreamChatTurnContext.RoundId`），并写入 **`SessionContext`**，日志与 OpenTelemetry Activity（如 `Maf.MainSession.Stream`）可带 `roundId`。
-- 设置环境变量 **`OFFICECOPILOT_CONTEXT_SNAPSHOT_DIR`** 为可写目录时，送入 MAF 前可对 `HistoryToUse` 写脱敏快照 JSON（见 `ContextTurnSnapshot`）。
+- 设置环境变量 **`OpenWorkmate_CONTEXT_SNAPSHOT_DIR`** 为可写目录时，送入 MAF 前可对 `HistoryToUse` 写脱敏快照 JSON（见 `ContextTurnSnapshot`）。
 
 ## 实验：摘要相关性诊断
 
-设置 **`OFFICECOPILOT_COMPACTION_RELEVANCE_LOG=1`** 时，在 Compaction 前打一条「用户词与各消息重叠度」日志（不改变历史），用于评估 Query-aware 摘要，见 `CompactionRelevanceDiagnostics`。若同时开启 **`CompactionQueryAwareHeuristicEnabled`**，可对照日志观察启发式删除是否与「低重叠」一致。
+设置 **`OpenWorkmate_COMPACTION_RELEVANCE_LOG=1`** 时，在 Compaction 前打一条「用户词与各消息重叠度」日志（不改变历史），用于评估 Query-aware 摘要，见 `CompactionRelevanceDiagnostics`。若同时开启 **`CompactionQueryAwareHeuristicEnabled`**，可对照日志观察启发式删除是否与「低重叠」一致。
 
 ## 观测基线（阶段一 checklist）
 
 本地对比「压缩前 / 后」或 **Summarization 关 / 开** 时建议：
 
-1. 设置 **`OFFICECOPILOT_COMPACTION_RELEVANCE_LOG=1`**（可选再加 **`OFFICECOPILOT_CONTEXT_SNAPSHOT_DIR`** 指向可写目录）。
+1. 设置 **`OpenWorkmate_COMPACTION_RELEVANCE_LOG=1`**（可选再加 **`OpenWorkmate_CONTEXT_SNAPSHOT_DIR`** 指向可写目录）。
 2. 同一长会话下各跑一轮：**`SummarizationEnabled: false`**（仅轮数 + token 裁剪 + 可选启发式）与 **`SummarizationEnabled: true`**（再加 MAF Compaction）。
 3. 在日志与前端 trace 中对照：`RoundId`、`CompactionRelevance` 行、**「历史压缩」** trace、是否出现 **context_length** 重试。
 

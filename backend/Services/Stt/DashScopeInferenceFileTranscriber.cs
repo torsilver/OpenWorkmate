@@ -1,7 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 
-namespace OfficeCopilot.Server.Services.Stt;
+namespace OpenWorkmate.Server.Services.Stt;
 
 /// <summary>
 /// 通过百炼 <c>v1/inference</c> WebSocket 对整文件做识别（分块发送二进制音频），聚合句末结果。

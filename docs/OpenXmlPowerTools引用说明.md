@@ -8,7 +8,7 @@
 
 | 项 | 说明 |
 |----|------|
-| **Open XML SDK** | `OfficeCopilot.Server.csproj` 使用 `DocumentFormat.OpenXml` **3.4.1**（与 `net10.0` 一致）。 |
+| **Open XML SDK** | `OpenWorkmate.Server.csproj` 使用 `DocumentFormat.OpenXml` **3.4.1**（与 `net10.0` 一致）。 |
 | **NuGet** | **无** `OpenXmlPowerTools`、`Codeuctivity.OpenXmlPowerTools`、`OpenXmlPowerTools.Core` 等引用。 |
 | **工具** | `ppt_slide_duplicate` → `PptPlugin.PptSlideDuplicate` → `PptOpenXmlHelpers.EditPresentationInMemory` → **`PptOpenXmlHelpers.DuplicateSlideAfter`**。 |
 

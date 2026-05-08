@@ -1,30 +1,30 @@
-let TASKLY_API_BASE = "http://127.0.0.1:8765";
+let openWorkmate_API_BASE = "http://127.0.0.1:8765";
 const COPILOT_TOKEN_STORAGE_KEY = "localServiceAuthToken";
 
-var tasklyWorkspaceApiReady = null;
-function tasklyEnsureWorkspaceApiBase() {
-  if (tasklyWorkspaceApiReady) return tasklyWorkspaceApiReady;
-  tasklyWorkspaceApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+var openWorkmateWorkspaceApiReady = null;
+function openWorkmateEnsureWorkspaceApiBase() {
+  if (openWorkmateWorkspaceApiReady) return openWorkmateWorkspaceApiReady;
+  openWorkmateWorkspaceApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(
     typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
   )
     .then(function (r) {
-      TASKLY_API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+      openWorkmate_API_BASE = OpenWorkmateLocalService.normalizeBase(r.baseUrl);
     })
     .catch(function (err) {
       // 自行缓存的 Promise：失败时必须清空，否则后台晚启动后仍会命中旧的 rejected
-      tasklyWorkspaceApiReady = null;
+      openWorkmateWorkspaceApiReady = null;
       throw err;
     });
-  return tasklyWorkspaceApiReady;
+  return openWorkmateWorkspaceApiReady;
 }
 
-function tasklyFetch(url, init) {
+function openWorkmateFetch(url, init) {
   init = init ? Object.assign({}, init) : {};
   return new Promise(function (resolve) {
     chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
       var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
       var headers = Object.assign({}, init.headers || {});
-      if (t) headers["X-OfficeCopilot-Token"] = t;
+      if (t) headers["X-OpenWorkmate-Token"] = t;
       init.headers = headers;
       resolve(fetch(url, init));
     });
@@ -32,8 +32,8 @@ function tasklyFetch(url, init) {
 }
 
 function ensureLocalServiceTokenFromBootstrap() {
-  return tasklyEnsureWorkspaceApiBase().then(function () {
-  return fetch(TASKLY_API_BASE + "/api/bootstrap/local-service-auth")
+  return openWorkmateEnsureWorkspaceApiBase().then(function () {
+  return fetch(openWorkmate_API_BASE + "/api/bootstrap/local-service-auth")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
       if (!j || !j.ok) return;
@@ -53,34 +53,34 @@ function ensureLocalServiceTokenFromBootstrap() {
   });
 }
 
-function tasklyRefreshEmbedThemes() {
+function openWorkmateRefreshEmbedThemes() {
   const t = document.documentElement.getAttribute("data-theme") || "dark";
-  const link = document.getElementById("taskly-hljs-theme");
-  if (link && typeof TasklyTheme !== "undefined") {
-    link.href = TasklyTheme.getHljsStylesheetHref(t);
+  const link = document.getElementById("OpenWorkmate-hljs-theme");
+  if (link && typeof OpenWorkmateTheme !== "undefined") {
+    link.href = OpenWorkmateTheme.getHljsStylesheetHref(t);
   }
-  if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
-    mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+  if (typeof mermaid !== "undefined" && typeof OpenWorkmateTheme !== "undefined") {
+    mermaid.initialize({ startOnLoad: false, theme: OpenWorkmateTheme.getMermaidTheme(t) });
   }
 }
 
 window.addEventListener("storage", (e) => {
-  if (e.key !== "tasklyUiTheme") return;
-  if (typeof TasklyTheme !== "undefined") {
-    TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+  if (e.key !== "openWorkmateUiTheme") return;
+  if (typeof OpenWorkmateTheme !== "undefined") {
+    OpenWorkmateTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
   }
-  tasklyRefreshEmbedThemes();
+  openWorkmateRefreshEmbedThemes();
 });
 
 ensureLocalServiceTokenFromBootstrap().then(function () {
-  return tasklyFetch(TASKLY_API_BASE + "/api/config");
+  return openWorkmateFetch(openWorkmate_API_BASE + "/api/config");
 })
   .then((r) => (r && r.ok ? r.json() : null))
   .then((j) => {
-    if (!j || typeof TasklyTheme === "undefined") return;
+    if (!j || typeof OpenWorkmateTheme === "undefined") return;
     const id = j.uiThemeId || j.UiThemeId;
-    if (id) TasklyTheme.setTheme(id);
-    tasklyRefreshEmbedThemes();
+    if (id) OpenWorkmateTheme.setTheme(id);
+    openWorkmateRefreshEmbedThemes();
   })
   .catch(() => {});
 
@@ -97,7 +97,7 @@ if (typeof marked !== 'undefined') {
   });
 }
 
-tasklyRefreshEmbedThemes();
+openWorkmateRefreshEmbedThemes();
 
 const $emptyState = document.getElementById('empty-state');
 const $markdownContainer = document.getElementById('markdown-container');

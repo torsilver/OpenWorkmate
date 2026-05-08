@@ -6,7 +6,7 @@ description: Create and edit PowerPoint (.pptx/.pptm) via Open XML on disk (Chro
 metadata: {"clawdbot":{"emoji":"📊","os":["linux","darwin","win32"]}}
 ---
 
-## Taskly（本仓库）
+## OpenWorkmate（本仓库）
 
 - **PDF 附件**：从 PDF 取字、合并 PDF、生成简单 PDF → 加载 **`Pdf / Pdf`**；**幻灯片排版**仍用本技能与 **`ppt_*`** / **`current_ppt_*`**。
 

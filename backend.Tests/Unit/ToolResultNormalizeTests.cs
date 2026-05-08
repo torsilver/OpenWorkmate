@@ -1,5 +1,5 @@
 using System.Text.Json;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Xunit;
 
 namespace backend.Tests.Unit;

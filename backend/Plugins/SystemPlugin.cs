@@ -1,13 +1,13 @@
 using System.ComponentModel;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 系统信息插件：提供当前时间等只读系统信息，供模型回答用户关于日期、时间的问题。
 /// </summary>
-[CopilotPluginId("System")]
+[OpenWorkmatePluginId("System")]
 public sealed class SystemPlugin
 {
     [ToolFunction("get_current_time")]

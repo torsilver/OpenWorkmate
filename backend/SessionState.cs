@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>单会话的运行时状态（历史等）。供 <see cref="ChatService"/> 与本轮编排上下文共享。</summary>
 public sealed class SessionState

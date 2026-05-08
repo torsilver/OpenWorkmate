@@ -1,8 +1,8 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.Plan;
+using OpenWorkmate.Server.Services.Plan;
 
-namespace OfficeCopilot.Server.Services.ContextProviders;
+namespace OpenWorkmate.Server.Services.ContextProviders;
 
 /// <summary>
 /// MAF <see cref="MessageAIContextProvider"/>：注入当前绑定计划（或指定步骤）为额外 system 消息。

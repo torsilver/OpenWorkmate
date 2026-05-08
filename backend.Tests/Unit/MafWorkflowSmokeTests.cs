@@ -1,7 +1,7 @@
 using Microsoft.Agents.AI.Workflows;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 /// <summary>验证 Microsoft.Agents.AI.Workflows 包可用（阶段 1/4：Workflow spike）。</summary>
 public sealed class MafWorkflowSmokeTests

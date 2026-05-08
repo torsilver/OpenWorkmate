@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>将基础 <see cref="ChatOptions"/> 与本轮工具列表合并为 MAF <see cref="ChatClientAgent"/> 使用的选项（新实例，不修改传入的 base）。</summary>
 public static class MafChatOptionsMapper

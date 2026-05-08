@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>拼入 system/身份后缀：默认先技能链再业务工具检索/激活，并与 activate 前技能门控一致。</summary>
 public static class DynamicToolingInstruction

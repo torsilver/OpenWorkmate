@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>旧版 Office 二进制扩展名与输出路径规则（无 COM，便于单测）。</summary>
 public enum OfficeLegacyKind

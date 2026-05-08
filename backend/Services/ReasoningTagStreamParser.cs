@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 对流式 assistant 文本做增量切分：标签内 → 推理，标签外 → 给用户正文。

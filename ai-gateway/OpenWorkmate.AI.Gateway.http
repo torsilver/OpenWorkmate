@@ -1,0 +1,6 @@
+@OpenWorkmate.AI.Gateway_HostAddress = http://localhost:5228
+
+GET {{OpenWorkmate.AI.Gateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

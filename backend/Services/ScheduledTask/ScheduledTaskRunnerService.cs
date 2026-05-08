@@ -1,7 +1,7 @@
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.ScheduledTask;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.ScheduledTask;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>定时任务调度器：周期扫描任务目录，到点将任务 MD 发给 AI 执行，并更新 nextRunAt/lastRunAt。</summary>
 public sealed class ScheduledTaskRunnerService : IHostedService, IDisposable

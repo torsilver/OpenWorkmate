@@ -1,6 +1,6 @@
 /**
  * 与 Chrome / Office 任务窗格共用的宿主无关协议片段（ESM）。
- * Office 侧镜像见 office-addin/copilot-host-shared.js（IIFE），修改时请对齐两端。
+ * Office 侧镜像见 office-addin/openWorkmate-host-shared.js（IIFE），修改时请对齐两端。
  */
 
 const DEFAULT_TELEMETRY_TIER = 'full'
@@ -87,10 +87,10 @@ export function buildWebSocketQueryString(o) {
     }
   }
 
-  const deviceKey = o.telemetryDeviceIdKey || 'tasklyTelemetryDeviceId'
-  const emissionKey = o.telemetryClientEmissionKey || 'tasklyTelemetryClientEmission'
-  const relayActiveKey = o.telemetryRelayActiveProfileKey || 'tasklyTelemetryRelayActiveProfileId'
-  const kindsByProfileKey = o.telemetryEventKindsByProfileKey || 'tasklyTelemetryEventKindsByProfile'
+  const deviceKey = o.telemetryDeviceIdKey || 'openWorkmateTelemetryDeviceId'
+  const emissionKey = o.telemetryClientEmissionKey || 'openWorkmateTelemetryClientEmission'
+  const relayActiveKey = o.telemetryRelayActiveProfileKey || 'openWorkmateTelemetryRelayActiveProfileId'
+  const kindsByProfileKey = o.telemetryEventKindsByProfileKey || 'openWorkmateTelemetryEventKindsByProfile'
 
   let devId = get(deviceKey)
   if (!devId) {

@@ -1,8 +1,8 @@
 {
-  "name": "taskly-office-addin",
+  "name": "OpenWorkmate-office-addin",
   "version": "1.0.0",
   "private": true,
-  "description": "Taskly Office 加载项（Word / Excel / PPT）本地开发静态托管",
+  "description": "OpenWorkmate Office 加载项（Word / Excel / PPT）本地开发静态托管",
   "scripts": {
     "dev": "node scripts/serve-https.cjs",
     "serve": "node scripts/serve-https.cjs"

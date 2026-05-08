@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>PDF 工具参数归一化（无 IO，便于单测）。</summary>
 public static class PdfToolNormalize

@@ -1,11 +1,11 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 主会话单轮动态工具状态：由外层 MAF 循环写入；<see cref="AgentToolingPlugin"/> 经 AsyncLocal 读取。
-/// 生命周期为「单条用户消息」触发的本轮流式编排（<see cref="OfficeCopilot.Server.Services.Chat.StreamChatTurnContext"/> 在 tooling 阶段新建本类型）；
-/// 内置 completion verifier 的续跑与首轮共用同一 <see cref="OfficeCopilot.Server.Services.Chat.StreamChatTurnContext"/>，故共用同一实例、不在续跑前清空。
+/// 生命周期为「单条用户消息」触发的本轮流式编排（<see cref="OpenWorkmate.Server.Services.Chat.StreamChatTurnContext"/> 在 tooling 阶段新建本类型）；
+/// 内置 completion verifier 的续跑与首轮共用同一 <see cref="OpenWorkmate.Server.Services.Chat.StreamChatTurnContext"/>，故共用同一实例、不在续跑前清空。
 /// </summary>
 public sealed class DynamicToolingTurnState
 {

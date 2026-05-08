@@ -1,8 +1,8 @@
 {
-  "name": "taskly-windows-pack-tools",
+  "name": "OpenWorkmate-windows-pack-tools",
   "private": true,
   "version": "1.0.0",
-  "description": "CRX 打包（Pack-Taskly 子步骤）",
+  "description": "CRX 打包（Pack-OpenWorkmate 子步骤）",
   "type": "commonjs",
   "dependencies": {
     "crx": "^5.0.1"

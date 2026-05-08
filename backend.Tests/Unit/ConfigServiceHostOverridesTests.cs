@@ -4,7 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -14,8 +14,8 @@ public class ConfigServiceHostOverridesTests
     [Fact]
     public void LoadConfig_LoadsScheduledTasksDirectoryFromUserConfigJson()
     {
-        var scheduledDir = Path.Combine(Path.GetTempPath(), "OfficeCopilot.cfg-st-" + Guid.NewGuid().ToString("N"));
-        var userConfigPath = Path.Combine(Path.GetTempPath(), "OfficeCopilot.cfg-user-" + Guid.NewGuid().ToString("N") + ".json");
+        var scheduledDir = Path.Combine(Path.GetTempPath(), "OpenWorkmate.cfg-st-" + Guid.NewGuid().ToString("N"));
+        var userConfigPath = Path.Combine(Path.GetTempPath(), "OpenWorkmate.cfg-user-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
             var cfg = new AppConfig
@@ -37,7 +37,7 @@ public class ConfigServiceHostOverridesTests
             File.WriteAllText(userConfigPath, JsonSerializer.Serialize(cfg, writeOpts));
 
             var configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["OfficeCopilot:UserConfigPath"] = userConfigPath })
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["OpenWorkmate:UserConfigPath"] = userConfigPath })
                 .Build();
 
             using var loggerFactory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Debug));

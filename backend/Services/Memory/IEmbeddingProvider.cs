@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>当前可用的嵌入服务；由 ChatService 在 RebuildRuntimeAsync 后设置，未配置时为 null。</summary>
 public interface IEmbeddingProvider

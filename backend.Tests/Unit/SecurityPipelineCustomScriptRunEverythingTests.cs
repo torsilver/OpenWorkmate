@@ -2,9 +2,9 @@ using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Xunit;
 
 namespace backend.Tests.Unit;

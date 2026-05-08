@@ -1,5 +1,5 @@
 using System.Text.Json;
-using OfficeCopilot.Server.Mcp;
+using OpenWorkmate.Server.Mcp;
 using Xunit;
 
 namespace backend.Tests.Unit;

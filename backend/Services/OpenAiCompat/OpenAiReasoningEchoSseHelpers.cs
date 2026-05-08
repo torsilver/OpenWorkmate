@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 internal static class OpenAiReasoningEchoSseHelpers
 {

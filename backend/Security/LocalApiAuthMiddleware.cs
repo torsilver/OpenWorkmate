@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>
 /// 保护 <c>/api/*</c>：有效密钥为 user-config.json 中的 <c>webSocketAuthToken</c>。
@@ -11,7 +11,7 @@ namespace OfficeCopilot.Server.Security;
 /// </summary>
 public sealed class LocalApiAuthMiddleware
 {
-    private const string HeaderName = "X-OfficeCopilot-Token";
+    private const string HeaderName = "X-OpenWorkmate-Token";
     private readonly RequestDelegate _next;
     private readonly ConfigService _configService;
     private readonly bool _isDevelopment;
@@ -50,7 +50,7 @@ public sealed class LocalApiAuthMiddleware
 
         var authToken = _configService.GetEffectiveWebSocketAuthToken();
 
-        // 浏览器扩展无法用 WebSocket 携带 X-OfficeCopilot-Token；与 /ws 一致，鉴权在 /api/stt-stream 内用查询参数 token 完成。
+        // 浏览器扩展无法用 WebSocket 携带 X-OpenWorkmate-Token；与 /ws 一致，鉴权在 /api/stt-stream 内用查询参数 token 完成。
         if (IsSttStreamWebSocketUpgrade(context))
         {
             if (string.IsNullOrEmpty(authToken))
@@ -62,7 +62,7 @@ public sealed class LocalApiAuthMiddleware
                     await context.Response.WriteAsync(JsonSerializer.Serialize(new
                     {
                         ok = false,
-                        message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
+                        message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OpenWorkmate\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
                     }, _jsonOptions));
                     return;
                 }
@@ -81,7 +81,7 @@ public sealed class LocalApiAuthMiddleware
                 await context.Response.WriteAsync(JsonSerializer.Serialize(new
                 {
                     ok = false,
-                    message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
+                    message = "服务端未在 user-config.json 中配置 webSocketAuthToken 时，HTTP API 仅允许本机（loopback）访问。请在 %LocalAppData%\\OpenWorkmate\\user-config.json 中设置强随机 webSocketAuthToken，并在扩展选项页填写相同密钥。"
                 }, _jsonOptions));
                 return;
             }
@@ -102,7 +102,7 @@ public sealed class LocalApiAuthMiddleware
                 await context.Response.WriteAsync(JsonSerializer.Serialize(new
                 {
                     ok = false,
-                    message = "未授权：请在请求头携带 X-OfficeCopilot-Token 或 Authorization: Bearer，值须与 user-config.json 中的 webSocketAuthToken 一致（扩展选项页保存的本地服务访问密钥）。"
+                    message = "未授权：请在请求头携带 X-OpenWorkmate-Token 或 Authorization: Bearer，值须与 user-config.json 中的 webSocketAuthToken 一致（扩展选项页保存的本地服务访问密钥）。"
                 }, _jsonOptions));
                 return;
             }
@@ -173,5 +173,5 @@ public sealed class LocalApiAuthMiddleware
 /// <summary>与 Program.cs 中开发用 WebSocket token 常量保持一致（供中间件引用）。</summary>
 public static class ProgramAuthConstants
 {
-    public const string DevelopmentWsToken = "office-copilot-dev-token";
+    public const string DevelopmentWsToken = "open-workmate-dev-token";
 }

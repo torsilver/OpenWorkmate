@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 上下文管理：历史裁剪、截断、摘要、注入等逻辑的统一入口。

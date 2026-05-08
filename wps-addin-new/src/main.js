@@ -1,4 +1,4 @@
-import './assets/taskly-copilot-theme-bridge.css'
+import './assets/open-workmate-theme-bridge.css'
 import './assets/main.css'
 
 import { createApp } from 'vue'

@@ -1,14 +1,14 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>RPC 调用当前打开的 Office 文档（Word/Excel 任务窗格）。仅当用户从 Word 或 Excel 加载项连接时有效。</summary>
-[CopilotPluginId("CurrentDocument")]
+[OpenWorkmatePluginId("CurrentDocument")]
 public sealed class CurrentDocumentPlugin
 {
     private readonly SessionManager _sessionManager;

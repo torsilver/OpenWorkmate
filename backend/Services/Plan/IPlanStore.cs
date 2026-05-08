@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Plan;
+namespace OpenWorkmate.Server.Services.Plan;
 
 /// <summary>计划存储：基于文件的计划 CRUD。</summary>
 public interface IPlanStore

@@ -76,7 +76,7 @@ wpsjs debug
 |-----------|------|
 | [wps-addin-new/manifest.xml](../wps-addin-new/manifest.xml) | 加载项清单（`JsPlugin`）。 |
 | [wps-addin-new/public/ribbon.xml](../wps-addin-new/public/ribbon.xml) + `src/components/ribbon.js` | 功能区与打开任务窗格等入口。 |
-| [wps-addin-new/src/](../wps-addin-new/src/) | **Vue 主线**：`TaskPane.vue`、`composables/useCopilot.js`（路由 `#/taskpane`）等。 |
+| [wps-addin-new/src/](../wps-addin-new/src/) | **Vue 主线**：`TaskPane.vue`、`composables/useOpenWorkmate.js`（路由 `#/taskpane`）等。 |
 | [wps-addin-new/public/README.md](../wps-addin-new/public/README.md) | `public/` 仅静态资源与 ribbon 等；**无**独立静态任务窗格页面。 |
 
 ### 3.1 会话上下文与后端工具可见性（`wpsHostKind`）
@@ -92,17 +92,17 @@ Vue 侧在 WebSocket **`set_context`** 中携带 **`wpsHostKind`**（与 [`wps-a
 
 ## 4. 开发者工具（DevTools）在任务窗格里的用法
 
-官方文档强调：**对其中一个网页单独调试**。本项目的 **Office Copilot 任务窗格** 是内嵌 WebView，与主窗口可能 **不是同一个调试目标**。
+官方文档强调：**对其中一个网页单独调试**。本项目的 **Open Workmate 任务窗格** 是内嵌 WebView，与主窗口可能 **不是同一个调试目标**。
 
 实践建议：
 
 1. **先聚焦**到任务窗格（点击任务窗格区域）。
 2. 尝试 **F12** 或文档所述 **Alt + F12**（以你本机 WPS 版本菜单/快捷键为准）。
-3. 若主窗口与任务窗格 **分离调试**，请在 **对应网页** 上打开 DevTools，再看 **Console / Network**（例如本机 `Office Copilot Server` 的 WebSocket、HTTP）。
+3. 若主窗口与任务窗格 **分离调试**，请在 **对应网页** 上打开 DevTools，再看 **Console / Network**（例如本机 `Open Workmate Server` 的 WebSocket、HTTP）。
 
 与 **本机后端** 联调时：
 
-- 确保 [backend](../backend/) 已启动，扩展/加载项能通过 [local-service-resolve](../chrome-extension/local-service-resolve.js) 同类逻辑解析到端口（详见 [wps-addin-new/src/utils/tasklyLocalService.js](../wps-addin-new/src/utils/tasklyLocalService.js)）。
+- 确保 [backend](../backend/) 已启动，扩展/加载项能通过 [local-service-resolve](../chrome-extension/local-service-resolve.js) 同类逻辑解析到端口（详见 [wps-addin-new/src/utils/openWorkmateLocalService.js](../wps-addin-new/src/utils/openWorkmateLocalService.js)）。
 - WebSocket / REST 错误请同时看 **WPS 窗格 Console** 与 **服务端日志**。
 
 ---

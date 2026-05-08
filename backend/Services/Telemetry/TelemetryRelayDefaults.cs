@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>与 <c>start-ai-and-gateway.cmd</c>、选项页占位符一致的本机开发默认。</summary>
 public static class TelemetryRelayDefaults

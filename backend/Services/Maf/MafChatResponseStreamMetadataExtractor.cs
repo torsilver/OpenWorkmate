@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>跨 MAF 流式 <c>AgentResponseUpdate</c> 调用保持去重状态（finish / role / meta 各最多一条逻辑序列）。</summary>
 public sealed class MafStreamDeltaMetadataState

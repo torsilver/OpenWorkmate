@@ -12,8 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <Compile Remove="OfficeCopilotTrayHost.cs" />
-    <Compile Remove="OfficeCopilotSingleInstance.cs" />
+    <Compile Remove="OpenWorkmateTrayHost.cs" />
+    <Compile Remove="OpenWorkmateSingleInstance.cs" />
     <Compile Remove="Plugins\OfficeLegacyComInterop.cs" />
   </ItemGroup>
 

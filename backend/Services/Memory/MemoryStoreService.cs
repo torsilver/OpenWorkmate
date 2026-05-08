@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>记忆存储服务：使用 IEmbeddingProvider 生成向量并写入 IVectorStore。</summary>
 public sealed class MemoryStoreService : IMemoryStoreService

@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 在宿主启动时异步预热 <see cref="ChatService"/> 的运行时，避免在单例构造函数中同步阻塞。

@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 public sealed class McpClientManager : IDisposable
 {

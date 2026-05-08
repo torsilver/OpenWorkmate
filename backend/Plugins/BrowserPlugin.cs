@@ -1,16 +1,16 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
-[CopilotPluginId("Browser")]
+[OpenWorkmatePluginId("Browser")]
 public class BrowserPlugin
 {
     private readonly SessionManager _sessionManager;
@@ -77,7 +77,7 @@ public class BrowserPlugin
     [Description("Adds a floating sticky note on the user's current webpage. Content and title are fully customizable. Multiple notes can exist at once. Optionally anchor the note above a specific text snippet.")]
     public async Task<string> AddFloatingNoteAsync(
         [Description("The main content of the floating note (AI can write any explanation, translation, or tip here)")] string message,
-        [Description("Optional. Custom title shown in the note header (e.g. '翻译', '解释'). Default is 'Office Copilot'.")] string? title = null,
+        [Description("Optional. Custom title shown in the note header (e.g. '翻译', '解释'). Default is 'Open Workmate'.")] string? title = null,
         [Description("Optional. If provided, the note will be positioned above the first occurrence of this text on the page; otherwise shown at top-right corner.")] string? anchorText = null)
     {
         var sessionId = SessionContext.GetSessionId();

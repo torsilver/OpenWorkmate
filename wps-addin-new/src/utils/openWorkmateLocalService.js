@@ -1,6 +1,6 @@
-const TASKLY_DEFAULT_PORT_START = 8765
-const TASKLY_PORT_TRY_COUNT = 10
-const TASKLY_BASE_URL_STORAGE_KEY = 'tasklyLocalServiceBaseUrl'
+const openWorkmate_DEFAULT_PORT_START = 8765
+const openWorkmate_PORT_TRY_COUNT = 10
+const openWorkmate_BASE_URL_STORAGE_KEY = 'OpenWorkmateLocalServiceBaseUrl'
 
 export function normalizeBase(url) {
   if (!url) return ''
@@ -36,7 +36,7 @@ function fetchBootstrapJson(base) {
 function readSessionStoredBase() {
   try {
     if (typeof sessionStorage === 'undefined') return null
-    return normalizeBase(sessionStorage.getItem(TASKLY_BASE_URL_STORAGE_KEY))
+    return normalizeBase(sessionStorage.getItem(openWorkmate_BASE_URL_STORAGE_KEY))
   } catch {
     return null
   }
@@ -45,7 +45,7 @@ function readSessionStoredBase() {
 function writeSessionStoredBase(base) {
   try {
     if (typeof sessionStorage !== 'undefined' && base)
-      sessionStorage.setItem(TASKLY_BASE_URL_STORAGE_KEY, normalizeBase(base))
+      sessionStorage.setItem(openWorkmate_BASE_URL_STORAGE_KEY, normalizeBase(base))
   } catch {
     /* ignore */
   }
@@ -56,7 +56,7 @@ function scanPorts(start, count, persist) {
     if (i >= count) {
       return Promise.reject(
         new Error(
-          `找不到本机 Office Copilot 服务（已扫描 127.0.0.1:${start}–${start + count - 1}）。请确认后台已启动。`
+          `找不到本机 Open Workmate 服务（已扫描 127.0.0.1:${start}–${start + count - 1}）。请确认后台已启动。`
         )
       )
     }
@@ -74,7 +74,7 @@ function scanPorts(start, count, persist) {
   return attempt(0)
 }
 
-export function tasklyResolveLocalServiceBase() {
+export function openWorkmateResolveLocalServiceBase() {
   const persist = (canonical) => writeSessionStoredBase(canonical)
   const stored = readSessionStoredBase()
   if (stored) {
@@ -84,13 +84,13 @@ export function tasklyResolveLocalServiceBase() {
         persist(canonical)
         return { baseUrl: canonical, bootstrap: j }
       }
-      return scanPorts(TASKLY_DEFAULT_PORT_START, TASKLY_PORT_TRY_COUNT, persist)
+      return scanPorts(openWorkmate_DEFAULT_PORT_START, openWorkmate_PORT_TRY_COUNT, persist)
     })
   }
-  return scanPorts(TASKLY_DEFAULT_PORT_START, TASKLY_PORT_TRY_COUNT, persist)
+  return scanPorts(openWorkmate_DEFAULT_PORT_START, openWorkmate_PORT_TRY_COUNT, persist)
 }
 
-export function tasklyHttpWsFromBase(baseUrl) {
+export function openWorkmateHttpWsFromBase(baseUrl) {
   const b = normalizeBase(baseUrl)
   if (!b) return { apiBase: '', wsUrl: '' }
   try {

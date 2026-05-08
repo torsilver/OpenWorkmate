@@ -4,7 +4,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 /// <summary>
 /// MCP 客户端：基于官方 <see href="https://www.nuget.org/packages/ModelContextProtocol">ModelContextProtocol</see> SDK（stdio）。

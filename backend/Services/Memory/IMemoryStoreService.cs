@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>记忆存储服务：封装嵌入 + 向量存储，提供增删改查。</summary>
 public interface IMemoryStoreService

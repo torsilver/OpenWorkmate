@@ -1,13 +1,13 @@
 using System.ComponentModel;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.CrossAgentTask;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.CrossAgentTask;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>跨 Agent 任务：由当前端发起，让另一端的 Agent 执行任务。</summary>
-[CopilotPluginId("CrossAgentTask")]
+[OpenWorkmatePluginId("CrossAgentTask")]
 public sealed class CrossAgentTaskPlugin
 {
     private readonly ICrossAgentTaskStore _store;

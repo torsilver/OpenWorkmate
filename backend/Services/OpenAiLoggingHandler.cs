@@ -3,9 +3,9 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 记录发往 OpenAI 兼容接口的 HTTP 请求体与错误响应体，便于与模型提供方对账与排查。

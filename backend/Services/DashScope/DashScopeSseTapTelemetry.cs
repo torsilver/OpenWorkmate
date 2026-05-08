@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>单次 chat/completions 流式响应的 SSE 旁路统计，供排查 reasoning_content 未进 WS 时使用。</summary>
 internal sealed class DashScopeSseTapTelemetry

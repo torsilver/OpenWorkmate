@@ -2,10 +2,10 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
-using OfficeCopilot.Server.Mcp;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server.Mcp;
+using OpenWorkmate.Server.Services.Telemetry;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 public class AiConfig
 {
@@ -13,7 +13,7 @@ public class AiConfig
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
     public string ApiKey { get; set; } = "";
     public string ModelId { get; set; } = "gpt-4o-mini";
-    public string SystemPrompt { get; set; } = "你是 Office Copilot，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 可用 | 显式分段，也可用空行或换行分段（服务端会拆成多个 Word 段落）；行首 Markdown：以 # / ## / ### 开头为标题，以 - 或 * 开头为列表项，其余为正文（自动首行缩进与排版）。创建 PPT 或向幻灯片写入正文时，bodyText/text 可用 | 显式分段，也可用空行或换行分段（与 Word 一致，服务端会拆成多行）；以 - 或 * 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n本机文件与用户身份：工具运行在「当前登录 Windows 用户」的环境中，凡写入或引用用户个人目录、桌面、下载、文档等，均应对应该用户本人。不要臆造 C:\\Users\\某用户名\\…；不要用 C:\\Users\\Public、%PUBLIC% 等公共/共享配置目录代替当前用户的私人目录。需要绝对路径时优先用 %USERPROFILE% 及其子路径（如 Desktop、Downloads）。Word/Excel/PPT 等路径参数若未要求完整盘符路径，优先只传文件名或相对子路径（服务端按约定解析到当前用户下，多为 Downloads）。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。\n工具接地：凡涉及本机 Excel/Word/PPT 或磁盘文件的实际变更（如合并/取消合并单元格、写入区域、保存文件、删除内容等），你必须先发出 function call 并由工具执行完成；仅在看到工具返回内容后，才能向用户确认「已成功」或说明失败原因。推理/思考过程不能代替工具调用，也不得仅凭意图描述冒充已执行。\n文件状态接地：对话里更早的助手摘要或较早轮次的工具输出**可能已过时**，不能当作磁盘上文件的当前真相（模型无法可靠区分「历史叙述」与「此刻文件」）。凡用户询问、核对或点名读取某 Word/Excel/PPT 路径下的实际内容（正文、表格、幻灯片、形状、列表等），你必须**当场再次调用**对应只读工具，并以**本轮工具返回**为唯一依据作答；禁止仅凭对话记忆复述成「已读过」或推断当前文件状态。若本轮尚未调用成功或未收到返回，应调用工具或如实说明，不得用历史内容凑答案。";
+    public string SystemPrompt { get; set; } = "你是 Open Workmate，一个智能办公自动化助手。你运行在用户的本地电脑上，能够帮助用户操作 Excel、Word 文档，执行系统命令。请用简洁友好的中文回答用户问题。\n如果用户让你画图、展示报表或动态页面，请直接返回一段完整的、带有 <html_canvas> 和 </html_canvas> 标签包裹的 HTML 代码（里面可以引入 Echarts 或其他 CDN 图表库），我会用浏览器渲染给用户看。\n用户可能从浏览器侧边栏、Word/Excel 任务窗格或 WPS 加载项连接：操作当前打开的文档请用 CurrentDocument（仅任务窗格/WPS 端可用），操作网页高亮与截图请用 Browser（仅浏览器端可用）；若当前端不支持会返回提示，可引导用户切换到对应端。\n当你获得大量结构化数据、表格或需要跨步骤精确引用的内容时，请使用 accurate_data_write 保存，之后用 accurate_data_read 按 id 取回，避免占用对话上下文。\n创建 Word 文档时，paragraphs 可用 | 显式分段，也可用空行或换行分段（服务端会拆成多个 Word 段落）；行首 Markdown：以 # / ## / ### 开头为标题，以 - 或 * 开头为列表项，其余为正文（自动首行缩进与排版）。创建 PPT 或向幻灯片写入正文时，bodyText/text 可用 | 显式分段，也可用空行或换行分段（与 Word 一致，服务端会拆成多行）；以 - 或 * 开头的行会自动变为项目符号。在当前文档中插入文字时，可用 style 参数指定样式（如 Heading1、Heading2）使文档结构清晰。\n本机文件与用户身份：工具运行在「当前登录 Windows 用户」的环境中，凡写入或引用用户个人目录、桌面、下载、文档等，均应对应该用户本人。不要臆造 C:\\Users\\某用户名\\…；不要用 C:\\Users\\Public、%PUBLIC% 等公共/共享配置目录代替当前用户的私人目录。需要绝对路径时优先用 %USERPROFILE% 及其子路径（如 Desktop、Downloads）。Word/Excel/PPT 等路径参数若未要求完整盘符路径，优先只传文件名或相对子路径（服务端按约定解析到当前用户下，多为 Downloads）。\n尽量在客户本机解决，减少token消耗的内容：优先通过本机工具完成提取/计算/转换，只把必要的摘要或最终结果回传到对话上下文，避免把原始大段数据（如超长文本或 base64）直接塞进 prompt。\n对可能大范围修改文件、执行系统命令或运行脚本的操作，应先向用户澄清影响范围与意图；系统可能对敏感操作要求人工确认，请配合。不要擅自扩大操作范围。\n工具接地：凡涉及本机 Excel/Word/PPT 或磁盘文件的实际变更（如合并/取消合并单元格、写入区域、保存文件、删除内容等），你必须先发出 function call 并由工具执行完成；仅在看到工具返回内容后，才能向用户确认「已成功」或说明失败原因。推理/思考过程不能代替工具调用，也不得仅凭意图描述冒充已执行。\n文件状态接地：对话里更早的助手摘要或较早轮次的工具输出**可能已过时**，不能当作磁盘上文件的当前真相（模型无法可靠区分「历史叙述」与「此刻文件」）。凡用户询问、核对或点名读取某 Word/Excel/PPT 路径下的实际内容（正文、表格、幻灯片、形状、列表等），你必须**当场再次调用**对应只读工具，并以**本轮工具返回**为唯一依据作答；禁止仅凭对话记忆复述成「已读过」或推断当前文件状态。若本轮尚未调用成功或未收到返回，应调用工具或如实说明，不得用历史内容凑答案。";
     /// <summary>始终包含的插件名（如 CLI），即使用户未提到也会传给模型（仅旧版 JSON 的 <c>ai</c> 对象内使用；运行时应使用 <see cref="AppConfig.AlwaysIncludePlugins"/>）。</summary>
     public List<string> AlwaysIncludePlugins { get; set; } = new();
 }
@@ -138,7 +138,7 @@ public class ContextWindowConfig
     public int SummarizationMaxSummaryChars { get; set; } = 500;
     public bool ContextLengthRetryEnabled { get; set; } = true;
     public int ContextLengthRetryMaxTurns { get; set; } = 10;
-    /// <summary>摘要时被压缩的对话历史落盘目录；为空时使用与 PlansDirectory 同级的 ConversationHistory，若仍无法解析则使用 %LocalAppData%/OfficeCopilot/ConversationHistory。</summary>
+    /// <summary>摘要时被压缩的对话历史落盘目录；为空时使用与 PlansDirectory 同级的 ConversationHistory，若仍无法解析则使用 %LocalAppData%/OpenWorkmate/ConversationHistory。</summary>
     public string? ConversationHistoryDirectory { get; set; }
     /// <summary>旧消息中大内容截断：当历史 token 占比超过此比例时，对「保留窗口」之外的旧消息做内容截断。0 表示禁用。建议低于 SummarizationTriggerRatio（如 0.7）。</summary>
     public double TruncateToolArgsThresholdRatio { get; set; }
@@ -157,7 +157,7 @@ public class ContextWindowConfig
     public double CompactionQueryAwareTokenPressureRatio { get; set; } = 0.92;
 
     /// <summary>主会话动态工具（search/activate + 外层扩容 MAF 循环）。</summary>
-    public OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig DynamicTooling { get; set; } = new();
+    public OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig DynamicTooling { get; set; } = new();
 
     /// <summary>完全不优化（完全依赖大模型）：为 true 时不按 token 裁历史、不摘要、不截断工具参数、不触发超长重试；仅保留轮数上限。为 false 时使用本配置内其余优化参数。</summary>
     public bool PassThroughContext { get; set; }
@@ -165,7 +165,7 @@ public class ContextWindowConfig
     /// <summary>为 true 时向 <see cref="SessionAuditDirectory"/> 追加 JSONL 会话审计（用户消息、工具起止、压缩等）；默认关闭。</summary>
     public bool SessionAuditEnabled { get; set; }
 
-    /// <summary>JSONL 审计目录；空则与 <see cref="ConversationHistoryDirectory"/> 同级下 SessionAudit，再否则 %LocalAppData%/OfficeCopilot/SessionAudit。</summary>
+    /// <summary>JSONL 审计目录；空则与 <see cref="ConversationHistoryDirectory"/> 同级下 SessionAudit，再否则 %LocalAppData%/OpenWorkmate/SessionAudit。</summary>
     public string? SessionAuditDirectory { get; set; }
 }
 
@@ -373,15 +373,15 @@ public class AppConfig
     public string? ActiveEmbeddingModelId { get; set; }
     /// <summary>向量存储类型：Memory = 内存，Sqlite = 本地 db 文件。</summary>
     public string RagStorageType { get; set; } = "Sqlite";
-    /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OfficeCopilot/rag.db。</summary>
+    /// <summary>SQLite 向量库路径（RagStorageType=Sqlite 时）；为空时使用 %LocalAppData%/OpenWorkmate/rag.db。</summary>
     public string? RagStoragePath { get; set; }
-    /// <summary>计划存储目录（.plan.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/Plans。</summary>
+    /// <summary>计划存储目录（.plan.md 文件）；为空时使用 %LocalAppData%/OpenWorkmate/Plans。</summary>
     public string? PlansDirectory { get; set; }
-    /// <summary>准确数据插件存储目录；为空时使用 %LocalAppData%/OfficeCopilot/AccurateData。</summary>
+    /// <summary>准确数据插件存储目录；为空时使用 %LocalAppData%/OpenWorkmate/AccurateData。</summary>
     public string? AccurateDataDirectory { get; set; }
-    /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OfficeCopilot/ScheduledTasks。</summary>
+    /// <summary>定时任务插件存储目录（.task.md 文件）；为空时使用 %LocalAppData%/OpenWorkmate/ScheduledTasks。</summary>
     public string? ScheduledTasksDirectory { get; set; }
-    /// <summary>历史对话 SQLite 所在目录（内含 <c>chat-sessions.db</c>）；为空时使用 %LocalAppData%/OfficeCopilot/ChatSessions。可被宿主键 OfficeCopilot:ChatSessionsDirectory 覆盖。</summary>
+    /// <summary>历史对话 SQLite 所在目录（内含 <c>chat-sessions.db</c>）；为空时使用 %LocalAppData%/OpenWorkmate/ChatSessions。可被宿主键 OpenWorkmate:ChatSessionsDirectory 覆盖。</summary>
     public string? ChatSessionsDirectory { get; set; }
     /// <summary>OCR 配置；为空时 MCP_OCR 工具不可用。已废弃，请使用 OcrModels + ActiveOcrModelId。</summary>
     public OcrConfig? Ocr { get; set; }
@@ -519,7 +519,7 @@ public sealed class ConfigService
 
     public event Action? OnConfigChanged;
 
-    /// <param name="hostConfiguration">仅用于解析 <c>OfficeCopilot:UserConfigPath</c>（测试指向临时文件）；应用配置内容一律来自该路径下的 JSON。</param>
+    /// <param name="hostConfiguration">仅用于解析 <c>OpenWorkmate:UserConfigPath</c>（测试指向临时文件）；应用配置内容一律来自该路径下的 JSON。</param>
     public ConfigService(IConfiguration hostConfiguration, ILogger<ConfigService> logger)
     {
         _logger = logger;
@@ -527,13 +527,13 @@ public sealed class ConfigService
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrEmpty(appData) || !Path.IsPathRooted(appData))
             appData = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? AppContext.BaseDirectory;
-        var appDir = Path.Combine(appData, "OfficeCopilot");
+        var appDir = Path.Combine(appData, "OpenWorkmate");
         try { Directory.CreateDirectory(appDir); } catch { /* 无权限时后续写文件会报错 */ }
 
         // 允许测试/开发环境覆盖配置落盘路径，避免互相污染本机配置。
-        // Key: OfficeCopilot:UserConfigPath
+        // Key: OpenWorkmate:UserConfigPath
         var configPath = Path.Combine(appDir, "user-config.json");
-        var overridePath = hostConfiguration["OfficeCopilot:UserConfigPath"];
+        var overridePath = hostConfiguration["OpenWorkmate:UserConfigPath"];
         if (!string.IsNullOrWhiteSpace(overridePath))
         {
             overridePath = Environment.ExpandEnvironmentVariables(overridePath.Trim());
@@ -755,7 +755,7 @@ public sealed class ConfigService
         NormalizeAgentProfiles(config);
         config.Session ??= new SessionConfig();
         config.ContextWindow ??= new ContextWindowConfig();
-        config.ContextWindow.DynamicTooling ??= new OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig();
+        config.ContextWindow.DynamicTooling ??= new OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig();
         if (config.ContextOptimizationPresets == null || config.ContextOptimizationPresets.Count == 0)
             config.ContextOptimizationPresets = new List<ContextOptimizationPreset>(GetBuiltInPresets());
         else
@@ -1033,11 +1033,11 @@ public sealed class ConfigService
         };
     }
 
-    private static OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig CloneDynamicTooling(
-        OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig? s)
+    private static OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig CloneDynamicTooling(
+        OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig? s)
     {
-        s ??= new OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig();
-        return new OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig
+        s ??= new OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig();
+        return new OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig
         {
             MaxOuterLoops = s.MaxOuterLoops,
             MaxSearchPerTurn = s.MaxSearchPerTurn,

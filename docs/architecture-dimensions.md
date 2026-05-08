@@ -1,4 +1,4 @@
-# Office Copilot（_Taskly）项目结构 — 多维视图
+# Open Workmate 项目结构 — 多维视图
 
 本文用 **Markdown + Mermaid** 从多个角度描述仓库与运行时结构，便于新人定位代码与排障。  
 在支持 Mermaid 的编辑器中打开本文件即可预览图；GitHub 对 Mermaid 也有基础支持。
@@ -12,8 +12,8 @@
 
 ```mermaid
 flowchart TB
-  subgraph repo["仓库根 _Taskly"]
-    BE["backend<br/>ASP.NET Core 本地服务<br/>OfficeCopilot.Server"]
+  subgraph repo["仓库根目录"]
+    BE["backend<br/>ASP.NET Core 本地服务<br/>OpenWorkmate.Server"]
     BT["backend.Tests<br/>xUnit：Unit / Integration"]
     CE["chrome-extension<br/>Chrome MV3 侧栏与选项页"]
     DOC["docs<br/>设计与清单类文档"]
@@ -39,7 +39,7 @@ flowchart LR
     OFF["Office 加载项<br/>office-addin"]
   end
 
-  subgraph local["本机 Office Copilot Server"]
+  subgraph local["本机 Open Workmate Server"]
     HTTP["HTTP<br/>REST /api/*<br/>静态页 debug/logs 等"]
     WS["WebSocket<br/>默认 /ws<br/>主对话通道"]
     WSSTT["WebSocket<br/>/api/stt-stream<br/>流式 ASR"]
@@ -196,7 +196,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-  subgraph appdata["%LocalAppData%\\OfficeCopilot"]
+  subgraph appdata["%LocalAppData%\\OpenWorkmate"]
     UC["user-config.json<br/>用户配置（含密钥等）"]
     LS["local-service.json<br/>本机服务发现信息"]
     PLANS["Plans\\<br/>IPlanStore 默认目录"]

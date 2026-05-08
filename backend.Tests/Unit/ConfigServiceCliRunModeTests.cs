@@ -1,7 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Xunit;
 
 namespace backend.Tests.Unit;

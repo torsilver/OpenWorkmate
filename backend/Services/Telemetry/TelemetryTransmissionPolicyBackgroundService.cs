@@ -1,9 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 public interface ITelemetryTransmissionPolicyProvider
 {

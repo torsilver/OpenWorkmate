@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 public sealed class TelemetryDefaultsFile
 {

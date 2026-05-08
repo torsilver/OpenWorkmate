@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  从 ExtensionInstallForcelist 中移除 Taskly 条目（仅删除包含指定 ExtensionId 的项，不影响其它扩展）。
+  从 ExtensionInstallForcelist 中移除 OpenWorkmate 条目（仅删除包含指定 ExtensionId 的项，不影响其它扩展）。
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -43,14 +43,14 @@ $prefix = "$ExtensionId;"
 $filtered = $list | Where-Object { -not $_.StartsWith($prefix, [System.StringComparison]::Ordinal) }
 
 if ($filtered.Count -eq $list.Count) {
-  Write-Host "未找到 Taskly 对应条目。" -ForegroundColor Yellow
+  Write-Host "未找到 OpenWorkmate 对应条目。" -ForegroundColor Yellow
   return
 }
 
 if ($filtered.Count -eq 0) {
   Remove-ItemProperty -Path $policyPath -Name $name -ErrorAction SilentlyContinue
-  Write-Host "已删除 ExtensionInstallForcelist（仅剩 Taskly 时已清空该值）。" -ForegroundColor Green
+  Write-Host "已删除 ExtensionInstallForcelist（仅剩 OpenWorkmate 时已清空该值）。" -ForegroundColor Green
 } else {
   Set-ItemProperty -Path $policyPath -Name $name -Value $filtered -Type MultiString
-  Write-Host "已从 ExtensionInstallForcelist 移除 Taskly。" -ForegroundColor Green
+  Write-Host "已从 ExtensionInstallForcelist 移除 OpenWorkmate。" -ForegroundColor Green
 }

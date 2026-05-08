@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>OCR 服务，供内置 MCP_OCR 工具调用；从图片中提取文本。</summary>
 public interface IOcrService

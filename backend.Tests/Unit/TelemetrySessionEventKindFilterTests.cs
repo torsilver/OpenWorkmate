@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Http;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server.Services.Telemetry;
 using Xunit;
 
 namespace backend.Tests.Unit;

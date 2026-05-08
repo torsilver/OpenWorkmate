@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 标记当前是否在 run_subtask 执行栈内，供 ToolStatusFilter 在发送 tool_invocation_* 时设置 isSubtask。

@@ -3,7 +3,7 @@
     <header class="header">
       <div class="header-title">
         <span class="header-icon">⚡</span>
-        <h1>Office Copilot</h1>
+        <h1>Open Workmate</h1>
       </div>
       <div class="header-controls">
         <label for="wps-agent-profile" class="visually-hidden">当前 Agent</label>
@@ -20,7 +20,7 @@
           type="button"
           class="header-btn"
           title="在 Chrome 中打开扩展选项页（模型、密钥、MCP、界面主题等）"
-          @click="openOfficeCopilotSettingsInChrome"
+          @click="openOpenWorkmateSettingsInChrome"
         >
           ⚙️
         </button>
@@ -86,7 +86,7 @@
 
     <main ref="messagesRef" class="messages">
       <div v-if="showWelcome" class="welcome">
-        <p class="welcome-title">你好，我是 Office Copilot 👋</p>
+        <p class="welcome-title">你好，我是 Open Workmate 👋</p>
         <p class="welcome-sub">在此与 AI 对话，可操作当前 WPS 文档。模型与密钥等请点击标题栏 ⚙️ 在 Chrome 扩展选项页配置。</p>
       </div>
       <template v-for="(msg, idx) in messages" :key="idx">
@@ -429,12 +429,12 @@
 
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useCopilot } from '../composables/useCopilot'
+import { useOpenWorkmate } from '../composables/useOpenWorkmate'
 
 export default {
   name: 'TaskPane',
   setup() {
-    const copilot = useCopilot()
+    const copilot = useOpenWorkmate()
     const fileInputRef = ref(null)
     const messagesRef = ref(null)
 

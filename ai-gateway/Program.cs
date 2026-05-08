@@ -4,11 +4,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Serilog;
-using Taskly.AI.Gateway;
-using Taskly.AI.Gateway.Endpoints;
-using Taskly.AI.Gateway.Models;
-using Taskly.AI.Gateway.Services;
-using Taskly.AI.Gateway.Storage;
+using OpenWorkmate.AI.Gateway;
+using OpenWorkmate.AI.Gateway.Endpoints;
+using OpenWorkmate.AI.Gateway.Models;
+using OpenWorkmate.AI.Gateway.Services;
+using OpenWorkmate.AI.Gateway.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 

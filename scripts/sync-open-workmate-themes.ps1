@@ -6,7 +6,7 @@ $targets = @(
     (Join-Path $root "wps-addin-new\public"),
     (Join-Path $root "office-addin")
 )
-foreach ($f in @("chat-themes.css", "taskly-theme-boot.js")) {
+foreach ($f in @("chat-themes.css", "open-workmate-theme-boot.js")) {
     $from = Join-Path $src $f
     if (-not (Test-Path $from)) { Write-Error "Missing $from"; exit 1 }
     foreach ($t in $targets) {
@@ -21,4 +21,4 @@ if (Test-Path $fontDir) {
         Copy-Item -Path (Join-Path $fontDir "*") -Destination $destFonts -Force
     }
 }
-Write-Host "Synced chat-themes.css, taskly-theme-boot.js, and shared-ui/fonts (if present) to chrome-extension, wps-addin-new/public, office-addin."
+Write-Host "Synced chat-themes.css, open-workmate-theme-boot.js, and shared-ui/fonts (if present) to chrome-extension, wps-addin-new/public, office-addin."

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>
 /// 子任务（<c>run_subtask</c>）内 <c>reasoning_chunk</c> 的 blockSeq/blockKind，与主会话

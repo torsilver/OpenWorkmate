@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>生成用于「测试连接」等场景的最小 PCM WAV（16kHz/16bit/单声道）。</summary>
 public static class SttUpstreamAdapter

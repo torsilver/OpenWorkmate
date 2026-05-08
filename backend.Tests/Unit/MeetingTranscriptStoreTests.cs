@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -21,7 +21,7 @@ public sealed class MeetingTranscriptStoreTests
         {
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+                "OpenWorkmate", "MeetingTranscripts", sid + ".jsonl");
             if (File.Exists(path))
                 File.Delete(path);
         }
@@ -39,7 +39,7 @@ public sealed class MeetingTranscriptStoreTests
         await store.AppendSegmentAsync(sid, 0, "中文实录", CancellationToken.None);
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+            "OpenWorkmate", "MeetingTranscripts", sid + ".jsonl");
         try
         {
             var raw = await File.ReadAllTextAsync(path);
@@ -78,7 +78,7 @@ public sealed class MeetingTranscriptStoreTests
         {
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OfficeCopilot", "MeetingTranscripts", sid + ".jsonl");
+                "OpenWorkmate", "MeetingTranscripts", sid + ".jsonl");
             if (File.Exists(path))
                 File.Delete(path);
         }

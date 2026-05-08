@@ -4,11 +4,11 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.OpenAiCompat;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>
 /// 主会话 Host + Worker 多 Agent 编排（MAF <see cref="AgentWorkflowBuilder.BuildSequential"/>）。

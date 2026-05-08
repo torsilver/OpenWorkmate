@@ -1,7 +1,7 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>
 /// MAF Agent Run Middleware 工厂。通过 <c>agent.AsBuilder().Use(shared).Build()</c> 注册到 Agent 管道。

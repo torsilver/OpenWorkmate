@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace OfficeCopilot.Server.Services.CrossAgentTask;
+namespace OpenWorkmate.Server.Services.CrossAgentTask;
 
 /// <summary>SQLite 持久化跨 Agent 任务。</summary>
 public sealed class SqliteCrossAgentTaskStore : ICrossAgentTaskStore

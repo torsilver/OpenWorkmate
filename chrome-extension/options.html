@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Office Copilot 设置</title>
-  <script src="taskly-theme-boot.js"></script>
+  <title>Open Workmate 设置</title>
+  <script src="open-workmate-theme-boot.js"></script>
   <style>
     :root {
       --bg-primary: #f8fafc;
@@ -388,7 +388,7 @@
 <body>
   <div class="container">
     <header class="console-header">
-      <h1>⚙️ Office Copilot 控制台</h1>
+      <h1>⚙️ Open Workmate 控制台</h1>
       <select id="uiThemeId" name="uiThemeId" class="console-header-theme-select"
         aria-label="对话界面主题"
         title="侧栏、WPS/Office 任务窗格、计划与 Workspace 等对话相关页面将使用同一主题；保存后写入本机配置并同步 localStorage。">
@@ -430,7 +430,7 @@
       <details class="settings-block">
         <summary>调试工具</summary>
         <div class="settings-block-inner">
-          <p class="help-text" style="margin-bottom: 10px;">仅供本机联调：在新标签页打开调试统计页，或打开本机服务上的日志查看网页（需已启动 Office Copilot 后台）。</p>
+          <p class="help-text" style="margin-bottom: 10px;">仅供本机联调：在新标签页打开调试统计页，或打开本机服务上的日志查看网页（需已启动 Open Workmate 后台）。</p>
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
             <button type="button" id="openDebugStatsFromOptionsBtn" class="btn-secondary">调试统计</button>
             <button type="button" id="openDebugLogsPageBtn" class="btn-secondary">调试日志（网页）</button>
@@ -441,7 +441,7 @@
         <summary>本地服务访问密钥</summary>
         <div class="settings-block-inner">
       <div class="form-group" style="margin-bottom: 0; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
-        <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：修改下方密钥后会<strong>自动保存</strong>到本机服务端 <code>user-config</code>（字段 <code>webSocketAuthToken</code>），请留意页顶「已自动保存」且本机 Office Copilot 后台已启动；若未写入 user-config，则回退为 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。同一值会同步到 <code>chrome.storage.local</code> 供侧栏/Workspace；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥。</p>
+        <p class="help-text" style="margin-bottom: 10px;">建议<strong>只在此处维护一份</strong>：修改下方密钥后会<strong>自动保存</strong>到本机服务端 <code>user-config</code>（字段 <code>webSocketAuthToken</code>），请留意页顶「已自动保存」且本机 Open Workmate 后台已启动；若未写入 user-config，则回退为 <code>appsettings.json</code> 中的 <code>WebSocket:AuthToken</code>。同一值会同步到 <code>chrome.storage.local</code> 供侧栏/Workspace；WPS/Office 任务窗格在本机首次连接时也会自动拉取同一密钥。</p>
         <div class="form-group" style="margin-bottom: 8px;">
           <label for="localServiceAuthToken">访问密钥（与服务端当前生效值一致）</label>
           <input type="password" id="localServiceAuthToken" autocomplete="off" placeholder="留空则服务端未强制密钥时可不携带" style="max-width: 480px; width: 100%;">
@@ -871,7 +871,7 @@
         </select>
         <div id="ragStoragePathGroup" style="display: none; margin-top: 8px;">
           <label for="ragStoragePath">数据库路径</label>
-          <input type="text" id="ragStoragePath" placeholder="留空则用 %LocalAppData%/OfficeCopilot/rag.db">
+          <input type="text" id="ragStoragePath" placeholder="留空则用 %LocalAppData%/OpenWorkmate/rag.db">
         </div>
       </div>
         </div>
@@ -912,7 +912,7 @@
             <summary style="padding: 10px 12px; cursor: pointer; font-weight: 600; font-size: 13px;">安装说明（本机目录）</summary>
             <div class="settings-block-inner" style="padding-top: 0;">
               <ol class="help-text" style="font-size: 13px; margin: 0; padding-left: 1.25rem; line-height: 1.6;">
-                <li>在<strong>运行 Office Copilot 服务端</strong>的机器上，找到与可执行文件同级的 <code>Skills</code> 文件夹（若不存在可自建）。</li>
+                <li>在<strong>运行 Open Workmate 服务端</strong>的机器上，找到与可执行文件同级的 <code>Skills</code> 文件夹（若不存在可自建）。</li>
                 <li>每个技能一个子文件夹，根目录放置 <code>SKILL.md</code>（frontmatter 中 <code>name</code> 即为对话里的技能 ID）；可执行类需另有 <code>scripts/</code> 目录，内含 <code>.mjs</code> 或 <code>.js</code>（由本机已安装的 <strong>Node.js</strong> 运行）。</li>
                 <li>可从 OpenClaw / Clawhub 生态拷贝符合上述结构的技能包，解压到 <code>Skills/&lt;文件夹名&gt;/</code> 即可（文件夹名可与 <code>name</code> 不同）。</li>
                 <li>对话中通过内置插件 <strong>ClawhubSkill</strong> 的工具 <code>run_clawhub_script</code> 调用：<code>skillId</code> 与 <code>SKILL.md</code> 的 <code>name</code> 一致，<code>scriptName</code> 为 <code>scripts/</code> 下文件名（不含扩展名）。</li>
@@ -989,7 +989,7 @@
         <p class="help-text" style="margin: 8px 0 0;">此处配置的 <strong>启动命令（Command）与参数（Args）</strong> 会由后端在本机直接启动进程，<strong>等价于在您的电脑上执行对应命令行</strong>。请勿添加不信任来源的配置。CLI 插件使用 <code>cmd /c</code>：在「RunEverything」模式下模型可发起任意命令；在其它模式下仍会弹出确认，但误点「允许」也会导致命令执行——请勿在不可信模型下使用 RunEverything。</p>
       </div>
       <p class="help-text" style="font-size: 14px; margin-bottom: 10px;">配置第三方 MCP（如数据库查询），拓展 AI 能力；开关关闭后该组件不会随对话启动。</p>
-      <p class="help-text" style="font-size: 14px; margin-bottom: 10px;"><strong>仅支持本机 stdio MCP</strong>：由 Office Copilot 服务端在本机启动子进程，经标准输入输出与 MCP 通信；<strong>不支持</strong>远程 URL、HTTP/SSE 等连接方式。出于<strong>安全考虑</strong>不接入远程 MCP，避免服务端对任意网络地址发起 MCP 连接、降低攻击面与凭证风险；本机启动命令仍由您显式配置，详见上方「安全风险」。</p>
+      <p class="help-text" style="font-size: 14px; margin-bottom: 10px;"><strong>仅支持本机 stdio MCP</strong>：由 Open Workmate 服务端在本机启动子进程，经标准输入输出与 MCP 通信；<strong>不支持</strong>远程 URL、HTTP/SSE 等连接方式。出于<strong>安全考虑</strong>不接入远程 MCP，避免服务端对任意网络地址发起 MCP 连接、降低攻击面与凭证风险；本机启动命令仍由您显式配置，详见上方「安全风险」。</p>
       <p class="help-text" style="font-size: 14px; margin-bottom: 12px;">与 <strong>Cursor</strong> 中 stdio 类型 MCP（<code>command</code> + <code>args</code> + <code>env</code>）对齐：可在本页填写<strong>相同</strong>命令行；进程实际运行在<strong>安装服务端的本机</strong>，需在该环境具备 Node/Python/dotnet 等与 Cursor 侧相同的依赖。服务端当前工作目录可能与 Cursor 工作区不一致，涉及路径时<strong>建议使用绝对路径</strong>。</p>
 
       <h4 style="margin: 16px 0 8px; font-size: 13px; color: var(--text-secondary);">已安装的 MCP 服务器</h4>

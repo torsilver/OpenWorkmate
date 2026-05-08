@@ -1,12 +1,12 @@
 using System.ComponentModel;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Subagent;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Subagent;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>同会话内子代理：run_subtask 在隔离上下文中执行子任务，仅将最终结果返回主 Agent，避免大量 tool 输出占用主上下文。</summary>
-[CopilotPluginId("Subagent")]
+[OpenWorkmatePluginId("Subagent")]
 public sealed class SubagentPlugin
 {
     private readonly ChatService _chatService;

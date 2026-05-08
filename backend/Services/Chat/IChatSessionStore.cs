@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>Chrome 等端「历史对话」列表与 transcript 持久化（SQLite）；内存会话过期后仍可从数据库恢复。</summary>
 public interface IChatSessionStore

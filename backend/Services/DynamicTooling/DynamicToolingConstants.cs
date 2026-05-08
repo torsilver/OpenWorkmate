@@ -1,8 +1,8 @@
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 public static class DynamicToolingConstants
 {
-    /// <summary>与 <c>AgentToolingPlugin</c> 上 <c>[CopilotPluginId]</c> 一致。</summary>
+    /// <summary>与 <c>AgentToolingPlugin</c> 上 <c>[OpenWorkmatePluginId]</c> 一致。</summary>
     public const string AgentToolingPluginId = "AgentTooling";
 
     /// <summary>与 <c>AgentToolingPlugin.ActivateToolsAsync</c> 方法名一致；MEAI 有时上报 C# 方法名而非 OpenAPI 工具名。</summary>

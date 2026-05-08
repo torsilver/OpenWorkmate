@@ -2,7 +2,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>为 <see cref="WordPlugin.WordDocumentCreate"/> 应用文档样式与末节节属性（页边距等）。</summary>
 public static class WordDocumentCreateStyles

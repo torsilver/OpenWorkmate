@@ -1,11 +1,11 @@
 /**
- * 本机 Office Copilot 服务地址解析：浏览器扩展无法读本地 JSON，故先尝试 chrome.storage 缓存，
+ * 本机 Open Workmate 服务地址解析：浏览器扩展无法读本地 JSON，故先尝试 chrome.storage 缓存，
  * 再按 127.0.0.1 端口扫描；服务端在 bootstrap 中返回 localServicePortScanStart/Count 供与配置对齐。
  */
 (function (global) {
-  var TASKLY_DEFAULT_PORT_START = 8765;
-  var TASKLY_PORT_TRY_COUNT = 10;
-  var TASKLY_BASE_URL_STORAGE_KEY = "tasklyLocalServiceBaseUrl";
+  var openWorkmate_DEFAULT_PORT_START = 8765;
+  var openWorkmate_PORT_TRY_COUNT = 10;
+  var openWorkmate_BASE_URL_STORAGE_KEY = "OpenWorkmateLocalServiceBaseUrl";
 
   function normalizeBase(url) {
     if (!url) return "";
@@ -39,7 +39,7 @@
   function readSessionStoredBase() {
     try {
       if (typeof sessionStorage === "undefined") return null;
-      return normalizeBase(sessionStorage.getItem(TASKLY_BASE_URL_STORAGE_KEY));
+      return normalizeBase(sessionStorage.getItem(openWorkmate_BASE_URL_STORAGE_KEY));
     } catch (e) {
       return null;
     }
@@ -48,7 +48,7 @@
   function writeSessionStoredBase(base) {
     try {
       if (typeof sessionStorage !== "undefined" && base)
-        sessionStorage.setItem(TASKLY_BASE_URL_STORAGE_KEY, normalizeBase(base));
+        sessionStorage.setItem(openWorkmate_BASE_URL_STORAGE_KEY, normalizeBase(base));
     } catch (e) { /* ignore */ }
   }
 
@@ -56,11 +56,11 @@
    * @param {chrome.storage.StorageArea | null} storage chrome.storage.local 或 null（非扩展环境）
    * @returns {Promise<{ baseUrl: string, bootstrap: object }>}
    */
-  function tasklyResolveLocalServiceBase(storage) {
+  function openWorkmateResolveLocalServiceBase(storage) {
     function persistCanonical(canonical, useChromeStorage) {
       if (useChromeStorage && storage && storage.set) {
         var o = {};
-        o[TASKLY_BASE_URL_STORAGE_KEY] = canonical;
+        o[openWorkmate_BASE_URL_STORAGE_KEY] = canonical;
         storage.set(o, function () {});
       } else writeSessionStoredBase(canonical);
     }
@@ -73,10 +73,10 @@
             persistCanonical(canonical, useChromeStorage);
             return { baseUrl: canonical, bootstrap: j };
           }
-          return scanPorts(useChromeStorage, TASKLY_DEFAULT_PORT_START, TASKLY_PORT_TRY_COUNT);
+          return scanPorts(useChromeStorage, openWorkmate_DEFAULT_PORT_START, openWorkmate_PORT_TRY_COUNT);
         });
       }
-      return scanPorts(useChromeStorage, TASKLY_DEFAULT_PORT_START, TASKLY_PORT_TRY_COUNT);
+      return scanPorts(useChromeStorage, openWorkmate_DEFAULT_PORT_START, openWorkmate_PORT_TRY_COUNT);
     }
 
     function scanPorts(useChromeStorage, start, count) {
@@ -84,7 +84,7 @@
         if (i >= count) {
           return Promise.reject(
             new Error(
-              "找不到本机 Office Copilot 服务（已扫描 127.0.0.1:" +
+              "找不到本机 Open Workmate 服务（已扫描 127.0.0.1:" +
                 start +
                 "–" +
                 (start + count - 1) +
@@ -109,12 +109,12 @@
     if (storage && typeof storage.get === "function") {
       return new Promise(function (resolve, reject) {
         try {
-          storage.get([TASKLY_BASE_URL_STORAGE_KEY], function (r) {
+          storage.get([openWorkmate_BASE_URL_STORAGE_KEY], function (r) {
             if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.lastError) {
               tryStoredThenScan(readSessionStoredBase(), false).then(resolve, reject);
               return;
             }
-            var stored = r && r[TASKLY_BASE_URL_STORAGE_KEY] ? normalizeBase(r[TASKLY_BASE_URL_STORAGE_KEY]) : null;
+            var stored = r && r[openWorkmate_BASE_URL_STORAGE_KEY] ? normalizeBase(r[openWorkmate_BASE_URL_STORAGE_KEY]) : null;
             tryStoredThenScan(stored, true).then(resolve, reject);
           });
         } catch (e) {
@@ -127,7 +127,7 @@
   }
 
   /** @returns {{ apiBase: string, wsUrl: string }} */
-  function tasklyHttpWsFromBase(baseUrl) {
+  function openWorkmateHttpWsFromBase(baseUrl) {
     var b = normalizeBase(baseUrl);
     if (!b) return { apiBase: "", wsUrl: "" };
     try {
@@ -140,12 +140,12 @@
     }
   }
 
-  global.TasklyLocalService = {
-    TASKLY_DEFAULT_PORT_START: TASKLY_DEFAULT_PORT_START,
-    TASKLY_PORT_TRY_COUNT: TASKLY_PORT_TRY_COUNT,
-    TASKLY_BASE_URL_STORAGE_KEY: TASKLY_BASE_URL_STORAGE_KEY,
+  global.OpenWorkmateLocalService = {
+    openWorkmate_DEFAULT_PORT_START: openWorkmate_DEFAULT_PORT_START,
+    openWorkmate_PORT_TRY_COUNT: openWorkmate_PORT_TRY_COUNT,
+    openWorkmate_BASE_URL_STORAGE_KEY: openWorkmate_BASE_URL_STORAGE_KEY,
     normalizeBase: normalizeBase,
-    tasklyResolveLocalServiceBase: tasklyResolveLocalServiceBase,
-    tasklyHttpWsFromBase: tasklyHttpWsFromBase
+    openWorkmateResolveLocalServiceBase: openWorkmateResolveLocalServiceBase,
+    openWorkmateHttpWsFromBase: openWorkmateHttpWsFromBase
   };
 })(typeof self !== "undefined" ? self : this);

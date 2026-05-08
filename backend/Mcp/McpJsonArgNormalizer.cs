@@ -1,7 +1,7 @@
 using System.Linq;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 /// <summary>MCP 工具调用参数：模型侧 JSON → <see cref="McpClient.CallToolAsync"/> 所需字典。</summary>
 public static class McpJsonArgNormalizer

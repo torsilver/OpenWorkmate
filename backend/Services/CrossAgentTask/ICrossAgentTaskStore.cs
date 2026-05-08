@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.CrossAgentTask;
+namespace OpenWorkmate.Server.Services.CrossAgentTask;
 
 /// <summary>跨 Agent 任务存储。</summary>
 public interface ICrossAgentTaskStore

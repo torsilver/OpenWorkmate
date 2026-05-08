@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>SQLite 持久化向量存储；向量存为 BLOB，检索时加载候选后算余弦相似度。适合万级以内。</summary>
 public sealed class SqliteVectorStore : IVectorStore

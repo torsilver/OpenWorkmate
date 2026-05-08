@@ -1,9 +1,9 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services.CrossAgentTask;
+using OpenWorkmate.Server.Services.CrossAgentTask;
 
-namespace OfficeCopilot.Server.Services.ContextProviders;
+namespace OpenWorkmate.Server.Services.ContextProviders;
 
 /// <summary>
 /// MAF <see cref="MessageAIContextProvider"/>：检索跨端待办并注入为额外 system 消息。

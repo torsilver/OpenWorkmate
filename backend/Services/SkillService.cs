@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>DELETE /api/skills/{id} 的结果，供 MapDelete 返回正确 HTTP 状态与 message。</summary>
 public readonly record struct SkillDeleteResult(bool Ok, string? Message, int HttpStatus = 200)

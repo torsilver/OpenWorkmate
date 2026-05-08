@@ -1,4 +1,4 @@
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 public enum TelemetryTier
 {

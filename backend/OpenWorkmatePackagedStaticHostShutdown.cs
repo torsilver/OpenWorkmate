@@ -3,19 +3,19 @@ using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
-/// MSI / stage 布局下 StaticHost 常由 Start-Taskly.ps1 与后台并列启动；托盘退出只停本进程，需主动结束同目录下的 Taskly.StaticHost。
+/// MSI / stage 布局下 StaticHost 常由 Start-OpenWorkmate.ps1 与后台并列启动；托盘退出只停本进程，需主动结束同目录下的 OpenWorkmate.StaticHost。
 /// </summary>
-internal static class TasklyPackagedStaticHostShutdown
+internal static class OpenWorkmatePackagedStaticHostShutdown
 {
     public static void Register(WebApplication app)
     {
         if (!OperatingSystem.IsWindows())
             return;
 
-        var logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger("TasklyPackagedStaticHost");
+        var logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger("OpenWorkmatePackagedStaticHost");
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
         lifetime.ApplicationStopped.Register(() =>
         {
@@ -25,7 +25,7 @@ internal static class TasklyPackagedStaticHostShutdown
             }
             catch (Exception ex)
             {
-                logger?.LogDebug(ex, "Stopping Taskly.StaticHost sibling failed (ignored).");
+                logger?.LogDebug(ex, "Stopping OpenWorkmate.StaticHost sibling failed (ignored).");
             }
         });
     }
@@ -37,13 +37,13 @@ internal static class TasklyPackagedStaticHostShutdown
         if (string.IsNullOrEmpty(installRoot))
             return;
 
-        var staticHostExe = Path.Combine(installRoot, "Taskly.StaticHost", "Taskly.StaticHost.exe");
+        var staticHostExe = Path.Combine(installRoot, "OpenWorkmate.StaticHost", "OpenWorkmate.StaticHost.exe");
         if (!File.Exists(staticHostExe))
             return;
 
         var target = Path.GetFullPath(staticHostExe);
 
-        foreach (var proc in Process.GetProcessesByName("Taskly.StaticHost"))
+        foreach (var proc in Process.GetProcessesByName("OpenWorkmate.StaticHost"))
         {
             using (proc)
             {
@@ -65,17 +65,16 @@ internal static class TasklyPackagedStaticHostShutdown
 
                 try
                 {
-                    logger?.LogInformation("Stopping packaged Taskly.StaticHost (pid {Pid}).", proc.Id);
+                    logger?.LogInformation("Stopping packaged OpenWorkmate.StaticHost (pid {Pid}).", proc.Id);
                     proc.Kill(entireProcessTree: false);
                     proc.WaitForExit(milliseconds: 8000);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogDebug(ex, "Kill Taskly.StaticHost pid {Pid} skipped.", proc.Id);
+                    logger?.LogDebug(ex, "Kill OpenWorkmate.StaticHost pid {Pid} skipped.", proc.Id);
                 }
             }
         }
     }
 }
 #endif
-

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.ScheduledTask;
+namespace OpenWorkmate.Server.Services.ScheduledTask;
 
 /// <summary>基于文件系统的定时任务存储：每份任务一个 .task.md 文件 + 同名的 .meta.json。</summary>
 public sealed class FileScheduledTaskStore : IScheduledTaskStore

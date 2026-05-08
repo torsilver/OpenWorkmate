@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Text;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
@@ -11,10 +11,10 @@ using UglyToad.PdfPig.Exceptions;
 using PigPdfDocument = UglyToad.PdfPig.PdfDocument;
 using SharpPdfDocument = PdfSharp.Pdf.PdfDocument;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>内置 PDF 读写：读用 PdfPig，写与合并用 PDFsharp。</summary>
-[CopilotPluginId("Pdf")]
+[OpenWorkmatePluginId("Pdf")]
 public sealed class PdfPlugin
 {
     private readonly ILogger<PdfPlugin> _logger;

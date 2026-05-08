@@ -1,4 +1,4 @@
-/* Taskly image URL harvester — paste entire file as run_custom_javascript_in_page scriptCode. */
+/* OpenWorkmate image URL harvester — paste entire file as run_custom_javascript_in_page scriptCode. */
 var notes = [];
 var images = [];
 var seen = {};

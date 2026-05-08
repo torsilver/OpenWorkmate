@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 主会话本轮流式请求的 system 首条拼装：持久 system + 客户端身份/页上下文/动态工具说明（由调用方拼入 <paramref name="identitySuffix"/>）+

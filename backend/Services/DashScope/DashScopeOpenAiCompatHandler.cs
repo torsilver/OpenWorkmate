@@ -1,16 +1,16 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.Http.Headers;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.OpenAiCompat;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>
 /// 百炼 OpenAI 兼容：合并 chat/completions 请求体中的扩展字段，并对流式 SSE 响应旁路解析 <c>reasoning_content</c>。
-/// 每个对话模型条目使用独立 <see cref="HttpClient"/> 挂载本 Handler，以便按 <see cref="OfficeCopilot.Server.AiModelEntry"/> 区分。
+/// 每个对话模型条目使用独立 <see cref="HttpClient"/> 挂载本 Handler，以便按 <see cref="OpenWorkmate.Server.AiModelEntry"/> 区分。
 /// </summary>
 internal sealed class DashScopeOpenAiCompatHandler : DelegatingHandler
 {

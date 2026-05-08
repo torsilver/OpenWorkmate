@@ -2,12 +2,12 @@
 name: Excel / XLSX
 slug: excel-xlsx
 version: 1.0.2
-description: Taskly Excel Open XML（.xlsx/.xlsm）读写：区域读写、公式、合并单元格、数据验证、条件格式、超链、工作表与图表列表。.xls 须先 office_legacy 转 .xlsx。检索：表格 xlsx 工作表 公式 合并 验证。
-changelog: Taskly 工具链对齐；移除 ClawHub 专用段落
+description: OpenWorkmate Excel Open XML（.xlsx/.xlsm）读写：区域读写、公式、合并单元格、数据验证、条件格式、超链、工作表与图表列表。.xls 须先 office_legacy 转 .xlsx。检索：表格 xlsx 工作表 公式 合并 验证。
+changelog: OpenWorkmate 工具链对齐；移除 ClawHub 专用段落
 metadata: {"clawdbot":{"emoji":"📗","requires":{"bins":[]},"os":["linux","darwin","win32"]}}
 ---
 
-## Taskly（本仓库）
+## OpenWorkmate（本仓库）
 
 - **插件**：**`Excel`**。工具均以 **`excel_`** 为前缀；路径为**本机完整路径**（附件请先用 **`get_attachment_path`**）。
 - **旧版 `.xls`**：Open XML 工具**不会**当普通 `.xlsx` 处理。须按需 **`load_user_skill_instructions`**（`skillId`：**`office_legacy_to_openxml`**），调用 **`office_legacy_save_as_open_xml`** 得到 **`.xlsx`** 后，再使用下文 **`excel_*`**。

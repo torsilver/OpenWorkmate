@@ -1,11 +1,11 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.DynamicTooling;
 
 #pragma warning disable MAAI001 // Compaction API is experimental
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 public sealed partial class ChatService
 {

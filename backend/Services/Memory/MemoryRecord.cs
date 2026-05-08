@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>单条记忆记录，用于列表展示与 CRUD。</summary>
 public sealed class MemoryRecord

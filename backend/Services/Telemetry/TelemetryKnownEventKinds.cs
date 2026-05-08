@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>与 <c>TryEnqueueFromSession</c> 使用的 <c>eventType</c> 及 AI Gateway <c>availableEventKinds</c> 默认集对齐。</summary>
 public static class TelemetryKnownEventKinds

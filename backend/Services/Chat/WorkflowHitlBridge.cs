@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Agents.AI.Workflows;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>
 /// 桥接 WebSocket HITL 响应 → MAF Workflow <see cref="StreamingRun"/> 的 <c>SendResponseAsync</c>。

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
-using Taskly.AI.Gateway.Models;
+using OpenWorkmate.AI.Gateway.Models;
 
-namespace Taskly.AI.Gateway.Services;
+namespace OpenWorkmate.AI.Gateway.Services;
 
 public sealed class UserPolicyStore
 {

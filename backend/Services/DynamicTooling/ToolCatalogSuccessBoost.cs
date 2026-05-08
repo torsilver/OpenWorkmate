@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 进程内累计各工具函数「语义成功」调用次数，供 <see cref="ToolCatalogIndex.Search"/> 在关键词打分之外做轻量 boost（遥测闭环前置，无持久化）。

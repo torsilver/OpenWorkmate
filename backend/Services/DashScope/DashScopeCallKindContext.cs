@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>
 /// 标记当前异步流是否处于「后台 LLM 调用」（摘要、工具筛选、子任务、技能生成等），供百炼 Handler 决定是否强制 <c>enable_thinking: false</c>。

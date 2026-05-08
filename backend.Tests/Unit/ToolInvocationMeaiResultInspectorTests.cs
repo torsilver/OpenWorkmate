@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Xunit;
 
 namespace backend.Tests.Unit;

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 /// <summary>GET /policy/aggregated 返回体：传输上限 + defaults 摘要 + 同步元数据。</summary>
 public sealed class TelemetryAggregatedPolicyResponse

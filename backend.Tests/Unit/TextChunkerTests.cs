@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Services.Memory;
+using OpenWorkmate.Server.Services.Memory;
 using Xunit;
 
 namespace backend.Tests.Unit;

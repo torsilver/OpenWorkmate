@@ -10,26 +10,26 @@ const DEFAULT_TELEMETRY_INGEST_LOG_LEVEL = "information";
 const TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = "telemetryRelayActiveProfileId";
 const TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = "telemetryEventKindsByProfile";
 
-var tasklySidepanelApiReady = null;
+var openWorkmateSidepanelApiReady = null;
 /** 避免在「后台晚启动」场景下反复弹出同一条气泡提示 */
-let tasklyLocalServiceWaitHintShown = false;
+let OpenWorkmateLocalServiceWaitHintShown = false;
 
-function tasklyEnsureApiBase() {
-  if (tasklySidepanelApiReady) return tasklySidepanelApiReady;
-  tasklySidepanelApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+function openWorkmateEnsureApiBase() {
+  if (openWorkmateSidepanelApiReady) return openWorkmateSidepanelApiReady;
+  openWorkmateSidepanelApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(
     typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
   )
     .then(function (r) {
-      var hw = TasklyLocalService.tasklyHttpWsFromBase(r.baseUrl);
+      var hw = OpenWorkmateLocalService.openWorkmateHttpWsFromBase(r.baseUrl);
       API_BASE = hw.apiBase;
       WS_URL = hw.wsUrl;
     })
     .catch(function (err) {
       // 解析失败时勿永久缓存 rejected，否则后台稍后启动也会一直命中旧失败，无法重新扫端口
-      tasklySidepanelApiReady = null;
+      openWorkmateSidepanelApiReady = null;
       throw err;
     });
-  return tasklySidepanelApiReady;
+  return openWorkmateSidepanelApiReady;
 }
 
 function formatLocalServiceConnectError(err) {
@@ -42,13 +42,13 @@ function formatLocalServiceConnectError(err) {
   return msg;
 }
 
-function tasklyFetch(url, init) {
+function openWorkmateFetch(url, init) {
   init = init ? Object.assign({}, init) : {};
   return new Promise(function (resolve) {
     chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
       var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
       var headers = Object.assign({}, init.headers || {});
-      if (t) headers["X-OfficeCopilot-Token"] = t;
+      if (t) headers["X-OpenWorkmate-Token"] = t;
       init.headers = headers;
       resolve(fetch(url, init));
     });
@@ -57,7 +57,7 @@ function tasklyFetch(url, init) {
 
 /** 本机 loopback：同步访问密钥，并拉取 <code>telemetryUserObservabilityEnabled</code>（与 user-config 一致） */
 function ensureLocalServiceTokenFromBootstrap() {
-  return tasklyEnsureApiBase().then(function () {
+  return openWorkmateEnsureApiBase().then(function () {
   return fetch(API_BASE + "/api/bootstrap/local-service-auth")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
@@ -133,7 +133,7 @@ const STORAGE_PLAN_STEP_INDEX = "copilot_plan_step_index";
  * 在浏览器中打开与本扩展相关的权限/站点设置（麦克风等）。
  * 优先打开 Chrome「网站设置」中本扩展条目；若被策略拦截则打开扩展程序详情页。不再 fallback 到扩展选项页（与麦克风无关，易误导）。
  */
-function openTasklyExtensionPermissionSettings() {
+function openopenWorkmateExtensionPermissionSettings() {
   function reportFailure(message) {
     const msg = message || "无法打开权限设置页。";
     try {
@@ -176,7 +176,7 @@ function openTasklyExtensionPermissionSettings() {
 }
 
 /** 打开扩展选项页：优先 openOptionsPage，失败则用新标签打开 options.html，并暴露错误（避免静默失败）。 */
-function openTasklyOptionsPage() {
+function openopenWorkmateOptionsPage() {
   function reportFailure(message) {
     const msg = message || "无法打开设置页。";
     try {
@@ -214,13 +214,13 @@ function openTasklyOptionsPage() {
 
 if ($settingsBtn) {
   $settingsBtn.addEventListener("click", () => {
-    openTasklyOptionsPage();
+    openopenWorkmateOptionsPage();
   });
 }
 
 /** 与新建对话、删除当前历史会话共用（历史对话块内 WELCOME_INNER_HTML 与此相同文案）。 */
 const WELCOME_INNER_HTML_NEW_CHAT =
-  '<div class="welcome"><p class="welcome-title">你好，我是 Office Copilot 👋</p><p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p></div>';
+  '<div class="welcome"><p class="welcome-title">你好，我是 Open Workmate 👋</p><p class="welcome-sub">你的本地智能办公助手；浏览器上下文以<strong>当前窗口中当前活动标签</strong>为准（切换标签后标题会同步），并非只绑定首次打开时那一页。标签页脚本、截图、会议监听等仅在本 Chrome 扩展中可用；开发联调请在侧栏右键「检查」打开 DevTools 查看 Console。WPS/Office 任务窗格连接同一后台。</p></div>';
 
 // ───── New conversation ─────
 if ($newChatBtn) {
@@ -433,8 +433,8 @@ async function ensurePlanChecklistLoaded(planId) {
   if (planChecklistSteps.length > 0 && planChecklistLoadedPlanId === planId) return;
   planChecklistLoadedPlanId = planId;
   try {
-    await tasklyEnsureApiBase();
-    const res = await tasklyFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
+    await openWorkmateEnsureApiBase();
+    const res = await openWorkmateFetch(API_BASE + "/api/plans/" + encodeURIComponent(planId));
     if (!res.ok) return;
     const data = await res.json();
     const content = data.content || "";
@@ -594,10 +594,10 @@ async function loadAtModeCandidates() {
   atModeLoading = (async () => {
     atModeLoadError = "";
     try {
-      await tasklyEnsureApiBase();
+      await openWorkmateEnsureApiBase();
       const [builtinRes, skillsRes] = await Promise.all([
-        tasklyFetch(API_BASE + "/api/tools/builtin"),
-        tasklyFetch(API_BASE + "/api/skills"),
+        openWorkmateFetch(API_BASE + "/api/tools/builtin"),
+        openWorkmateFetch(API_BASE + "/api/skills"),
       ]);
       const loadErrs = [];
       if (!builtinRes.ok) loadErrs.push("内置工具接口 HTTP " + builtinRes.status);
@@ -973,7 +973,7 @@ function applyConversationTitleFromLoadedMessages(msgs) {
 
 // ───── DevTools logging（侧栏页面右键「检查」打开 Console） ─────
 function debugLog(tag, message, type = "info", detail) {
-  const prefix = "[OfficeCopilot]";
+  const prefix = "[OpenWorkmate]";
   const line = `[${tag}] ${message}`;
   if (type === "err") {
     if (detail !== undefined) console.error(prefix, line, detail);
@@ -999,7 +999,7 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
-/** 工具参数/结果里 ASCII-only JSON 的字面量 \\uXXXX → 可读字符（与 WPS copilotHostShared 同源） */
+/** 工具参数/结果里 ASCII-only JSON 的字面量 \\uXXXX → 可读字符（与 WPS openWorkmateHostShared 同源） */
 function decodeJsonStyleUnicodeEscapes(s) {
   if (s == null || typeof s !== "string") return s;
   if (s.indexOf("\\u") === -1) return s;
@@ -1019,9 +1019,9 @@ function decodeJsonStyleUnicodeEscapes(s) {
 async function refreshAgentProfileSelector() {
   if (!$agentProfileSelect) return;
   try {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     await ensureLocalServiceTokenFromBootstrap();
-    const res = await tasklyFetch(API_BASE + "/api/config");
+    const res = await openWorkmateFetch(API_BASE + "/api/config");
     const data = await res.json();
     if (!res.ok) return;
     const list = data.agentProfiles || data.AgentProfiles || [];
@@ -1124,7 +1124,7 @@ function connect() {
   ws.addEventListener("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
     reconnectAttempts = 0;
-    tasklyLocalServiceWaitHintShown = false;
+    OpenWorkmateLocalServiceWaitHintShown = false;
     setStatus("connected");
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
@@ -1166,10 +1166,10 @@ function connect() {
   });
   }).catch(function (err) {
     setStatus("reconnecting");
-    if (!tasklyLocalServiceWaitHintShown) {
-      tasklyLocalServiceWaitHintShown = true;
+    if (!OpenWorkmateLocalServiceWaitHintShown) {
+      OpenWorkmateLocalServiceWaitHintShown = true;
       addSystemMessage(
-        "未检测到本机 Office Copilot，将自动重试连接。请先启动本机服务端或稍候片刻。\n" +
+        "未检测到本机 Open Workmate，将自动重试连接。请先启动本机服务端或稍候片刻。\n" +
           formatLocalServiceConnectError(err)
       );
     }
@@ -1211,7 +1211,7 @@ function send(text, attachmentsPayload = null, sendOptions = {}) {
 
 var MEETING_SUMMARY_STORAGE_KEY = "meetingSummaryPending";
 
-function tasklyMeetingSummaryUserContent(sid, leadIn) {
+function openWorkmateMeetingSummaryUserContent(sid, leadIn) {
   var pre = (leadIn || "").trim();
   if (pre && !pre.endsWith("。") && !pre.endsWith(".")) pre += "。";
   return (
@@ -1231,7 +1231,7 @@ function flushPendingMeetingSummaryFromStorage() {
     if (!v || !v.sessionId) return;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     addSystemMessage("正在根据 sessionId=" + v.sessionId + " 生成会议纪要（实录页请求）…");
-    send(tasklyMeetingSummaryUserContent(String(v.sessionId), "会议实录页请求生成会议纪要"));
+    send(openWorkmateMeetingSummaryUserContent(String(v.sessionId), "会议实录页请求生成会议纪要"));
     chrome.storage.local.remove([MEETING_SUMMARY_STORAGE_KEY], function () {});
   });
 }
@@ -1290,23 +1290,23 @@ function flushCrossAgentAutoRunAfterReconnect() {
 }
 
 // ───── 主题联动（hljs / Mermaid） ─────
-function tasklyRefreshEmbedThemes() {
+function openWorkmateRefreshEmbedThemes() {
   const t = document.documentElement.getAttribute("data-theme") || "dark";
-  const link = document.getElementById("taskly-hljs-theme");
-  if (link && typeof TasklyTheme !== "undefined") {
-    link.href = TasklyTheme.getHljsStylesheetHref(t);
+  const link = document.getElementById("OpenWorkmate-hljs-theme");
+  if (link && typeof OpenWorkmateTheme !== "undefined") {
+    link.href = OpenWorkmateTheme.getHljsStylesheetHref(t);
   }
-  if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
-    mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+  if (typeof mermaid !== "undefined" && typeof OpenWorkmateTheme !== "undefined") {
+    mermaid.initialize({ startOnLoad: false, theme: OpenWorkmateTheme.getMermaidTheme(t) });
   }
 }
 
 window.addEventListener("storage", (e) => {
-  if (e.key !== "tasklyUiTheme") return;
-  if (typeof TasklyTheme === "undefined") return;
+  if (e.key !== "openWorkmateUiTheme") return;
+  if (typeof OpenWorkmateTheme === "undefined") return;
   const v = e.newValue != null && e.newValue !== "" ? e.newValue : "dark";
-  TasklyTheme.applyThemeDomOnly(v);
-  tasklyRefreshEmbedThemes();
+  OpenWorkmateTheme.applyThemeDomOnly(v);
+  openWorkmateRefreshEmbedThemes();
 });
 
 // ───── Init Libraries ─────
@@ -1322,7 +1322,7 @@ if (typeof marked !== 'undefined') {
   });
 }
 
-tasklyRefreshEmbedThemes();
+openWorkmateRefreshEmbedThemes();
 
 // ───── Streaming state ─────
 
@@ -1990,7 +1990,7 @@ function updateExecutionLogCount() {
   /* 工具块已直接挂在时间线，无需单独计数 summary */
 }
 
-/** 与 wps-addin-new/src/lib/copilotHostShared.js 保持同名语义 */
+/** 与 wps-addin-new/src/lib/openWorkmateHostShared.js 保持同名语义 */
 const DEFAULT_CONTEXT_TOKEN_BUDGET_CHROME = 131072;
 const CONTEXT_USAGE_RING_R_CHROME = 13;
 
@@ -2338,7 +2338,7 @@ async function fetchHistoryPage(append) {
   historyLoading = true;
   if ($historyLoadMore) $historyLoadMore.disabled = true;
   try {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     await ensureLocalServiceTokenFromBootstrap();
     const skip = append ? historySkip : 0;
     if (!append) {
@@ -2351,7 +2351,7 @@ async function fetchHistoryPage(append) {
         resolve(String((r && r[STORAGE_ACTIVE_AGENT_PROFILE_ID]) || "default").trim() || "default");
       });
     });
-    const res = await tasklyFetch(
+    const res = await openWorkmateFetch(
       API_BASE + "/api/chat-sessions?skip=" + skip + "&take=10&agentProfileId=" + encodeURIComponent(ap)
     );
     const data = await res.json().catch(() => ({}));
@@ -2421,9 +2421,9 @@ async function deleteHistorySession(sid, liEl) {
   if (!sid) return;
   if (!confirm("确定删除此历史对话？本地保存的记录将移除，且无法恢复。")) return;
   try {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     await ensureLocalServiceTokenFromBootstrap();
-    const res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
+    const res = await openWorkmateFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid), { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       alert(data.message || "删除失败");
@@ -2456,7 +2456,7 @@ async function switchToHistorySession(sid, agentProfileIdFromItem) {
   if (!sid) return;
   finalizeStream();
   try {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     await ensureLocalServiceTokenFromBootstrap();
     if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== "") {
       const ap = String(agentProfileIdFromItem).trim();
@@ -2479,7 +2479,7 @@ async function switchToHistorySession(sid, agentProfileIdFromItem) {
         _suppressAgentProfileSelectChange = false;
       }
     }
-    const res = await tasklyFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
+    const res = await openWorkmateFetch(API_BASE + "/api/chat-sessions/" + encodeURIComponent(sid) + "/messages");
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       addBotMessage(data.message || "加载该对话消息失败", true);
@@ -2852,7 +2852,7 @@ function handleMessage(raw) {
             btn.textContent = "前往设置";
             btn.type = "button";
             btn.style.cssText = "margin-top:8px;padding:6px 12px;font-size:12px;cursor:pointer;background:var(--accent, #3b82f6);color:#fff;border:none;border-radius:6px;";
-            btn.addEventListener("click", () => { openTasklyOptionsPage(); });
+            btn.addEventListener("click", () => { openopenWorkmateOptionsPage(); });
             block.appendChild(btn);
           }
         }
@@ -2871,9 +2871,9 @@ function handleMessage(raw) {
 
     case "ui_theme_changed": {
       const tid = (msg.uiThemeId && String(msg.uiThemeId).trim()) || "";
-      if (tid && typeof TasklyTheme !== "undefined") {
-        TasklyTheme.setTheme(tid);
-        if (typeof tasklyRefreshEmbedThemes === "function") tasklyRefreshEmbedThemes();
+      if (tid && typeof OpenWorkmateTheme !== "undefined") {
+        OpenWorkmateTheme.setTheme(tid);
+        if (typeof openWorkmateRefreshEmbedThemes === "function") openWorkmateRefreshEmbedThemes();
       }
       break;
     }
@@ -4044,7 +4044,7 @@ function addFloatingNoteInPage(message, title, anchorText) {
       closeBtn.style.cursor = 'pointer';
       closeBtn.style.fontSize = '16px';
       closeBtn.onclick = function() { if (container.parentNode) container.parentNode.removeChild(container); };
-      var headerTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '⚡ Office Copilot';
+      var headerTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '⚡ Open Workmate';
       var header = document.createElement('div');
       header.style.display = 'flex';
       header.style.justifyContent = 'space-between';
@@ -4067,7 +4067,7 @@ function addFloatingNoteInPage(message, title, anchorText) {
     note.style.position = 'fixed';
     note.style.top = '20px';
     note.style.right = '20px';
-    var headerTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '⚡ Office Copilot';
+    var headerTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '⚡ Open Workmate';
     var header = document.createElement('div');
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
@@ -4311,7 +4311,7 @@ function setStatus(state) {
     $text.textContent = s.text;
   }
   if (state === "failed") {
-    if ($status) $status.title = "无法连接到后台服务，请确认 OfficeCopilot.Server 已启动";
+    if ($status) $status.title = "无法连接到后台服务，请确认 OpenWorkmate.Server 已启动";
   } else {
     if ($status) $status.title = "连接状态";
   }
@@ -4486,7 +4486,7 @@ if ($attachBtn && $fileInput) {
     if ($voiceBtn) $voiceBtn.classList.toggle("recording", flag);
   }
 
-  function tasklyResampleFloat32Mono(input, inputRate, outputRate) {
+  function openWorkmateResampleFloat32Mono(input, inputRate, outputRate) {
     if (inputRate === outputRate || input.length === 0) return input;
     const ratio = inputRate / outputRate;
     const outLen = Math.max(1, Math.floor(input.length / ratio));
@@ -4502,7 +4502,7 @@ if ($attachBtn && $fileInput) {
     return out;
   }
 
-  function tasklyFloatToPcm16leBytes(floatMono) {
+  function openWorkmateFloatToPcm16leBytes(floatMono) {
     const buf = new ArrayBuffer(floatMono.length * 2);
     const view = new DataView(buf);
     for (let i = 0; i < floatMono.length; i++) {
@@ -4582,7 +4582,7 @@ if ($attachBtn && $fileInput) {
   }
 
   async function startVoiceSttSession() {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     const token = await new Promise(function (resolve) {
       chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
         resolve((r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim());
@@ -4591,7 +4591,7 @@ if ($attachBtn && $fileInput) {
     const qs = new URLSearchParams();
     if (token) qs.set("token", token);
     qs.set("mode", "inline");
-    const url = TasklyLocalService.tasklySttStreamWsUrl(API_BASE, qs.toString());
+    const url = OpenWorkmateLocalService.openWorkmateSttStreamWsUrl(API_BASE, qs.toString());
     return await new Promise(function (resolve, reject) {
       let settled = false;
       const w = new WebSocket(url);
@@ -4672,7 +4672,7 @@ if ($attachBtn && $fileInput) {
       userMessage += "\n\n可点击下方按钮打开本扩展的站点权限页。";
       addBotMessage(userMessage, true, {
         label: "打开权限设置",
-        onClick: () => openTasklyExtensionPermissionSettings()
+        onClick: () => openopenWorkmateExtensionPermissionSettings()
       });
       return;
     }
@@ -4717,8 +4717,8 @@ if ($attachBtn && $fileInput) {
       } else {
         mono.set(inBuf.getChannelData(0));
       }
-      const resampled = tasklyResampleFloat32Mono(mono, voiceAudioContext.sampleRate, STT_OUT_RATE);
-      const pcm = tasklyFloatToPcm16leBytes(resampled);
+      const resampled = openWorkmateResampleFloat32Mono(mono, voiceAudioContext.sampleRate, STT_OUT_RATE);
+      const pcm = openWorkmateFloatToPcm16leBytes(resampled);
       try {
         voiceSttWs.send(pcm);
       } catch (err) { /* ignore */ }
@@ -4855,7 +4855,7 @@ $input.addEventListener("input", () => {
     $meetingTimer.textContent = formatTime(Date.now() - meetingStartTime);
   }
 
-  function tasklyResampleFloat32MonoMeeting(input, inputRate, outputRate) {
+  function openWorkmateResampleFloat32MonoMeeting(input, inputRate, outputRate) {
     if (inputRate === outputRate || input.length === 0) return input;
     const ratio = inputRate / outputRate;
     const outLen = Math.max(1, Math.floor(input.length / ratio));
@@ -4871,7 +4871,7 @@ $input.addEventListener("input", () => {
     return out;
   }
 
-  function tasklyFloatToPcm16leBytesMeeting(floatMono) {
+  function openWorkmateFloatToPcm16leBytesMeeting(floatMono) {
     const buf = new ArrayBuffer(floatMono.length * 2);
     const view = new DataView(buf);
     for (let i = 0; i < floatMono.length; i++) {
@@ -4984,14 +4984,14 @@ $input.addEventListener("input", () => {
   function openMeetingSttWs() {
     return new Promise(function (resolve, reject) {
       let settled = false;
-      tasklyEnsureApiBase().then(function () {
+      openWorkmateEnsureApiBase().then(function () {
         chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
           const token = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
           const qs = new URLSearchParams();
           if (token) qs.set("token", token);
           qs.set("mode", "meeting");
           qs.set("meetingSessionId", meetingSessionId);
-          const url = TasklyLocalService.tasklySttStreamWsUrl(API_BASE, qs.toString());
+          const url = OpenWorkmateLocalService.openWorkmateSttStreamWsUrl(API_BASE, qs.toString());
           meetingSttWs = new WebSocket(url);
           meetingSttWs.onmessage = function bootstrap(ev) {
             let d;
@@ -5115,7 +5115,7 @@ $input.addEventListener("input", () => {
       userMessage += "\n\n点击下方按钮将在 Chrome 中打开本扩展的站点权限页（可改麦克风）；若被拦截会再尝试打开扩展程序详情页。";
       addBotMessage(userMessage, true, {
         label: "打开权限设置",
-        onClick: () => openTasklyExtensionPermissionSettings()
+        onClick: () => openopenWorkmateExtensionPermissionSettings()
       });
       return;
     }
@@ -5180,8 +5180,8 @@ $input.addEventListener("input", () => {
       } else {
         mono.set(inBuf.getChannelData(0));
       }
-      const resampled = tasklyResampleFloat32MonoMeeting(mono, audioContext.sampleRate, STT_OUT_RATE);
-      const pcm = tasklyFloatToPcm16leBytesMeeting(resampled);
+      const resampled = openWorkmateResampleFloat32MonoMeeting(mono, audioContext.sampleRate, STT_OUT_RATE);
+      const pcm = openWorkmateFloatToPcm16leBytesMeeting(resampled);
       try {
         meetingSttWs.send(pcm);
       } catch (err) { /* ignore */ }
@@ -5259,7 +5259,7 @@ $input.addEventListener("input", () => {
 
     addSystemMessage("会议监听已结束（" + duration + "），正在请求生成会议纪要（基于已落盘转写）…");
 
-    send(tasklyMeetingSummaryUserContent(sid, "会议监听已结束"));
+    send(openWorkmateMeetingSummaryUserContent(sid, "会议监听已结束"));
   }
 
   $meetingBtn.addEventListener("click", () => {
@@ -5312,12 +5312,12 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("focus", ensureConnectionOnVisible);
 
 // 先拉 Agent 列表再连 WS，保证首连即带 agentProfileId
-void (async function tasklySidepanelBoot() {
+void (async function openWorkmateSidepanelBoot() {
   try {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     await refreshAgentProfileSelector();
   } catch (e) {
-    console.warn("tasklySidepanelBoot", e);
+    console.warn("openWorkmateSidepanelBoot", e);
   }
   connect();
 })();

@@ -1,8 +1,8 @@
 using System.Net;
-using OfficeCopilot.Server.Security;
+using OpenWorkmate.Server.Security;
 using Serilog;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>未显式配置 urls / ASPNETCORE_URLS 时，按 WebSocket:Port 起算做本机端口回退并 UseUrls。</summary>
 internal static class LocalListenUrlConfigurer

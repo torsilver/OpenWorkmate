@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>按 Chrome 选项「遥测详细程度 / 日志档位」限制出站 detailLevel（p0/p1/p2），与中继策略独立。</summary>
 public static class TelemetryIngestDetailGate

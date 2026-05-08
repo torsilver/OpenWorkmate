@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// 工具返回串的「语义失败」固定前缀协议：供 <see cref="ToolStatusNotifier"/> 与 <see cref="ToolInvocationFailureClassifier"/> 共用，

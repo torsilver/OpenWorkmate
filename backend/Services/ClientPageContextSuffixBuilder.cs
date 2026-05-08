@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>将 set_context 存储的 WPS 宿主与页签/展示名拼成追加到 system（IdentitySuffix）的短说明。</summary>
 public static class ClientPageContextSuffixBuilder

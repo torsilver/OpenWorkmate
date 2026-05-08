@@ -403,9 +403,9 @@ html, body {
   margin-left: 4px;
 }
 .tool-call-block.tool-call--running {
-  animation: taskly-tool-pulse 1.6s ease-in-out infinite;
+  animation: OpenWorkmate-tool-pulse 1.6s ease-in-out infinite;
 }
-@keyframes taskly-tool-pulse {
+@keyframes OpenWorkmate-tool-pulse {
   0%, 100% { border-color: var(--border); }
   50% { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 }

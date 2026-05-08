@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
-[CopilotPluginId("CLI")]
+[OpenWorkmatePluginId("CLI")]
 public sealed class CliPlugin
 {
     private const int DefaultTimeoutMs = 30_000;

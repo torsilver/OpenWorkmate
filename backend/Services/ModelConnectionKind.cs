@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>OCR 持久化 connectionKind 常量；与前端 options.js 保持一致。</summary>
 public static class ModelConnectionKind

@@ -1,10 +1,10 @@
 using System.Net.Http.Headers;
 using System.Text;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.ModelProfiles;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// 非百炼直连 OpenAI 兼容链：流式解析 <c>reasoning_content</c>、在带 tool_calls 的轮次结束后向 echo 存储追加一轮推理全文；

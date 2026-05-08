@@ -1,17 +1,17 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.OpenAiCompat;
-using OfficeCopilot.Server.Services.LlmRouting;
-using OfficeCopilot.Server.Services.ModelProfiles;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server.Services.LlmRouting;
+using OpenWorkmate.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.Telemetry;
 
-namespace OfficeCopilot.Server.Services.ModelAdapters;
+namespace OpenWorkmate.Server.Services.ModelAdapters;
 
 /// <summary>默认 OpenAI 兼容对话管道：可选百炼 SSE reasoning 旁路，其余与历史 <see cref="ChatService"/> 内联实现一致。</summary>
 public sealed class DefaultChatClientPipelineFactory : IChatClientPipelineFactory

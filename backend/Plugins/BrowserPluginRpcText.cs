@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>Browser 插件 RPC 返回值解析与「空结果」用户可读说明（无外部依赖，可单测）。</summary>
 public static class BrowserPluginRpcText

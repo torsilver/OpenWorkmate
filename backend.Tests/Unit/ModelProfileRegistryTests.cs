@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using OfficeCopilot.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.ModelProfiles;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -10,7 +10,7 @@ public sealed class ModelProfileRegistryTests
     [Fact]
     public void Reload_MergesVendorAndOverlay_FromTempDirectory()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "taskly-model-profiles-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "OpenWorkmate-model-profiles-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(dir, "ModelProfiles", "vendor"));
         File.WriteAllText(
             Path.Combine(dir, "ModelProfiles", "vendor", "model_prices_excerpt.json"),
@@ -26,7 +26,7 @@ public sealed class ModelProfileRegistryTests
             """);
 
         File.WriteAllText(
-            Path.Combine(dir, "ModelProfiles", "taskly-overlay.json"),
+            Path.Combine(dir, "ModelProfiles", "open-workmate-overlay.json"),
             """
             {
               "moonshot/kimi-k2.6": {

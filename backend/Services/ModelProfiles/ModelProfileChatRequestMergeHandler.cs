@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.ModelProfiles;
+namespace OpenWorkmate.Server.Services.ModelProfiles;
 
 /// <summary>
 /// 对任意 OpenAI 兼容 <c>POST .../chat/completions</c>：当模型能力表要求且消息中存在

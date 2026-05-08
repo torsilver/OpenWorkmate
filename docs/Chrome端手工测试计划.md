@@ -1,6 +1,6 @@
 # Chrome 端功能手工测试计划
 
-> **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Office Copilot Server**；测试素材与操作在 Chrome 内完成。  
+> **范围**：仅针对 **Chrome 扩展**（`chrome-extension/`）+ 本机 **Open Workmate Server**；测试素材与操作在 Chrome 内完成。  
 > **不包含**：Cursor/VSCode 侧自行配置的 MCP、Office/WPS 任务窗格专属能力。  
 > **内置工具定义**：以运行时 **ToolRegistry**（`ChatService.RebuildRuntimeAsync`）为准。**GET** `/api/tools/builtin`（`Program.cs`）当前返回 **18** 条，**仍缺少** `Pdf`、`Context`、`Subagent`、`CrossAgentTask`、`ScheduledTask` 共 **5** 项（详见 [应用内AI插件列表.md](应用内AI插件列表.md) §五）。手工核对插件开关请以该文档 **§1.1**（`disabledBuiltInPlugins` 小写 id）与 **§1.3**（各插件函数数）为准。  
 > **Chrome 的 `clientType` 为 `chrome` 时，不暴露 `CurrentDocument` 插件**（其余已注册且未禁用的插件均可暴露）。详见 `backend/Services/ClientTypeToolFilter.cs`。  
@@ -126,19 +126,19 @@
 
 下列每条**工具名**与后端插件上的 `**[ToolFunction("...")]`** 元数据一致。
 
-- **路径约定**：未写盘符的**相对文件名**解析到当前 Windows 用户的下载目录（常为文件夹 `Downloads`，与后端 `OpenXmlHelpers.ResolvePath` 一致）。下文固定使用 `taskly-excel-test.xlsx`、`taskly-word-test.docx`、`taskly-ppt-test.pptx`、`taskly-img.png`，你可改名但同一轮请保持一致。
+- **路径约定**：未写盘符的**相对文件名**解析到当前 Windows 用户的下载目录（常为文件夹 `Downloads`，与后端 `OpenXmlHelpers.ResolvePath` 一致）。下文固定使用 `OpenWorkmate-excel-test.xlsx`、`OpenWorkmate-word-test.docx`、`OpenWorkmate-ppt-test.pptx`、`OpenWorkmate-img.png`，你可改名但同一轮请保持一致。
 - **应核对工具名**：侧栏/调试统计/后端日志中是否出现该调用（用于统计**工具调用成功率**）。
 - **表格与 Markdown**：下列表格用竖线分列；**话术列**内勿再写入与列分隔符相同的竖线字符（否则整行窜列），勿在单元格内写 Markdown 超链接语法（方括号 + 圆括号 URL）。需表示「竖线分段」时用文字 **U+007C** 或见 **§3.9 / §3.10**。
 - 模型未选型时：先发「**请必须调用工具 xxx**」，或用 `@Excel` 等约束。
 
 ### 3.0 数据准备顺序（建议）
 
-1. **E01** `excel_range_write` 生成或覆盖 `taskly-excel-test.xlsx`。
-2. **W01** `word_document_create` 生成 `taskly-word-test.docx`。
-3. **P01** `ppt_document_create` 生成 `taskly-ppt-test.pptx`。
-4. 下载目录放一张图片 `**taskly-img.png`**，供 Word/Ppt 插图用例。
-5. **PD01** `pdf_document_create` 生成 `taskly-pdf-a.pdf`；**PD04**（见 §3.2a）再生成 `taskly-pdf-b.pdf`，供 **PD05** `pdf_merge` 使用。可选：自备一份含可选中文字的小 PDF 做附件 + `get_pdf_text`（扫描件可能几乎无字，属预期）。  
-6. 可选：**F04/F05** `text_file_write` / `text_file_read` 用 `taskly-text-test.md`（与 §3.2 一致）。
+1. **E01** `excel_range_write` 生成或覆盖 `OpenWorkmate-excel-test.xlsx`。
+2. **W01** `word_document_create` 生成 `OpenWorkmate-word-test.docx`。
+3. **P01** `ppt_document_create` 生成 `OpenWorkmate-ppt-test.pptx`。
+4. 下载目录放一张图片 `**OpenWorkmate-img.png`**，供 Word/Ppt 插图用例。
+5. **PD01** `pdf_document_create` 生成 `OpenWorkmate-pdf-a.pdf`；**PD04**（见 §3.2a）再生成 `OpenWorkmate-pdf-b.pdf`，供 **PD05** `pdf_merge` 使用。可选：自备一份含可选中文字的小 PDF 做附件 + `get_pdf_text`（扫描件可能几乎无字，属预期）。  
+6. 可选：**F04/F05** `text_file_write` / `text_file_read` 用 `OpenWorkmate-text-test.md`（与 §3.2 一致）。
 
 ### 3.1 Browser
 
@@ -167,10 +167,10 @@
 | 编号  | 工具名                            | 前置        | 建议粘贴到对话框的话术                                           | 应核对工具名                         | 预期要点   |
 | --- | ------------------------------ | --------- | ----------------------------------------------------- | ------------------------------ | ------ |
 | F01 | `get_attachment_path`          | 先附件一张图    | 「请对我上一张附件调用 get_attachment_path。」                     | `get_attachment_path`          | 本机路径   |
-| F02 | `get_file_size`                | 有测试文件     | 「请 get_file_size：taskly-excel-test.xlsx。」             | `get_file_size`                | 字节数    |
-| F03 | `save_screenshot_to_downloads` | 已有 B05 引用 | 「请 save_screenshot_to_downloads，文件名 taskly-fullpage。」 | `save_screenshot_to_downloads` | 下载目录有图 |
-| F04 | `text_file_write` | — | 「请 text_file_write：相对路径 taskly-text-test.md，content【# 手工测试换行后一行正文】，append false（覆盖或新建）。」 | `text_file_write` | 下载目录生成 UTF-8 文本 |
-| F05 | `text_file_read` | F04 | 「请 text_file_read：taskly-text-test.md，maxChars 100000。」 | `text_file_read` | 内容与 F04 一致 |
+| F02 | `get_file_size`                | 有测试文件     | 「请 get_file_size：OpenWorkmate-excel-test.xlsx。」             | `get_file_size`                | 字节数    |
+| F03 | `save_screenshot_to_downloads` | 已有 B05 引用 | 「请 save_screenshot_to_downloads，文件名 OpenWorkmate-fullpage。」 | `save_screenshot_to_downloads` | 下载目录有图 |
+| F04 | `text_file_write` | — | 「请 text_file_write：相对路径 OpenWorkmate-text-test.md，content【# 手工测试换行后一行正文】，append false（覆盖或新建）。」 | `text_file_write` | 下载目录生成 UTF-8 文本 |
+| F05 | `text_file_read` | F04 | 「请 text_file_read：OpenWorkmate-text-test.md，maxChars 100000。」 | `text_file_read` | 内容与 F04 一致 |
 
 
 ### 3.2a Pdf（内置，插件名 `Pdf`）
@@ -180,11 +180,11 @@
 
 | 编号   | 工具名                                    | 前置             | 建议粘贴到对话框的话术                                                                                                                | 应核对工具名                | 预期要点                   |
 | ---- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------- |
-| PD01 | `pdf_document_create`                  | —              | 「请必须调用工具 pdf_document_create：输出 taskly-pdf-a.pdf，正文【第一段手工测PDF】。overwrite 为 false。」                                         | `pdf_document_create` | 下载目录生成可打开 PDF          |
-| PD02 | `get_pdf_info`                         | PD01           | 「请 get_pdf_info：taskly-pdf-a.pdf。」                                                                                         | `get_pdf_info`        | 页数、是否加密、元数据摘要          |
-| PD03 | `get_pdf_text`                         | PD01           | 「请 get_pdf_text：taskly-pdf-a.pdf，maxChars 50000。」（可不写 firstPage、lastPage）                                                  | `get_pdf_text`        | 含 `Page` 分段或正文；过长有截断说明 |
-| PD04 | `pdf_document_create`                  | —              | 「请 pdf_document_create：输出 taskly-pdf-b.pdf，正文【第二份合并用】。overwrite false。」                                                    | `pdf_document_create` | 第二文件存在                 |
-| PD05 | `pdf_merge`                            | PD01 且 PD04    | 「请 pdf_merge：输出 taskly-pdf-merged.pdf；inputPdfPaths 里分两行写 taskly-pdf-a.pdf 与 taskly-pdf-b.pdf（或同一行用分号分隔）；overwrite false。」 | `pdf_merge`           | 合并成功，总页数合理             |
+| PD01 | `pdf_document_create`                  | —              | 「请必须调用工具 pdf_document_create：输出 OpenWorkmate-pdf-a.pdf，正文【第一段手工测PDF】。overwrite 为 false。」                                         | `pdf_document_create` | 下载目录生成可打开 PDF          |
+| PD02 | `get_pdf_info`                         | PD01           | 「请 get_pdf_info：OpenWorkmate-pdf-a.pdf。」                                                                                         | `get_pdf_info`        | 页数、是否加密、元数据摘要          |
+| PD03 | `get_pdf_text`                         | PD01           | 「请 get_pdf_text：OpenWorkmate-pdf-a.pdf，maxChars 50000。」（可不写 firstPage、lastPage）                                                  | `get_pdf_text`        | 含 `Page` 分段或正文；过长有截断说明 |
+| PD04 | `pdf_document_create`                  | —              | 「请 pdf_document_create：输出 OpenWorkmate-pdf-b.pdf，正文【第二份合并用】。overwrite false。」                                                    | `pdf_document_create` | 第二文件存在                 |
+| PD05 | `pdf_merge`                            | PD01 且 PD04    | 「请 pdf_merge：输出 OpenWorkmate-pdf-merged.pdf；inputPdfPaths 里分两行写 OpenWorkmate-pdf-a.pdf 与 OpenWorkmate-pdf-b.pdf（或同一行用分号分隔）；overwrite false。」 | `pdf_merge`           | 合并成功，总页数合理             |
 | PD06 | `get_attachment_path` + `get_pdf_text` | 侧栏附件一份非扫描小 PDF | 「请先对我附件调用 get_attachment_path，再对返回路径调用 get_pdf_text，maxChars 200000。」                                                      | 两个工具名                 | 两跳均成功；无字时返回说明非静默       |
 
 
@@ -219,7 +219,7 @@
 
 | 编号  | 工具名         | 前置               | 建议粘贴到对话框的话术                   | 应核对工具名      | 预期要点 |
 | --- | ----------- | ---------------- | ----------------------------- | ----------- | ---- |
-| O01 | `ocr_image` | 有 taskly-img.png | 「请 ocr_image：taskly-img.png。」 | `ocr_image` | 识别文字 |
+| O01 | `ocr_image` | 有 OpenWorkmate-img.png | 「请 ocr_image：OpenWorkmate-img.png。」 | `ocr_image` | 识别文字 |
 
 
 ### 3.7 CLI
@@ -227,18 +227,18 @@
 
 | 编号  | 工具名           | 前置     | 建议粘贴到对话框的话术                                    | 应核对工具名        | 预期要点   |
 | --- | ------------- | ------ | ---------------------------------------------- | ------------- | ------ |
-| L01 | `run_command` | 知白名单策略 | 「请 run_command：`cmd /c echo taskly-cli-test`。」 | `run_command` | 输出或确认流 |
+| L01 | `run_command` | 知白名单策略 | 「请 run_command：`cmd /c echo OpenWorkmate-cli-test`。」 | `run_command` | 输出或确认流 |
 
 
 ### 3.8 Excel（逐工具）
 
-**文件**：`taskly-excel-test.xlsx`（相对路径 = 用户「下载」目录）。**建议按 E01→E21 顺序**。
+**文件**：`OpenWorkmate-excel-test.xlsx`（相对路径 = 用户「下载」目录）。**建议按 E01→E21 顺序**。
 
 
 | 编号  | 工具名                              | 依赖  | 建议粘贴到对话框的话术                                                                                                                                             | 应核对工具名                           | 预期要点             |
 | --- | -------------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------- |
-| E01 | `excel_range_write`              | —   | 「请 excel_range_write：文件 taskly-excel-test.xlsx，Sheet1，A1，data=[[姓名,分数,等级],[张三,85,],[李四,92,]]。」                                                      | `excel_range_write`              | 已写入              |
-| E02 | `excel_sheets_list`              | E01 | 「请 excel_sheets_list：taskly-excel-test.xlsx。」                                                                                                           | `excel_sheets_list`              | 列出表名             |
+| E01 | `excel_range_write`              | —   | 「请 excel_range_write：文件 OpenWorkmate-excel-test.xlsx，Sheet1，A1，data=[[姓名,分数,等级],[张三,85,],[李四,92,]]。」                                                      | `excel_range_write`              | 已写入              |
+| E02 | `excel_sheets_list`              | E01 | 「请 excel_sheets_list：OpenWorkmate-excel-test.xlsx。」                                                                                                           | `excel_sheets_list`              | 列出表名             |
 | E03 | `excel_range_read`               | E01 | 「请 excel_range_read：同一文件，Sheet1，startCell A1，endCell C3，includeFormulas false。」                                                                         | `excel_range_read`               | 制表符文本            |
 | E04 | `excel_formula_write`            | E01 | 「请在 Sheet1 的 D2 写入公式 =B2*1.1。」                                                                                                                          | `excel_formula_write`            | 成功               |
 | E05 | `excel_cells_merge`              | E01 | 「请合并 Sheet1 的 A1:C1。」                                                                                                                                   | `excel_cells_merge`              | 已合并              |
@@ -254,25 +254,25 @@
 | E15 | `excel_conditional_format_add`   | E01 | 「请对 Sheet1 的 B2:B10 添加 between 条件格式，formula1=60，formula2=100。」                                                                                          | `excel_conditional_format_add`   | 成功               |
 | E16 | `excel_conditional_formats_list` | E15 | 「请 excel_conditional_formats_list：Sheet1。」                                                                                                              | `excel_conditional_formats_list` | 有规则              |
 | E17 | `excel_conditional_format_clear` | E15 | 「请清除 Sheet1 的 B2:B10 条件格式。」                                                                                                                             | `excel_conditional_format_clear` | 已清除              |
-| E18 | `excel_hyperlink_set`            | E01 | 「请 excel_hyperlink_set：文件 taskly-excel-test.xlsx，Sheet1，单元格 F1，url 填 https://example.com ，displayText 填【测试链接】。」 | `excel_hyperlink_set`            | 成功               |
+| E18 | `excel_hyperlink_set`            | E01 | 「请 excel_hyperlink_set：文件 OpenWorkmate-excel-test.xlsx，Sheet1，单元格 F1，url 填 https://example.com ，displayText 填【测试链接】。」 | `excel_hyperlink_set`            | 成功               |
 | E19 | `excel_sheet_add`                | E01 | 「请添加工作表 ManualTestExtra。」                                                                                                                               | `excel_sheet_add`                | 新表存在             |
 | E20 | `excel_sheet_remove`             | E19 | 「请删除工作表 ManualTestExtra。」                                                                                                                               | `excel_sheet_remove`             | 已删               |
-| E21 | `excel_charts_list`              | —   | 「请 excel_charts_list：taskly-excel-test.xlsx。」（需非空可先手工插入图表）                                                                                              | `excel_charts_list`              | 列表或「无图表」         |
+| E21 | `excel_charts_list`              | —   | 「请 excel_charts_list：OpenWorkmate-excel-test.xlsx。」（需非空可先手工插入图表）                                                                                              | `excel_charts_list`              | 列表或「无图表」         |
 
 
 ### 3.9 Word（逐工具，共 23 个函数）
 
-**文件**：`taskly-word-test.docx`。**无表格时** `word_tables_list` / `word_tables_read` 会得到「无表格」——可先在 Word 手工插入 2×2 表再测 W02/W03，或接受「无表格」作为预期。
+**文件**：`OpenWorkmate-word-test.docx`。**无表格时** `word_tables_list` / `word_tables_read` 会得到「无表格」——可先在 Word 手工插入 2×2 表再测 W02/W03，或接受「无表格」作为预期。
 
 **说明**：`word_document_create` 有 **W01**（空行拆段）与 **W01b**（换行/空行场景）两条；其余每行对应一个内置工具函数。竖线分段与表格语法冲突处见第 3 节段首「表格与 Markdown」。
 
 
 | 编号   | 工具名                         | 依赖               | 建议粘贴到对话框的话术                                                                                                                             | 应核对工具名                      | 预期要点        |
 | ---- | --------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ----------- |
-| W01  | `word_document_create`      | —                | 「请 word_document_create：taskly-word-test.docx，标题【手工测试】；**paragraphs 用字符串数组**，两个元素分别为【第一段】与【第二段】。」（与工具说明一致时也可只传一项，项内用空行或 ASCII 竖线 U+007C 分段；本表为避表格语法不示例竖线。） | `word_document_create`      | 文件已生成，含两段正文 |
-| W01b | `word_document_create`      | —                | 「请 word_document_create：taskly-word-newlines.docx，标题【换行分段】；**paragraphs 用字符串数组**：第一项为多行字符串——第一行【段甲】、空一行、再【段乙】；不要用数组项之间的竖线代替空行分段。」                                 | `word_document_create`      | 多段按空行/换行拆段  |
-| W02  | `word_body_read`            | W01              | 「请 word_body_read：taskly-word-test.docx，includeTables true。」                                                                            | `word_body_read`            | 段落文本        |
-| W03  | `word_tables_list`          | 文档内有表            | 「请 word_tables_list：taskly-word-test.docx。」                                                                                             | `word_tables_list`          | 表数量或「无表格」   |
+| W01  | `word_document_create`      | —                | 「请 word_document_create：OpenWorkmate-word-test.docx，标题【手工测试】；**paragraphs 用字符串数组**，两个元素分别为【第一段】与【第二段】。」（与工具说明一致时也可只传一项，项内用空行或 ASCII 竖线 U+007C 分段；本表为避表格语法不示例竖线。） | `word_document_create`      | 文件已生成，含两段正文 |
+| W01b | `word_document_create`      | —                | 「请 word_document_create：OpenWorkmate-word-newlines.docx，标题【换行分段】；**paragraphs 用字符串数组**：第一项为多行字符串——第一行【段甲】、空一行、再【段乙】；不要用数组项之间的竖线代替空行分段。」                                 | `word_document_create`      | 多段按空行/换行拆段  |
+| W02  | `word_body_read`            | W01              | 「请 word_body_read：OpenWorkmate-word-test.docx，includeTables true。」                                                                            | `word_body_read`            | 段落文本        |
+| W03  | `word_tables_list`          | 文档内有表            | 「请 word_tables_list：OpenWorkmate-word-test.docx。」                                                                                             | `word_tables_list`          | 表数量或「无表格」   |
 | W04  | `word_tables_read`          | 有表               | 「请 word_tables_read：tableIndex=1。」                                                                                                      | `word_tables_read`          | 表内容         |
 | W05  | `word_find_replace`         | W01              | 「请 word_find_replace：查找文档中已有词【第一段】，替换为【已替换】。」（若坚持用【替换目标】，需先在正文加入该词再替换）                                                                  | `word_find_replace`         | 成功          |
 | W06  | `word_paragraphs_format`    | W01              | 「请 word_paragraphs_format：第 2 段，alignment center。」                                                                                      | `word_paragraphs_format`    | 成功          |
@@ -289,7 +289,7 @@
 | W17  | `word_bookmark_insert`      | W01              | 「请 word_bookmark_insert：书签名 bm_manual，paragraphIndex=1。」                                                                                | `word_bookmark_insert`      | 成功          |
 | W18  | `word_bookmarks_list`       | W17              | 「请 word_bookmarks_list。」                                                                                                                | `word_bookmarks_list`       | 含 bm_manual |
 | W19  | `word_bookmark_read`        | W17              | 「请 word_bookmark_read：bm_manual。」                                                                                                       | `word_bookmark_read`        | 文本          |
-| W20  | `word_image_insert`         | 有 taskly-img.png | 「请 word_image_insert：第 1 段后插入 taskly-img.png。」                                                                                          | `word_image_insert`         | 成功          |
+| W20  | `word_image_insert`         | 有 OpenWorkmate-img.png | 「请 word_image_insert：第 1 段后插入 OpenWorkmate-img.png。」                                                                                          | `word_image_insert`         | 成功          |
 | W21  | `word_images_list`          | W20 后            | 「请 word_images_list。」                                                                                                                   | `word_images_list`          | 部件数 ≥1      |
 | W22  | `word_sections_list`        | W01              | 「请 word_sections_list。」                                                                                                                 | `word_sections_list`        | ≥1 节        |
 | W23  | `word_hyperlink_insert`     | W01              | 「请 word_hyperlink_insert：在第 2 段插入超链接，地址 https://example.com ，显示文字【点我】。」                                | `word_hyperlink_insert`     | 成功          |
@@ -297,7 +297,7 @@
 
 ### 3.10 Ppt（逐工具，共 14 个函数）
 
-**文件**：`taskly-ppt-test.pptx`。**P14** 可复制**含嵌入图**的页（`ImagePart` + `blip/@embed`）；亦可在 **P01** 无图页上测；复杂图表/媒体若失败记工具返回。
+**文件**：`OpenWorkmate-ppt-test.pptx`。**P14** 可复制**含嵌入图**的页（`ImagePart` + `blip/@embed`）；亦可在 **P01** 无图页上测；复杂图表/媒体若失败记工具返回。
 
 **说明**：`ppt_table_write_cells` 的 `rowsCsv` 约定见插件 Description（多行用 U+007C、单元格用英文逗号）；**P12** 话术用「竖线」代称，避免破坏表格（参见 §3「表格与 Markdown」）。
 
@@ -306,19 +306,19 @@
 
 | 编号  | 工具名                     | 依赖               | 建议粘贴到对话框的话术                                                                                                                            | 应核对工具名                  | 预期要点    |
 | --- | ----------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------- |
-| P01 | `ppt_document_create`   | —                | 「请 ppt_document_create：taskly-ppt-test.pptx。」                                                                                          | `ppt_document_create`   | 1 张灯片   |
+| P01 | `ppt_document_create`   | —                | 「请 ppt_document_create：OpenWorkmate-ppt-test.pptx。」                                                                                          | `ppt_document_create`   | 1 张灯片   |
 | P02 | `ppt_slides_list`       | P01              | 「请 ppt_slides_list。」                                                                                                                   | `ppt_slides_list`       | ≥1 张    |
 | P03 | `ppt_slide_read`        | P01              | 「请 ppt_slide_read：slideIndex=1，includeShapeDetails true。」                                                                              | `ppt_slide_read`        | 文本+形状   |
 | P04 | `ppt_slide_write`       | P03              | 「请 ppt_slide_write：slideIndex=1，placeholderType=title，text【手工 PPT】。」                                                                   | `ppt_slide_write`       | 成功      |
 | P05 | `ppt_slide_insert`      | P01              | 「请 ppt_slide_insert：position 取大末尾，title【第二页】，body【正文测试】。」                                                                              | `ppt_slide_insert`      | 总页数 +1  |
 | P06 | `ppt_slide_delete`      | P05              | 「请 ppt_slide_delete：slideIndex=2。」                                                                                                     | `ppt_slide_delete`      | 剩 1 页   |
-| P07 | `ppt_slide_image_add`   | 有 taskly-img.png | 「请 ppt_slide_image_add：slideIndex=1，imagePath taskly-img.png。」                                                                         | `ppt_slide_image_add`   | 成功      |
+| P07 | `ppt_slide_image_add`   | 有 OpenWorkmate-img.png | 「请 ppt_slide_image_add：slideIndex=1，imagePath OpenWorkmate-img.png。」                                                                         | `ppt_slide_image_add`   | 成功      |
 | P08 | `ppt_notes_read`        | P01              | 「请 ppt_notes_read：slideIndex=1。」                                                                                                       | `ppt_notes_read`        | 文本或空    |
 | P09 | `ppt_notes_write`       | P01              | 「请 ppt_notes_write：slideIndex=1，【备注手工测试】。」                                                                                             | `ppt_notes_write`       | 成功      |
 | P10 | `ppt_slides_reorder`    | 至少 2 页           | 先 P05 再发：「请 ppt_slides_reorder：newOrder=2,1。」                                                                                          | `ppt_slides_reorder`    | 成功      |
 | P11 | `ppt_table_create`      | P01              | 「请 ppt_table_create：slideIndex=1，3 行 2 列。」                                                                                             | `ppt_table_create`      | 成功      |
 | P12 | `ppt_table_write_cells` | P11              | 「请 ppt_table_write_cells：slideIndex=1，rowsCsv 填 2 行 2 列：第一行【第一行左,第一行右】与第二行【第二行左,第二行右】之间用竖线（U+007C）连接，格内只用英文逗号。」                        | `ppt_table_write_cells` | 成功      |
-| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 taskly-ppt-test.pptx，slideIndex=1，url https://example.com ，shapeIndex=1。」 | `ppt_hyperlink_add`     | 成功或形状说明 |
+| P13 | `ppt_hyperlink_add`     | P01              | 「请 ppt_hyperlink_add：文件 OpenWorkmate-ppt-test.pptx，slideIndex=1，url https://example.com ，shapeIndex=1。」 | `ppt_hyperlink_add`     | 成功或形状说明 |
 | P14 | `ppt_slide_duplicate`   | P01 或 P07        | 「请 ppt_slide_duplicate：slideIndex=1。」后端复制 `ImagePart` 并重映射 `blip/@embed`；极复杂页（图表等）失败请看工具返回。                                            | `ppt_slide_duplicate`   | 成功      |
 
 

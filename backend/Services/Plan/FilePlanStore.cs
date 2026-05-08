@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Plan;
+namespace OpenWorkmate.Server.Services.Plan;
 
 /// <summary>基于文件系统的计划存储：每份计划一个 .plan.md 文件 + 同名的 .meta.json。</summary>
 public sealed class FilePlanStore : IPlanStore

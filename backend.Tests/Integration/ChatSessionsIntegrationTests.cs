@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Xunit;
 
 namespace backend.Tests.Integration;
@@ -25,13 +25,13 @@ public class ChatSessionsIntegrationTests : IDisposable
     {
         _userConfigPath = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+            "OpenWorkmate.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
         _scheduledTasksDir = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
+            "OpenWorkmate.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
         _chatSessionsDir = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.chat-sessions-test-" + Guid.NewGuid().ToString("N"));
+            "OpenWorkmate.chat-sessions-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_chatSessionsDir);
 
         IntegrationTestUserConfigWriter.Write(_userConfigPath, _scheduledTasksDir, webSocketAuthToken: "");
@@ -43,8 +43,8 @@ public class ChatSessionsIntegrationTests : IDisposable
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["OfficeCopilot:UserConfigPath"] = _userConfigPath,
-                    ["OfficeCopilot:ChatSessionsDirectory"] = _chatSessionsDir,
+                    ["OpenWorkmate:UserConfigPath"] = _userConfigPath,
+                    ["OpenWorkmate:ChatSessionsDirectory"] = _chatSessionsDir,
                 });
             });
         });
@@ -189,9 +189,9 @@ public class ChatSessionsIntegrationTests : IDisposable
     {
         var userPath = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.user-config-auth-chatsess-" + Guid.NewGuid().ToString("N") + ".json");
-        var schedDir = Path.Combine(Path.GetTempPath(), "OfficeCopilot.st-chatsess-" + Guid.NewGuid().ToString("N"));
-        var chatDir = Path.Combine(Path.GetTempPath(), "OfficeCopilot.chat-chatsess-" + Guid.NewGuid().ToString("N"));
+            "OpenWorkmate.user-config-auth-chatsess-" + Guid.NewGuid().ToString("N") + ".json");
+        var schedDir = Path.Combine(Path.GetTempPath(), "OpenWorkmate.st-chatsess-" + Guid.NewGuid().ToString("N"));
+        var chatDir = Path.Combine(Path.GetTempPath(), "OpenWorkmate.chat-chatsess-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(chatDir);
         IntegrationTestUserConfigWriter.Write(userPath, schedDir, webSocketAuthToken: "chatsess-secret");
 
@@ -202,8 +202,8 @@ public class ChatSessionsIntegrationTests : IDisposable
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["OfficeCopilot:UserConfigPath"] = userPath,
-                    ["OfficeCopilot:ChatSessionsDirectory"] = chatDir,
+                    ["OpenWorkmate:UserConfigPath"] = userPath,
+                    ["OpenWorkmate:ChatSessionsDirectory"] = chatDir,
                 });
             });
         });

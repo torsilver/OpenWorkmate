@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <JsPlugin>
   <ApiVersion>1.0.0</ApiVersion>
-  <Name>Office Copilot</Name>
+  <Name>Open Workmate</Name>
   <Description>AI 侧边栏，与后台对话并操作当前文档</Description>
 </JsPlugin>

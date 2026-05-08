@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Telemetry;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>Shared services for the tool invocation pipeline (registered as singleton).</summary>
 public sealed class ToolInvocationPipelineServices

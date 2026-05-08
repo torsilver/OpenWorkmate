@@ -1,4 +1,4 @@
-namespace Taskly.AI.Gateway.Services;
+namespace OpenWorkmate.AI.Gateway.Services;
 
 public static class TelemetryPathValidator
 {

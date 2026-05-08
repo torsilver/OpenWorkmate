@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -46,7 +46,7 @@ public sealed class OfficeLegacyConversionHelperTests
     [Fact]
     public void TryBuildDefaultOutputPath_builds_stem_converted()
     {
-        var temp = Path.Combine(Path.GetTempPath(), "taskly_legacy_test_" + Guid.NewGuid().ToString("N"));
+        var temp = Path.Combine(Path.GetTempPath(), "owm_legacy_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         var input = Path.Combine(temp, "hello.doc");
         File.WriteAllText(input, "x");
@@ -60,7 +60,7 @@ public sealed class OfficeLegacyConversionHelperTests
     [Fact]
     public void TryBuildDefaultOutputPath_fails_when_default_exists()
     {
-        var temp = Path.Combine(Path.GetTempPath(), "taskly_legacy_test2_" + Guid.NewGuid().ToString("N"));
+        var temp = Path.Combine(Path.GetTempPath(), "owm_legacy_test2_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         var input = Path.Combine(temp, "dup.xls");
         var blocking = Path.Combine(temp, "dup_converted.xlsx");

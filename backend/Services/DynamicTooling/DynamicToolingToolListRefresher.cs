@@ -1,8 +1,8 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 在 <c>activate_tools</c> 已更新 <see cref="DynamicToolingTurnState.ActivatedFunctionNames"/> 后，

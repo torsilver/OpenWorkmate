@@ -1,7 +1,7 @@
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.Ocr;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.Ocr;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>OCR：委托 <see cref="OcrExtractorProvider"/>。</summary>
 public sealed class OcrService : IOcrService

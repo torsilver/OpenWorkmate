@@ -1,6 +1,6 @@
 # 应用内开放给对话模型的插件列表（内部）
 
-本文描述 **Taskly / Office Copilot 后端** 在 **`ToolRegistry`**（MAF / MEAI `AITool`）上注册、供**本应用内对话 AI** 调用的插件（工具）范围。  
+本文描述 **OpenWorkmate / Open Workmate 后端** 在 **`ToolRegistry`**（MAF / MEAI `AITool`）上注册、供**本应用内对话 AI** 调用的插件（工具）范围。  
 **不以 Cursor 或其它 IDE 的 Skill 为准**；与 Cursor `.cursor/skills` 无关。
 
 ## 权威来源与变更方式

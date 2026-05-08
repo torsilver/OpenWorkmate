@@ -1,7 +1,7 @@
-# taskly-overlay 与 vendor 摘录合并规则
+# open-workmate-overlay 与 vendor 摘录合并规则
 
 1. **基底**：`vendor/model_prices_excerpt.json` 为单个 JSON 对象，顶层键为 LiteLLM 模型 id（如 `moonshot/kimi-k2.6`），值为 LiteLLM 原字段（`max_input_tokens`、`supports_vision` 等）。
-2. **覆盖**：`taskly-overlay.json` 顶层键与 profileKey 对齐；值为 **Taskly 扩展** 字段（与 LiteLLM 字段并存，同名时扩展优先用于 Taskly 语义，勿覆盖 LiteLLM 定价字段名除非有意为之）。
+2. **覆盖**：`open-workmate-overlay.json` 顶层键与 profileKey 对齐；值为 **OpenWorkmate 扩展** 字段（与 LiteLLM 字段并存，同名时扩展优先用于 OpenWorkmate 语义，勿覆盖 LiteLLM 定价字段名除非有意为之）。
 3. **运行时**：`ModelProfileRegistry` 将两文件按 profileKey 合并为 `MergedModelProfile`；`AiModelEntry.modelProfileKey` 显式指向 profileKey；未配置时不参与合并。
 4. **私有扩展字段**（camelCase JSON）：
    - `requiresReasoningEchoWithTools`：上游在 thinking 开启且多轮工具时可能要求回传 `reasoning_content`（诊断：缺缓冲时打 Warning；**不再作为启用 HTTP echo 的唯一开关**）。

@@ -4,7 +4,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using DocumentFormat.OpenXml.Validation;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;

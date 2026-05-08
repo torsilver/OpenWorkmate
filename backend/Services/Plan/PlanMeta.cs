@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Services.Plan;
+namespace OpenWorkmate.Server.Services.Plan;
 
 /// <summary>计划元数据：标题、状态、时间。</summary>
 public class PlanMeta

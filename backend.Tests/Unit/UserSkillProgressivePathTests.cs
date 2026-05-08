@@ -1,5 +1,5 @@
-using OfficeCopilot.Server.Plugins;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Plugins;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -9,7 +9,7 @@ public class UserSkillProgressivePathTests
     [Fact]
     public void TryResolveSafeResourcePath_AllowsNestedFileUnderBaseDir()
     {
-        var tmp = Path.Combine(Path.GetTempPath(), "taskly-skill-test-" + Guid.NewGuid().ToString("N"));
+        var tmp = Path.Combine(Path.GetTempPath(), "OpenWorkmate-skill-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(tmp, "references"));
         var relFile = Path.Combine(tmp, "references", "note.md");
         File.WriteAllText(relFile, "x");
@@ -24,7 +24,7 @@ public class UserSkillProgressivePathTests
     [Fact]
     public void TryResolveSafeResourcePath_RejectsParentTraversal()
     {
-        var tmp = Path.Combine(Path.GetTempPath(), "taskly-skill-test-" + Guid.NewGuid().ToString("N"));
+        var tmp = Path.Combine(Path.GetTempPath(), "OpenWorkmate-skill-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmp);
         var skill = new SkillDefinition { Id = "t", BaseDir = tmp };
         Assert.False(UserSkillProgressivePlugin.TryResolveSafeResourcePath(skill, "..\\Windows\\System.ini", out _, out var err));
@@ -36,7 +36,7 @@ public class UserSkillProgressivePathTests
     [Fact]
     public void TryResolveSafeResourcePath_RejectsSkillMdViaRelativeArg()
     {
-        var tmp = Path.Combine(Path.GetTempPath(), "taskly-skill-test-" + Guid.NewGuid().ToString("N"));
+        var tmp = Path.Combine(Path.GetTempPath(), "OpenWorkmate-skill-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmp);
         File.WriteAllText(Path.Combine(tmp, "SKILL.md"), "---\nname: t\ndescription: d\n---\nbody");
         var skill = new SkillDefinition { Id = "t", BaseDir = tmp };

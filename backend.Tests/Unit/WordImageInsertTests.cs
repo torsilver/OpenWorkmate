@@ -1,7 +1,7 @@
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -21,8 +21,8 @@ public sealed class WordImageInsertTests
     [Fact]
     public void WordImageInsert_adds_image_part_and_drawing_and_keeps_paragraph_text()
     {
-        var docPath = Path.Combine(Path.GetTempPath(), $"taskly_img_{Guid.NewGuid():N}.docx");
-        var pngPath = Path.Combine(Path.GetTempPath(), $"taskly_1x1_{Guid.NewGuid():N}.png");
+        var docPath = Path.Combine(Path.GetTempPath(), $"owm_img_{Guid.NewGuid():N}.docx");
+        var pngPath = Path.Combine(Path.GetTempPath(), $"owm_1x1_{Guid.NewGuid():N}.png");
         try
         {
             using (var doc = WordprocessingDocument.Create(docPath, WordprocessingDocumentType.Document))
@@ -53,8 +53,8 @@ public sealed class WordImageInsertTests
     [Fact]
     public void WordImageInsert_second_image_gets_distinct_drawing_ids()
     {
-        var docPath = Path.Combine(Path.GetTempPath(), $"taskly_img2_{Guid.NewGuid():N}.docx");
-        var pngPath = Path.Combine(Path.GetTempPath(), $"taskly_1x1b_{Guid.NewGuid():N}.png");
+        var docPath = Path.Combine(Path.GetTempPath(), $"owm_img2_{Guid.NewGuid():N}.docx");
+        var pngPath = Path.Combine(Path.GetTempPath(), $"owm_1x1b_{Guid.NewGuid():N}.png");
         try
         {
             using (var doc = WordprocessingDocument.Create(docPath, WordprocessingDocumentType.Document))

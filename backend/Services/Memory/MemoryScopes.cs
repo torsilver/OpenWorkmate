@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>记忆作用域常量：共享记忆使用固定 session_id，供跨端检索。</summary>
 public static class MemoryScopes

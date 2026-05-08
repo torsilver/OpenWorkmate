@@ -12,31 +12,31 @@ var TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'telemetryRelayActiveProfileId';
 var TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'telemetryEventKindsByProfile';
 
 /** 新字段 <code>aiGatewayBaseUrl</code> 优先，兼容旧 <code>telemetryRelayBaseUrl</code>。 */
-function tasklyAiGatewayBaseFromConfig(data) {
+function openWorkmateAiGatewayBaseFromConfig(data) {
   data = data || {};
   return String((data.aiGatewayBaseUrl ?? data.AiGatewayBaseUrl ?? data.telemetryRelayBaseUrl ?? data.TelemetryRelayBaseUrl) || '').trim();
 }
-function tasklyAiGatewayKeyFromConfig(data) {
+function openWorkmateAiGatewayKeyFromConfig(data) {
   data = data || {};
   return String((data.aiGatewayApiKey ?? data.AiGatewayApiKey ?? data.telemetryRelayApiKey ?? data.TelemetryRelayApiKey) || '').trim();
 }
-function tasklyOpsPolicyProfileIdFromConfig(data) {
+function openWorkmateOpsPolicyProfileIdFromConfig(data) {
   data = data || {};
   return String((data.opsPolicyProfileId ?? data.OpsPolicyProfileId ?? data.telemetryServerPolicyProfileId ?? data.TelemetryServerPolicyProfileId) || '').trim();
 }
 
-function tasklyTelemetryMasterEl() {
+function openWorkmateTelemetryMasterEl() {
   return document.getElementById('telemetryMasterEnabled');
 }
 
-function tasklyIsTelemetryMasterOn() {
-  var el = tasklyTelemetryMasterEl();
+function openWorkmateIsTelemetryMasterOn() {
+  var el = openWorkmateTelemetryMasterEl();
   return !!(el && el.checked);
 }
 
 /** 遥测总开关关闭时灰显并禁用 Gateway 子面板（不发起策略拉取、不可编辑子项）。 */
-function tasklyApplyTelemetryMasterSubpanelState() {
-  var on = tasklyIsTelemetryMasterOn();
+function openWorkmateApplyTelemetryMasterSubpanelState() {
+  var on = openWorkmateIsTelemetryMasterOn();
   var wrap = document.getElementById('telemetryGatewaySubpanel');
   if (wrap) {
     wrap.style.opacity = on ? '1' : '0.48';
@@ -61,28 +61,28 @@ function tasklyApplyTelemetryMasterSubpanelState() {
   }
 }
 
-function tasklySetOptionsApiUrls(apiBase) {
-  var b = TasklyLocalService.normalizeBase(apiBase);
+function openWorkmateSetOptionsApiUrls(apiBase) {
+  var b = OpenWorkmateLocalService.normalizeBase(apiBase);
   API_URL = b + "/api/config";
   SKILLS_API_URL = b + "/api/skills";
   BUILTIN_TOOLS_URL = b + "/api/tools/builtin";
 }
 
-var tasklyOptionsApiReady = null;
-function tasklyEnsureOptionsApiBase() {
-  if (tasklyOptionsApiReady) return tasklyOptionsApiReady;
-  tasklyOptionsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(chrome.storage.local)
+var openWorkmateOptionsApiReady = null;
+function openWorkmateEnsureOptionsApiBase() {
+  if (openWorkmateOptionsApiReady) return openWorkmateOptionsApiReady;
+  openWorkmateOptionsApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(chrome.storage.local)
     .then(function (r) {
-      tasklySetOptionsApiUrls(r.baseUrl);
+      openWorkmateSetOptionsApiUrls(r.baseUrl);
     })
     .catch(function (err) {
-      tasklyOptionsApiReady = null;
+      openWorkmateOptionsApiReady = null;
       throw err;
     });
-  return tasklyOptionsApiReady;
+  return openWorkmateOptionsApiReady;
 }
 
-function tasklyMergeAuthHeaders(init) {
+function openWorkmateMergeAuthHeaders(init) {
   init = init ? Object.assign({}, init) : {};
   return new Promise(function (resolve) {
     try {
@@ -93,7 +93,7 @@ function tasklyMergeAuthHeaders(init) {
         }
         var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || '').trim();
         var headers = Object.assign({}, init.headers || {});
-        if (t) headers['X-OfficeCopilot-Token'] = t;
+        if (t) headers['X-OpenWorkmate-Token'] = t;
         init.headers = headers;
         resolve(init);
       });
@@ -103,13 +103,13 @@ function tasklyMergeAuthHeaders(init) {
   });
 }
 
-function tasklyFetch(url, init) {
-  return tasklyMergeAuthHeaders(init).then(function (merged) { return fetch(url, merged); });
+function openWorkmateFetch(url, init) {
+  return openWorkmateMergeAuthHeaders(init).then(function (merged) { return fetch(url, merged); });
 }
 
 /** 本机 loopback 从后台拉取密钥并写入 chrome.storage（仅当本地尚未保存时），便于 WPS/侧栏与选项页共用同一配置源 */
 function ensureLocalServiceTokenFromBootstrap() {
-  return tasklyEnsureOptionsApiBase().then(function () {
+  return openWorkmateEnsureOptionsApiBase().then(function () {
   var base = API_URL.replace('/api/config', '');
   return fetch(base + '/api/bootstrap/local-service-auth')
     .then(function (r) { return r.ok ? r.json() : null; })
@@ -177,7 +177,7 @@ function messageForBackendUnreachable(err) {
   if (!err) return null;
   var msg = (err && err.message) ? String(err.message) : '';
   if (msg === 'Failed to fetch' || (err.name === 'TypeError' && msg && msg.indexOf('fetch') !== -1))
-    return '无法连接到本地服务（默认扫描 127.0.0.1:8765 起连续端口），请确保已启动 OfficeCopilot.Server。';
+    return '无法连接到本地服务（默认扫描 127.0.0.1:8765 起连续端口），请确保已启动 OpenWorkmate.Server。';
   return null;
 }
 
@@ -198,11 +198,11 @@ function messageForBackendUnreachable(err) {
       alert('当前环境无法打开标签页。');
       return;
     }
-    tasklyEnsureOptionsApiBase()
+    openWorkmateEnsureOptionsApiBase()
       .then(function () {
         var base = API_URL.replace('/api/config', '');
         if (!base) {
-          alert('未能解析本机服务地址，请确认 Office Copilot 后台已启动。');
+          alert('未能解析本机服务地址，请确认 Open Workmate 后台已启动。');
           return;
         }
         var url = base + '/debug/logs.html';
@@ -213,7 +213,7 @@ function messageForBackendUnreachable(err) {
       })
       .catch(function (err) {
         var m = messageForBackendUnreachable(err);
-        alert(m || (err && err.message) || '未能解析本机服务地址，请确认 Office Copilot 后台已启动。');
+        alert(m || (err && err.message) || '未能解析本机服务地址，请确认 Open Workmate 后台已启动。');
       });
   }
   var sBtn = document.getElementById('openDebugStatsFromOptionsBtn');
@@ -700,7 +700,7 @@ var agentProfilesCache = [];
 var editingAgentProfileId = null;
 
 /** 与后端 BuiltInAgentProfileDefaults 一致：无配置或拉取失败时的侧栏预设。 */
-function tasklyBuiltInAgentProfilesFallback() {
+function openWorkmateBuiltInAgentProfilesFallback() {
   return [
     { id: 'default', displayName: '默认助手', systemPromptSuffix: '' },
     { id: 'moe', displayName: '萌萌助手', systemPromptSuffix: '你是「萌萌助手」：请用轻松软萌、亲切的语气与用户交流，可适度使用「呀、呢、喔」等语气词与少量颜文字。回答须真实准确；涉及安全、法律、医疗等专业问题时仍要严谨说明，勿用卖萌代替依据。' },
@@ -726,7 +726,7 @@ function syncAgentProfilesCacheFromFullConfig() {
       };
     }).filter(function (p) { return p.id; });
   } else {
-    agentProfilesCache = tasklyBuiltInAgentProfilesFallback().map(function (p) {
+    agentProfilesCache = openWorkmateBuiltInAgentProfilesFallback().map(function (p) {
       return { id: p.id, displayName: p.displayName, systemPromptSuffix: p.systemPromptSuffix || '' };
     });
   }
@@ -1077,7 +1077,7 @@ function loadMemoryList() {
   var url = baseUrl + '/api/memory?skip=0&take=50&scope=' + encodeURIComponent(urlScope);
   if (scope === 'session' && sessionId !== undefined) url += '&sessionId=' + encodeURIComponent(sessionId);
   if (scope === 'agent' && agentName) url += '&agentName=' + encodeURIComponent(agentName);
-  tasklyFetch(url).then(async function (r) {
+  openWorkmateFetch(url).then(async function (r) {
     var data = await r.json().catch(function () { return {}; });
     if (!r.ok) {
       var el = document.getElementById('memoryList');
@@ -1124,7 +1124,7 @@ function openMemoryEditor(id) {
     if (title) title.textContent = '编辑记忆';
     if (editId) editId.value = id;
     var baseUrl = API_URL.replace('/api/config', '');
-    tasklyFetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(async function (r) {
+    openWorkmateFetch(baseUrl + '/api/memory/' + encodeURIComponent(id)).then(async function (r) {
       var data = await r.json().catch(function () { return {}; });
       if (!r.ok) {
         alert('加载失败：' + (data && data.message ? data.message : r.status));
@@ -1170,7 +1170,7 @@ function saveMemoryFromEditor() {
   var body = id
     ? JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared })
     : JSON.stringify({ text: text, tags: tagsEl && tagsEl.value ? tagsEl.value.trim() : '', scopeShared: scopeShared });
-  tasklyFetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
+  openWorkmateFetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body }).then(function (r) {
     if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '保存失败'); });
     closeMemoryEditor();
     loadMemoryList();
@@ -1180,7 +1180,7 @@ function saveMemoryFromEditor() {
 function deleteMemory(id) {
   if (!id || !confirm('确定删除这条记忆？')) return;
   var baseUrl = API_URL.replace('/api/config', '');
-  tasklyFetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
+  openWorkmateFetch(baseUrl + '/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
     if (!r.ok) return r.json().catch(function () { return {}; }).then(function (data) { throw new Error(data.message || '删除失败'); });
     loadMemoryList();
   }).catch(function (e) { alert('删除失败: ' + (e.message || e)); });
@@ -1213,7 +1213,7 @@ async function doTestEmbeddingConnection(endpoint, apiKey, modelId, statusEl, ve
     var baseUrl = API_URL.replace('/api/config', '');
     var body = { endpoint: endpoint, apiKey: apiKey, modelId: modelId };
     if (vendorId) body.vendorId = vendorId;
-    var res = await tasklyFetch(baseUrl + '/api/config/test-embedding', {
+    var res = await openWorkmateFetch(baseUrl + '/api/config/test-embedding', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1357,7 +1357,7 @@ async function doTestRealtimeAsrConnection() {
       webSocketBaseUrl: (wsEl && wsEl.value.trim()) || undefined,
       modelId: (modelEl && modelEl.value.trim()) || undefined
     };
-    var res = await tasklyFetch(baseUrl + '/api/config/test-realtime-asr', {
+    var res = await openWorkmateFetch(baseUrl + '/api/config/test-realtime-asr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1417,7 +1417,7 @@ async function doTestOcrConnection(endpoint, apiKey, statusEl, opts) {
     if (opts.modelId) payload.modelId = opts.modelId;
     if (opts.connectionKind) payload.connectionKind = opts.connectionKind;
     if (opts.vendorId) payload.vendorId = opts.vendorId;
-    var res = await tasklyFetch(baseUrl + '/api/config/test-ocr', {
+    var res = await openWorkmateFetch(baseUrl + '/api/config/test-ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1745,7 +1745,7 @@ async function loadSkillEnvSection() {
   const existing = skillEnv && typeof skillEnv === 'object' ? Object.keys(skillEnv) : [];
   let keysSet = new Set(existing);
   try {
-    const res = await tasklyFetch(SKILLS_API_URL);
+    const res = await openWorkmateFetch(SKILLS_API_URL);
     if (res.ok) {
       const skills = await res.json();
       if (Array.isArray(skills)) {
@@ -1850,7 +1850,7 @@ async function loadConfig() {
   try {
     setSaveConfigButtonsState(true, '加载中...');
     
-    const response = await tasklyFetch(API_URL);
+    const response = await openWorkmateFetch(API_URL);
     if (!response.ok) {
       var errData = await response.json().catch(function () { return {}; });
       throw new Error(errData.message || '加载配置失败');
@@ -1865,12 +1865,12 @@ async function loadConfig() {
     var masterOn = telOn && obsRaw !== false;
     if (masterEl) masterEl.checked = masterOn;
     var telUrl = document.getElementById('aiGatewayBaseUrl');
-    if (telUrl) telUrl.value = tasklyAiGatewayBaseFromConfig(data);
+    if (telUrl) telUrl.value = openWorkmateAiGatewayBaseFromConfig(data);
     var telKey = document.getElementById('aiGatewayApiKey');
-    if (telKey) telKey.value = tasklyAiGatewayKeyFromConfig(data);
+    if (telKey) telKey.value = openWorkmateAiGatewayKeyFromConfig(data);
     var telSrvProf = document.getElementById('opsPolicyProfileSelect');
     if (telSrvProf) {
-      telSrvProf.value = tasklyOpsPolicyProfileIdFromConfig(data);
+      telSrvProf.value = openWorkmateOpsPolicyProfileIdFromConfig(data);
     }
     var obsEnabled = masterOn;
     try {
@@ -1878,7 +1878,7 @@ async function loadConfig() {
       oSync[TELEMETRY_CLIENT_EMISSION_KEY] = obsEnabled ? 'on' : 'off';
       chrome.storage.local.set(oSync);
     } catch (e) { /* ignore */ }
-    tasklyApplyTelemetryMasterSubpanelState();
+    openWorkmateApplyTelemetryMasterSubpanelState();
     var srvTok = String((data.webSocketAuthToken ?? data.WebSocketAuthToken) ?? '').trim();
     var tokInp = document.getElementById('localServiceAuthToken');
     if (tokInp) {
@@ -1933,25 +1933,25 @@ async function loadConfig() {
     toggleSessionSection(!!activePresetId);
     updatePresetRenameDeleteVisibility(activePresetId, presets);
     var themeEl = document.getElementById('uiThemeId');
-    if (themeEl && typeof TasklyTheme !== 'undefined') {
+    if (themeEl && typeof OpenWorkmateTheme !== 'undefined') {
       var serverTheme = data.uiThemeId ?? data.UiThemeId;
       if (serverTheme != null && String(serverTheme).trim() !== '') {
-        TasklyTheme.setTheme(String(serverTheme).trim());
+        OpenWorkmateTheme.setTheme(String(serverTheme).trim());
       } else {
-        TasklyTheme.applyFromStorage();
+        OpenWorkmateTheme.applyFromStorage();
       }
-      themeEl.value = TasklyTheme.normalize(localStorage.getItem(TasklyTheme.KEY) || 'dark');
+      themeEl.value = OpenWorkmateTheme.normalize(localStorage.getItem(OpenWorkmateTheme.KEY) || 'dark');
     } else if (themeEl) {
       themeEl.value = 'dark';
     }
     applySemanticKernelToForm(data.semanticKernel ?? data.SemanticKernel);
-    tasklyInitTelemetryRelayProfilesAfterServerLoad(data);
+    openWorkmateInitTelemetryRelayProfilesAfterServerLoad(data);
     try {
       var runId = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
       var cfgId = String((data.chromeExtensionId ?? data.ChromeExtensionId ?? '')).trim();
       if (runId && cfgId !== runId) {
         var syncUrl = API_URL.replace('/api/config', '') + '/api/config/sync-chrome-extension-id';
-        var syncRes = await tasklyFetch(syncUrl, {
+        var syncRes = await openWorkmateFetch(syncUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chromeExtensionId: runId })
@@ -1967,13 +1967,13 @@ async function loadConfig() {
     } catch (syncErr) {
       console.warn('同步 chromeExtensionId 异常:', syncErr);
     }
-    tasklyApplyTelemetryMasterSubpanelState();
+    openWorkmateApplyTelemetryMasterSubpanelState();
     refreshTransmissionPolicyHint();
   } catch (err) {
     var friendly = messageForBackendUnreachable(err);
     if (friendly) console.warn(friendly);
     else console.error(err);
-    var msg = friendly || (err && err.message) || '无法连接到本地服务，请确保已启动 OfficeCopilot.Server。';
+    var msg = friendly || (err && err.message) || '无法连接到本地服务，请确保已启动 OpenWorkmate.Server。';
     alert(msg);
   } finally {
     setSaveConfigButtonsState(false, '');
@@ -2179,7 +2179,7 @@ function updatePresetRenameDeleteVisibility(activePresetId, presets) {
 async function saveConfig() {
   try {
     setSaveConfigButtonsState(true, '保存中…');
-    await tasklyFlushTelemetryRelayProfileToStorage();
+    await openWorkmateFlushTelemetryRelayProfileToStorage();
     syncAgentProfilesCacheFromFullConfig();
     var agentProfilesToSave = agentProfilesCache.slice();
     var activeAgentProfileIdToSave = getOptionsActiveAgentProfileId();
@@ -2217,7 +2217,7 @@ async function saveConfig() {
     var activeOcrModelId = (fullConfig && (fullConfig.activeOcrModelId || fullConfig.ActiveOcrModelId)) || '';
     var uiThemeEl = document.getElementById('uiThemeId');
     var uiThemeId = (uiThemeEl && uiThemeEl.value) ? uiThemeEl.value : ((fullConfig && (fullConfig.uiThemeId ?? fullConfig.UiThemeId)) || 'dark');
-    if (typeof TasklyTheme !== 'undefined') uiThemeId = TasklyTheme.normalize(uiThemeId);
+    if (typeof OpenWorkmateTheme !== 'undefined') uiThemeId = OpenWorkmateTheme.normalize(uiThemeId);
     const payload = {
       alwaysIncludePlugins: alwaysIncludePluginsToSave,
       aiModels: aiModelsToSave,
@@ -2251,8 +2251,8 @@ async function saveConfig() {
         var rid = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) ? String(chrome.runtime.id).trim() : '';
         return rid || undefined;
       })(),
-      telemetryEnabled: tasklyIsTelemetryMasterOn(),
-      telemetryUserObservabilityEnabled: tasklyIsTelemetryMasterOn(),
+      telemetryEnabled: openWorkmateIsTelemetryMasterOn(),
+      telemetryUserObservabilityEnabled: openWorkmateIsTelemetryMasterOn(),
       aiGatewayBaseUrl: (function () {
         var el = document.getElementById('aiGatewayBaseUrl');
         var s = el ? String(el.value || '').trim() : '';
@@ -2269,7 +2269,7 @@ async function saveConfig() {
         return s || undefined;
       })()
     };
-    const response = await tasklyFetch(API_URL, {
+    const response = await openWorkmateFetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2467,7 +2467,7 @@ async function doTestAiConnection(fields, statusEl) {
       deploymentName: deploymentName
     };
     if (vendorId) testBody.vendorId = vendorId;
-    var res = await tasklyFetch(baseUrl + '/api/config/test-ai', {
+    var res = await openWorkmateFetch(baseUrl + '/api/config/test-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(testBody)
@@ -2550,7 +2550,7 @@ function renderSkillCardHtml(skill, opts) {
 
 async function loadSkills() {
   try {
-    const res = await tasklyFetch(SKILLS_API_URL);
+    const res = await openWorkmateFetch(SKILLS_API_URL);
     if (res.ok) {
       currentSkills = await res.json();
       renderSkills();
@@ -2617,7 +2617,7 @@ window.editSkill = (id) => {
 window.deleteSkill = async (id) => {
   if (!confirm('确定要删除这个技能吗？')) return;
   try {
-    const res = await tasklyFetch(SKILLS_API_URL + '/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await openWorkmateFetch(SKILLS_API_URL + '/' + encodeURIComponent(id), { method: 'DELETE' });
     if (res.ok) await loadSkills();
     else {
       var data = await res.json().catch(function () { return {}; });
@@ -2662,7 +2662,7 @@ els.saveSkillBtn.addEventListener('click', async () => {
   
   try {
     els.saveSkillBtn.disabled = true;
-    const res = await tasklyFetch(SKILLS_API_URL, {
+    const res = await openWorkmateFetch(SKILLS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2697,7 +2697,7 @@ window.toggleSkillEnabled = async function (id) {
     baseDir: skill.baseDir || skill.BaseDir || ''
   };
   try {
-    const res = await tasklyFetch(SKILLS_API_URL, {
+    const res = await openWorkmateFetch(SKILLS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2818,7 +2818,7 @@ function renderCliScriptUnifiedConfig() {
 
   html += '<div class="cli-location-section" style="margin-top:4px;">';
   html += '<h3 style="margin:0 0 8px;font-size:16px;">后台（服务端 CMD · run_command）</h3>';
-  html += '<p class="help-text" style="margin-bottom:8px;font-size:13px;">执行位置：运行 Office Copilot 服务端的本机命令行。四端会话发起的 <code>run_command</code> 均在此执行；白名单以本节为准。</p>';
+  html += '<p class="help-text" style="margin-bottom:8px;font-size:13px;">执行位置：运行 Open Workmate 服务端的本机命令行。四端会话发起的 <code>run_command</code> 均在此执行；白名单以本节为准。</p>';
   html += '<p class="help-text" style="margin-bottom:8px;font-size:12px;color:var(--muted);">内置行由产品预设，不提供删除按钮；仅自定义行可删除。</p>';
   html += '<div class="cli-end-block" data-end="backend">';
   html += '<p class="help-text" style="margin-bottom:8px;">命令白名单</p>';
@@ -3046,7 +3046,7 @@ function collectCliSecurityPayload() {
   return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
 }
 
-function tasklyTelemetryRelayProfilesRead(callback) {
+function openWorkmateTelemetryRelayProfilesRead(callback) {
   chrome.storage.local.get(
     [TELEMETRY_RELAY_PROFILES_KEY, TELEMETRY_RELAY_ACTIVE_PROFILE_KEY, TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY],
     function (r) {
@@ -3059,7 +3059,7 @@ function tasklyTelemetryRelayProfilesRead(callback) {
   );
 }
 
-function tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, done) {
+function openWorkmateTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, done) {
   var o = {};
   o[TELEMETRY_RELAY_PROFILES_KEY] = profiles;
   o[TELEMETRY_RELAY_ACTIVE_PROFILE_KEY] = activeId;
@@ -3067,7 +3067,7 @@ function tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, done) {
   chrome.storage.local.set(o, done || function () {});
 }
 
-function tasklyPersistActiveRelayProfileInputs(profiles, activeId) {
+function openWorkmatePersistActiveRelayProfileInputs(profiles, activeId) {
   var urlEl = document.getElementById('aiGatewayBaseUrl');
   var keyEl = document.getElementById('aiGatewayApiKey');
   var base = urlEl ? String(urlEl.value || '').trim() : '';
@@ -3079,7 +3079,7 @@ function tasklyPersistActiveRelayProfileInputs(profiles, activeId) {
   return next;
 }
 
-function tasklyRenderTelemetryRelayProfileSelect(profiles, activeId) {
+function openWorkmateRenderTelemetryRelayProfileSelect(profiles, activeId) {
   var sel = document.getElementById('aiGatewayProfileSelect');
   if (!sel) return;
   sel.innerHTML = '';
@@ -3093,10 +3093,10 @@ function tasklyRenderTelemetryRelayProfileSelect(profiles, activeId) {
   else if (profiles.length) sel.value = profiles[0].id;
 }
 
-function tasklyInitTelemetryRelayProfilesAfterServerLoad(serverData) {
-  tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-    var srvUrl = tasklyAiGatewayBaseFromConfig(serverData);
-    var srvKey = tasklyAiGatewayKeyFromConfig(serverData);
+function openWorkmateInitTelemetryRelayProfilesAfterServerLoad(serverData) {
+  openWorkmateTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
+    var srvUrl = openWorkmateAiGatewayBaseFromConfig(serverData);
+    var srvKey = openWorkmateAiGatewayKeyFromConfig(serverData);
     if (!profiles.length) {
       profiles = [{ id: 'default', name: '默认', baseUrl: srvUrl, apiKey: srvKey }];
       activeId = 'default';
@@ -3107,15 +3107,15 @@ function tasklyInitTelemetryRelayProfilesAfterServerLoad(serverData) {
     var keyEl = document.getElementById('aiGatewayApiKey');
     if (urlEl) urlEl.value = active.baseUrl || '';
     if (keyEl) keyEl.value = active.apiKey || '';
-    tasklyTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, function () {
-      tasklyRenderTelemetryRelayProfileSelect(profiles, activeId);
+    openWorkmateTelemetryRelayProfilesWrite(profiles, activeId, kindsMap, function () {
+      openWorkmateRenderTelemetryRelayProfileSelect(profiles, activeId);
       refreshTransmissionPolicyHint();
-      tasklyApplyTelemetryMasterSubpanelState();
+      openWorkmateApplyTelemetryMasterSubpanelState();
     });
   });
 }
 
-function tasklySaveTelemetryEventKindsFromDom(profiles, activeId, kindsMap) {
+function openWorkmateSaveTelemetryEventKindsFromDom(profiles, activeId, kindsMap) {
   var box = document.getElementById('telemetryEventKindsList');
   if (!box) return;
   var kinds = [];
@@ -3124,26 +3124,26 @@ function tasklySaveTelemetryEventKindsFromDom(profiles, activeId, kindsMap) {
   });
   var next = Object.assign({}, kindsMap);
   next[activeId] = kinds;
-  tasklyTelemetryRelayProfilesWrite(profiles, activeId, next);
+  openWorkmateTelemetryRelayProfilesWrite(profiles, activeId, next);
 }
 
-function tasklyFlushTelemetryRelayProfileToStorage() {
+function openWorkmateFlushTelemetryRelayProfileToStorage() {
   return new Promise(function (resolve) {
-    tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-      var merged = tasklyPersistActiveRelayProfileInputs(profiles, activeId);
-      tasklyTelemetryRelayProfilesWrite(merged, activeId, kindsMap, resolve);
+    openWorkmateTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
+      var merged = openWorkmatePersistActiveRelayProfileInputs(profiles, activeId);
+      openWorkmateTelemetryRelayProfilesWrite(merged, activeId, kindsMap, resolve);
     });
   });
 }
 
-function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap) {
+function openWorkmateRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap) {
   var container = document.getElementById('telemetryEventKindsList');
   if (!container) return;
   if (!Array.isArray(list)) list = [];
   container.innerHTML = '';
   if (!list.length) {
     container.textContent = '（请先打开遥测总开关并填写 Gateway URL / Key，成功拉取聚合策略后显示可选事件种类）';
-    tasklyApplyTelemetryMasterSubpanelState();
+    openWorkmateApplyTelemetryMasterSubpanelState();
     return;
   }
   var selected = kindsMap[activeId];
@@ -3153,7 +3153,7 @@ function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap)
     }).filter(Boolean);
     var nk = Object.assign({}, kindsMap);
     nk[activeId] = selected.slice();
-    tasklyTelemetryRelayProfilesWrite(profiles, activeId, nk);
+    openWorkmateTelemetryRelayProfilesWrite(profiles, activeId, nk);
   }
   list.forEach(function (entry) {
     var kind = String((entry && (entry.kind != null ? entry.kind : entry.Kind)) || '').trim();
@@ -3168,8 +3168,8 @@ function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap)
     cb.setAttribute('data-kind', kind);
     cb.checked = selected.indexOf(kind) >= 0;
     cb.addEventListener('change', function () {
-      tasklyTelemetryRelayProfilesRead(function (pr, aid, km) {
-        tasklySaveTelemetryEventKindsFromDom(pr, aid, km);
+      openWorkmateTelemetryRelayProfilesRead(function (pr, aid, km) {
+        openWorkmateSaveTelemetryEventKindsFromDom(pr, aid, km);
       });
     });
     row.appendChild(cb);
@@ -3178,27 +3178,27 @@ function tasklyRenderTelemetryEventKindsList(list, profiles, activeId, kindsMap)
     row.appendChild(span);
     container.appendChild(row);
   });
-  tasklyApplyTelemetryMasterSubpanelState();
+  openWorkmateApplyTelemetryMasterSubpanelState();
 }
 
 /** 拉取聚合策略时使用的 profileId：优先下拉当前值（含未保存的切换），否则已加载的 user-config，再否则留空（Gateway 使用其默认 profile）。 */
-function tasklyResolveOpsPolicyProfileIdForFetch() {
+function openWorkmateResolveOpsPolicyProfileIdForFetch() {
   var sel = document.getElementById('opsPolicyProfileSelect');
   var fromSel = sel && sel.value ? String(sel.value).trim() : '';
   if (fromSel) return fromSel;
   if (fullConfig) {
-    var fromCfg = tasklyOpsPolicyProfileIdFromConfig(fullConfig);
+    var fromCfg = openWorkmateOpsPolicyProfileIdFromConfig(fullConfig);
     if (fromCfg) return String(fromCfg).trim();
   }
   return '';
 }
 
-function tasklyRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultProfileId) {
+function openWorkmateRenderTelemetryServerPolicyProfileSelect(policyProfiles, defaultProfileId) {
   var sel = document.getElementById('opsPolicyProfileSelect');
   if (!sel) return;
   var list = Array.isArray(policyProfiles) ? policyProfiles : [];
   var defId = (defaultProfileId != null ? String(defaultProfileId) : '').trim();
-  var wantSaved = fullConfig ? tasklyOpsPolicyProfileIdFromConfig(fullConfig).trim() : '';
+  var wantSaved = fullConfig ? openWorkmateOpsPolicyProfileIdFromConfig(fullConfig).trim() : '';
   var wantInteractive = (sel.value || '').trim();
   var want = wantInteractive || wantSaved;
   function listHasId(id) {
@@ -3252,7 +3252,7 @@ function refreshTransmissionPolicyHint() {
   var profEl = document.getElementById('opsPolicyProfileSelect');
   var base = (urlEl && urlEl.value || '').trim().replace(/\/+$/, '');
   var key = (keyEl && keyEl.value || '').trim();
-  if (!tasklyIsTelemetryMasterOn() || !base || !key) {
+  if (!openWorkmateIsTelemetryMasterOn() || !base || !key) {
     hint.textContent = '';
     var emptyList = document.getElementById('telemetryEventKindsList');
     if (emptyList) emptyList.innerHTML = '';
@@ -3260,14 +3260,14 @@ function refreshTransmissionPolicyHint() {
       profEl.innerHTML = '';
       var od = document.createElement('option');
       od.value = '';
-      od.textContent = !tasklyIsTelemetryMasterOn() ? '（遥测总开关已关闭）' : '（请先开启遥测并填写 URL 与 Key）';
+      od.textContent = !openWorkmateIsTelemetryMasterOn() ? '（遥测总开关已关闭）' : '（请先开启遥测并填写 URL 与 Key）';
       profEl.appendChild(od);
       profEl.disabled = true;
     }
-    tasklyApplyTelemetryMasterSubpanelState();
+    openWorkmateApplyTelemetryMasterSubpanelState();
     return;
   }
-  var fetchProfileId = tasklyResolveOpsPolicyProfileIdForFetch();
+  var fetchProfileId = openWorkmateResolveOpsPolicyProfileIdForFetch();
   var u = base + '/api/policy/aggregated' + (fetchProfileId ? '?profileId=' + encodeURIComponent(fetchProfileId) : '');
   fetch(u, { headers: { Authorization: 'Bearer ' + key } })
     .then(function (res) {
@@ -3300,15 +3300,15 @@ function refreshTransmissionPolicyHint() {
           : eff.DefaultPolicyProfileId != null
             ? eff.DefaultPolicyProfileId
             : '';
-      tasklyRenderTelemetryServerPolicyProfileSelect(polProf, defPol);
+      openWorkmateRenderTelemetryServerPolicyProfileSelect(polProf, defPol);
       var kinds =
         eff.availableEventKinds != null
           ? eff.availableEventKinds
           : eff.AvailableEventKinds != null
             ? eff.AvailableEventKinds
             : [];
-      tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-        tasklyRenderTelemetryEventKindsList(kinds, profiles, activeId, kindsMap);
+      openWorkmateTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
+        openWorkmateRenderTelemetryEventKindsList(kinds, profiles, activeId, kindsMap);
       });
     })
     .catch(function () {
@@ -3316,7 +3316,7 @@ function refreshTransmissionPolicyHint() {
         '无法拉取聚合策略（请检查 AI Gateway URL / API Key 与网络）。若 AI 后台亦拉取失败或策略无效，将不向 Gateway 发送结构化 AI 流事件（fail-closed）。';
       var emptyList = document.getElementById('telemetryEventKindsList');
       if (emptyList) emptyList.innerHTML = '';
-      tasklyApplyTelemetryMasterSubpanelState();
+      openWorkmateApplyTelemetryMasterSubpanelState();
     });
 }
 
@@ -3346,7 +3346,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var uiThemeSelect = document.getElementById('uiThemeId');
   if (uiThemeSelect) {
     uiThemeSelect.addEventListener('change', function () {
-      if (typeof TasklyTheme !== 'undefined') TasklyTheme.setTheme(uiThemeSelect.value);
+      if (typeof OpenWorkmateTheme !== 'undefined') OpenWorkmateTheme.setTheme(uiThemeSelect.value);
       debouncedSaveConfig();
     });
   }
@@ -3383,7 +3383,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     telMaster.addEventListener('change', function () {
       syncTelemetryMasterToStorage();
-      tasklyApplyTelemetryMasterSubpanelState();
+      openWorkmateApplyTelemetryMasterSubpanelState();
       refreshTransmissionPolicyHint();
       debouncedSaveConfig();
     });
@@ -3409,10 +3409,10 @@ document.addEventListener('DOMContentLoaded', function () {
     telProfSel.addEventListener('change', function () {
       var newId = String(telProfSel.value || '').trim();
       if (!newId) return;
-      tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-        var merged = tasklyPersistActiveRelayProfileInputs(profiles, activeId);
+      openWorkmateTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
+        var merged = openWorkmatePersistActiveRelayProfileInputs(profiles, activeId);
         var nextActive = newId;
-        tasklyTelemetryRelayProfilesWrite(merged, nextActive, kindsMap, function () {
+        openWorkmateTelemetryRelayProfilesWrite(merged, nextActive, kindsMap, function () {
           var p = merged.filter(function (x) {
             return x.id === nextActive;
           })[0];
@@ -3420,7 +3420,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var keyEl = document.getElementById('aiGatewayApiKey');
           if (p && urlEl) urlEl.value = p.baseUrl || '';
           if (p && keyEl) keyEl.value = p.apiKey || '';
-          tasklyRenderTelemetryRelayProfileSelect(merged, nextActive);
+          openWorkmateRenderTelemetryRelayProfileSelect(merged, nextActive);
           refreshTransmissionPolicyHint();
           debouncedSaveConfig();
         });
@@ -3439,12 +3439,12 @@ document.addEventListener('DOMContentLoaded', function () {
     telProfAdd.addEventListener('click', function () {
       var name = window.prompt('新配置显示名称', 'Gateway');
       if (name === null) return;
-      tasklyTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
-        var merged = tasklyPersistActiveRelayProfileInputs(profiles, activeId);
+      openWorkmateTelemetryRelayProfilesRead(function (profiles, activeId, kindsMap) {
+        var merged = openWorkmatePersistActiveRelayProfileInputs(profiles, activeId);
         var nid = 'relay-' + Date.now().toString(36);
         merged.push({ id: nid, name: (name || '新配置').trim(), baseUrl: '', apiKey: '' });
-        tasklyTelemetryRelayProfilesWrite(merged, nid, kindsMap, function () {
-          tasklyRenderTelemetryRelayProfileSelect(merged, nid);
+        openWorkmateTelemetryRelayProfilesWrite(merged, nid, kindsMap, function () {
+          openWorkmateRenderTelemetryRelayProfileSelect(merged, nid);
           var urlEl = document.getElementById('aiGatewayBaseUrl');
           var keyEl = document.getElementById('aiGatewayApiKey');
           if (urlEl) urlEl.value = '';
@@ -3461,7 +3461,7 @@ document.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('beforeunload', function () {
     if (saveConfigDebounceTimer) flushPendingDebouncedSave();
   });
-  tasklyEnsureOptionsApiBase()
+  openWorkmateEnsureOptionsApiBase()
     .then(function () { return ensureLocalServiceTokenFromBootstrap(); })
     .then(function () { loadConfig(); })
     .catch(function (err) {
@@ -3481,7 +3481,7 @@ async function loadBuiltinTools() {
   if (!el) return;
   var disabledSet = (getDisabledBuiltIn() || []).map(function (s) { return (s || '').toLowerCase(); }).filter(Boolean);
   try {
-    const res = await tasklyFetch(BUILTIN_TOOLS_URL);
+    const res = await openWorkmateFetch(BUILTIN_TOOLS_URL);
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">' + escapeHtml(data.message || ('无法加载内置插件列表（' + res.status + '）。请确认后端已启动且已更新至最新版本。')) + '</div>';
@@ -3676,7 +3676,7 @@ function scheduledTaskEnabledFromDto(obj) {
 
 async function setScheduledTaskEnabledFromList(id, enabled) {
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
+    const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: !!enabled })
@@ -3695,7 +3695,7 @@ async function loadScheduledTasks() {
   const listEl = document.getElementById('scheduledTasksList');
   if (!listEl) return;
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks');
+    const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks');
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -3783,7 +3783,7 @@ document.getElementById('scheduledTaskCancelBtn').addEventListener('click', () =
 
 async function editScheduledTask(id) {
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
+    const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id));
     if (!res.ok) {
       var errData = await res.json().catch(function () { return {}; });
       throw new Error(errData.message || '获取失败');
@@ -3817,7 +3817,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
   const deleteAfterRun = document.getElementById('scheduledTaskDeleteAfterRun').checked;
   try {
     if (id) {
-      const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
+      const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3829,7 +3829,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
       });
       if (!res.ok) throw new Error((await res.json().catch(function () { return {}; })).message || '更新失败');
     } else {
-      const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks', {
+      const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3852,7 +3852,7 @@ document.getElementById('scheduledTaskSaveBtn').addEventListener('click', async 
 async function deleteScheduledTask(id) {
   if (!confirm('确定要删除该定时任务吗？')) return;
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await openWorkmateFetch(BASE_URL() + '/api/scheduled-tasks/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');
@@ -3872,7 +3872,7 @@ async function loadPlansList() {
   try {
     let url = BASE_URL() + '/api/plans';
     if (agentName) url += '?agentName=' + encodeURIComponent(agentName);
-    const res = await tasklyFetch(url);
+    const res = await openWorkmateFetch(url);
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -3913,7 +3913,7 @@ async function loadPlansList() {
 async function deletePlan(id) {
   if (!id || !confirm('确定要删除该计划吗？')) return;
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await openWorkmateFetch(BASE_URL() + '/api/plans/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');
@@ -3928,7 +3928,7 @@ async function loadAccurateDataList() {
   const listEl = document.getElementById('accurateDataList');
   if (!listEl) return;
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/accurate-data');
+    const res = await openWorkmateFetch(BASE_URL() + '/api/accurate-data');
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       listEl.innerHTML = '<p class="help-text">' + escapeHtml(data.message || '加载失败或后端未就绪。') + '</p>';
@@ -3964,7 +3964,7 @@ async function loadAccurateDataList() {
 async function deleteAccurateData(id) {
   if (!id || !confirm('确定要删除该准确数据条目吗？')) return;
   try {
-    const res = await tasklyFetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await openWorkmateFetch(BASE_URL() + '/api/accurate-data/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res.ok) {
       var data = await res.json().catch(function () { return {}; });
       throw new Error(data.message || '删除失败');

@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Xunit;
 
 namespace backend.Tests.Integration;
@@ -36,10 +36,10 @@ internal sealed class IsolatedAuthWebAppFactory : IDisposable
     {
         var userConfigPath = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
+            "OpenWorkmate.user-config-test-" + Guid.NewGuid().ToString("N") + ".json");
         var scheduledTasksDir = Path.Combine(
             Path.GetTempPath(),
-            "OfficeCopilot.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
+            "OpenWorkmate.scheduled-tasks-test-" + Guid.NewGuid().ToString("N"));
 
         IntegrationTestUserConfigWriter.Write(userConfigPath, scheduledTasksDir, authToken);
 
@@ -50,7 +50,7 @@ internal sealed class IsolatedAuthWebAppFactory : IDisposable
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["OfficeCopilot:UserConfigPath"] = userConfigPath,
+                    ["OpenWorkmate:UserConfigPath"] = userConfigPath,
                 });
             });
         });
@@ -104,7 +104,7 @@ public class SecurityAuthIntegrationTests
         using var fac = IsolatedAuthWebAppFactory.Create("integration-secret-token");
         var client = fac.Factory.CreateClient();
         var req = new HttpRequestMessage(HttpMethod.Get, "/api/config");
-        req.Headers.TryAddWithoutValidation("X-OfficeCopilot-Token", "integration-secret-token");
+        req.Headers.TryAddWithoutValidation("X-OpenWorkmate-Token", "integration-secret-token");
         var res = await client.SendAsync(req);
         res.EnsureSuccessStatusCode();
     }
@@ -173,7 +173,7 @@ public class SecurityAuthIntegrationTests
     }
 
     /// <summary>
-    /// 扩展侧栏 WebSocket 无法在握手时携带 X-OfficeCopilot-Token；须仅用查询参数 token 通过 LocalApiAuthMiddleware 到达 /api/stt-stream。
+    /// 扩展侧栏 WebSocket 无法在握手时携带 X-OpenWorkmate-Token；须仅用查询参数 token 通过 LocalApiAuthMiddleware 到达 /api/stt-stream。
     /// </summary>
     [Fact]
     public async Task SttStream_WebSocket_WhenAuthConfigured_QueryTokenWithoutHeader_OpensSocket_AndServerSendsConfigError()

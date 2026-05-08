@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// 将模型或用户传入的工具名字符串（裸函数名或恰好一段 <c>Plugin.function</c>）解析为注册表中的

@@ -1,6 +1,6 @@
 using System;
 using System.Text.Json;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Unit;

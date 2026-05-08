@@ -1,6 +1,6 @@
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>已启用用户技能的轻量索引，供 <c>search_available_skills</c> 使用（不含 SKILL 正文）。</summary>
 public sealed class SkillCatalogIndex

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
 using Word = Microsoft.Office.Interop.Word;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>通过本机已安装的 Microsoft Office COM 将 .doc/.xls/.ppt 另存为 Open XML（仅 net10.0-windows 编译）。</summary>
 internal static class OfficeLegacyComInterop

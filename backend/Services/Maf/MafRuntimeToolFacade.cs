@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>
 /// 主会话 MAF 路径的工具列表统一入口（阶段 3：后续可替换为无 Kernel 的纯注册表，而调用方仍只依赖本类）。

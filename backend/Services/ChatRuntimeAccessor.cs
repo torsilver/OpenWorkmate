@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>按会话/端类型提供模型侧 <see cref="AITool"/> 列表。</summary>
 public interface IRuntimeTools

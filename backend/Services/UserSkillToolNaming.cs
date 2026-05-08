@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>UserSkill 注册到 ToolRegistry 时使用的插件名/函数名规则（与 ChatService 动态注册一致）。</summary>
 public static class UserSkillToolNaming

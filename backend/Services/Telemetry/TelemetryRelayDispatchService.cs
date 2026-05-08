@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using Microsoft.Extensions.Hosting;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>
 /// 从内存队列取出观测事件，批量 POST 到本机 AI Gateway <c>/ingest/spans</c>（JSONL 落盘）。

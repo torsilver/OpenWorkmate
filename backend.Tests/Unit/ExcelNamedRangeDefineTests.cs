@@ -1,6 +1,6 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -10,7 +10,7 @@ public class ExcelNamedRangeDefineTests
     [Fact]
     public void DefineNamedRange_WhenWorkbookHasCalcPr_insertsDefinedNamesBeforeCalcPr()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"taskly-nr-{Guid.NewGuid():N}.xlsx");
+        var path = Path.Combine(Path.GetTempPath(), $"OpenWorkmate-nr-{Guid.NewGuid():N}.xlsx");
         try
         {
             var plugin = new ExcelPlugin();

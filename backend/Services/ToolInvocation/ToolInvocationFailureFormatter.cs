@@ -1,6 +1,6 @@
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// 将工具管道内异常格式化为返回给模型的短文案（不含堆栈）；取消类异常由中间件直接 rethrow，不经过本类。

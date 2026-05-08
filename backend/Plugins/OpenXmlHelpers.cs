@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>Excel/Word/PPT 等插件共用的路径解析、扩展名校验，以及「创建输出」前的常见误用扩展名纠正。</summary>
 public static class OpenXmlHelpers

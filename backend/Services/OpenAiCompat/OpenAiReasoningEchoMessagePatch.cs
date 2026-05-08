@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.ModelProfiles;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// 为 OpenAI 兼容 <c>messages</c> 中「assistant + tool_calls 且缺 <c>reasoning_content</c>」的条目按轮次注入会话内缓存的推理全文；

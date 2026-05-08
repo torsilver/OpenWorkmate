@@ -1,8 +1,8 @@
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 最早阶段的纯文件追踪（不依赖 Serilog），用于 MSI/Program Files 等场景下定位「进程是否启动、卡在哪一步」。
-/// 写入 %LocalAppData%\OfficeCopilot\startup-trace.txt。
+/// 写入 %LocalAppData%\OpenWorkmate\startup-trace.txt。
 /// </summary>
 internal static class StartupTrace
 {
@@ -12,7 +12,7 @@ internal static class StartupTrace
         {
             var root = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OfficeCopilot");
+                "OpenWorkmate");
             Directory.CreateDirectory(root);
             var path = Path.Combine(root, "startup-trace.txt");
             File.AppendAllText(

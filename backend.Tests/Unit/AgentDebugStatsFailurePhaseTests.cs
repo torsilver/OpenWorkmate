@@ -1,7 +1,7 @@
 using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Xunit;
 
 namespace backend.Tests.Unit;

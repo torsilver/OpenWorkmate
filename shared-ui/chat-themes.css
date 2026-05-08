@@ -1,7 +1,7 @@
 /**
- * Taskly 对话 UI 命名预设主题（语义 CSS 变量）。
+ * OpenWorkmate 对话 UI 命名预设主题（语义 CSS 变量）。
  * 根节点须设置 data-theme="light|dark|blocks|modern|minimal|lines|sketch|parchment"。
- * 由 taskly-theme-boot.js 从 localStorage tasklyUiTheme 或后端配置同步。
+ * 由 OpenWorkmate-theme-boot.js 从 localStorage openWorkmateUiTheme 或后端配置同步。
  */
 
 /* 站酷快乐体（OFL，fonts/OFL.txt）— 手绘 / 羊皮纸主题手写气质 */

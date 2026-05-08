@@ -1,8 +1,8 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.DynamicTooling;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 按 clientType / 会话将「选中的函数对」解析为 <see cref="AITool"/> 列表；与主会话 <see cref="ChatService"/> 逻辑一致，供计划撰写等复用。

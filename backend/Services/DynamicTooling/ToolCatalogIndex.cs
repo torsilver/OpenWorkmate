@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>允许列表上的工具轻量索引，供 <c>search_available_tools</c> 使用（不含完整 JSON Schema）。</summary>
 public sealed class ToolCatalogIndex

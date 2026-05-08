@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 将模型传入的 <c>paragraphs</c>（数组、单字符串、或罕见形态）规范为 <c>string[]?</c>，避免 MEAI 对 <c>string[]</c> 的严格 JSON 绑定在根路径失败。

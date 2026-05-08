@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Taskly.AI.Gateway.Services;
+namespace OpenWorkmate.AI.Gateway.Services;
 
 public static class TelemetryAppsettingsApiKeyWriter
 {

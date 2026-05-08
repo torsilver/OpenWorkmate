@@ -1,6 +1,6 @@
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Ocr;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Ocr;
 using Xunit;
 
 namespace backend.Tests.Unit;

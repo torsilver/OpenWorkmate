@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// Marks a method as a tool function for AI model invocation.

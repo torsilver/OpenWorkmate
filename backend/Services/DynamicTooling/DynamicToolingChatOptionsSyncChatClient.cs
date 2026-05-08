@@ -1,8 +1,8 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 放在 <see cref="FunctionInvokingChatClient"/> **内侧**、直连模型之前。

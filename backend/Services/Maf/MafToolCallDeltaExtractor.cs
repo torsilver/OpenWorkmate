@@ -2,9 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.Chat;
+using OpenWorkmate.Server.Services.Chat;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>从 MAF 流式 <see cref="AgentResponseUpdate"/> 提取 <see cref="ToolCallStreamDelta"/>（与 SK StreamingToolCallDeltaHelper 行为对齐的简化版：按 callId 累计参数字符串并输出增量）。</summary>
 public static class MafToolCallDeltaExtractor

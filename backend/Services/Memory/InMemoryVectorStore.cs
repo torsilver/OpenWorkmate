@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>内存向量存储，使用余弦相似度检索；进程重启后数据丢失。</summary>
 public sealed class InMemoryVectorStore : IVectorStore

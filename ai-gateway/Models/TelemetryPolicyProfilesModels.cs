@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 /// <summary><c>DataRoot/policy.ops.json</c> 内 <c>policyProfiles</c> 字段形状：多组策略，每组为启用的 AI 流事件种类列表。</summary>
 public sealed class TelemetryPolicyProfilesFile

@@ -1,8 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.Subagent;
+namespace OpenWorkmate.Server.Services.Subagent;
 
 /// <summary>内置子代理：system 文案与工具白名单（与 <see cref="ToolRegistry.GetAllowedTools"/> 结果求交）。</summary>
 public static class SubagentBuiltinPresets

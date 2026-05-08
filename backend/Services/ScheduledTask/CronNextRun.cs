@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.ScheduledTask;
+namespace OpenWorkmate.Server.Services.ScheduledTask;
 
 /// <summary>根据 meta 计算下次执行时间。</summary>
 public static class CronNextRun

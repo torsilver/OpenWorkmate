@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 执行 Clawhub 技能目录下的脚本（如 node scripts/search.mjs），并注入环境变量。

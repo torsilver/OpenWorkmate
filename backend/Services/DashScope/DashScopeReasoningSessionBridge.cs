@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>
 /// 将百炼 SSE 旁路解析出的推理片段与 <see cref="ChatService"/> 的 drain 对齐（仅 UI 流式，不入历史、不参与业务判断）。

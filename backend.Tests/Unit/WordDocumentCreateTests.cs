@@ -3,7 +3,7 @@ using System.Text.Json;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -38,8 +38,8 @@ public class WordDocumentCreateTests
     public void WordDocumentCreate_CnGov_PageTopMarginDiffersFromDefault()
     {
         var id = Guid.NewGuid().ToString("N");
-        var pathDef = Path.Combine(Path.GetTempPath(), $"taskly_wm_def_{id}.docx");
-        var pathGov = Path.Combine(Path.GetTempPath(), $"taskly_wm_gov_{id}.docx");
+        var pathDef = Path.Combine(Path.GetTempPath(), $"owm_wm_def_{id}.docx");
+        var pathGov = Path.Combine(Path.GetTempPath(), $"owm_wm_gov_{id}.docx");
         var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
         Assert.Contains("已创建", plugin.WordDocumentCreate(pathDef, "T", JsonSerializer.SerializeToElement(new[] { "|a" }), "default"));
         Assert.Contains("已创建", plugin.WordDocumentCreate(pathGov, "T", JsonSerializer.SerializeToElement(new[] { "|a" }), "cnGovGbt9704"));
@@ -61,7 +61,7 @@ public class WordDocumentCreateTests
     [Fact]
     public void WordDocumentCreate_ArrayParagraphs_MultipleBlocks()
     {
-        var path = Path.Combine(Path.GetTempPath(), "taskly_word_arr_" + Guid.NewGuid().ToString("N") + ".docx");
+        var path = Path.Combine(Path.GetTempPath(), "owm_word_arr_" + Guid.NewGuid().ToString("N") + ".docx");
         var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
         try
         {
@@ -82,8 +82,8 @@ public class WordDocumentCreateTests
     public void WordDocumentCreate_NullOrEmptyParagraphs_OnlyTitle()
     {
         var id = Guid.NewGuid().ToString("N");
-        var pathNull = Path.Combine(Path.GetTempPath(), $"taskly_word_empty_null_{id}.docx");
-        var pathEmpty = Path.Combine(Path.GetTempPath(), $"taskly_word_empty_arr_{id}.docx");
+        var pathNull = Path.Combine(Path.GetTempPath(), $"owm_word_empty_null_{id}.docx");
+        var pathEmpty = Path.Combine(Path.GetTempPath(), $"owm_word_empty_arr_{id}.docx");
         var plugin = new WordPlugin(NullLogger<WordPlugin>.Instance);
         try
         {

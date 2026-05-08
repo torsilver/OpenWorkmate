@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// <see cref="AITool"/> 注册表。
@@ -48,15 +48,15 @@ public sealed class ToolRegistry
         }
     }
 
-    /// <summary>从实例类型上的 <see cref="CopilotPluginIdAttribute"/> 读取插件 Id 并注册工具（内置插件须标注该特性）。</summary>
-    /// <exception cref="InvalidOperationException">类型上缺少 <see cref="CopilotPluginIdAttribute"/>。</exception>
+    /// <summary>从实例类型上的 <see cref="OpenWorkmatePluginIdAttribute"/> 读取插件 Id 并注册工具（内置插件须标注该特性）。</summary>
+    /// <exception cref="InvalidOperationException">类型上缺少 <see cref="OpenWorkmatePluginIdAttribute"/>。</exception>
     public void RegisterPluginFromObject(object instance)
     {
         var type = instance.GetType();
-        var attr = type.GetCustomAttribute<CopilotPluginIdAttribute>();
+        var attr = type.GetCustomAttribute<OpenWorkmatePluginIdAttribute>();
         if (attr is null)
             throw new InvalidOperationException(
-                $"类型 {type.FullName} 未标注 [CopilotPluginId(\"...\")]，无法使用无参 RegisterPluginFromObject。");
+                $"类型 {type.FullName} 未标注 [OpenWorkmatePluginId(\"...\")]，无法使用无参 RegisterPluginFromObject。");
         RegisterPluginFromObject(instance, attr.Id);
     }
 

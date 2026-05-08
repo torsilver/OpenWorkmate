@@ -13,7 +13,7 @@
 - NuGet 包 **`Microsoft.Agents.AI.DevUI`**（preview）提供 ASP.NET Core 扩展，在应用里注册 **DevUI**。
 - **DevUI** 是一个**浏览器内嵌的调试对话页**（历史上映射路径为 **`/devui`**），用于在**不经过 Chrome 扩展 / 任务窗格 WebSocket** 的情况下，直接与本机注册的 MAF Agent 发消息，做最小联调。
 - 与 DevUI 同一时期在开发环境注册的常见配套还包括：
-  - **`AddAIAgent`**：向 MAF 宿主注册一个命名 Agent（例如 `OfficeCopilot`）。
+  - **`AddAIAgent`**：向 MAF 宿主注册一个命名 Agent（例如 `OpenWorkmate`）。
   - **OpenAI Responses / Conversations 风格的 HTTP 端点**（`AddOpenAIResponses` / `AddOpenAIConversations` 及对应的 `Map*`），供 DevUI 或兼容客户端调用。
 
 ### 当前状态
@@ -52,7 +52,7 @@
 |------|-------------|
 | 侧栏 / 任务窗格会话 | **WebSocket**：配置项中的 `WebSocket:Path`（默认 `/ws`） |
 | 配置、引导、其它 HTTP API | **`/api/*`**（受 `LocalApiAuthMiddleware` 等策略约束） |
-| 本机调试日志网页（Taskly 自有） | 静态页 **`/debug/logs.html`** 等（与 MAF DevUI/AG-UI **无关**） |
+| 本机调试日志网页（OpenWorkmate 自有） | 静态页 **`/debug/logs.html`** 等（与 MAF DevUI/AG-UI **无关**） |
 
 ---
 

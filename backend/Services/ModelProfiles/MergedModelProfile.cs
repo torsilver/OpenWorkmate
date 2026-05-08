@@ -1,6 +1,6 @@
-namespace OfficeCopilot.Server.Services.ModelProfiles;
+namespace OpenWorkmate.Server.Services.ModelProfiles;
 
-/// <summary>LiteLLM 摘录字段与 taskly-overlay 合并后的只读视图。</summary>
+/// <summary>LiteLLM 摘录字段与 open-workmate-overlay 合并后的只读视图。</summary>
 public sealed class MergedModelProfile
 {
     public required string ProfileKey { get; init; }
@@ -17,7 +17,7 @@ public sealed class MergedModelProfile
     /// <summary>在检测到 assistant tool_calls 且缺少 reasoning_content 时，出站请求顶层写入 <c>thinking: false</c>。</summary>
     public bool SuppressUpstreamThinkingWithTools { get; init; }
 
-    /// <summary>为 true 时跳过 <see cref="OfficeCopilot.Server.Services.OpenAiCompat.OpenAiReasoningEchoHandler"/>（不 patch、不解析 SSE reasoning）。</summary>
+    /// <summary>为 true 时跳过 <see cref="OpenWorkmate.Server.Services.OpenAiCompat.OpenAiReasoningEchoHandler"/>（不 patch、不解析 SSE reasoning）。</summary>
     public bool DisableReasoningHttpEcho { get; init; }
 
     /// <summary>Kimi 等：出站合并 <c>thinking: { type: enabled, keep: all }</c>，与历史 <c>reasoning_content</c> 联用。</summary>

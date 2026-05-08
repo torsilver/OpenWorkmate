@@ -1,11 +1,11 @@
 /**
- * Office Copilot 任务窗格逻辑：WebSocket、消息列表、计划面板、RPC、HITL。
+ * Open Workmate 任务窗格逻辑：WebSocket、消息列表、计划面板、RPC、HITL。
  */
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mermaid from 'mermaid'
-import { tasklyResolveLocalServiceBase, tasklyHttpWsFromBase } from '../utils/tasklyLocalService.js'
+import { openWorkmateResolveLocalServiceBase, openWorkmateHttpWsFromBase } from '../utils/OpenWorkmateLocalService.js'
 import { getWpsHostKind, assertWpsHost } from '../wps-rpc/hostKind.js'
 import { runWpsExcelRpc } from '../wps-rpc/excelRpc.js'
 import { wordInsertTableWps } from '../wps-rpc/wordTableRpc.js'
@@ -17,7 +17,7 @@ import {
   parseStreamUsagePayload,
   usagePromptFillRatio,
   buildStreamUsageRingTitle
-} from '../lib/copilotHostShared.js'
+} from '../lib/openWorkmateHostShared.js'
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -25,8 +25,8 @@ let apiBaseReadyPromise = null
 
 function ensureApiBase() {
   if (!apiBaseReadyPromise) {
-    apiBaseReadyPromise = tasklyResolveLocalServiceBase().then((r) => {
-      const hw = tasklyHttpWsFromBase(r.baseUrl)
+    apiBaseReadyPromise = openWorkmateResolveLocalServiceBase().then((r) => {
+      const hw = openWorkmateHttpWsFromBase(r.baseUrl)
       API_BASE = hw.apiBase
       WS_URL = hw.wsUrl
     })
@@ -34,26 +34,26 @@ function ensureApiBase() {
   return apiBaseReadyPromise
 }
 /** 与后端有效密钥一致；通常首次连接会自动从本机引导接口同步，也可手动 localStorage.setItem */
-const TASKLY_AUTH_TOKEN_KEY = 'tasklyLocalServiceAuthToken'
+const openWorkmate_AUTH_TOKEN_KEY = 'OpenWorkmateLocalServiceAuthToken'
 /** 对齐 Chrome sidepanel：WebSocket 查询参数 deviceId / telemetryTier / telemetryIngestLogLevel / telemetryEventKinds（localStorage） */
-const TASKLY_TELEMETRY_DEVICE_ID_KEY = 'tasklyTelemetryDeviceId'
-const TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'tasklyTelemetryRelayActiveProfileId'
-const TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'tasklyTelemetryEventKindsByProfile'
+const openWorkmate_TELEMETRY_DEVICE_ID_KEY = 'openWorkmateTelemetryDeviceId'
+const openWorkmate_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY = 'openWorkmateTelemetryRelayActiveProfileId'
+const openWorkmate_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY = 'openWorkmateTelemetryEventKindsByProfile'
 /** 对齐 Chrome <code>telemetryClientEmission</code>：<code>on</code> | <code>off</code> */
-const TASKLY_TELEMETRY_CLIENT_EMISSION_KEY = 'tasklyTelemetryClientEmission'
+const openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY = 'openWorkmateTelemetryClientEmission'
 
 function getStoredAuthToken() {
   try {
-    return (localStorage.getItem(TASKLY_AUTH_TOKEN_KEY) || '').trim()
+    return (localStorage.getItem(openWorkmate_AUTH_TOKEN_KEY) || '').trim()
   } catch {
     return ''
   }
 }
 
-function tasklyFetch(url, init = {}) {
+function openWorkmateFetch(url, init = {}) {
   const headers = new Headers(init.headers)
   const t = getStoredAuthToken()
-  if (t) headers.set('X-OfficeCopilot-Token', t)
+  if (t) headers.set('X-OpenWorkmate-Token', t)
   return fetch(url, { ...init, headers })
 }
 
@@ -97,7 +97,7 @@ function ensureBootstrapAuthToken() {
       if (!j || !j.ok) return j
       try {
         localStorage.setItem(
-          TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
+          openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY,
           j.telemetryUserObservabilityEnabled === false ? 'off' : 'on'
         )
       } catch {
@@ -106,7 +106,7 @@ function ensureBootstrapAuthToken() {
       const t = (j.webSocketAuthToken || '').trim()
       if (!t || getStoredAuthToken()) return j
       try {
-        localStorage.setItem(TASKLY_AUTH_TOKEN_KEY, t)
+        localStorage.setItem(openWorkmate_AUTH_TOKEN_KEY, t)
       } catch {
         /* ignore */
       }
@@ -133,7 +133,7 @@ marked.setOptions({
   breaks: true
 })
 
-function tasklyMermaidTheme() {
+function openWorkmateMermaidTheme() {
   if (typeof document === 'undefined') return 'dark'
   const t = document.documentElement.getAttribute('data-theme') || 'dark'
   return t === 'light' || t === 'minimal' || t === 'lines' || t === 'sketch' ? 'neutral' : 'dark'
@@ -141,19 +141,19 @@ function tasklyMermaidTheme() {
 
 function refreshMermaidConfig() {
   try {
-    mermaid.initialize({ startOnLoad: false, theme: tasklyMermaidTheme() })
+    mermaid.initialize({ startOnLoad: false, theme: openWorkmateMermaidTheme() })
   } catch {
     /* ignore */
   }
 }
 
 /** 对齐 chrome-extension/sidepanel.js：hljs 外链 + Mermaid theme */
-function tasklyRefreshEmbedThemes() {
+function openWorkmateRefreshEmbedThemes() {
   if (typeof document === 'undefined') return
   const t = document.documentElement.getAttribute('data-theme') || 'dark'
-  const link = document.getElementById('taskly-hljs-theme')
-  if (link && typeof window !== 'undefined' && typeof window.TasklyTheme !== 'undefined') {
-    const rel = window.TasklyTheme.getHljsStylesheetHref(t)
+  const link = document.getElementById('OpenWorkmate-hljs-theme')
+  if (link && typeof window !== 'undefined' && typeof window.OpenWorkmateTheme !== 'undefined') {
+    const rel = window.OpenWorkmateTheme.getHljsStylesheetHref(t)
     try {
       link.href = new URL(rel, window.location.href).href
     } catch {
@@ -163,16 +163,16 @@ function tasklyRefreshEmbedThemes() {
   refreshMermaidConfig()
 }
 
-tasklyRefreshEmbedThemes()
+openWorkmateRefreshEmbedThemes()
 
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key !== 'tasklyUiTheme') return
-    if (typeof window.TasklyTheme === 'undefined') return
+    if (e.key !== 'openWorkmateUiTheme') return
+    if (typeof window.OpenWorkmateTheme === 'undefined') return
     const v = e.newValue != null && e.newValue !== '' ? e.newValue : 'dark'
     try {
-      window.TasklyTheme.applyThemeDomOnly(v)
-      tasklyRefreshEmbedThemes()
+      window.OpenWorkmateTheme.applyThemeDomOnly(v)
+      openWorkmateRefreshEmbedThemes()
     } catch {
       /* ignore */
     }
@@ -194,7 +194,7 @@ function scheduleMermaidRun() {
       if (!pre || pre.closest('.mermaid-container')) return
       const graph = (code.textContent || '').trim()
       if (!graph) return
-      const id = `taskly-mm-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`
+      const id = `OpenWorkmate-mm-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`
       mermaid
         .render(id, graph)
         .then(({ svg }) => {
@@ -329,7 +329,7 @@ function wpsPptPickTextShape(slide, shapeIndex, shapeName) {
   return null
 }
 
-export function useCopilot() {
+export function useOpenWorkmate() {
   /** set_context 去重：wpsHostKind + pageTitle 与上次一致则跳过 */
   let lastSetContextSig = ''
 
@@ -594,10 +594,10 @@ export function useCopilot() {
 
   function applyUiThemeChanged(msg) {
     const tid = (msg && msg.uiThemeId && String(msg.uiThemeId).trim()) || ''
-    if (!tid || typeof window === 'undefined' || typeof window.TasklyTheme === 'undefined') return
+    if (!tid || typeof window === 'undefined' || typeof window.OpenWorkmateTheme === 'undefined') return
     try {
-      window.TasklyTheme.setTheme(tid)
-      tasklyRefreshEmbedThemes()
+      window.OpenWorkmateTheme.setTheme(tid)
+      openWorkmateRefreshEmbedThemes()
       scheduleMermaidRun()
     } catch {
       /* ignore */
@@ -605,12 +605,12 @@ export function useCopilot() {
   }
 
   /** 在系统浏览器中打开 Chrome 扩展选项页：优先使用本机 user-config 中的 chromeExtensionId（由 Chrome 选项页写入），其次构建期 VITE_CHROME_EXTENSION_ID。 */
-  async function openOfficeCopilotSettingsInChrome() {
+  async function openOpenWorkmateSettingsInChrome() {
     await ensureApiBase()
     await ensureBootstrapAuthToken()
     let id = ''
     try {
-      const res = await tasklyFetch(API_BASE + '/api/config')
+      const res = await openWorkmateFetch(API_BASE + '/api/config')
       if (res.ok) {
         const j = await res.json().catch(() => ({}))
         id = String(j.chromeExtensionId || j.ChromeExtensionId || '').trim()
@@ -816,7 +816,7 @@ export function useCopilot() {
 
   async function loadAgentProfilesFromServer() {
     await ensureApiBase()
-    const res = await tasklyFetch(API_BASE + '/api/config')
+    const res = await openWorkmateFetch(API_BASE + '/api/config')
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return
     const list = data.agentProfiles || data.AgentProfiles || []
@@ -847,10 +847,10 @@ export function useCopilot() {
       (data.uiThemeId && String(data.uiThemeId).trim()) ||
       (data.UiThemeId && String(data.UiThemeId).trim()) ||
       ''
-    if (themeFromServer && typeof window !== 'undefined' && typeof window.TasklyTheme !== 'undefined') {
+    if (themeFromServer && typeof window !== 'undefined' && typeof window.OpenWorkmateTheme !== 'undefined') {
       try {
-        window.TasklyTheme.setTheme(themeFromServer)
-        tasklyRefreshEmbedThemes()
+        window.OpenWorkmateTheme.setTheme(themeFromServer)
+        openWorkmateRefreshEmbedThemes()
       } catch {
         /* ignore */
       }
@@ -913,7 +913,7 @@ export function useCopilot() {
         historyItems.value = []
       }
       const ap = activeAgentProfileId.value || 'default'
-      const res = await tasklyFetch(
+      const res = await openWorkmateFetch(
         API_BASE +
           '/api/chat-sessions?skip=' +
           encodeURIComponent(skip) +
@@ -945,7 +945,7 @@ export function useCopilot() {
     try {
       await ensureApiBase()
       await ensureBootstrapAuthToken()
-      const res = await tasklyFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid), {
+      const res = await openWorkmateFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid), {
         method: 'DELETE'
       })
       const data = await res.json().catch(() => ({}))
@@ -988,7 +988,7 @@ export function useCopilot() {
       if (agentProfileIdFromItem != null && String(agentProfileIdFromItem).trim() !== '') {
         persistActiveAgentProfileId(String(agentProfileIdFromItem).trim())
       }
-      const res = await tasklyFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid) + '/messages')
+      const res = await openWorkmateFetch(API_BASE + '/api/chat-sessions/' + encodeURIComponent(sid) + '/messages')
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         addBotMessage(data.message || '加载该对话消息失败', true)
@@ -1379,10 +1379,10 @@ export function useCopilot() {
       agentProfileId: ap,
       token: tok,
       bootstrap,
-      telemetryDeviceIdKey: TASKLY_TELEMETRY_DEVICE_ID_KEY,
-      telemetryClientEmissionKey: TASKLY_TELEMETRY_CLIENT_EMISSION_KEY,
-      telemetryRelayActiveProfileKey: TASKLY_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
-      telemetryEventKindsByProfileKey: TASKLY_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
+      telemetryDeviceIdKey: openWorkmate_TELEMETRY_DEVICE_ID_KEY,
+      telemetryClientEmissionKey: openWorkmate_TELEMETRY_CLIENT_EMISSION_KEY,
+      telemetryRelayActiveProfileKey: openWorkmate_TELEMETRY_RELAY_ACTIVE_PROFILE_KEY,
+      telemetryEventKindsByProfileKey: openWorkmate_TELEMETRY_EVENT_KINDS_BY_PROFILE_KEY
     })
     ws = new WebSocket(WS_URL + qs)
     ws.onopen = () => {
@@ -1411,7 +1411,7 @@ export function useCopilot() {
     }
     })
       .catch((e) => {
-        addSystemMessage('找不到本机 Office Copilot：' + (e && e.message ? e.message : String(e)))
+        addSystemMessage('找不到本机 Open Workmate：' + (e && e.message ? e.message : String(e)))
       })
   }
 
@@ -1830,7 +1830,7 @@ export function useCopilot() {
   function fetchPlanAndShow(id, title, createdBy) {
     if (createdBy !== CLIENT_TYPE) return
     ensureApiBase().then(() =>
-      tasklyFetch(API_BASE + '/api/plans/' + encodeURIComponent(id))
+      openWorkmateFetch(API_BASE + '/api/plans/' + encodeURIComponent(id))
         .then((res) =>
           res.json().catch(() => ({})).then((data) => {
             if (!res.ok) return Promise.reject(new Error((data && data.message) || '请求失败 ' + res.status))
@@ -1866,7 +1866,7 @@ export function useCopilot() {
     if (!planId.value) return
     const content = planContentEdit.value
     ensureApiBase().then(() =>
-      tasklyFetch(API_BASE + '/api/plans/' + encodeURIComponent(planId.value), {
+      openWorkmateFetch(API_BASE + '/api/plans/' + encodeURIComponent(planId.value), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
@@ -2350,7 +2350,7 @@ export function useCopilot() {
             try {
               const fso = new ActiveXObject('Scripting.FileSystemObject')
               const folder = fso.GetSpecialFolder(2)
-              tempFromB64 = folder + '\\taskly_ppt_img_' + Date.now() + '.bin'
+              tempFromB64 = folder + '\\openWorkmate_ppt_img_' + Date.now() + '.bin'
               const stream = new ActiveXObject('ADODB.Stream')
               stream.Type = 1
               stream.Open()
@@ -2775,8 +2775,8 @@ export function useCopilot() {
       try {
         await ensureApiBase()
         const [builtinRes, skillsRes] = await Promise.all([
-          tasklyFetch(`${API_BASE}/api/tools/builtin`),
-          tasklyFetch(`${API_BASE}/api/skills`),
+          openWorkmateFetch(`${API_BASE}/api/tools/builtin`),
+          openWorkmateFetch(`${API_BASE}/api/skills`),
         ])
         const loadErrs = []
         if (!builtinRes.ok) loadErrs.push('内置工具接口 HTTP ' + builtinRes.status)
@@ -3124,6 +3124,6 @@ export function useCopilot() {
     onChatKeyup,
     onChatInput,
     getCopilotSessionId: getSessionId,
-    openOfficeCopilotSettingsInChrome
+    openOpenWorkmateSettingsInChrome
   }
 }

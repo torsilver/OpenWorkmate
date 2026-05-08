@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.DashScope;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.DashScope;
 using Xunit;
 
 namespace backend.Tests.Unit;

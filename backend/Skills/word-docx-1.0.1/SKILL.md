@@ -1,12 +1,12 @@
 ---
 name: Word / Docx
 version: 1.0.6
-description: Open XML / DOCX structure (runs, styles, sections, fields). Use with Taskly Word kernel tools for create-edit; load word_cn_default_formal for Chinese formal layout defaults (GB/T 9704 preset). For legacy .doc/.dot inputs before Open XML tools, load office_legacy_to_openxml. PDF 抽取/合并见技能 Pdf / Pdf（get_pdf_text、pdf_merge），勿用 office_legacy 处理 .pdf。
+description: Open XML / DOCX structure (runs, styles, sections, fields). Use with OpenWorkmate Word kernel tools for create-edit; load word_cn_default_formal for Chinese formal layout defaults (GB/T 9704 preset). For legacy .doc/.dot inputs before Open XML tools, load office_legacy_to_openxml. PDF 抽取/合并见技能 Pdf / Pdf（get_pdf_text、pdf_merge），勿用 office_legacy 处理 .pdf。
 changelog: word_document_create paragraphs is string[]; no server-side JSON-dump rejection (rely on shape guidance + parser).
 metadata: {"clawdbot":{"emoji":"📘","os":["linux","darwin","win32"]}}
 ---
 
-## Taskly（本仓库）
+## OpenWorkmate（本仓库）
 
 - **PDF 附件**：抽取文本、合并多份 PDF、简单纯文本生成 PDF → 按需加载技能 **`Pdf / Pdf`**（`get_attachment_path` → **`get_pdf_info`** / **`get_pdf_text`** / **`pdf_merge`** / **`pdf_document_create`**）。**.pdf 不要**走 `office_legacy_*`。
 - **旧版 Word 二进制（`.doc` / `.dot`）**：Open XML 工具（如 `word_body_read`）**不会**直接读这些扩展名。须先按需 **`load_user_skill_instructions`**（`skillId` 填 **`office_legacy_to_openxml`**），按该技能调用 **`office_legacy_save_as_open_xml`** 得到 `.docx` 后，再使用下文所述 **`word_*`** 与 OOXML 知识；Excel `.xls`、PPT `.ppt` 同理见该技能。

@@ -15,11 +15,11 @@ index 77f1019..8192032 100644
 -        install:'null',
 -        customDomain:projectCfg.customDomain
 -    }}
-+    function tasklyWpsAddonTypeList(cfg) {
++    function openWorkmateWpsAddonTypeList(cfg) {
 +        if (Array.isArray(cfg.wpsAddonTypes) && cfg.wpsAddonTypes.length > 0) return cfg.wpsAddonTypes
 +        return [cfg.addonType ? cfg.addonType : "wps"]
 +    }
-+    const typeList = tasklyWpsAddonTypeList(projectCfg)
++    const typeList = openWorkmateWpsAddonTypeList(projectCfg)
 +    const namePrefix = projectCfg.name
 +    const plugins = typeList.map(function (t) {
 +        return {$:{
@@ -69,7 +69,7 @@ index 56dfbb2..6acba63 100644
  			}
  
 -			//write jsplugins.xml
-+			//write jsplugins.xml（Taskly：支持 wpsAddonTypes 多组件；url 需区分以免 publish 去重）
++			//write jsplugins.xml（OpenWorkmate：支持 wpsAddonTypes 多组件；url 需区分以免 publish 去重）
  			let pluginRoot = {jsplugins:{
  				jspluginonline:[]
  			}}
@@ -91,11 +91,11 @@ index 56dfbb2..6acba63 100644
 -					url:`${serverHost}/`,
 -					customDomain:projectCfg.customDomain
 -				}})
-+			function tasklyWpsAddonTypeList(cfg) {
++			function openWorkmateWpsAddonTypeList(cfg) {
 +				if (Array.isArray(cfg.wpsAddonTypes) && cfg.wpsAddonTypes.length > 0) return cfg.wpsAddonTypes
 +				return [cfg.addonType ? cfg.addonType : "et"]
 +			}
-+			var typeList = tasklyWpsAddonTypeList(projectCfg)
++			var typeList = openWorkmateWpsAddonTypeList(projectCfg)
 +			for (var ti = 0; ti < typeList.length; ti++) {
 +				var addonType = typeList[ti]
 +				var ent = {$:{

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
 using Xunit;
 
 namespace backend.Tests.Unit;

@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services.ModelProfiles;
+namespace OpenWorkmate.Server.Services.ModelProfiles;
 
-/// <summary>加载 <c>ModelProfiles/vendor/model_prices_excerpt.json</c> 与 <c>taskly-overlay.json</c> 并合并。</summary>
+/// <summary>加载 <c>ModelProfiles/vendor/model_prices_excerpt.json</c> 与 <c>open-workmate-overlay.json</c> 并合并。</summary>
 public sealed class ModelProfileRegistry
 {
     private readonly ILogger<ModelProfileRegistry>? _logger;
@@ -20,7 +20,7 @@ public sealed class ModelProfileRegistry
     {
         var root = string.IsNullOrEmpty(baseDirectory) ? AppContext.BaseDirectory : baseDirectory;
         var vendorPath = Path.Combine(root, "ModelProfiles", "vendor", "model_prices_excerpt.json");
-        var overlayPath = Path.Combine(root, "ModelProfiles", "taskly-overlay.json");
+        var overlayPath = Path.Combine(root, "ModelProfiles", "open-workmate-overlay.json");
 
         if (!File.Exists(vendorPath))
         {
@@ -37,7 +37,7 @@ public sealed class ModelProfileRegistry
         }
         catch
         {
-            _logger?.LogWarning("ModelProfiles taskly overlay invalid: {Path}", overlayPath);
+            _logger?.LogWarning("ModelProfiles OpenWorkmate overlay invalid: {Path}", overlayPath);
         }
 
         var overlayRoot = overlayDoc?.RootElement ?? default;

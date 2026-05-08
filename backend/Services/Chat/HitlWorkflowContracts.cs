@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>
 /// HITL 工作流请求：工具调用需要用户确认时，由 Workflow RequestPort 发送给外部系统。

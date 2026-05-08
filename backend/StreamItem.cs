@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 流式片段类型：正文、百炼等 <c>reasoning_content</c>、工具参数增量、OpenAI 兼容流元数据（用量/结束原因/角色/响应 id）、或警告。

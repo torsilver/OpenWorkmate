@@ -1,9 +1,9 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services.Memory;
+using OpenWorkmate.Server.Services.Memory;
 
-namespace OfficeCopilot.Server.Services.ContextProviders;
+namespace OpenWorkmate.Server.Services.ContextProviders;
 
 /// <summary>
 /// MAF <see cref="MessageAIContextProvider"/>：检索会话记忆与共享记忆，注入为额外 system 消息。

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// SSE 旁路解析出的顶层 <c>usage</c> JSON 片段与 MAF 主循环 drain 对齐（仅 UI，不入会话历史）。

@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
-using OfficeCopilot.Server.Services.ModelProfiles;
-using OfficeCopilot.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.OpenAiCompat;
 using Xunit;
 
 namespace backend.Tests.Unit;

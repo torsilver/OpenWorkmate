@@ -2,12 +2,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.Plan;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.Plan;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// 工具调用前后向前端推送 tool_invocation_start / tool_invocation_end，

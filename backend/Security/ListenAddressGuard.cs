@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>防止在未配置认证时将服务绑定到非本机地址。</summary>
 public static class ListenAddressGuard
@@ -24,7 +24,7 @@ public static class ListenAddressGuard
             if (IsBindingOpenToNetwork(uri.Host))
             {
                 return "当前监听地址 \"" + raw + "\" 可能对局域网或公网开放，但未在 user-config.json 中配置 webSocketAuthToken。"
-                       + " 请在 %LocalAppData%\\OfficeCopilot\\user-config.json 中设置强随机 webSocketAuthToken，"
+                       + " 请在 %LocalAppData%\\OpenWorkmate\\user-config.json 中设置强随机 webSocketAuthToken，"
                        + " 或使用启动参数 --allow-public-bind 显式承担风险（不推荐）。";
             }
         }

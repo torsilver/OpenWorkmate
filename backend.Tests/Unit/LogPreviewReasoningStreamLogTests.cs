@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server.Logging;
 using Xunit;
 
 namespace backend.Tests.Unit;

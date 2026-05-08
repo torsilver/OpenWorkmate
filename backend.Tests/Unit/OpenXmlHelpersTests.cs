@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// 按会话缓存各轮「带 tool_calls 的 assistant」流式响应累积的 <c>reasoning_content</c> 全文（按时间顺序追加），供出站 HTTP 请求按轮次索引注入。

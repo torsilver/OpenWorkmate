@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 将工具中的多行正文规范为「以 \n 分隔的逻辑行」，与 <see cref="WordParagraphSplitter"/> 规则一致：

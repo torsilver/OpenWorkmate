@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>按会话档位与中继传输策略在入队前裁剪；持久化以 Seq 为准（经 Serilog 写入）。</summary>
 public static class TelemetryOutboundRedactor

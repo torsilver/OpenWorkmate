@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Taskly.AI.Gateway.Tests" />
+    <InternalsVisibleTo Include="OpenWorkmate.AI.Gateway.Tests" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,8 +1,8 @@
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Plugins;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Plugins;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -12,7 +12,7 @@ public class UserSkillProgressiveDynamicToolsTests
     [Fact]
     public async Task LoadUserSkillInstructions_WithoutSelect_ReturnsBody()
     {
-        var root = Path.Combine(Path.GetTempPath(), "taskly_skill_load_" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "owm_skill_load_" + Guid.NewGuid().ToString("N"));
         var skillDir = Path.Combine(root, "direct_load_skill");
         Directory.CreateDirectory(skillDir);
         await File.WriteAllTextAsync(
@@ -55,7 +55,7 @@ public class UserSkillProgressiveDynamicToolsTests
     [Fact]
     public async Task SearchAvailableSkills_RespectsFixedMaxPerTurn()
     {
-        var root = Path.Combine(Path.GetTempPath(), "taskly_skill_search_" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "owm_skill_search_" + Guid.NewGuid().ToString("N"));
         var skillDir = Path.Combine(root, "s1");
         Directory.CreateDirectory(skillDir);
         await File.WriteAllTextAsync(

@@ -1,10 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Logging;
-using OfficeCopilot.Server.Services.DashScope;
+using OpenWorkmate.Server.Logging;
+using OpenWorkmate.Server.Services.DashScope;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>内置完成度评判（无用户配置，使用主会话 <see cref="IChatClient"/>）。</summary>
 public interface IBuiltinTurnCompletionVerifier

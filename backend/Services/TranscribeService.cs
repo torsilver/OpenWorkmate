@@ -1,6 +1,6 @@
-using OfficeCopilot.Server.Services.Stt;
+using OpenWorkmate.Server.Services.Stt;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>语音转文字：仅支持已配置百炼实时识别（v1/inference WebSocket 文件流）。</summary>
 public sealed class TranscribeService : ITranscribeService

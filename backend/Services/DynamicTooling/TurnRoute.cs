@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>主会话 tooling 阶段对本轮用户消息的轻量路由（启发式），用于首轮小工具表与 Verifier 门控。</summary>
 public enum TurnRoute

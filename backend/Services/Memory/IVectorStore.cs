@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>向量存储：仅负责向量与元数据的存取，不负责文本向量化。collection 区分记忆(memory)与知识库(kb:id)。</summary>
 public interface IVectorStore

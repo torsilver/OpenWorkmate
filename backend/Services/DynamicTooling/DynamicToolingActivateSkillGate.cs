@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 项目内置：本轮一旦调用过 <c>search_available_tools</c> 且存在已启用用户技能，

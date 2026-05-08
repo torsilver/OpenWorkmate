@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using Taskly.AI.Gateway.Services;
+using OpenWorkmate.AI.Gateway.Services;
 
-namespace Taskly.AI.Gateway.Tests;
+namespace OpenWorkmate.AI.Gateway.Tests;
 
 public sealed class GatewayWebApplicationFactory : WebApplicationFactory<Program>
 {

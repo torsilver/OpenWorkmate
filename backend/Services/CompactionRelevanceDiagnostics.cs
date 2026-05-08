@@ -1,11 +1,11 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 实验向：在调用 MAF Compaction 前，按「用户句拆词 vs 各条消息文本」的简单重叠度打日志，便于评估 Query-aware 摘要策略；不改变历史内容。
-/// 启用：环境变量 <c>OFFICECOPILOT_COMPACTION_RELEVANCE_LOG=1</c>。
+/// 启用：环境变量 <c>OpenWorkmate_COMPACTION_RELEVANCE_LOG=1</c>。
 /// </summary>
 public static class CompactionRelevanceDiagnostics
 {
@@ -16,7 +16,7 @@ public static class CompactionRelevanceDiagnostics
         string userMessage,
         IReadOnlyList<ChatMessage> history)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("OFFICECOPILOT_COMPACTION_RELEVANCE_LOG"), "1", StringComparison.Ordinal))
+        if (!string.Equals(Environment.GetEnvironmentVariable("OpenWorkmate_COMPACTION_RELEVANCE_LOG"), "1", StringComparison.Ordinal))
             return;
 
         var terms = (userMessage ?? "")

@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 public sealed class ChatRuntimeAccessorTests
 {

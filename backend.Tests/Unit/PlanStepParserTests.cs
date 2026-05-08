@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Services.Plan;
+using OpenWorkmate.Server.Services.Plan;
 using Xunit;
 
 namespace backend.Tests.Unit;

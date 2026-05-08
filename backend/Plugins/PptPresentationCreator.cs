@@ -4,7 +4,7 @@ using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>基于 Microsoft Learn 示例生成最小合法 .pptx（含母版、版式、主题、首张幻灯片）。</summary>
 internal static class PptPresentationCreator

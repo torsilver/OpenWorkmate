@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>主会话「动态工具」：LangGraph 式阶段 + Anthropic 式按需检索/激活（主路径唯一方式）。</summary>
 public sealed class DynamicToolingConfig

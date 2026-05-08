@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-namespace Taskly.AI.Gateway.Tests;
+namespace OpenWorkmate.AI.Gateway.Tests;
 
 public sealed class AdminPolicyBundleIntegrationTests : IClassFixture<GatewayWebApplicationFactory>, IDisposable
 {

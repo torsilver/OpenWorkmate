@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX MSI: https://wixtoolset.org
+  Build (from repo): see Pack-OpenWorkmate.ps1
+    wix build OpenWorkmate.wxs
+      -ext WixToolset.UI.wixext
+      -bindpath stage=ABS_STAGE -bindpath launcher=ABS_LAUNCHERS
+      -culture zh-CN
+      -arch x64 -out OpenWorkmate.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="OpenWorkmate"
+      Manufacturer="OpenWorkmate"
+      Version="1.0.0.0"
+      UpgradeCode="{B1A37021-8E4C-4F2D-9B81-0E2F3C4D5E6F}"
+      Scope="perMachine"
+      Codepage="936">
+    <SummaryInformation Description="OpenWorkmate local AI stack (backend, HTTPS static host, Office/WPS/Chrome assets)" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of OpenWorkmate is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Fork: WixUI_OpenWorkmate_InstallDir.wxs（在目标目录与「准备安装」之间插入客户端勾选页） -->
+    <ui:WixUI Id="OpenWorkmate_WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <!-- Exit dialog: optional checkbox to start services -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="启动 OpenWorkmate（AI 后台、HTTPS 静态站）" />
+
+    <!-- Type 50: Property = path to exe; SetProperty expands [System64Folder] (plain Property Value cannot). -->
+    <SetProperty
+        Id="OpenWorkmatePowershellExe"
+        Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+        After="LaunchConditions"
+        Sequence="both" />
+    <CustomAction
+        Id="InstallOpenWorkmateClientsAfterFinish"
+        Property="OpenWorkmatePowershellExe"
+        ExeCommand="-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Install-OpenWorkmateClients.ps1&quot; -InstallRoot &quot;[INSTALLFOLDER]&quot; -Chrome &quot;[OWM_AUTO_CHROME]&quot; -Office &quot;[OWM_AUTO_OFFICE]&quot; -Wps &quot;[OWM_AUTO_WPS]&quot;"
+        Impersonate="yes"
+        Execute="immediate"
+        Return="asyncNoWait" />
+    <CustomAction
+        Id="LaunchOpenWorkmateAfterInstall"
+        Property="OpenWorkmatePowershellExe"
+        ExeCommand="-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Start-OpenWorkmate.ps1&quot;"
+        Impersonate="yes"
+        Execute="immediate"
+        Return="asyncNoWait" />
+
+    <UI Id="OpenWorkmateExitLaunch">
+      <Publish
+          Dialog="ExitDialog"
+          Control="Finish"
+          Event="DoAction"
+          Value="InstallOpenWorkmateClientsAfterFinish"
+          Condition='OWM_AUTO_CHROME="1" OR OWM_AUTO_OFFICE="1" OR OWM_AUTO_WPS="1"'
+          Order="1" />
+      <Publish
+          Dialog="ExitDialog"
+          Control="Finish"
+          Event="DoAction"
+          Value="LaunchOpenWorkmateAfterInstall"
+          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1"
+          Order="2" />
+    </UI>
+
+    <Feature Id="Main" Title="OpenWorkmate" Level="1">
+      <ComponentGroupRef Id="OpenWorkmateFiles" />
+      <ComponentGroupRef Id="OpenWorkmateLauncher" />
+      <ComponentGroupRef Id="OpenWorkmateShortcuts" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="OpenWorkmate" />
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="OpenWorkmateProgramMenuFolder" Name="OpenWorkmate" />
+    </StandardDirectory>
+  </Fragment>
+
+  <!-- Harvested payload -->
+  <Fragment>
+    <ComponentGroup Id="OpenWorkmateFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.stage)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- Stable File Id for WixShellExec (cannot use harvested id) -->
+  <Fragment>
+    <ComponentGroup Id="OpenWorkmateLauncher" Directory="INSTALLFOLDER">
+      <Component Id="LaunchOpenWorkmateCmdComp" Guid="{D4E5F6A7-B8C9-4012-9DEF-123456789012}" Bitness="always64">
+        <File Id="LaunchOpenWorkmateCmd" Source="!(bindpath.launcher)LaunchOpenWorkmate.cmd" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="OpenWorkmateShortcuts" Directory="OpenWorkmateProgramMenuFolder">
+      <Component Id="OpenWorkmateShortcutComp" Guid="{C3D4E5F6-A7B8-4901-9CDE-F12345678901}" Bitness="always64">
+        <Shortcut
+            Id="OpenWorkmateStartShortcut"
+            Name="Start OpenWorkmate"
+            Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+            Arguments="-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Start-OpenWorkmate.ps1&quot;"
+            WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut
+            Id="OpenWorkmateClientSetupShortcut"
+            Name="OpenWorkmate client setup (Office Chrome WPS)"
+            Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+            Arguments="-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command &quot;Start-Process -LiteralPath &apos;[INSTALLFOLDER]OpenWorkmate-ClientSetup.html&apos;&quot;"
+            WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="Remove_OpenWorkmateProgramMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKMU" Key="Software\OpenWorkmate\Setup" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

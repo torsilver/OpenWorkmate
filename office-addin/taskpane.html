@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Office Copilot</title>
-  <script src="taskly-theme-boot.js"></script>
+  <title>Open Workmate</title>
+  <script src="open-workmate-theme-boot.js"></script>
   <link rel="stylesheet" href="chat-themes.css">
   <link rel="stylesheet" href="taskpane.css">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
@@ -14,7 +14,7 @@
     <header class="header">
       <div class="header-title">
         <span class="header-icon">⚡</span>
-        <h1>Office Copilot</h1>
+        <h1>Open Workmate</h1>
       </div>
       <div class="header-controls">
         <label for="agent-profile-select" class="visually-hidden">当前 Agent</label>
@@ -57,7 +57,7 @@
 
     <main id="messages" class="messages">
       <div class="welcome">
-        <p class="welcome-title">你好，我是 Office Copilot 👋</p>
+        <p class="welcome-title">你好，我是 Open Workmate 👋</p>
         <p class="welcome-sub">在此与 AI 对话，可操作当前 Word/Excel/PowerPoint 文档。完整配置请在 Chrome 扩展 options 页完成。</p>
       </div>
     </main>
@@ -128,25 +128,25 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link id="taskly-hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+  <link id="OpenWorkmate-hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>
 (function () {
-  function tasklyOfficeRefreshEmbedThemes() {
+  function openWorkmateOfficeRefreshEmbedThemes() {
     var t = document.documentElement.getAttribute("data-theme") || "dark";
-    var link = document.getElementById("taskly-hljs-theme");
+    var link = document.getElementById("OpenWorkmate-hljs-theme");
     var light = t === "light" || t === "minimal" || t === "lines" || t === "sketch";
     if (link) {
       link.href = light
         ? "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css"
         : "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css";
     }
-    if (typeof mermaid !== "undefined" && typeof TasklyTheme !== "undefined") {
-      mermaid.initialize({ startOnLoad: false, theme: TasklyTheme.getMermaidTheme(t) });
+    if (typeof mermaid !== "undefined" && typeof OpenWorkmateTheme !== "undefined") {
+      mermaid.initialize({ startOnLoad: false, theme: OpenWorkmateTheme.getMermaidTheme(t) });
     }
   }
-  window.tasklyOfficeRefreshEmbedThemes = tasklyOfficeRefreshEmbedThemes;
+  window.openWorkmateOfficeRefreshEmbedThemes = openWorkmateOfficeRefreshEmbedThemes;
   if (typeof marked !== "undefined" && typeof hljs !== "undefined") {
     marked.setOptions({
       highlight: function (code, lang) {
@@ -157,17 +157,17 @@
     });
   }
   window.addEventListener("storage", function (e) {
-    if (e.key !== "tasklyUiTheme") return;
-    if (typeof TasklyTheme !== "undefined") {
-      TasklyTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
+    if (e.key !== "openWorkmateUiTheme") return;
+    if (typeof OpenWorkmateTheme !== "undefined") {
+      OpenWorkmateTheme.applyThemeDomOnly(e.newValue != null && e.newValue !== "" ? e.newValue : "dark");
     }
-    tasklyOfficeRefreshEmbedThemes();
+    openWorkmateOfficeRefreshEmbedThemes();
   });
-  tasklyOfficeRefreshEmbedThemes();
+  openWorkmateOfficeRefreshEmbedThemes();
 })();
   </script>
   <script src="local-service-resolve.js"></script>
-  <script src="copilot-host-shared.js"></script>
+  <script src="openWorkmate-host-shared.js"></script>
   <script src="taskpane.js"></script>
 </body>
 </html>

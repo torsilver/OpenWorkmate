@@ -2,10 +2,10 @@ using System.IO;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server.Services.Ocr;
+namespace OpenWorkmate.Server.Services.Ocr;
 
 public sealed class OcrExtractorProvider
 {

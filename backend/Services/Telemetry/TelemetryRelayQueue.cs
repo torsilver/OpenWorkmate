@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 public sealed class TelemetryRelayQueue : ITelemetryRelayQueue
 {

@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>与 chrome-extension/options.js 中 vendorId 一致。</summary>
 public static class AiVendorIds

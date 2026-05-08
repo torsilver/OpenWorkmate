@@ -13,21 +13,21 @@
   const $chkAuto = document.getElementById("chk-auto");
 
   let autoTimer = null;
-  let tasklyDebugStatsApiReady = null;
+  let openWorkmateDebugStatsApiReady = null;
 
-  function tasklyEnsureDebugStatsApiBase() {
-    if (tasklyDebugStatsApiReady) return tasklyDebugStatsApiReady;
-    tasklyDebugStatsApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+  function openWorkmateEnsureDebugStatsApiBase() {
+    if (openWorkmateDebugStatsApiReady) return openWorkmateDebugStatsApiReady;
+    openWorkmateDebugStatsApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(
       typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
     )
       .then(function (r) {
-        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+        API_BASE = OpenWorkmateLocalService.normalizeBase(r.baseUrl);
       })
       .catch(function (err) {
-        tasklyDebugStatsApiReady = null;
+        openWorkmateDebugStatsApiReady = null;
         throw err;
       });
-    return tasklyDebugStatsApiReady;
+    return openWorkmateDebugStatsApiReady;
   }
 
   function showErr(msg) {
@@ -129,7 +129,7 @@
       .replace(/"/g, "&quot;");
   }
 
-  function tasklyFetch(url, init) {
+  function openWorkmateFetch(url, init) {
     init = init ? Object.assign({}, init) : {};
     return new Promise(function (resolve) {
       if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
@@ -139,7 +139,7 @@
       chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
         var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
         var headers = Object.assign({}, init.headers || {});
-        if (t) headers["X-OfficeCopilot-Token"] = t;
+        if (t) headers["X-OpenWorkmate-Token"] = t;
         init.headers = headers;
         resolve(fetch(url, init));
       });
@@ -170,7 +170,7 @@
   }
 
   function resolveBootstrapAndLoad() {
-    return tasklyEnsureDebugStatsApiBase()
+    return openWorkmateEnsureDebugStatsApiBase()
       .then(function () {
         return ensureLocalServiceTokenFromBootstrap(API_BASE);
       })
@@ -184,7 +184,7 @@
 
   async function load() {
     try {
-      const res = await tasklyFetch(API_BASE + "/api/debug/agent-stats");
+      const res = await openWorkmateFetch(API_BASE + "/api/debug/agent-stats");
       if (!res.ok) {
         showErr(await parseErrorMessage(res));
         return;
@@ -199,9 +199,9 @@
   async function reset() {
     if (!confirm("确定清空所有调试计数？将删除本机持久化文件。")) return;
     try {
-      await tasklyEnsureDebugStatsApiBase();
+      await openWorkmateEnsureDebugStatsApiBase();
       await ensureLocalServiceTokenFromBootstrap(API_BASE);
-      const res = await tasklyFetch(API_BASE + "/api/debug/agent-stats/reset", { method: "POST" });
+      const res = await openWorkmateFetch(API_BASE + "/api/debug/agent-stats/reset", { method: "POST" });
       if (!res.ok) {
         showErr(await parseErrorMessage(res));
         return;

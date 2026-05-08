@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>上下文长度错误检测与为重试裁剪历史（实现委托 <see cref="ContextManager.TrimHistoryForRetry"/>，与主路径裁剪边界一致）。</summary>
 public static class ContextLengthRetryHelper

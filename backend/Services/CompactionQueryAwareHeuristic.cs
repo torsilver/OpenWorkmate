@@ -2,7 +2,7 @@ using System.Linq;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 实验向：在 MAF Compaction 之前，按「当前用户句拆词 vs 可删区最旧消息」的简单重叠度，

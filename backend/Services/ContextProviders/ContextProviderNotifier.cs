@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.ContextProviders;
+namespace OpenWorkmate.Server.Services.ContextProviders;
 
 /// <summary>Context Provider 用的通知辅助：将 agent_status / agent_trace 推送到当前 WebSocket 会话。</summary>
 internal static class ContextProviderNotifier

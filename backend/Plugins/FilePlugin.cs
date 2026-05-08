@@ -2,12 +2,12 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
-[CopilotPluginId("File")]
+[OpenWorkmatePluginId("File")]
 public sealed class FilePlugin
 {
     private readonly ScreenshotCacheService _screenshotCache;

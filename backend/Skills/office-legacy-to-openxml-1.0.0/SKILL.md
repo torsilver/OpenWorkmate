@@ -7,7 +7,7 @@ changelog: 与 word-docx 技能交叉引用。
 metadata: {"clawdbot":{"emoji":"📄","os":["win32"]}}
 ---
 
-## Taskly（本仓库）
+## OpenWorkmate（本仓库）
 
 ### 何时必须先转换
 

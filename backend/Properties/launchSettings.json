@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "OfficeCopilot": {
+    "OpenWorkmate": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
@@ -10,7 +10,7 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
-    "OfficeCopilotTray": {
+    "OpenWorkmateTray": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

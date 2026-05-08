@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using OfficeCopilot.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.DashScope;
 using Xunit;
 
 namespace backend.Tests.Unit;

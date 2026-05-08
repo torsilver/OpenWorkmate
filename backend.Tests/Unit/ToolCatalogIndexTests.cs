@@ -1,9 +1,9 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 public sealed class ToolCatalogIndexTests
 {

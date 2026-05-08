@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>简单分块：按段落/句子切分，尽量不超过 maxChars 字符。</summary>
 public static class TextChunker

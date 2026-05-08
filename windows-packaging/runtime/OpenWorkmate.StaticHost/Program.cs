@@ -45,7 +45,7 @@ static void TryWriteStaticHostDiag(string message)
     {
         var dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Taskly", "logs");
+            "OpenWorkmate", "logs");
         Directory.CreateDirectory(dir);
         File.AppendAllText(
             Path.Combine(dir, "static-host.txt"),
@@ -95,14 +95,14 @@ if (!string.IsNullOrWhiteSpace(chromeRoot) && Directory.Exists(chromeRoot))
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(Path.GetFullPath(chromeRoot)),
-        RequestPath = "/taskly-chrome"
+        RequestPath = "/OpenWorkmate-chrome"
     });
 }
 
 var bootMsg =
-    $"Taskly.StaticHost HTTPS https://localhost:{port}/ （Office 根：{officeRoot}）";
+    $"OpenWorkmate.StaticHost HTTPS https://localhost:{port}/ （Office 根：{officeRoot}）";
 if (Directory.Exists(wpsRoot)) bootMsg += $"{Environment.NewLine}  WPS 静态：/wps → {wpsRoot}";
-if (Directory.Exists(chromeRoot)) bootMsg += $"{Environment.NewLine}  Chrome 更新：/taskly-chrome → {chromeRoot}";
+if (Directory.Exists(chromeRoot)) bootMsg += $"{Environment.NewLine}  Chrome 更新：/OpenWorkmate-chrome → {chromeRoot}";
 TryWriteStaticHostDiag(bootMsg);
 app.Logger.LogInformation("{Boot}", bootMsg);
 

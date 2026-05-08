@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.Stt;
+namespace OpenWorkmate.Server.Services.Stt;
 
 /// <summary>
 /// 阿里云百炼 <c>wss://.../api-ws/v1/inference</c> 实时语音识别协议（run-task / finish-task / result-generated）。

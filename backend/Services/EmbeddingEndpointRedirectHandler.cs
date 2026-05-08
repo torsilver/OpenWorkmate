@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 将发往 api.openai.com 的请求重写到指定的 OpenAI 兼容 endpoint（如阿里 dashscope）。

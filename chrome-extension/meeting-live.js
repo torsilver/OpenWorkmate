@@ -3,30 +3,30 @@
   const POLL_MS = 2000;
 
   var API_BASE = "http://127.0.0.1:8765";
-  var tasklyMeetingLiveApiReady = null;
+  var openWorkmateMeetingLiveApiReady = null;
 
-  function tasklyEnsureApiBase() {
-    if (tasklyMeetingLiveApiReady) return tasklyMeetingLiveApiReady;
-    tasklyMeetingLiveApiReady = TasklyLocalService.tasklyResolveLocalServiceBase(
+  function openWorkmateEnsureApiBase() {
+    if (openWorkmateMeetingLiveApiReady) return openWorkmateMeetingLiveApiReady;
+    openWorkmateMeetingLiveApiReady = OpenWorkmateLocalService.openWorkmateResolveLocalServiceBase(
       typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local : null
     )
       .then(function (r) {
-        API_BASE = TasklyLocalService.normalizeBase(r.baseUrl);
+        API_BASE = OpenWorkmateLocalService.normalizeBase(r.baseUrl);
       })
       .catch(function (err) {
-        tasklyMeetingLiveApiReady = null;
+        openWorkmateMeetingLiveApiReady = null;
         throw err;
       });
-    return tasklyMeetingLiveApiReady;
+    return openWorkmateMeetingLiveApiReady;
   }
 
-  function tasklyFetch(url, init) {
+  function openWorkmateFetch(url, init) {
     init = init ? Object.assign({}, init) : {};
     return new Promise(function (resolve) {
       chrome.storage.local.get([COPILOT_TOKEN_STORAGE_KEY], function (r) {
         var t = (r && r[COPILOT_TOKEN_STORAGE_KEY] || "").trim();
         var headers = Object.assign({}, init.headers || {});
-        if (t) headers["X-OfficeCopilot-Token"] = t;
+        if (t) headers["X-OpenWorkmate-Token"] = t;
         init.headers = headers;
         resolve(fetch(url, init));
       });
@@ -34,7 +34,7 @@
   }
 
   function ensureLocalServiceTokenFromBootstrap() {
-    return tasklyEnsureApiBase().then(function () {
+    return openWorkmateEnsureApiBase().then(function () {
       return fetch(API_BASE + "/api/bootstrap/local-service-auth")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
@@ -112,10 +112,10 @@
   }
 
   async function pollOnce() {
-    await tasklyEnsureApiBase();
+    await openWorkmateEnsureApiBase();
     var url = API_BASE + "/api/meeting-transcript/" + encodeURIComponent(sessionId) + "/segments?afterSeq=" + afterSeq;
     try {
-      var res = await tasklyFetch(url);
+      var res = await openWorkmateFetch(url);
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok || data.ok === false) {
         showError((data && data.message) ? data.message : ("拉取实录失败 HTTP " + res.status));
@@ -173,7 +173,7 @@
   }
 
   ensureLocalServiceTokenFromBootstrap()
-    .then(function () { return tasklyEnsureApiBase(); })
+    .then(function () { return openWorkmateEnsureApiBase(); })
     .then(function () {
       setStatus("连接本机 API…");
       startPolling();
@@ -181,7 +181,7 @@
     .catch(function (e) {
       showError("本机服务未就绪，将自动重试：" + (e && e.message ? e.message : String(e)));
       setStatus("等待本机服务…");
-      // 仍启动轮询：tasklyEnsureApiBase 在 reject 时会清空缓存，后续 pollOnce 会重新扫端口
+      // 仍启动轮询：openWorkmateEnsureApiBase 在 reject 时会清空缓存，后续 pollOnce 会重新扫端口
       startPolling();
     });
 })();

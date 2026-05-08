@@ -1,7 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 本机 JSON 落盘用序列化选项：<see cref="System.Text.Json"/> 默认会把非 ASCII 写成 <c>\uXXXX</c>，

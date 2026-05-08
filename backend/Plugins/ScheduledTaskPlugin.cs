@@ -1,17 +1,17 @@
 using System.ComponentModel;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.ScheduledTask;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.ScheduledTask;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 定时任务插件：供 AI 创建与管理定时任务（.task.md + meta）；到点后由 ScheduledTaskRunnerService 将任务内容发给 AI 执行。
 /// 使用已有 IScheduledTaskStore，目录由配置 ScheduledTasksDirectory 决定。
 /// </summary>
-[CopilotPluginId("ScheduledTask")]
+[OpenWorkmatePluginId("ScheduledTask")]
 public sealed class ScheduledTaskPlugin
 {
     private readonly IScheduledTaskStore _store;

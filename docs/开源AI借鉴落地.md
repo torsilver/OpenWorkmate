@@ -1,4 +1,4 @@
-# Taskly：开源 AI 借鉴与落地路线
+# OpenWorkmate：开源 AI 借鉴与落地路线
 
 本文档落实「开源 AI 工具调研」计划中的三项结论：**优先聚焦主线**、**可汉化提示词模式（映射到本仓库工具）**、**MAF/MEAI 编排与 LangGraph 式状态机的对照评估**。  
 与 [提示词清单.md](./提示词清单.md)、[architecture-dimensions.md](./architecture-dimensions.md)、[maf-migration-baseline.md](./maf-migration-baseline.md) 配合阅读。（原 `PROJECT_PLAN.md` 已过时删除，里程碑以代码与基线文档为准。）
@@ -28,14 +28,14 @@
 
 **英文常见结构**：Thought → Action → Observation → …
 
-**Taskly 映射文案（建议中文，可并入 system 或紧接 `ToolResultEchoSystemInstruction`）：**
+**OpenWorkmate 映射文案（建议中文，可并入 system 或紧接 `ToolResultEchoSystemInstruction`）：**
 
 - 在调用工具前，用**一句**说明本轮目标（用户可见或仅作约束均可，视产品而定）。
 - 工具返回后，**必须**用自然语言整理结果；与现有常量一致——见 `ChatService` 中 `ToolResultEchoSystemInstruction`（工具结果须在正文复述）。
 
 **与本仓库工具名的对应关系示例**：
 
-| 开源模式中的环节 | Taskly 中的落点 |
+| 开源模式中的环节 | OpenWorkmate 中的落点 |
 |------------------|-----------------|
 | Action（调用外部能力） | `Excel_*`、`Word_*`、`Browser_*`、`CurrentDocument_*`、MCP 工具等 |
 | Observation（结构化中间结果） | `accurate_data_write` / `accurate_data_read`（大数据不塞满上下文） |
@@ -45,7 +45,7 @@
 
 **可借鉴结构**：每个角色有 *Role、Goal、Backstory*。
 
-**Taskly 映射**：已由 **clientType 身份后缀** 承担「角色 + 边界」，见 `ChatService.GetClientTypeIdentitySuffix`（chrome / office-word / office-excel / wps 等）。增强时可为**新端**增加一行后缀，而不是再引入第二套 Agent 运行时。
+**OpenWorkmate 映射**：已由 **clientType 身份后缀** 承担「角色 + 边界」，见 `ChatService.GetClientTypeIdentitySuffix`（chrome / office-word / office-excel / wps 等）。增强时可为**新端**增加一行后缀，而不是再引入第二套 Agent 运行时。
 
 **可选补充句（写入各端后缀或全局 system）**：
 
@@ -55,7 +55,7 @@
 
 **可借鉴点**：在**敏感或不可逆操作前**暂停，等待人类输入后再继续。
 
-**Taskly 映射**：
+**OpenWorkmate 映射**：
 
 | 概念 | 实现位置 |
 |------|-----------|
@@ -69,13 +69,13 @@
 
 **可借鉴点**：沙箱、输出长度、危险命令二次确认。
 
-**Taskly 映射**：CLI / 系统类工具继续与 `SecurityPipeline`、HITL 配置联动；提示词侧可强调：「对可能修改文件或执行命令的操作，先确认范围再执行。」
+**OpenWorkmate 映射**：CLI / 系统类工具继续与 `SecurityPipeline`、HITL 配置联动；提示词侧可强调：「对可能修改文件或执行命令的操作，先确认范围再执行。」
 
 ### 2.5 计划拆解（与 Plan 插件一致）
 
 **可借鉴点**：复杂任务先产出可执行步骤，再逐步执行。
 
-**Taskly 映射**：`PlanPlugin.create_plan`、绑定 `planId` / `planCurrentStepIndex` 时在 `RunStreamChatContextPhasePart2Async` 注入的「当前步骤」system 块。开源项目中的「Planner 节点」对应这里的 **计划生成 + 分步注入**，无需另起一套图执行引擎。
+**OpenWorkmate 映射**：`PlanPlugin.create_plan`、绑定 `planId` / `planCurrentStepIndex` 时在 `RunStreamChatContextPhasePart2Async` 注入的「当前步骤」system 块。开源项目中的「Planner 节点」对应这里的 **计划生成 + 分步注入**，无需另起一套图执行引擎。
 
 ---
 
@@ -108,7 +108,7 @@
 
 ```mermaid
 flowchart TB
-  subgraph taskly [Taskly_MAF_当前形态]
+  subgraph OpenWorkmate [OpenWorkmate_MAF_当前形态]
     TS[ToolSelection]
     MafStream[MafMainSessionStreamRunner_Workflow]
     Plan[PlanInject_and_PlanPlugin]

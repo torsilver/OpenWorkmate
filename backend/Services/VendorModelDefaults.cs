@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>vendorId → connectionKind；空 vendorId 表示走 URL 自动识别。</summary>
 public static class VendorModelDefaults

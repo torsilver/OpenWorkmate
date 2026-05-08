@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
 namespace backend.Tests.Integration;
 

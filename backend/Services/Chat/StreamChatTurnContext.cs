@@ -1,9 +1,9 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.Plan;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.Plan;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>主会话单轮流式编排的共享状态：上下文准备与工具阶段写入，主模型流式阶段读取。</summary>
 public sealed class StreamChatTurnContext

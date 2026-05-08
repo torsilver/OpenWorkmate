@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>
 /// 将 <see cref="WordPlugin.WordDocumentCreate"/> 的 paragraphs（由 <c>string[]</c> 归并得到的单串）展开为多条逻辑行：

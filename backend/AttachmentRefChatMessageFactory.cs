@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 将带 <c>attachment:</c> 引用的用户轮次组装为 <see cref="ChatMessage"/>；可选注入图片（多模态）。

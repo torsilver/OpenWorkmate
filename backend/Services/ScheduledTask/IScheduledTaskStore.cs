@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.ScheduledTask;
+namespace OpenWorkmate.Server.Services.ScheduledTask;
 
 /// <summary>定时任务存储：基于文件的 .task.md + .meta.json CRUD。</summary>
 public interface IScheduledTaskStore

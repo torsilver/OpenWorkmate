@@ -2,10 +2,10 @@
 
 本机进程 **AI Gateway**（`ai-gateway/`，默认 `http://127.0.0.1:8777`）同时扮演三个角色：
 
-1. **LLM 代理**：按运维 + 用户策略把 OfficeCopilot 后台的聊天请求转发给上游供应商（`POST /llm/v1/chat/completions`），或由后台 **直连**（见 `routeMode`）。
+1. **LLM 代理**：按运维 + 用户策略把 OpenWorkmate 后台的聊天请求转发给上游供应商（`POST /llm/v1/chat/completions`），或由后台 **直连**（见 `routeMode`）。
 2. **结构化观测落盘**：后台通过 `POST /ingest/spans`（JSON 批量）把 trace/span 写入 Gateway；Gateway 以 **每会话一行 JSONL** 形式存到 `DataRoot/sessions/<sid>.jsonl`，大负载写入 `DataRoot/blobs/`。
 3. **策略与管理 UI**：
-   - 聚合策略：`GET /api/policy/aggregated[?profileId=…]`（Bearer / `X-Telemetry-Key` = `AiGateway:ApiKey`），返回 `{effective, ops, user, userOverlayViolations, eTag, …}`。OfficeCopilot 后台进程启动时拉一次，之后约每 1 小时拉一次（不因 user-config 保存而额外拉取）。
+   - 聚合策略：`GET /api/policy/aggregated[?profileId=…]`（Bearer / `X-Telemetry-Key` = `AiGateway:ApiKey`），返回 `{effective, ops, user, userOverlayViolations, eTag, …}`。OpenWorkmate 后台进程启动时拉一次，之后约每 1 小时拉一次（不因 user-config 保存而额外拉取）。
    - 运维面板：`/admin.html`（写 `DataRoot/policy.ops.json`）。
    - 本机我的数据：`/my.html`（loopback 专属，展开 trace 树、删除、导出 .md、反馈评分、切换 `routeMode`）。
 
@@ -16,7 +16,7 @@
 | 运维策略 | `DataRoot/policy.ops.json` | 管理员可编辑：允许的 `routeMode`、各类 profile、retention、MaxEventPayloadChars 等 |
 | 用户策略 | `DataRoot/policy.user.json` | 仅 loopback PUT；当前包含 `routeMode` (`gateway` \| `direct`) |
 | 运行期选项 | `AiGateway:*` in `appsettings.json` | `ApiKey`、`AdminApiKey`、`DataRoot`、`RetentionDays`、`MaxEventPayloadChars` |
-| OfficeCopilot 后台 | `user-config.json` 顶层 | `telemetryEnabled`、`aiGatewayBaseUrl`、`aiGatewayApiKey`、`opsPolicyProfileId` |
+| OpenWorkmate 后台 | `user-config.json` 顶层 | `telemetryEnabled`、`aiGatewayBaseUrl`、`aiGatewayApiKey`、`opsPolicyProfileId` |
 
 ## 健康与 fail-closed（后台侧）
 

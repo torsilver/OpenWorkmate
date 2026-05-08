@@ -6,7 +6,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>PPT OpenXml 共用：形状枚举、文本写入、图片、备注、重排、表格、超链接、幻灯片复制。</summary>
 internal static class PptOpenXmlHelpers

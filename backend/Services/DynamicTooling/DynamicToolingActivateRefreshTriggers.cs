@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>
 /// 判断 <c>activate_tools</c> 调用结束后是否应刷新可变工具列表（与 ToolInvocationMiddleware 中 TryRefresh 一致）。

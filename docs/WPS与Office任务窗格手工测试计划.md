@@ -1,10 +1,10 @@
 # WPS 与 Office 任务窗格手工测试计划
 
-> **范围**：**任务窗格**（应用内加载项）连接本机 **Office Copilot Server**。  
+> **范围**：**任务窗格**（应用内加载项）连接本机 **Open Workmate Server**。  
 > **本文操作步骤与表格**：按 **金山 WPS**、目录 **[wps-addin-new/](../wps-addin-new/)**、`clientType=wps` 编写（含 `wpsHostKind`、`npx wpsjs debug`、文中「WPS 文字/表格/演示」称谓及 §七 `wps_*` 预置脚本等）。  
 > **Microsoft Office 加载项（[office-addin/](../office-addin/)）**：`clientType` 为 `office-word` / `office-excel` / `office-powerpoint`；**服务端工具过滤、§二负向/正向通用插件、§四～§六同名 `current_*` 工具、§八～§十可与 WPS 对照执行**。差异：`set_context` 为 Office 宿主上下文（非 `wpsHostKind`）；§三 RPC 守卫提示为 Word/Excel/PowerPoint 环境（见 `office-addin/taskpane.js`）；§七预置脚本以 `DOCUMENT_SCRIPTS` 为准（如 `office_doc_meta`），与 WPS 侧 `wps_*` 白名单不对表逐一相同；调试以 `office-addin/Start-OfficeAddinDev.ps1` + 旁加载 `manifest.xml` 为准，见 `office-addin/README.md`。  
 > **不包含**：Chrome 扩展独有能力（**`Browser`**、侧栏会议监听等）。**`File` / `CLI` / `System` / `UserOptions`** 在 `clientType=wps` 或 `office-*` 下与 `IsCommonPlugin` 一致**会暴露**（见 `ClientTypeToolFilter`）；`get_attachment_path` 仍依赖 Chrome 侧附件落盘链，任务窗格上可能不适用。本文也不替代 `docs/Chrome端手工测试计划.md`。  
-> **权威对照（WPS）**：`wps-addin-new/src/composables/useCopilot.js`（`handleRpcRequest`）、`wps-addin-new/src/wps-rpc/hostKind.js`；工具名与过滤见 `backend/Plugins/CurrentDocumentPlugin.cs`、`backend/Services/ClientTypeToolFilter.cs`；`wpsHostKind` 见 `docs/应用内AI插件列表.md` §三、`docs/WPS插件调试指南.md` §3.1。  
+> **权威对照（WPS）**：`wps-addin-new/src/composables/useOpenWorkmate.js`（`handleRpcRequest`）、`wps-addin-new/src/wps-rpc/hostKind.js`；工具名与过滤见 `backend/Plugins/CurrentDocumentPlugin.cs`、`backend/Services/ClientTypeToolFilter.cs`；`wpsHostKind` 见 `docs/应用内AI插件列表.md` §三、`docs/WPS插件调试指南.md` §3.1。  
 > **权威对照（Office）**：`office-addin/taskpane.js`、`office-addin/manifest.xml`；后端同上。
 
 **通过标准（每条用例）**：行为与下表「预期」一致；失败时工具返回或 UI 中可见**明确原因**（含 RPC `error` 回包、后端 `message`），符合项目错误可见性约定。
@@ -17,8 +17,8 @@
 
 | 序号 | 检查项 | 说明 |
 |------|--------|------|
-| W0 | 后端已启动 | 本机 `OfficeCopilot.Server` 可连；任务窗格能完成握手（见 W1） |
-| W1 | 加载项已加载 | `wpsjs debug` 拉起后，在 **WPS 文字 / 表格 / 演示** 中打开 **Office Copilot** 任务窗格 |
+| W0 | 后端已启动 | 本机 `OpenWorkmate.Server` 可连；任务窗格能完成握手（见 W1） |
+| W1 | 加载项已加载 | `wpsjs debug` 拉起后，在 **WPS 文字 / 表格 / 演示** 中打开 **Open Workmate** 任务窗格 |
 | W2 | 模型与密钥 | 与扩展/选项页或环境变量一致，请求不被 401 |
 | W3 | 动态工具（若测 §八） | 主会话固定动态工具；首轮为 bootstrap，业务工具需 **`search_available_tools` → `activate_tools`** |
 | W4 | Pdf / Memory / MCP | 按需：Pdf 读写**服务端进程可见路径**；Memory 需 Embedding；外接 MCP 需在设置中启用 |
@@ -116,13 +116,13 @@
 | PP4 | `current_ppt_slide_insert` | 「在最后插入一页，标题为 Hi」 | 幻灯片数 +1 |
 | PP5 | `current_ppt_slide_delete` | 在副本上删除最后一页 | 张数 -1 或返回不支持说明 |
 | PP6 | `current_ppt_document_create` | 「新建并保存到 `D:\Temp\test-wps-create.pptx`」（路径须本机可写且 WPS 可 `SaveAs`） | 文件落盘或返回路径/权限错误 |
-| PP7 | 其它 `current_ppt_*` | 按需抽测 `slide_image_add`（路径或 base64）、`notes_read/write`、`slides_reorder`、`table_create`、`table_write_cells`、`hyperlink_add`、`slide_duplicate` | 与 `useCopilot.js` 分支一致；失败时含可操作原因（如 base64 写临时文件失败会提示用路径） |
+| PP7 | 其它 `current_ppt_*` | 按需抽测 `slide_image_add`（路径或 base64）、`notes_read/write`、`slides_reorder`、`table_create`、`table_write_cells`、`hyperlink_add`、`slide_duplicate` | 与 `useOpenWorkmate.js` 分支一致；失败时含可操作原因（如 base64 写临时文件失败会提示用路径） |
 
 ---
 
 ## 七、预置文档脚本：`current_run_document_script`
 
-仅允许 **`DOCUMENT_SCRIPTS`** 中已注册的 `scriptId`（`useCopilot.js`）。当前白名单包括：
+仅允许 **`DOCUMENT_SCRIPTS`** 中已注册的 `scriptId`（`useOpenWorkmate.js`）。当前白名单包括：
 
 | scriptId | 适用宿主 | 建议测法 |
 |----------|----------|----------|
@@ -185,7 +185,7 @@ wpsjs / 加载项构建方式：
 
 ## 十二、维护说明
 
-- **增删 RPC 分支**（WPS：`useCopilot.js` / `getWpsHostKind`；Office：`office-addin/taskpane.js`）时，同步本文 **§三～§六** 与 `docs/WPS插件调试指南.md` §3.1（WPS）、`office-addin/README.md`（Office）。  
+- **增删 RPC 分支**（WPS：`useOpenWorkmate.js` / `getWpsHostKind`；Office：`office-addin/taskpane.js`）时，同步本文 **§三～§六** 与 `docs/WPS插件调试指南.md` §3.1（WPS）、`office-addin/README.md`（Office）。  
 - **增删 `DOCUMENT_SCRIPTS` / 预置脚本** 时，同步 **§七** 与 `CurrentDocumentPlugin` 工具描述（两端白名单分别维护）。  
 - **改 `ClientTypeToolFilter`（含任务窗格宿主收窄）** 时，同步 **§一 C3/C4** 与 `docs/应用内AI插件列表.md` §三。
 

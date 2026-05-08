@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Services.ScheduledTask;
+namespace OpenWorkmate.Server.Services.ScheduledTask;
 
 /// <summary>定时任务元数据：调度与状态。</summary>
 public class ScheduledTaskMeta

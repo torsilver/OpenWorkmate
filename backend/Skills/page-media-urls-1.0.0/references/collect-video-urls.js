@@ -1,4 +1,4 @@
-/* Taskly video / stream URL harvester — paste entire file as run_custom_javascript_in_page scriptCode. */
+/* OpenWorkmate video / stream URL harvester — paste entire file as run_custom_javascript_in_page scriptCode. */
 var notes = [];
 var videos = [];
 var seen = {};

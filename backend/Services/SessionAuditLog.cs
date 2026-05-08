@@ -1,7 +1,7 @@
 using System.Text.Json;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 可选 JSONL 会话审计（<see cref="ContextWindowConfig.SessionAuditEnabled"/>）；内容截断、不落 base64。
@@ -57,6 +57,6 @@ public static class SessionAuditLog
             if (!string.IsNullOrEmpty(parent))
                 return Path.Combine(parent, "SessionAudit");
         }
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OfficeCopilot", "SessionAudit");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenWorkmate", "SessionAudit");
     }
 }

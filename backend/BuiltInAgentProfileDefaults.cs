@@ -1,6 +1,6 @@
 using System.Linq;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>
 /// 侧栏 Agent 内置预设：与 user-config 合并时<strong>缺什么补什么</strong>（同 id 以用户配置为准），

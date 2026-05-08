@@ -6,26 +6,26 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Plugins;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Memory;
-using OfficeCopilot.Server.Services.Plan;
-using OfficeCopilot.Server.Services.CrossAgentTask;
-using OfficeCopilot.Server.Services.ScheduledTask;
-using OfficeCopilot.Server.Services.ContextProviders;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Mcp;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.Maf;
-using OfficeCopilot.Server.Services.Subagent;
-using OfficeCopilot.Server.Services.ModelProfiles;
-using OfficeCopilot.Server.Services.OpenAiCompat;
-using OfficeCopilot.Server.Services.ModelAdapters;
-using OfficeCopilot.Server.Services.Telemetry;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server.Plugins;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Memory;
+using OpenWorkmate.Server.Services.Plan;
+using OpenWorkmate.Server.Services.CrossAgentTask;
+using OpenWorkmate.Server.Services.ScheduledTask;
+using OpenWorkmate.Server.Services.ContextProviders;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Mcp;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.Maf;
+using OpenWorkmate.Server.Services.Subagent;
+using OpenWorkmate.Server.Services.ModelProfiles;
+using OpenWorkmate.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server.Services.ModelAdapters;
+using OpenWorkmate.Server.Services.Telemetry;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 public sealed partial class ChatService : IDisposable
 {
@@ -190,9 +190,9 @@ public sealed partial class ChatService : IDisposable
 
         void TryAddBuiltInPlugin(object instance)
         {
-            var attr = instance.GetType().GetCustomAttribute<CopilotPluginIdAttribute>()
+            var attr = instance.GetType().GetCustomAttribute<OpenWorkmatePluginIdAttribute>()
                 ?? throw new InvalidOperationException(
-                    $"内置插件类型 {instance.GetType().FullName} 缺少 [CopilotPluginId]。");
+                    $"内置插件类型 {instance.GetType().FullName} 缺少 [OpenWorkmatePluginId]。");
             if (disabledBuiltIn.Contains(attr.Id.ToLowerInvariant()))
                 return;
             pluginInstances.Add(instance);

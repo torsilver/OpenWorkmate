@@ -2,7 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.Stt;
+namespace OpenWorkmate.Server.Services.Stt;
 
 /// <summary>
 /// 扩展 ↔ 本机 WebSocket ↔ 百炼 v1/inference；二进制帧为 PCM s16le 单声道，采样率与 run-task 一致。

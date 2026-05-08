@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.Telemetry;
+namespace OpenWorkmate.Server.Services.Telemetry;
 
 /// <summary>WebSocket <c>telemetryEventKinds</c> 查询参数解析；与 Gateway <c>availableEventKinds</c> 的交集由 <see cref="TelemetryEffectiveEventKinds"/> 在 <see cref="TelemetryRelaySessionExtensions.TryEnqueueFromSession"/> 中计算。</summary>
 public static class TelemetrySessionEventKindFilter

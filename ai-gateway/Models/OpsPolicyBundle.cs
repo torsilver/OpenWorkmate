@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 /// <summary><c>DataRoot/policy.ops.json</c>：运维全局策略（传输上限 + defaults + 多组 profile + 路由模式上限）。</summary>
 public sealed class OpsPolicyBundle

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Services.DynamicTooling;
+namespace OpenWorkmate.Server.Services.DynamicTooling;
 
 /// <summary>v1 启发式路由：无额外模型调用。</summary>
 public static partial class TurnRouteClassifier

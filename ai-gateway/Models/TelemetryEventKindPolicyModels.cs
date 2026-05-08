@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Taskly.AI.Gateway.Models;
+namespace OpenWorkmate.AI.Gateway.Models;
 
 /// <summary>内置 AI 流事件种类元数据（不再使用独立 JSON 文件）；默认 profile 的 <c>eventKinds</c> 由此展开，供 GET /policy/aggregated 的 <c>availableEventKinds</c>。</summary>
 public sealed class TelemetryEventKindPolicyFile
@@ -25,7 +25,7 @@ public sealed class TelemetryEventKindEntry
 
 public static class TelemetryEventKindPolicyDefaults
 {
-    /// <summary>与 OfficeCopilot 当前发出的 <c>eventType</c> 一致。</summary>
+    /// <summary>与 OpenWorkmate 当前发出的 <c>eventType</c> 一致。</summary>
     public static IReadOnlyList<TelemetryEventKindEntry> BuiltInKinds { get; } =
     [
         new TelemetryEventKindEntry { Kind = "assistant_turn_final", Label = "助手轮次结束" },

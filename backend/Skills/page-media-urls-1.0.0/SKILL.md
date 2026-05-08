@@ -6,7 +6,7 @@ description: Chrome 当前标签页：预置两段独立 JS——仅图片（img
 metadata: {"clawdbot":{"emoji":"🖼️","os":["linux","darwin","win32"]}}
 ---
 
-## Taskly（本仓库）
+## OpenWorkmate（本仓库）
 
 - **设计**：**图片**与**视频**各一份页内脚本，便于**分别调参、单独迭代**，互不牵累。模型按用户意图选用 **`references/collect-image-urls.js`** 和/或 **`references/collect-video-urls.js`**，不要混成一份大杂烩后再改。
 - **何时用哪段**  

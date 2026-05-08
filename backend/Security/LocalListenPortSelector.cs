@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>在指定范围内探测第一个可绑定的 TCP 端口（与 Kestrel 实际绑定之间存在极小竞态窗口，桌面场景可接受）。</summary>
 public static class LocalListenPortSelector

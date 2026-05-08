@@ -1,8 +1,8 @@
 using System.Text.Json;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 public class BrowserPluginRpcTextTests
 {

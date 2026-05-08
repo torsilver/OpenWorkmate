@@ -1,5 +1,5 @@
 // Expose Program for WebApplicationFactory in integration tests.
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 public partial class Program
 {

@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.ScheduledTask;
+namespace OpenWorkmate.Server.Services.ScheduledTask;
 
 /// <summary>创建/更新单次任务时计算首次 <see cref="ScheduledTaskMeta.NextRunAt"/>。</summary>
 public static class ScheduledTaskScheduling

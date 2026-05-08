@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// Microsoft.Extensions.AI <see cref="FunctionInvokingChatClient"/> 在工具内异常时可能不向外抛错，

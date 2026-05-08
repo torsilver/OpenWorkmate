@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>WebSocket 消息的 JSON 序列化辅助，避免各处重复拼装。</summary>
 public static class WsMessageJson

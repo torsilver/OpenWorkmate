@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  为当前用户（HKCU）注册 Chrome ExtensionInstallForcelist，指向本机 HTTPS 上的 Taskly 扩展更新清单。
+  为当前用户（HKCU）注册 Chrome ExtensionInstallForcelist，指向本机 HTTPS 上的 OpenWorkmate 扩展更新清单。
 
 .PARAMETER ExtensionId
   Chrome 扩展 ID（32 位 a-p，与 CRX 私钥一致）。
 
 .PARAMETER UpdatesXmlUrl
-  完整 HTTPS URL，例如 https://localhost:3000/taskly-chrome/updates.xml
+  完整 HTTPS URL，例如 https://localhost:3000/OpenWorkmate-chrome/updates.xml
 
 .PARAMETER MachineScope
   若指定则写入 HKLM（需管理员提升），否则写入 HKCU。

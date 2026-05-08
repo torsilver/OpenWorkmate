@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.CrossAgentTask;
+namespace OpenWorkmate.Server.Services.CrossAgentTask;
 
 /// <summary>跨 Agent 任务：由一端发起、指定目标端（clientType 或 sessionId）执行。</summary>
 public sealed class CrossAgentTaskItem

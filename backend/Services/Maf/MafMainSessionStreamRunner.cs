@@ -3,15 +3,15 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Diagnostics;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DashScope;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.OpenAiCompat;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Diagnostics;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.OpenAiCompat;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Services.Maf;
+namespace OpenWorkmate.Server.Services.Maf;
 
 /// <summary>使用 MAF <see cref="ChatClientAgent"/> + MEAI 消息流映射主会话 <see cref="StreamItem"/>（主路径；工具表由 <see cref="DynamicToolingTurnState"/> 与 <see cref="SessionToolResolver.BuildDynamicActiveToolList"/> 驱动）。</summary>
 public static class MafMainSessionStreamRunner

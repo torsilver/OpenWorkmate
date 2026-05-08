@@ -1,8 +1,8 @@
 using System.Text;
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server.Services.DashScope;
+using OpenWorkmate.Server.Services.DashScope;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// HITL 确认前：用主模型、无会话历史、无工具，将待执行的命令/脚本原文概括为简短中文说明。

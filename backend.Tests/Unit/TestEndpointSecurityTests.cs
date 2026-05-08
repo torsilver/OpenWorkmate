@@ -1,5 +1,5 @@
 using System.Net;
-using OfficeCopilot.Server.Security;
+using OpenWorkmate.Server.Security;
 using Xunit;
 
 namespace backend.Tests.Unit;

@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 public enum ToolPermissionRuleEffect
 {

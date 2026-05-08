@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// 联调 Moonshot / Kimi 等「Invalid request: text content is empty」时用的出站 messages 结构摘要（不落正文）。

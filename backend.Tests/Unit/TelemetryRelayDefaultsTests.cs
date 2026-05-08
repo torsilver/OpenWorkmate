@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.Telemetry;
 using Xunit;
 
 namespace backend.Tests.Unit;

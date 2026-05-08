@@ -1,12 +1,12 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>内置语音转文字能力（百炼实时 ASR 文件通道），以 MCP_STT 注册 transcribe_audio。</summary>
-[CopilotPluginId("MCP_STT")]
+[OpenWorkmatePluginId("MCP_STT")]
 public sealed class SttPlugin
 {
     private readonly ITranscribeService _transcribeService;

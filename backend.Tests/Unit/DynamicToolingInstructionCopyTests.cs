@@ -1,4 +1,4 @@
-using OfficeCopilot.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.DynamicTooling;
 using Xunit;
 
 namespace backend.Tests.Unit;

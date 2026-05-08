@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Logging;
+using OpenWorkmate.Server.Logging;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 /// <summary>
 /// 将 MCP 服务器工具暴露为 MEAI <see cref="AITool"/> 列表。

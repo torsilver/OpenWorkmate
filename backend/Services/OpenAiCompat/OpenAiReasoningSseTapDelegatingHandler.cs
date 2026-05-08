@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.Chat;
-using OfficeCopilot.Server.Services.DashScope;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.Chat;
+using OpenWorkmate.Server.Services.DashScope;
 
-namespace OfficeCopilot.Server.Services.OpenAiCompat;
+namespace OpenWorkmate.Server.Services.OpenAiCompat;
 
 /// <summary>
 /// 非百炼 OpenAI 兼容 <c>chat/completions</c> 流式响应：不改写请求体，仅挂 SSE 旁路解析

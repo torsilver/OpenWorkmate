@@ -1,14 +1,14 @@
 using System.ComponentModel;
 using System.Text.Json;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Memory;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Memory;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>阶段 3：长期记忆插件，供模型在对话中主动「记住」与「检索」记忆。</summary>
-[CopilotPluginId("Memory")]
+[OpenWorkmatePluginId("Memory")]
 public sealed class MemoryPlugin
 {
     private readonly IMemoryStoreService _memory;

@@ -1,7 +1,7 @@
 using System.Text.Json;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>
 /// 百炼 OpenAI 兼容 <c>POST .../chat/completions</c> 请求体合并（非标准顶层字段）。

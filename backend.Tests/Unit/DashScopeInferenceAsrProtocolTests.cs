@@ -1,5 +1,5 @@
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.Stt;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.Stt;
 using Xunit;
 
 namespace backend.Tests.Unit;

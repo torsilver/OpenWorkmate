@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.Plan;
-using OfficeCopilot.Server.Mcp;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.Plan;
+using OpenWorkmate.Server.Mcp;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>WebSocket 消息。type=<c>agent_status</c> 为准备阶段文案；<c>agent_trace</c> 为内部过程详情；<c>agent_phase</c> 配合 <see cref="Phase"/>（intent/digest）；<c>reasoning_chunk</c> 为模型推理增量（与 <c>stream_chunk</c> 并列），仅供 UI 按序展示，不得在后端或扩展内参与业务判断。<c>reasoning_chunk</c>/<c>stream_chunk</c> 必选 <c>blockSeq</c>、<c>blockKind</c>（think|answer）。OpenAI 兼容流元数据：<c>stream_usage</c>（JSON）、<c>stream_finish</c>、<c>stream_role</c>、<c>stream_meta</c> 与正文并列，<c>blockKind</c> 分别为 usage|finish|role|meta。</summary>
 public class WsMessage
@@ -360,7 +360,7 @@ public sealed class ChromeExtensionIdSyncRequest
 [JsonSerializable(typeof(AiConfig))]
 [JsonSerializable(typeof(SessionConfig))]
 [JsonSerializable(typeof(ContextWindowConfig))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.DynamicTooling.DynamicToolingConfig))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.DynamicTooling.DynamicToolingConfig))]
 [JsonSerializable(typeof(ContextOptimizationPreset))]
 [JsonSerializable(typeof(List<ContextOptimizationPreset>))]
 [JsonSerializable(typeof(AiModelEntry))]
@@ -391,12 +391,12 @@ public sealed class ChromeExtensionIdSyncRequest
 [JsonSerializable(typeof(RagIngestRequest))]
 [JsonSerializable(typeof(MemoryAddRequest))]
 [JsonSerializable(typeof(MemoryUpdateRequest))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.Memory.MemoryRecord))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.Memory.MemoryRecord))]
 [JsonSerializable(typeof(PlanMeta))]
 [JsonSerializable(typeof(List<PlanMeta>))]
 [JsonSerializable(typeof(PlanUpdateRequest))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta))]
-[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.ScheduledTask.ScheduledTaskMeta>))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.ScheduledTask.ScheduledTaskMeta))]
+[JsonSerializable(typeof(List<OpenWorkmate.Server.Services.ScheduledTask.ScheduledTaskMeta>))]
 [JsonSerializable(typeof(ScheduledTaskCreateRequest))]
 [JsonSerializable(typeof(ScheduledTaskUpdateRequest))]
 [JsonSerializable(typeof(MeetingTranscriptSegmentRequest))]
@@ -405,10 +405,10 @@ public sealed class ChromeExtensionIdSyncRequest
 [JsonSerializable(typeof(ToolInvocationDebugStatDto))]
 [JsonSerializable(typeof(List<ToolInvocationDebugStatDto>))]
 [JsonSerializable(typeof(DebugStatsResetResponse))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionListItemDto))]
-[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.Chat.ChatSessionListItemDto>))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionMessageDto))]
-[JsonSerializable(typeof(List<OfficeCopilot.Server.Services.Chat.ChatSessionMessageDto>))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionListResponse))]
-[JsonSerializable(typeof(OfficeCopilot.Server.Services.Chat.ChatSessionMessagesResponse))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.Chat.ChatSessionListItemDto))]
+[JsonSerializable(typeof(List<OpenWorkmate.Server.Services.Chat.ChatSessionListItemDto>))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.Chat.ChatSessionMessageDto))]
+[JsonSerializable(typeof(List<OpenWorkmate.Server.Services.Chat.ChatSessionMessageDto>))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.Chat.ChatSessionListResponse))]
+[JsonSerializable(typeof(OpenWorkmate.Server.Services.Chat.ChatSessionMessagesResponse))]
 internal partial class JsonCtx : JsonSerializerContext;

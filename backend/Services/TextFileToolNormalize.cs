@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 文本类文件工具参数与截断（无 IO，便于单测）。字符上限与 PDF 读文本一致。

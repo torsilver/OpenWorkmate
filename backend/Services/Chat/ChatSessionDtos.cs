@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>GET /api/chat-sessions 单条摘要。</summary>
 public sealed class ChatSessionListItemDto

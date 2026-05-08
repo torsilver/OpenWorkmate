@@ -1,14 +1,14 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Agents.AI;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.Telemetry;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.Telemetry;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// MAF Function Calling Middleware：替代旧的 <c>ToolInvocationPipelineFunction</c>（AIFunction 包装器）。

@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 /// <summary>收紧 CORS：按配置前缀匹配，并始终允许常见扩展与本机调试来源。</summary>
 public static class CorsOriginEvaluator

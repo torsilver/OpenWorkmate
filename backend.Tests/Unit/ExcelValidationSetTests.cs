@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using OfficeCopilot.Server.Plugins;
+using OpenWorkmate.Server.Plugins;
 using Xunit;
 
 namespace backend.Tests.Unit;
@@ -11,7 +11,7 @@ public class ExcelValidationSetTests
     [Fact]
     public void ValidationSet_WhenWorksheetHasPageMargins_insertsDataValidationsBeforePageMargins()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"taskly-dv-{Guid.NewGuid():N}.xlsx");
+        var path = Path.Combine(Path.GetTempPath(), $"OpenWorkmate-dv-{Guid.NewGuid():N}.xlsx");
         try
         {
             var plugin = new ExcelPlugin();
@@ -49,7 +49,7 @@ public class ExcelValidationSetTests
     [Fact]
     public void ValidationSet_ListInlineOptions_GetQuotedFormula1SoDropdownHasItems()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"taskly-dv-q-{Guid.NewGuid():N}.xlsx");
+        var path = Path.Combine(Path.GetTempPath(), $"OpenWorkmate-dv-q-{Guid.NewGuid():N}.xlsx");
         try
         {
             var plugin = new ExcelPlugin();
@@ -81,7 +81,7 @@ public class ExcelValidationSetTests
     [Fact]
     public void ValidationSet_ListCellReference_LeavesFormula1Unquoted()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"taskly-dv-ref-{Guid.NewGuid():N}.xlsx");
+        var path = Path.Combine(Path.GetTempPath(), $"OpenWorkmate-dv-ref-{Guid.NewGuid():N}.xlsx");
         try
         {
             var plugin = new ExcelPlugin();

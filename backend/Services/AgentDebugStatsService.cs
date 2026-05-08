@@ -1,11 +1,11 @@
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 调试统计：主会话工具阶段（含动态工具 bootstrap）与各工具调用成功/失败次数。默认持久化到本机用户目录。
@@ -30,7 +30,7 @@ public sealed class AgentDebugStatsService : IDisposable
     private long _toolFailureBusinessCount;
     private readonly Dictionary<string, (long Success, long Fail)> _toolInvocations = new(StringComparer.Ordinal);
 
-    /// <summary>生产环境：默认路径为 %LocalAppData%\OfficeCopilot\agent-debug-stats.json。</summary>
+    /// <summary>生产环境：默认路径为 %LocalAppData%\OpenWorkmate\agent-debug-stats.json。</summary>
     public AgentDebugStatsService(ILogger<AgentDebugStatsService> logger, IHostApplicationLifetime applicationLifetime)
         : this(logger, GetDefaultPersistencePath(), applicationLifetime) { }
 
@@ -66,7 +66,7 @@ public sealed class AgentDebugStatsService : IDisposable
     public static string GetDefaultPersistencePath()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(appData, "OfficeCopilot", "agent-debug-stats.json");
+        return Path.Combine(appData, "OpenWorkmate", "agent-debug-stats.json");
     }
 
     /// <summary>测试或关机前强制同步落盘（跳过防抖）。</summary>

@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Taskly.AI.Gateway.Storage;
+using OpenWorkmate.AI.Gateway.Storage;
 
-namespace Taskly.AI.Gateway.Endpoints;
+namespace OpenWorkmate.AI.Gateway.Endpoints;
 
 public static class LlmChatCompletionsEndpoint
 {

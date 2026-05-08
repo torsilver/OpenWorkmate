@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Plan;
+namespace OpenWorkmate.Server.Services.Plan;
 
 /// <summary>将本轮选中的 <see cref="AITool"/> 格式化为计划撰写提示中的「可用工具」附录（可截断）。</summary>
 public static class PlanAuthoringToolDigest
@@ -33,7 +33,7 @@ public static class PlanAuthoringToolDigest
             sb.Append(line);
         }
         if (omitted > 0)
-            sb.AppendLine().Append("(以上附录因长度限制省略 ").Append(omitted).Append(" 个工具；仍须遵守：步骤只能依赖本端 Office Copilot 已暴露的工具能力，不得假设附录外手段。)");
+            sb.AppendLine().Append("(以上附录因长度限制省略 ").Append(omitted).Append(" 个工具；仍须遵守：步骤只能依赖本端 Open Workmate 已暴露的工具能力，不得假设附录外手段。)");
         return sb.ToString();
     }
 

@@ -5,9 +5,9 @@
   xsi:type="TaskPaneApp">
   <Id>a1b2c3d4-e5f6-4a5b-8c7d-9e0f1a2b3c4d</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Office Copilot</ProviderName>
+  <ProviderName>Open Workmate</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
-  <DisplayName DefaultValue="Office Copilot" />
+  <DisplayName DefaultValue="Open Workmate" />
   <Description DefaultValue="AI 办公助手侧边栏，连接本地后台，可在当前文档中执行 AI 指令。请在 Chrome 扩展中配置后台与 AI。" />
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />

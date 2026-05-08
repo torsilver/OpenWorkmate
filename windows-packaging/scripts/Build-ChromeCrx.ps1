@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  将 chrome-extension 打成 CRX，并生成 Chrome 外部更新用的 updates.xml（供 Taskly.StaticHost 在 /taskly-chrome 下托管）。
+  将 chrome-extension 打成 CRX，并生成 Chrome 外部更新用的 updates.xml（供 OpenWorkmate.StaticHost 在 /OpenWorkmate-chrome 下托管）。
 
 .PARAMETER RepoRoot
   仓库根目录（含 chrome-extension）。默认：本脚本上溯两级（windows-packaging/scripts -> 仓库根）。
@@ -12,7 +12,7 @@
 param(
   [string]$RepoRoot = "",
   [int]$HttpsPort = 3000,
-  [string]$KeyFileName = "taskly-chrome-extension.pem",
+  [string]$KeyFileName = "OpenWorkmate-chrome-extension.pem",
   [switch]$SkipIfNoKey
 )
 
@@ -29,7 +29,7 @@ $packagingRoot = Join-Path $RepoRoot 'windows-packaging'
 $keysDir = Join-Path $packagingRoot 'keys'
 $keyPath = Join-Path $keysDir $KeyFileName
 $extDir = Join-Path $RepoRoot 'chrome-extension'
-$stageChrome = Join-Path $packagingRoot 'stage\taskly-chrome'
+$stageChrome = Join-Path $packagingRoot 'stage\OpenWorkmate-chrome'
 $nodeTools = Join-Path $packagingRoot 'scripts\node-tools'
 $templatePath = Join-Path $packagingRoot 'chrome-update\updates.xml.template'
 
@@ -62,7 +62,7 @@ if (-not (Test-Path (Join-Path $nodeTools 'node_modules\crx'))) {
 }
 
 New-Item -ItemType Directory -Force -Path $stageChrome | Out-Null
-$outCrx = Join-Path $stageChrome 'Taskly.crx'
+$outCrx = Join-Path $stageChrome 'OpenWorkmate.crx'
 $idPath = Join-Path $stageChrome 'extension-id.txt'
 
 & node (Join-Path $nodeTools 'pack-crx.cjs') $extDir $keyPath $outCrx $idPath
@@ -73,7 +73,7 @@ $manifest = Get-Content (Join-Path $extDir 'manifest.json') -Raw | ConvertFrom-J
 $version = [string]$manifest.version
 if (-not $version) { throw 'manifest.json missing version' }
 
-$crxUrl = "https://localhost:$HttpsPort/taskly-chrome/Taskly.crx"
+$crxUrl = "https://localhost:$HttpsPort/OpenWorkmate-chrome/OpenWorkmate.crx"
 $template = Get-Content -Path $templatePath -Raw -Encoding UTF8
 $xml = $template.Replace('{{EXTENSION_ID}}', $extensionId).Replace('{{CRX_URL}}', $crxUrl).Replace('{{VERSION}}', $version)
 $outXml = Join-Path $stageChrome 'updates.xml'

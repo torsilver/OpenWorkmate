@@ -1,4 +1,4 @@
-# Office Copilot — Office 加载项（Word / Excel / PowerPoint）
+# Open Workmate — Office 加载项（Word / Excel / PowerPoint）
 
 本目录为 **Office 加载项** 独立安装包，与 Chrome 扩展、WPS 加载项分文件夹存放，便于客户按需安装。
 
@@ -30,5 +30,5 @@
 
 ## 连接参数
 
-- WebSocket 默认：`ws://localhost:8765/ws`。若服务端在 `user-config.json` 中配置了 `webSocketAuthToken`，请在任务窗格所在源的开发者工具中执行 `localStorage.setItem('tasklyLocalServiceAuthToken','你的密钥')` 后刷新（与 WPS 任务窗格相同键名）。
+- WebSocket 默认：`ws://localhost:8765/ws`。若服务端在 `user-config.json` 中配置了 `webSocketAuthToken`，请在任务窗格所在源的开发者工具中执行 `localStorage.setItem('openWorkmateLocalServiceAuthToken','你的密钥')` 后刷新（与 WPS 任务窗格相同键名）。
 - 连接时携带 `clientType=office-word` 或 `clientType=office-excel`，便于后台识别客户端能力。

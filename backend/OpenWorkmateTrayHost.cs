@@ -2,13 +2,13 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Threading;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 using Microsoft.Extensions.Hosting;
 
-namespace OfficeCopilot.Server;
+namespace OpenWorkmate.Server;
 
 /// <summary>Windows 托盘：同进程内启动 WebApplication.RunAsync 并跑 WinForms 消息循环。</summary>
-internal static class OfficeCopilotTrayHost
+internal static class OpenWorkmateTrayHost
 {
     public static void Run(WebApplication app, string logViewerUrl)
     {
@@ -32,7 +32,7 @@ internal static class OfficeCopilotTrayHost
         })
         {
             IsBackground = false,
-            Name = "OfficeCopilotTraySta"
+            Name = "OpenWorkmateTraySta"
         };
         uiThread.SetApartmentState(ApartmentState.STA);
         uiThread.Start();
@@ -58,7 +58,7 @@ internal static class OfficeCopilotTrayHost
             {
                 Icon = SystemIcons.Application,
                 Visible = true,
-                Text = "Office Copilot 后台"
+                Text = "Open Workmate 后台"
             };
 
             var menu = new ContextMenuStrip();
@@ -92,7 +92,7 @@ internal static class OfficeCopilotTrayHost
                         var msg = t.Exception?.GetBaseException().Message ?? "未知错误";
                         try
                         {
-                            MessageBox.Show("后台启动失败：\n" + msg, "Office Copilot", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            MessageBox.Show("后台启动失败：\n" + msg, "Open Workmate", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                         catch { /* ignore */ }
                     }
@@ -115,7 +115,7 @@ internal static class OfficeCopilotTrayHost
             catch (Exception ex)
             {
                 MessageBox.Show("无法打开调试日志页：\n" + ex.Message + "\n\n请手动在浏览器打开：\n" + _logViewerUrl,
-                    "Office Copilot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "Open Workmate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -135,7 +135,7 @@ internal static class OfficeCopilotTrayHost
             {
                 MessageBox.Show(
                     "未配置 Chrome 扩展 ID。\n\n请在 user-config.json 中设置 chromeExtensionId。\n扩展 ID 可在 Chrome 打开 chrome://extensions 并开启「开发者模式」后从列表中复制。",
-                    "Office Copilot",
+                    "Open Workmate",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
                 return;
@@ -145,7 +145,7 @@ internal static class OfficeCopilotTrayHost
             {
                 MessageBox.Show(
                     "Chrome 扩展 ID 格式异常（应为 32 位字母数字）。当前值：" + id,
-                    "Office Copilot",
+                    "Open Workmate",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;
@@ -178,7 +178,7 @@ internal static class OfficeCopilotTrayHost
                 MessageBox.Show(
                     "无法打开扩展设置页：\n" + ex.Message +
                     "\n\n请安装 Google Chrome，或手动在 Chrome 地址栏打开：\n" + url,
-                    "Office Copilot",
+                    "Open Workmate",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
@@ -202,7 +202,7 @@ internal static class OfficeCopilotTrayHost
 
         private void ExitFromMenu()
         {
-            const string title = "Office Copilot";
+            const string title = "Open Workmate";
             var confirm = MessageBox.Show(
                 "确定要退出后台吗？\n退出后将停止 AI 服务。",
                 title,

@@ -1,12 +1,12 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using OfficeCopilot.Server;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server;
+using OpenWorkmate.Server.Services;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>将 Office 97–2003 二进制格式（.doc/.dot/.xls/.ppt）通过本机已安装的 Microsoft Office 另存为 Open XML，供后续 Word/Excel/PPT 内核工具使用。</summary>
-[CopilotPluginId("OfficeLegacy")]
+[OpenWorkmatePluginId("OfficeLegacy")]
 public sealed class OfficeLegacyConvertPlugin
 {
     private const int DefaultTimeoutMs = 90_000;
@@ -27,7 +27,7 @@ public sealed class OfficeLegacyConvertPlugin
         CancellationToken cancellationToken = default)
     {
 #if !WINDOWS
-        return "[错误] 当前 Taskly 后台未以 net10.0-windows 构建，未启用 Microsoft Office COM 转换。请使用 Windows 专用发行版后台。";
+        return "[错误] 当前 OpenWorkmate 后台未以 net10.0-windows 构建，未启用 Microsoft Office COM 转换。请使用 Windows 专用发行版后台。";
 #else
         if (!OperatingSystem.IsWindows())
             return "[错误] 本工具仅支持在 Windows 上运行。";

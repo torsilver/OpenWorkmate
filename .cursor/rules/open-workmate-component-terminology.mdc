@@ -1,15 +1,15 @@
 ---
-description: 统一 Taskly 各端称呼与仓库目录对应，避免沟通歧义
+description: 统一 OpenWorkmate 各端称呼与仓库目录对应，避免沟通歧义
 alwaysApply: true
 ---
 
-# Taskly 组件称呼（与用户/文档对齐）
+# OpenWorkmate 组件称呼（与用户/文档对齐）
 
 在对话、注释与文档中优先使用下列**固定称呼**，并对应到仓库路径：
 
 | 称呼 | 含义 | 仓库路径 |
 |------|------|----------|
-| **AI 后台** | Office Copilot 服务端（.NET） | `backend/` |
+| **AI 后台** | Open Workmate 服务端（.NET） | `backend/` |
 | **遥测端** | AI Gateway（策略、ingest、LLM 代理等） | `ai-gateway/` |
 | **Chrome 端** | 浏览器扩展（选项页、侧栏、Workspace 等） | `chrome-extension/` |
 | **Office 端** | Microsoft Office 加载项（任务窗等） | `office-addin/` |

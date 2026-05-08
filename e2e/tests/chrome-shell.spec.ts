@@ -5,10 +5,10 @@ import { test, expect, tinyPngBuffer } from '../fixtures';
  * 无法覆盖项见 `docs/Chrome端手工测试-Playwright无法覆盖清单.md`。
  */
 test.describe('§1.1 侧栏壳（Playwright）', () => {
-  test('C1 侧栏页加载为 Office Copilot 对话壳', async ({ page, extensionId }) => {
+  test('C1 侧栏页加载为 Open Workmate 对话壳', async ({ page, extensionId }) => {
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await expect(page).toHaveTitle(/Office Copilot/);
-    await expect(page.locator('.welcome-title')).toContainText('Office Copilot');
+    await expect(page).toHaveTitle(/Open Workmate/);
+    await expect(page.locator('.welcome-title')).toContainText('Open Workmate');
     await expect(page.locator('#messages')).toBeVisible();
     await expect(page.locator('#input')).toBeVisible();
   });
@@ -39,7 +39,7 @@ test.describe('§1.1 侧栏壳（Playwright）', () => {
     await expect(page.locator('#attachments-preview')).toBeHidden();
     // 新对话会先插入欢迎 HTML，再 connect()；连上后 addSystemMessage 会移除 .welcome，故不能只断言欢迎块。
     await expect(
-      page.getByText(/你好，我是 Office Copilot|已连接到本地服务|未检测到本机 Office Copilot/),
+      page.getByText(/你好，我是 Open Workmate|已连接到本地服务|未检测到本机 Open Workmate/),
     ).toBeVisible({ timeout: 15000 });
   });
 
@@ -48,7 +48,7 @@ test.describe('§1.1 侧栏壳（Playwright）', () => {
     await expect(page.locator('#file-input')).toHaveAttribute('accept', 'image/*');
     await page.locator('#attach-btn').click();
     await page.locator('#file-input').setInputFiles({
-      name: 'taskly-e2e.png',
+      name: 'OpenWorkmate-e2e.png',
       mimeType: 'image/png',
       buffer: tinyPngBuffer,
     });
@@ -65,7 +65,7 @@ test.describe('§1.1 侧栏壳（Playwright）', () => {
 test.describe('选项页直达', () => {
   test('options.html 标题与主容器', async ({ page, extensionId }) => {
     await page.goto(`chrome-extension://${extensionId}/options.html`);
-    await expect(page).toHaveTitle(/Office Copilot/);
+    await expect(page).toHaveTitle(/Open Workmate/);
     await expect(page.locator('.container')).toBeVisible();
   });
 });

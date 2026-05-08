@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>会话 ID 校验与从 <see cref="ChatMessage"/> 列表抽取可持久化文本行（不含 system）。</summary>
 public static class ChatSessionPersistenceHelper

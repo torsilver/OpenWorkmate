@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 短时缓存用户附件（图片等），落盘到临时目录，键为 attachment:guid，避免把 base64 传入 AI 上下文。
@@ -19,7 +19,7 @@ public sealed class AttachmentCacheService
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrEmpty(appData))
             appData = Path.GetTempPath();
-        _tempDir = Path.Combine(appData, "OfficeCopilot", "Attachments");
+        _tempDir = Path.Combine(appData, "OpenWorkmate", "Attachments");
         try
         {
             Directory.CreateDirectory(_tempDir);

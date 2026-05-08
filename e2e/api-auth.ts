@@ -2,11 +2,11 @@ import { request, type APIRequestContext } from '@playwright/test';
 
 /** 与 playwright.config.ts `use.baseURL` 一致 */
 export function apiBaseURL(): string {
-  return process.env.OFFICE_COPILOT_E2E_API_BASE || 'http://127.0.0.1:8765';
+  return process.env.OPEN_WORKMATE_E2E_API_BASE || 'http://127.0.0.1:8765';
 }
 
 /**
- * 先拉 loopback 的 bootstrap 拿到 `webSocketAuthToken`，再带 `X-OfficeCopilot-Token` 调其它 /api/*。
+ * 先拉 loopback 的 bootstrap 拿到 `webSocketAuthToken`，再带 `X-OpenWorkmate-Token` 调其它 /api/*。
  * 与服务端 `LocalApiAuthMiddleware` 行为一致。
  */
 export async function createAuthedApiContext(): Promise<APIRequestContext> {
@@ -19,7 +19,7 @@ export async function createAuthedApiContext(): Promise<APIRequestContext> {
       try {
         const j = (await boot.json()) as { webSocketAuthToken?: string };
         const t = (j.webSocketAuthToken && String(j.webSocketAuthToken).trim()) || '';
-        if (t) headers['X-OfficeCopilot-Token'] = t;
+        if (t) headers['X-OpenWorkmate-Token'] = t;
       } catch {
         /* ignore body parse */
       }

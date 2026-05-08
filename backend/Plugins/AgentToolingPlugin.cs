@@ -1,14 +1,14 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
-using OfficeCopilot.Server.Services;
-using OfficeCopilot.Server.Services.DynamicTooling;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services;
+using OpenWorkmate.Server.Services.DynamicTooling;
+using OpenWorkmate.Server.Services.ToolInvocation;
 
-namespace OfficeCopilot.Server.Plugins;
+namespace OpenWorkmate.Server.Plugins;
 
 /// <summary>动态工具引导：检索允许列表内的工具元数据并激活，供主会话扩容 <see cref="Microsoft.Extensions.AI.ChatOptions.Tools"/>。</summary>
-[CopilotPluginId("AgentTooling")]
+[OpenWorkmatePluginId("AgentTooling")]
 public sealed class AgentToolingPlugin
 {
     private readonly IChatRuntimeAccessor _runtime;

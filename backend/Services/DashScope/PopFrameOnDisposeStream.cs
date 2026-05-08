@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Services.DashScope;
+namespace OpenWorkmate.Server.Services.DashScope;
 
 /// <summary>在释放底层流时执行一次回调（用于结束百炼推理 AsyncLocal 帧）。</summary>
 internal sealed class PopFrameOnDisposeStream : Stream

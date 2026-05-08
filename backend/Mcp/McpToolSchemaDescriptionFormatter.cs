@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 /// <summary>
 /// MEAI 10.4 的 <c>AIFunctionFactoryOptions</c> 无法挂载 MCP <c>inputSchema</c>，将 schema 以受控长度附加到工具 Description，供模型填参参考。

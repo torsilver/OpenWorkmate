@@ -1,4 +1,4 @@
-namespace OfficeCopilot.Server.Mcp;
+namespace OpenWorkmate.Server.Mcp;
 
 public class McpServerConfig
 {

@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 工具能力元数据（对标 Claude Code 类 harness 的 read-only / destructive / HITL 提示），供日志与未来并行策略使用。

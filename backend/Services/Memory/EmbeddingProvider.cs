@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services.Memory;
+namespace OpenWorkmate.Server.Services.Memory;
 
 /// <summary>持有当前嵌入服务引用（MEAI <see cref="IEmbeddingGenerator{String, Embedding}"/>），由 ChatService 在 RebuildRuntimeAsync 后更新。</summary>
 public sealed class EmbeddingProvider : IEmbeddingProvider

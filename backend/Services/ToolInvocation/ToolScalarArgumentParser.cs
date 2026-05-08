@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace OfficeCopilot.Server.Services.ToolInvocation;
+namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
 /// 将模型工具参数中的 <see cref="JsonElement"/> 宽松解析为标量，避免 JSON 字符串与布尔/数字类型不一致导致 MEAI 反射绑定期 <see cref="JsonException"/>。

@@ -14,7 +14,7 @@ async function tryGetOk(
 }
 
 /**
- * 需本机已启动后端，且 `OFFICE_COPILOT_E2E_API_BASE`（或默认 127.0.0.1:8765）可访问。
+ * 需本机已启动后端，且 `OPEN_WORKMATE_E2E_API_BASE`（或默认 127.0.0.1:8765）可访问。
  * 连不上则 skip，不判失败（避免无后端时 CI/本地误红）。
  */
 test.describe('后端可选：HTTP 与 §1.4 A1 壳', () => {

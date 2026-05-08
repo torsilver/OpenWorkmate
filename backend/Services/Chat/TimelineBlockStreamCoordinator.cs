@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>
 /// 每会话、每轮 stream_start 起的推理/正文时间线逻辑段序号（与 WS reasoning_chunk / stream_chunk 的 blockSeq、blockKind 一致）。

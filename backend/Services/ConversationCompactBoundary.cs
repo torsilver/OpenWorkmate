@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.AI;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 对话压缩边界：摘要消息内嵌机器可解析标记，裁剪历史时保护摘要及其后一条锚点消息。

@@ -1,8 +1,8 @@
 using System.Text.Json;
-using OfficeCopilot.Server.Services.ToolInvocation;
+using OpenWorkmate.Server.Services.ToolInvocation;
 using Xunit;
 
-namespace OfficeCopilot.Server.Tests.Unit;
+namespace OpenWorkmate.Server.Tests.Unit;
 
 public sealed class ToolScalarArgumentParserTests
 {

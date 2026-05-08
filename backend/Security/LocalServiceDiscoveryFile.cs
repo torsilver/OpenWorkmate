@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting.Server;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Security;
+namespace OpenWorkmate.Server.Security;
 
 public sealed class LocalServiceDiscoveryPayload
 {
@@ -38,7 +38,7 @@ public static class LocalServiceDiscoveryFile
     {
         try
         {
-            var dir = LocalServiceDiscoveryPaths.GetOfficeCopilotDataDirectory();
+            var dir = LocalServiceDiscoveryPaths.GetOpenWorkmateDataDirectory();
             Directory.CreateDirectory(dir);
             var path = LocalServiceDiscoveryPaths.GetDiscoveryFilePath();
             var payload = new LocalServiceDiscoveryPayload

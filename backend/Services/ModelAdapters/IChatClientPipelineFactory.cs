@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services.ModelAdapters;
+namespace OpenWorkmate.Server.Services.ModelAdapters;
 
 /// <summary>为单条 <see cref="AiModelEntry"/> 构建主对话用 <see cref="IChatClient"/>（OpenAI SDK + MEAI 包装 + HTTP 管道）。</summary>
 public interface IChatClientPipelineFactory

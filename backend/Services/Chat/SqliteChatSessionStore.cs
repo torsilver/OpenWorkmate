@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace OfficeCopilot.Server.Services.Chat;
+namespace OpenWorkmate.Server.Services.Chat;
 
 /// <summary>在目录下使用 <c>chat-sessions.db</c> 存储会话元数据与消息行（WAL，外键开启）。</summary>
 public sealed class SqliteChatSessionStore : IChatSessionStore

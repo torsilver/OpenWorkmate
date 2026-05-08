@@ -1,8 +1,8 @@
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.DependencyInjection;
-using OfficeCopilot.Server.Diagnostics;
+using OpenWorkmate.Server.Diagnostics;
 
-namespace OfficeCopilot.Server.Services.Chat.Executors;
+namespace OpenWorkmate.Server.Services.Chat.Executors;
 
 /// <summary>
 /// 构建主会话单轮的三阶段 MAF Workflow：ContextPrepPart1 → ContextPrepPart2 → ToolingPhase。

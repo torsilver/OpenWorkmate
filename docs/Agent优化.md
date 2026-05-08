@@ -10,12 +10,12 @@
 |----|------|
 | System 拼装集中化 | `SystemPromptBuilder`：`BuildHistoryForStreamingTurn`、`GetClientTypeIdentitySuffix`、固定指令常量；单元测试见 `backend.Tests/Unit/SystemPromptBuilderTests.cs` |
 | 轮次关联 | `StreamChatTurnContext.RoundId`、`SessionContext.SetRoundId` / `GetRoundId`；Compaction、MAF 流、回合结束等日志带 `RoundId`；`Maf.MainSession.Stream` Activity 含 `roundId` |
-| Context 只读快照 | `ContextTurnSnapshot.TryLogAndOptionalFile`：默认 Debug 日志；环境变量 `OFFICECOPILOT_CONTEXT_SNAPSHOT_DIR` 时落盘 JSON（见类注释：与持久历史、本轮 `HistoryToUse` 对照） |
+| Context 只读快照 | `ContextTurnSnapshot.TryLogAndOptionalFile`：默认 Debug 日志；环境变量 `OpenWorkmate_CONTEXT_SNAPSHOT_DIR` 时落盘 JSON（见类注释：与持久历史、本轮 `HistoryToUse` 对照） |
 | Token 预算文档 | [Token预算与上下文裁剪.md](Token预算与上下文裁剪.md)；`ContextWindowConfig` 注释引用 |
 | Memory 分工文档 | [Memory注入与search_memory分工.md](Memory注入与search_memory分工.md) |
 | 重试裁剪与主路径一致 | `ContextLengthRetryHelper` 委托 `ContextManager.TrimHistoryForRetry`；`TrimHistoryForRetry` 的 token 与主路径一致（`EstimateMessageTokens`，含多模态片段占位） |
 | 动态工具排序增强 | `ToolCatalogSuccessBoost` 进程内成功计数；`ToolCatalogIndex.Search` 可选加分；单元测试见 `ToolCatalogIndexTests` / `ToolCatalogSuccessBoostTests` |
-| Compaction 实验诊断 | `CompactionRelevanceDiagnostics`：`OFFICECOPILOT_COMPACTION_RELEVANCE_LOG=1` 时打重叠度日志 |
+| Compaction 实验诊断 | `CompactionRelevanceDiagnostics`：`OpenWorkmate_COMPACTION_RELEVANCE_LOG=1` 时打重叠度日志 |
 | Query-aware 启发式（实验） | `CompactionQueryAwareHeuristic` + `ContextWindowConfig.CompactionQueryAware*`；Part1 在 MAF 前可选删低重叠旧消息；单元测试 `CompactionQueryAwareHeuristicTests` |
 | 动态上下文压缩说明 | [动态上下文压缩.md](动态上下文压缩.md) 与实现对齐 |
 
@@ -40,7 +40,7 @@
 
 在改 Compaction 策略或调预算前，建议先做一次可复现对照：
 
-1. 设置 **`OFFICECOPILOT_COMPACTION_RELEVANCE_LOG=1`**；可选设置 **`OFFICECOPILOT_CONTEXT_SNAPSHOT_DIR`** 为可写目录。
+1. 设置 **`OpenWorkmate_COMPACTION_RELEVANCE_LOG=1`**；可选设置 **`OpenWorkmate_CONTEXT_SNAPSHOT_DIR`** 为可写目录。
 2. 用同一「长会话」各跑一轮：**`SummarizationEnabled: false`**（仅轮数 + token 裁剪 + 可选启发式）与 **`SummarizationEnabled: true`**（再加 MAF Compaction）。
 3. 记录：`RoundId`、日志中的 `CompactionRelevance` 行、前端 **context** trace（「历史压缩」等）、是否触发 **context_length** 重试。
 

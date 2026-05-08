@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using OfficeCopilot.Server;
+using OpenWorkmate.Server;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// Chrome 会议监听实录：按会话 id 追加转写段落（JSONL），供超长会议落盘与 <see cref="Plugins.MeetingTranscriptPlugin"/> 分块读取。
@@ -63,7 +63,7 @@ public sealed class MeetingTranscriptStore : IMeetingTranscriptStore
     private static string GetRootDirectory()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(appData, "OfficeCopilot", "MeetingTranscripts");
+        var dir = Path.Combine(appData, "OpenWorkmate", "MeetingTranscripts");
         Directory.CreateDirectory(dir);
         return dir;
     }

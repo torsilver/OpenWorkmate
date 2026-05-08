@@ -5,10 +5,10 @@
   xsi:type="TaskPaneApp">
   <Id>a1b2c3d4-e5f6-4a5b-8c7d-9e0f1a2b3c4d</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Office Copilot</ProviderName>
+  <ProviderName>Open Workmate</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
-  <DisplayName DefaultValue="Office Copilot" />
-  <Description DefaultValue="AI 办公助手（安装包）。任务窗连接本机 Taskly.StaticHost。" />
+  <DisplayName DefaultValue="Open Workmate" />
+  <Description DefaultValue="AI 办公助手（安装包）。任务窗连接本机 OpenWorkmate.StaticHost。" />
   <IconUrl DefaultValue="{{BASE_URL}}/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="{{BASE_URL}}/assets/icon-64.png" />
   <SupportUrl DefaultValue="{{BASE_URL}}/" />

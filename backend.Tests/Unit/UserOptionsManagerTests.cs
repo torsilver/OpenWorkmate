@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
-using OfficeCopilot.Server.Services;
+using OpenWorkmate.Server.Services;
 using Xunit;
 
 namespace backend.Tests.Unit;

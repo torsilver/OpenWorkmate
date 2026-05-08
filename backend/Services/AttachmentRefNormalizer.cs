@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace OfficeCopilot.Server.Services;
+namespace OpenWorkmate.Server.Services;
 
 /// <summary>
 /// 将模型或用户传入的附件引用规范为缓存字典键：<c>attachment:</c> + 32 位小写 hex（与 <see cref="Guid.ToString(string)"/> N 格式一致）。

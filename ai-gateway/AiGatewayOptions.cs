@@ -1,4 +1,4 @@
-namespace Taskly.AI.Gateway;
+namespace OpenWorkmate.AI.Gateway;
 
 public sealed class AiGatewayOptions
 {
