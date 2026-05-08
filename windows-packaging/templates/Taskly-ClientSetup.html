@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Taskly 安装后配置</title>
+  <style>
+    body { font-family: Segoe UI, Microsoft YaHei, sans-serif; line-height: 1.6; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.35rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+    code, pre { background: #f4f4f4; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9rem; }
+    pre { padding: 0.75rem; overflow-x: auto; }
+    .note { background: #fff8e6; border-left: 4px solid #e6a800; padding: 0.75rem 1rem; margin: 1rem 0; }
+    ol li { margin: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Taskly 安装后配置（Office / Chrome / WPS）</h1>
+  <p>MSI 已将程序文件安装到本目录。请先使用开始菜单中的 <strong>Start Taskly</strong> 启动本机服务（后台托盘 + Gateway + HTTPS 静态站），再按下面步骤完成各客户端一次性配置。</p>
+  <div class="note">
+    <strong>说明：</strong>Chrome 与 Office 商店策略限制，安装程序无法在无交互情况下自动替你「装好」扩展与加载项；下列为官方支持的旁加载 / 策略方式。
+  </div>
+
+  <h2>1. 启动服务</h2>
+  <ol>
+    <li>打开开始菜单 → <strong>Taskly</strong> → <strong>Start Taskly</strong>。</li>
+    <li>后台应在系统托盘出现 Office Copilot 图标；本机 HTTPS 为 <code>https://localhost:PORT</code>（默认端口见打包时的 StaticHost 配置，一般为 3000）。</li>
+    <li>若浏览器提示证书不受信任，请在开发环境执行 <code>dotnet dev-certs https --trust</code>（见主仓库 README）。</li>
+  </ol>
+
+  <h2>2. Microsoft Office 加载项</h2>
+  <ol>
+    <li>打开 Word 或 Excel。</li>
+    <li><strong>插入</strong> → <strong>加载项</strong> → <strong>我的加载项</strong> → <strong>上传我的加载项</strong>。</li>
+    <li>选择与本目录并列的 <code>office-addin\manifest-install.xml</code>（完整路径即：<em>本安装目录</em><code>\office-addin\manifest-install.xml</code>）。</li>
+  </ol>
+
+  <h2>3. Chrome 扩展（企业策略 / 本机更新）</h2>
+  <ol>
+    <li>确认 <strong>Start Taskly</strong> 已运行，且能访问 <code>https://localhost:3000/taskly-chrome/updates.xml</code>（端口以你环境为准）。</li>
+    <li>在安装目录运行 <code>Install-ChromePolicy.ps1</code>（右键「使用 PowerShell 运行」或在 PowerShell 中执行）。</li>
+    <li>完全退出并重新打开 Chrome，打开 <code>chrome://policy</code> 确认 <code>ExtensionInstallForcelist</code> 已生效。</li>
+  </ol>
+
+  <h2>4. WPS 加载项</h2>
+  <ol>
+    <li>在 WPS 中按官方文档进行「加载项 / 插件」开发或调试入口，指向本安装目录下的 <code>wps-addin</code> 构建产物（含 <code>manifest.xml</code>）。</li>
+    <li>具体菜单名称以你本机 WPS 版本为准；开发调试可使用仓库中的 <code>wpsjs debug</code> 流程对照。</li>
+  </ol>
+
+  <p style="margin-top:2rem;color:#666;font-size:0.9rem;">本页位于安装目录：<code>Taskly-ClientSetup.html</code></p>
+</body>
+</html>

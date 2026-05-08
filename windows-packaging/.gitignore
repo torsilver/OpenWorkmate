@@ -1,0 +1,8 @@
+# 构建产物与密钥（勿提交）
+dist/
+stage/
+keys/*.pem
+keys/extension-id.txt
+
+# Node 工具本地依赖
+scripts/node-tools/node_modules/
