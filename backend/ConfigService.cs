@@ -1148,13 +1148,7 @@ public sealed class ConfigService
             });
         }
 
-        config.AgentProfiles = next;
-        if (config.AgentProfiles.Count == 0)
-        {
-            config.AgentProfiles.Add(new AgentProfileEntry { Id = "default", DisplayName = "默认助手" });
-            config.ActiveAgentProfileId = "default";
-            return;
-        }
+        config.AgentProfiles = BuiltInAgentProfileDefaults.MergeWithUserProfiles(next);
 
         var active = (config.ActiveAgentProfileId ?? "").Trim();
         if (string.IsNullOrEmpty(active) ||

@@ -654,11 +654,7 @@
       <details class="settings-block" id="agentProfilesDetails">
         <summary>Agent 身份（侧栏）</summary>
         <div class="settings-block-inner">
-          <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">用于区分记忆/计划归属与可选的 system 后缀；<strong>不</strong>绑定独立对话模型（全局仍用上方「当前」对话模型）。侧栏切换 Agent 会新开会话并重连 WebSocket。</p>
-          <div class="form-group" style="margin-bottom: 12px;">
-            <label for="optionsActiveAgentProfileSelect">默认 Agent（服务端在 WS 未带 <code>agentProfileId</code> 时使用）</label>
-            <select id="optionsActiveAgentProfileSelect" style="min-width: 200px;"></select>
-          </div>
+          <p class="help-text" style="margin-top: 0; margin-bottom: 12px;">用于区分记忆/计划归属与可选的 system 后缀；<strong>不</strong>绑定独立对话模型（全局仍用上方「当前」对话模型）。侧栏切换 Agent 会新开会话并重连 WebSocket。在列表中点「设为默认」可指定服务端默认身份（WebSocket 未带 <code>agentProfileId</code> 时使用）。</p>
           <div id="agentProfilesList" class="ai-models-list"></div>
           <button type="button" id="addAgentProfileBtn" class="btn-secondary" style="margin-top: 12px;">+ 添加 Agent</button>
           <div id="agentProfileEditor" class="skill-card" style="display: none; margin-top: 20px;">

@@ -826,7 +826,17 @@ export function useCopilot() {
           displayName: String((p.displayName ?? p.DisplayName ?? p.id) || '助手').trim()
         }))
       : []
-    if (normalized.length === 0) normalized = [{ id: 'default', displayName: '默认助手' }]
+    if (normalized.length === 0) {
+      normalized = [
+        { id: 'default', displayName: '默认助手' },
+        { id: 'moe', displayName: '萌萌助手' },
+        { id: 'ceo', displayName: '霸气总裁' },
+        { id: 'pro', displayName: '专业高手' },
+        { id: 'poet', displayName: '文艺诗人' },
+        { id: 'roast', displayName: '损友吐槽' },
+        { id: 'zen', displayName: '冷静极简' }
+      ]
+    }
     agentProfileOptions.value = normalized
     const serverDefault = String(data.activeAgentProfileId || data.ActiveAgentProfileId || 'default').trim() || 'default'
     let cur = activeAgentProfileId.value

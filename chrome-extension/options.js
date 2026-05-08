@@ -699,6 +699,19 @@ function updateOcrModelSummary() {
 var agentProfilesCache = [];
 var editingAgentProfileId = null;
 
+/** 与后端 BuiltInAgentProfileDefaults 一致：无配置或拉取失败时的侧栏预设。 */
+function tasklyBuiltInAgentProfilesFallback() {
+  return [
+    { id: 'default', displayName: '默认助手', systemPromptSuffix: '' },
+    { id: 'moe', displayName: '萌萌助手', systemPromptSuffix: '你是「萌萌助手」：请用轻松软萌、亲切的语气与用户交流，可适度使用「呀、呢、喔」等语气词与少量颜文字。回答须真实准确；涉及安全、法律、医疗等专业问题时仍要严谨说明，勿用卖萌代替依据。' },
+    { id: 'ceo', displayName: '霸气总裁', systemPromptSuffix: '你是「霸道总裁」人设：语气自信果断、略带距离感但保持礼貌，表述简短有力。遇到不确定或风险时必须明确说明，勿用强硬口吻掩盖；禁止油腻、骚扰、贬低用户。' },
+    { id: 'pro', displayName: '专业高手', systemPromptSuffix: '你是「专业高手」：像资深顾问一样先给结论再讲依据，分条说明，可执行、可验证；避免空话套话，语气克制专业。' },
+    { id: 'poet', displayName: '文艺诗人', systemPromptSuffix: '你是「文艺诗人」：在准确、清楚的前提下，可用略带文采与意象的中文表达；避免生僻字堆砌，复杂说明仍要层次分明。' },
+    { id: 'roast', displayName: '损友吐槽', systemPromptSuffix: '你是「损友」型搭档：可先一两句轻松吐槽再认真解决问题，俏皮不刻薄；禁止人身攻击、歧视、低俗；涉及安全与合规须立即严肃说明。' },
+    { id: 'zen', displayName: '冷静极简', systemPromptSuffix: '你是「冷静极简」：能用一句话就不用两句，去掉客套与多余感叹；仍须准确、完整地覆盖用户问题的实质要点。' }
+  ];
+}
+
 function syncAgentProfilesCacheFromFullConfig() {
   var data = fullConfig || {};
   var raw = data.agentProfiles || data.AgentProfiles;
@@ -713,22 +726,24 @@ function syncAgentProfilesCacheFromFullConfig() {
       };
     }).filter(function (p) { return p.id; });
   } else {
-    agentProfilesCache = [{ id: 'default', displayName: '默认助手', systemPromptSuffix: '' }];
+    agentProfilesCache = tasklyBuiltInAgentProfilesFallback().map(function (p) {
+      return { id: p.id, displayName: p.displayName, systemPromptSuffix: p.systemPromptSuffix || '' };
+    });
   }
 }
 
 function getOptionsActiveAgentProfileId() {
-  var el = document.getElementById('optionsActiveAgentProfileSelect');
-  if (el && el.options.length && el.value) return el.value;
   var a = fullConfig && (fullConfig.activeAgentProfileId || fullConfig.ActiveAgentProfileId);
-  if (a) return String(a);
+  if (a) {
+    var sid = String(a).trim();
+    if (sid && agentProfilesCache.some(function (x) { return x.id === sid; })) return sid;
+  }
   return agentProfilesCache[0] ? agentProfilesCache[0].id : 'default';
 }
 
 function renderAgentProfilesList() {
   syncAgentProfilesCacheFromFullConfig();
   var listEl = document.getElementById('agentProfilesList');
-  var selEl = document.getElementById('optionsActiveAgentProfileSelect');
   if (!listEl) return;
   var activeId = String((fullConfig && (fullConfig.activeAgentProfileId || fullConfig.ActiveAgentProfileId)) || '').trim();
   if (!activeId && agentProfilesCache[0]) activeId = agentProfilesCache[0].id;
@@ -748,7 +763,7 @@ function renderAgentProfilesList() {
       fullConfig = fullConfig || {};
       fullConfig.activeAgentProfileId = btn.dataset.id;
       fullConfig.ActiveAgentProfileId = btn.dataset.id;
-      scheduleSaveConfig();
+      debouncedSaveConfig();
       renderAgentProfilesList();
     });
   });
@@ -758,26 +773,6 @@ function renderAgentProfilesList() {
   listEl.querySelectorAll('.delete-ap-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { deleteAgentProfile(btn.dataset.id); });
   });
-  if (selEl) {
-    var prev = selEl.value;
-    selEl.innerHTML = '';
-    agentProfilesCache.forEach(function (p) {
-      var opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.displayName || p.id;
-      selEl.appendChild(opt);
-    });
-    var pick = prev && agentProfilesCache.some(function (x) { return x.id === prev; }) ? prev : activeId;
-    if (!pick || !agentProfilesCache.some(function (x) { return x.id === pick; })) pick = agentProfilesCache[0] ? agentProfilesCache[0].id : '';
-    selEl.value = pick;
-    selEl.onchange = function () {
-      fullConfig = fullConfig || {};
-      fullConfig.activeAgentProfileId = selEl.value;
-      fullConfig.ActiveAgentProfileId = selEl.value;
-      scheduleSaveConfig();
-      renderAgentProfilesList();
-    };
-  }
 }
 
 function closeAgentProfileEditor() {
@@ -830,7 +825,7 @@ function saveAgentProfileFromEditor() {
   fullConfig.agentProfiles = agentProfilesCache;
   fullConfig.AgentProfiles = agentProfilesCache;
   closeAgentProfileEditor();
-  scheduleSaveConfig();
+  debouncedSaveConfig();
   renderAgentProfilesList();
 }
 
@@ -851,7 +846,7 @@ function deleteAgentProfile(id) {
     fullConfig.activeAgentProfileId = agentProfilesCache[0].id;
     fullConfig.ActiveAgentProfileId = agentProfilesCache[0].id;
   }
-  scheduleSaveConfig();
+  debouncedSaveConfig();
   renderAgentProfilesList();
 }
 

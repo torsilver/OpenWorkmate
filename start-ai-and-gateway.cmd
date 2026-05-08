@@ -38,7 +38,7 @@ REM WPS 加载项调试（默认关闭）：需在 wps-addin-new 目录执行，
 REM 启用：去掉下一行开头的 REM（会多开一个控制台跑 npx wpsjs debug）。
 REM 文档：docs\WPS插件调试指南.md
 REM ---------------------------------------------------------------------------
-start "Taskly WPS Add-in (wpsjs debug)" cmd /k cd /d "%ROOT%wps-addin-new" ^&^& npx wpsjs debug
+REM start "Taskly WPS Add-in (wpsjs debug)" cmd /k cd /d "%ROOT%wps-addin-new" ^&^& npx wpsjs debug
 
 echo.
 echo 已打开：AI 后台、AI Gateway、Office 加载项 HTTPS 共三个控制台窗口（WPS 行默认注释）。
