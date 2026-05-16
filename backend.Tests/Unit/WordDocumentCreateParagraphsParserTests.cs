@@ -64,6 +64,17 @@ public class WordDocumentCreateParagraphsParserTests
         Assert.Equal(new[] { "p1", "p2" }, arr);
     }
 
+    /// <summary>模型常见：首项为封面/标题行，第二项为整段 JSON 数组字面量；须展开第二项而非整段写入 Word。</summary>
+    [Fact]
+    public void Parse_ArrayWithTitlePlusJsonArrayLiteralString_ExpandsSecondItem()
+    {
+        var inner = """["# H1", "## H2\nx"]""";
+        var el = JsonSerializer.SerializeToElement(new[] { "封面标题", inner });
+        var arr = WordDocumentCreateParagraphsParser.Parse(el);
+        Assert.NotNull(arr);
+        Assert.Equal(new[] { "封面标题", "# H1", "## H2\nx" }, arr);
+    }
+
     [Fact]
     public void Parse_StringThatIsNotJsonArray_StaysSingleParagraph()
     {

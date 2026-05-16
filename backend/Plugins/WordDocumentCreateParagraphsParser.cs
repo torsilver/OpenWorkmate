@@ -25,10 +25,18 @@ internal static class WordDocumentCreateParagraphsParser
             case JsonValueKind.Array:
             {
                 var raw = e.EnumerateArray().Select(ElementToParagraphString).ToArray();
-                // 常见误用：整段 ["…","…"] 被塞进数组的单个字符串元素（或仅一项且该项为 JSON 数组字面量）
-                if (raw.Length == 1 && TryExpandEmbeddedJsonStringArray(raw[0], out var one))
-                    return one;
-                return raw;
+                // 常见误用：整段 ["…","…"] 被塞进数组的**单个**元素；或「标题串 + 一整段 JSON 数组字面量」共两项。
+                // 对每一项尝试展开，避免仅 length==1 时才展开导致第二项原样落盘。
+                var flat = new List<string>(raw.Length + 4);
+                foreach (var seg in raw)
+                {
+                    if (TryExpandEmbeddedJsonStringArray(seg, out var expanded))
+                        flat.AddRange(expanded);
+                    else
+                        flat.Add(seg);
+                }
+
+                return flat.Count == 0 ? Array.Empty<string>() : flat.ToArray();
             }
             case JsonValueKind.String:
             {

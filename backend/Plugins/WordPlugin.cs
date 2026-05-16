@@ -171,6 +171,12 @@ public sealed class WordPlugin
         if (!OpenXmlHelpers.ValidateWordExtension(filePath, out var extErr)) return extErr;
         if (!WordDocumentCreatePresetParser.TryParse(documentPreset, out var preset, out var presetErr))
             return presetErr!;
+        if (!WordDocumentCreateHarness.TryValidateParsedParagraphs(paragraphsArray, out var harnessRejection))
+        {
+            _logger?.LogInformation("[Word] word_document_create harness rejected path={Path} message={Message}", filePath, harnessRejection);
+            return harnessRejection!;
+        }
+
         var paragraphsJoined = NormalizeWordDocumentCreateParagraphsArray(paragraphsArray);
         if (string.IsNullOrWhiteSpace(title))
         {
