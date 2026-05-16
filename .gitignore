@@ -52,9 +52,8 @@ Thumbs.db
 .idea/
 *.iml
 
-# ---- 嵌入模型与日志（大文件/运行时） ----
+# ---- 嵌入模型（大文件/运行时） ----
 *.gguf
-backend/logs/
 
 # 本地 RAG / 工具向量 SQLite（运行时生成）
 backend/Data/

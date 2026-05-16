@@ -4,11 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace OpenWorkmate.Server;
 
-/// <summary>本机调试：解析 Serilog 滚动日志路径并安全读取尾部（仅允许 office-copilot-*.txt）。目录与 <c>Program.cs</c> 中 Serilog File sink 一致。</summary>
+/// <summary>本机调试：解析 Serilog 滚动日志路径并安全读取尾部（仅允许 openworkmate-*.txt）。目录与 <c>Program.cs</c> 中 Serilog File sink 一致。</summary>
 public static class DebugLogHelper
 {
     private static readonly Regex SafeLogName = new(
-        @"^office-copilot-\d{8}(_\d+)?\.txt$",
+        @"^openworkmate-\d{8}(_\d+)?\.txt$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     /// <summary>%LocalAppData%\OpenWorkmate\logs（与当前工作目录无关，避免 MSI/快捷方式下 cwd 落在 Program Files 时读不到日志）。</summary>
@@ -31,7 +31,7 @@ public static class DebugLogHelper
         var dir = LogsDirectory;
         if (!Directory.Exists(dir)) return Array.Empty<string>();
 
-        return Directory.GetFiles(dir, "office-copilot-*.txt")
+        return Directory.GetFiles(dir, "openworkmate-*.txt")
             .Select(Path.GetFileName)
             .Where(n => n != null && SafeLogName.IsMatch(n))
             .Cast<string>()
@@ -44,6 +44,67 @@ public static class DebugLogHelper
         if (string.IsNullOrEmpty(name)) return false;
         if (name.Contains('\\') || name.Contains('/') || name.Contains("..")) return false;
         return SafeLogName.IsMatch(name);
+    }
+
+    /// <summary>删除早于「当前 UTC 减去 <paramref name="retentionDays"/> 天」的 Serilog 滚动日志（仅白名单文件名）。</summary>
+    /// <param name="logsDirectoryOverride">为 null 时使用 <see cref="LogsDirectory"/>；单测可传临时目录。</param>
+    /// <returns>成功删除的文件数。</returns>
+    public static int DeleteRollingLogsOlderThanDays(int retentionDays, string? logsDirectoryOverride = null)
+    {
+        if (retentionDays < 1)
+            return 0;
+
+        var dir = string.IsNullOrEmpty(logsDirectoryOverride) ? LogsDirectory : logsDirectoryOverride!;
+        if (!Directory.Exists(dir))
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+        string[] paths;
+        try
+        {
+            paths = Directory.GetFiles(dir, "openworkmate-*.txt", SearchOption.TopDirectoryOnly);
+        }
+        catch
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        foreach (var path in paths)
+        {
+            var name = Path.GetFileName(path);
+            if (name == null || !IsAllowedLogFileName(name))
+                continue;
+
+            DateTime mtimeUtc;
+            try
+            {
+                mtimeUtc = File.GetLastWriteTimeUtc(path);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (mtimeUtc >= cutoff)
+                continue;
+
+            try
+            {
+                File.Delete(path);
+                removed++;
+            }
+            catch (IOException)
+            {
+                // 可能仍被 Serilog 占用；下周期再试
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 权限等；忽略
+            }
+        }
+
+        return removed;
     }
 
     /// <summary>读取指定文件或最新文件的尾部行（最多 maxLines）。</summary>
@@ -61,7 +122,7 @@ public static class DebugLogHelper
         {
             var names = ListLogFileNames();
             if (names.Count == 0)
-                return (null, Array.Empty<string>(), "未找到 office-copilot-*.txt 日志文件。");
+                return (null, Array.Empty<string>(), "未找到 openworkmate-*.txt 日志文件。");
             path = Path.Combine(dir, names[0]);
             fileName = names[0];
         }

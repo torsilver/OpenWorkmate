@@ -73,7 +73,7 @@ try
         lc.MinimumLevel.Debug()
             .Enrich.FromLogContext()
             .WriteTo.Console()
-            .WriteTo.File(Path.Combine(logDir, "office-copilot-.txt"), rollingInterval: RollingInterval.Day);
+            .WriteTo.File(Path.Combine(logDir, "openworkmate-.txt"), rollingInterval: RollingInterval.Day);
     });
 
     LocalListenUrlConfigurer.Apply(builder);
@@ -85,6 +85,7 @@ try
     builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.ITelemetryRelayQueue>(sp =>
         sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.TelemetryRelayQueue>());
     builder.Services.AddHostedService<OpenWorkmate.Server.Services.Telemetry.TelemetryRelayDispatchService>();
+    builder.Services.AddHostedService<SerilogFileRetentionBackgroundService>();
     builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>();
     builder.Services.AddSingleton<OpenWorkmate.Server.Services.Telemetry.ITelemetryTransmissionPolicyProvider>(sp =>
         sp.GetRequiredService<OpenWorkmate.Server.Services.Telemetry.TelemetryTransmissionPolicyBackgroundService>());

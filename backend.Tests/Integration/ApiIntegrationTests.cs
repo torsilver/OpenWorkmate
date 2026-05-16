@@ -700,7 +700,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var logsDir = DebugLogHelper.LogsDirectory;
         Directory.CreateDirectory(logsDir);
-        const string name = "office-copilot-20990101.txt";
+        const string name = "openworkmate-20990101.txt";
         var path = Path.Combine(logsDir, name);
         await File.WriteAllTextAsync(path, "alpha\nbeta\ngamma\n");
         try

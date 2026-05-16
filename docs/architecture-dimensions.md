@@ -206,7 +206,7 @@ flowchart TB
   end
 
   subgraph repo2["仓库 / 进程"]
-    LOGS["logs\\office-copilot-*.txt"]
+    LOGS["logs\\openworkmate-*.txt"]
     APPSET["appsettings*.json"]
   end
 ```
