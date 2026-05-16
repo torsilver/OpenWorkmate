@@ -206,7 +206,7 @@ flowchart TB
   end
 
   subgraph repo2["仓库 / 进程"]
-    LOGS["logs\\openworkmate-*.txt"]
+    LOGS["backend/logs\\openworkmate-*.txt"]
     APPSET["appsettings*.json"]
   end
 ```

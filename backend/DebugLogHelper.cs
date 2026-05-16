@@ -7,16 +7,42 @@ namespace OpenWorkmate.Server;
 /// <summary>本机调试：解析 Serilog 滚动日志路径并安全读取尾部（仅允许 openworkmate-*.txt）。目录与 <c>Program.cs</c> 中 Serilog File sink 一致。</summary>
 public static class DebugLogHelper
 {
+    private const string ServerProjectFileName = "OpenWorkmate.Server.csproj";
+
     private static readonly Regex SafeLogName = new(
         @"^openworkmate-\d{8}(_\d+)?\.txt$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    /// <summary>%LocalAppData%\OpenWorkmate\logs（与当前工作目录无关，避免 MSI/快捷方式下 cwd 落在 Program Files 时读不到日志）。</summary>
-    public static string LogsDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenWorkmate",
-            "logs");
+    private static readonly string LogsDirectoryCached = ResolveLogsDirectory();
+
+    /// <summary>
+    /// Serilog 与调试接口共用的日志目录：优先为仓库内 <c>backend/logs</c>（自 <see cref="AppContext.BaseDirectory"/> 向上查找含服务端 csproj 的目录）；
+    /// 若找不到（例如仅发布输出目录），则为可执行文件旁的 <c>logs</c>。
+    /// </summary>
+    public static string LogsDirectory => LogsDirectoryCached;
+
+    private static string ResolveLogsDirectory()
+    {
+        try
+        {
+            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            {
+                var direct = Path.Combine(dir.FullName, ServerProjectFileName);
+                if (File.Exists(direct))
+                    return Path.Combine(dir.FullName, "logs");
+
+                var underBackend = Path.Combine(dir.FullName, "backend", ServerProjectFileName);
+                if (File.Exists(underBackend))
+                    return Path.Combine(dir.FullName, "backend", "logs");
+            }
+        }
+        catch
+        {
+            /* fall through */
+        }
+
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "logs"));
+    }
 
     public static bool IsDebugLogLoopback(HttpContext ctx)
     {

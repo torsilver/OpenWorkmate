@@ -817,7 +817,7 @@ app.MapGet("/api/tools/builtin", () =>
 {
     var builtIn = new List<BuiltInPluginInfo>
     {
-        new() { Id = "Browser", Name = "Browser", Description = "网页高亮与便签；整页截图；页内基座 page_agent（observe/ref）与自定义页内 JS（run_custom_javascript_in_page）等" },
+        new() { Id = "Browser", Name = "Browser", Description = "网页高亮与便签；整页截图；page_agent（可交互控件 observe/ref 与点击填写等）与 run_custom_javascript_in_page（读正文/DOM 等）等" },
         new() { Id = "File", Name = "File", Description = "附件路径解析、文件大小查询、保存截图到下载文件夹" },
         new() { Id = "System", Name = "System", Description = "当前时间等系统信息，用于回答用户关于日期、时间的问题" },
         new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（百炼实时 ASR）：将音频文件转成文字，需在设置中配置百炼实时语音识别 API Key" },

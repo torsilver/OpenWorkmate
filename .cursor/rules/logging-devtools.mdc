@@ -7,7 +7,7 @@ description: 日志与调试——后端 ILogger 优先，Chrome 扩展用 DevTo
 
 ## 1. 后端（C#）
 
-- 业务与联调信息优先用 **Serilog / `ILogger`** 写入现有日志（Windows：`%LocalAppData%\OpenWorkmate\logs\openworkmate-*.txt`，与 `DebugLogHelper.LogsDirectory` 一致），便于按级别过滤与检索。
+- 业务与联调信息优先用 **Serilog / `ILogger`** 写入现有日志（默认 **`backend/logs/openworkmate-*.txt`**（开发/从源码运行时）；仅发布输出且旁无 csproj 时为可执行文件旁 `logs/`，见 `DebugLogHelper.LogsDirectory`），便于按级别过滤与检索。
 - 新增诊断时**不要**依赖「前端侧栏再显示一遍」作为主要观测手段。
 
 ## 2. Chrome 扩展前端

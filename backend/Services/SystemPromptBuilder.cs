@@ -94,8 +94,8 @@ public static class SystemPromptBuilder
         if (string.IsNullOrEmpty(ct)) return "";
         if (string.Equals(ct, "chrome", StringComparison.OrdinalIgnoreCase))
             return "你是浏览器侧边栏助手：可对「本机路径上的」Word/Excel/PPT 使用 Word/Excel/Ppt 插件读写（与任务窗格互补；本端无 CurrentDocument 当前文档 API，须用文件路径调用文档工具）。另支持网页整页截图、页内基座 page_agent、自定义页内脚本 run_custom_javascript_in_page、页内高亮与便签、附件与文件工具、命令行等。用户已提供 docx/xlsx 等路径时，应直接用相应文档工具完成编辑与批注，不得以「浏览器端不能改 Word」为由拒绝或要求用户必须切到任务窗格。"
-                + " Browser 类 page_agent（requestJson 内 op：observe 取 ref，再 click/fill/waitFor/scrollIntoView 等）与截图工具仅作用于「当前活动标签页」（用户需先切到目标网页并置于前台）。复杂读页或需整段 DOM 抽取时在策略允许下配合 run_custom_javascript_in_page。"
-                + " 总结网页上长对话的「靠后内容」：先 page_agent observe 定位容器 ref，必要时用 run_custom_javascript_in_page 写短脚本滚动到底或 query 对话节点再 return（须含 return）。";
+                + " page_agent 用于操作当前活动标签页（observe 得可交互 ref，再 click/fill/waitFor/scrollIntoView）；observe 的短标签**不是**文章正文。要总结/摘录当前页长文正文须用 run_custom_javascript_in_page（短脚本 return），勿仅靠反复 observe。"
+                + " 总结外站网页长对话等：需要正文时用 run_custom 抽取；若要先展开/滚到底再读，可先用 page_agent 点对应 ref 或 run_custom 内滚动后再 return。";
         if (string.Equals(ct, "office-word", StringComparison.OrdinalIgnoreCase))
             return "你是 Word 侧助手，负责当前打开的 Word 文档；网页相关操作请由用户在浏览器侧边栏端完成。你只负责本端能力；若需求属于另一客户端，请说明并建议用户切换。";
         if (string.Equals(ct, "office-excel", StringComparison.OrdinalIgnoreCase))

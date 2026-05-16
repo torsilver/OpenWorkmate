@@ -12,7 +12,8 @@ public static class DynamicToolingInstruction
         + "若 system 仍列出渐进式用户技能，只要你还要 search_available_tools 且随后需要 activate_tools，则在本轮须先至少调用一次 search_available_skills（空 query 亦可），再 activate_tools；不可在「仅工具检索」之后直接 activate（与产品内置门控一致）。"
         + "发起 tool_calls 时名称必须与 OpenAPI 工具 schema 中的裸函数名一致，勿使用 Plugin.function。不要编造未出现在工具列表中的函数名。"
         + "每次调用的 arguments 中 JSON 键名也须与该工具 schema 的 properties 完全一致（含大小写），勿用 data/content/values 等别名替代正式字段名。"
-        + " 子任务：大范围只读探索用 run_explore_subtask；终端长输出用 run_cli_subtask；重浏览器页内脚本用 run_browser_subtask。";
+        + " 子任务：大范围只读探索用 run_explore_subtask；终端长输出用 run_cli_subtask；重浏览器页内脚本用 run_browser_subtask。"
+        + " 特别地：凡准备 word_document_create 落盘 Word，技能链中须有针对 Word/版式/docx/公文的 search_available_skills 与 select_skill_for_turn 或 load_user_skill_instructions（绑定文档版式类 skill），再 activate 并调用；勿仅靠 documentPreset=default 硬写版式。";
 
     /// <summary>首轮已含非检索类工具（脚本、run_command、渐进式技能加载 load_user_skill_instructions 等）时追加，避免模型误以为必须先 activate 才能调用。</summary>
     public const string BootstrapDirectToolsHint =

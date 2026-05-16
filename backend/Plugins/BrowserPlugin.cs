@@ -118,9 +118,10 @@ public class BrowserPlugin
     [ToolFunction("page_agent")]
     [Description(
         "【Chrome / 页内基座】单一 JSON 字符串参数 requestJson，由扩展注入 <c>page-agent-sdk.js</c> 执行。仅作用于当前活动标签页；用户需先切到目标页。\n" +
-        "op 取值：observe（扫描可交互元素并分配 ref）| click{ref} | fill{ref,value} | waitFor{ref,timeoutMs?} | scrollIntoView{ref}。模型应先 observe 再对 ref 执行动作。\n" +
-        "返回为 JSON 字符串（ok/error 结构）；失败时 error.code 如 BAD_REQUEST、NOT_FOUND、TIMEOUT、STALE_REF。\n" +
-        "无法满足时用 run_custom_javascript_in_page 作为逃生舱。")]
+        "定位：面向「操作页面」——observe 扫描**可交互**控件并分配 ref，返回 tag/role/短 name 等元数据；**不是**文章正文、不是整页可读长文。用户要总结/摘录博客或新闻**正文**时，勿指望仅靠 observe，应改用 run_custom_javascript_in_page。\n" +
+        "op：observe | click{ref} | fill{ref,value} | waitFor{ref,timeoutMs?} | scrollIntoView{ref}。应先 observe 再对 ref 执行动作。\n" +
+        "返回为 JSON 字符串（ok/error）；错误码如 BAD_REQUEST、NOT_FOUND、TIMEOUT、STALE_REF（页面导航后须重新 observe）。\n" +
+        "读全文或复杂 DOM 抽取用 run_custom_javascript_in_page。")]
     public async Task<string> PageAgentAsync(
         [Description("JSON 对象字符串，如 {\"op\":\"observe\"} 或 {\"op\":\"click\",\"ref\":\"r0\"}。")] string requestJson)
     {
@@ -171,10 +172,13 @@ public class BrowserPlugin
     /// <summary>在当前标签页执行 AI 提供的 JavaScript；与 <see cref="PageAgentAsync"/> 分离。</summary>
     [ToolFunction("run_custom_javascript_in_page")]
     [Description(
-        "【自定义页内 JS】运行位置：用户当前浏览器标签页的页面上下文。传入一整段 JavaScript（参数名 scriptCode），应包含 return 以返回结果（如 return document.title）。\n" +
-        "优先使用 page_agent（结构化 observe/ref）；仅当 page_agent 无法满足时再使用本工具；执行前可能需用户确认（视安全设置）。")]
+        "【自定义页内 JS】在用户当前浏览器标签页的页面上下文执行。参数 scriptCode 为整段 JavaScript，**必须包含 return**（如 return document.title；或 return document.querySelector('article')?.innerText ?? ''）。\n" +
+        "适用：抽取正文/列表、滚动后取样、复杂 DOM 等「读页」任务；脚本宜短小、选择器明确；若返回空应改选择器或兜底，勿与 page_agent 的 observe 短标签混为一谈。\n" +
+        "与 page_agent 分工：点击、填表、滚到控件、等待控件可见等操作用 page_agent；总结当前页长文正文用本工具而非反复 observe。\n" +
+        "须扩展已开启 Allow User Scripts；执行前可能需用户确认（视安全设置）。")]
     public async Task<string> RunCustomJavaScriptInPageAsync(
-        [Description("在页面中执行的 JavaScript 源码；应包含 return（如 return JSON.stringify([...document.images].map(i => i.src));）。")] string scriptCode)
+        [Description("页内执行的 JS；须含 return。读正文示例：return document.querySelector('article')?.innerText ?? document.body.innerText.slice(0,8000);")]
+        string scriptCode)
     {
         const int MaxScriptCodeLength = 32 * 1024;
         if (string.IsNullOrWhiteSpace(scriptCode))

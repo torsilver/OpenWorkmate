@@ -152,9 +152,10 @@ public sealed class WordPlugin
     [ToolFunction("word_document_create")]
     [Description(
         "创建新 Word（Open XML）文档并写入标题与段落；文件已存在则覆盖。filePath 须为 .docx（推荐）或 .docm，勿用 .md/.txt/.doc。"
+        + " 生成或排版 Word 前必须先 search_available_skills 检索文档版式/Word/docx/公文等相关用户技能，再用 select_skill_for_turn 或 load_user_skill_instructions 绑定并载入文档版式类 skill（如 word_cn_default_formal、word-docx），按该 skill 约定组织 paragraphs 与 documentPreset，最后调用本工具；勿跳过检索与绑定、仅靠默认样式硬写。"
         + " paragraphs 为字符串数组：每一项是一段 Markdown 正文（# / ## / ###、- 列表、项内仍可用 | 或空行拆段）；多项之间等价于历史版用 | 分段。禁止把整页 HTML、API 调试输出或未转义抓取文本整块塞进单项。"
         + " documentPreset：default=历史通用 Office 版式（Calibri/微软雅黑 10.5pt、彩色标题、常见页边距）；cnGovGbt9704=中文正式稿默认版式（GB/T 9704—2012 常用归纳：仿宋三号、固定 28 磅、标题二号宋体居中、黑体/楷体三号层次、天头/订口近似页边距），依赖本机已安装仿宋/宋体等字体。"
-        + " 按中文正式稿规则写作前请先 load_user_skill_instructions（skillId 如 word_cn_default_formal）。路径须对应当前登录用户。")]
+        + " 选用 cnGovGbt9704 或公文体例时须与已载入 skill 的说明一致。路径须对应当前登录用户。")]
     public string WordDocumentCreate(
         [Description("目标文件路径，必须以 .docx（推荐）或 .docm 结尾（例如 报告.docx）；禁止 .md、.txt、旧版二进制 .doc。优先仅文件名或相对路径（服务端解析为当前用户下约定目录，常为 Downloads）。勿填 Public 或臆测的 C:\\Users\\…；绝对路径用 %USERPROFILE%\\…")] string filePath,
         [Description("文档标题；可省略，省略时用目标文件名（无扩展名）")] string title = "",
