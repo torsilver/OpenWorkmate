@@ -328,12 +328,6 @@ function initActiveTabContextSync() {
   });
 }
 
-function truncateTabListUrl(url, maxLen) {
-  const s = url != null ? String(url) : "";
-  if (s.length <= maxLen) return s;
-  return s.slice(0, maxLen) + "…";
-}
-
 function getCurrentPlanId() {
   return sessionStorage.getItem(STORAGE_PLAN_ID) || "";
 }
@@ -2996,105 +2990,37 @@ async function executeCustomPageScriptViaUserScripts(scriptCode) {
   return JSON.stringify(v);
 }
 
-/** run_builtin_page_script 中在扩展上下文执行（chrome.tabs），非页面注入 */
-const EXTENSION_PAGE_SCRIPT_IDS = new Set([
-  "tab_list",
-  "tab_list_all_windows",
-  "tab_activate",
-  "tab_reload",
-  "tab_go_back",
-  "tab_go_forward",
-  "tab_close",
-  "tab_open"
-]);
-
-async function runExtensionPageScript(scriptId, params) {
-  const p = params && typeof params === "object" ? params : {};
-
-  async function getTargetTabId(explicitId) {
-    if (explicitId != null && explicitId !== "") {
-      const n = Number(explicitId);
-      if (!Number.isFinite(n) || n <= 0) throw new Error("失败：tabId 无效。");
-      return n;
-    }
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) throw new Error("失败：无法解析当前活动标签页。");
-    return tab.id;
+/** page_agent：注入 page-agent-sdk.js 并在页内执行 dispatch（对齐 Chrome：SDK 不经 WebSocket 连后台）。 */
+async function executePageAgentInActiveTab(requestObj) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !tab.url || tab.url.startsWith("chrome://")) {
+    debugLog("RPC", "page_agent no active tab or restricted url", "err");
+    throw new Error("Cannot inject script into this page.");
   }
-
-  if (scriptId === "tab_list" || scriptId === "tab_list_all_windows") {
-    const maxTabs = Math.min(200, Math.max(1, Number(p.maxTabs) || 50));
-    const allBrowser =
-      scriptId === "tab_list_all_windows" || String(p.scope || "").toLowerCase() === "browser";
-    const tabs = await chrome.tabs.query(allBrowser ? {} : { currentWindow: true });
-    const urlMax = Math.min(500, Math.max(80, Number(p.urlMaxLength) || 200));
-    const slice = tabs.slice(0, maxTabs).map((t) => ({
-      tabId: t.id,
-      windowId: t.windowId,
-      title: t.title || "",
-      url: truncateTabListUrl(t.url || "", urlMax),
-      active: !!t.active,
-      index: t.index
-    }));
-    const scopeLabel = allBrowser ? "当前浏览器（所有窗口）" : "当前窗口";
-    return (
-      "成功：" +
-      scopeLabel +
-      "共 " +
-      tabs.length +
-      " 个标签（下列为前 " +
-      slice.length +
-      " 个）。\n" +
-      JSON.stringify(slice, null, 2)
-    );
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["page-agent-sdk.js"]
+  });
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: async (req) => {
+      const agent = globalThis.__OWM_PAGE_AGENT_V1;
+      if (!agent || typeof agent.dispatch !== "function") {
+        return JSON.stringify({
+          ok: false,
+          error: { code: "BAD_REQUEST", message: "page agent SDK 未加载。" }
+        });
+      }
+      const out = await agent.dispatch(req);
+      return typeof out === "string" ? out : JSON.stringify(out);
+    },
+    args: [requestObj]
+  });
+  const raw = results && results[0] ? results[0].result : null;
+  if (raw == null) {
+    return JSON.stringify({ ok: false, error: { code: "BAD_REQUEST", message: "扩展未收到页内返回值。" } });
   }
-
-  if (scriptId === "tab_activate") {
-    const tabId = p.tabId != null ? Number(p.tabId) : NaN;
-    if (!Number.isFinite(tabId) || tabId <= 0) throw new Error("失败：tab_activate 需要有效的 tabId。");
-    await chrome.tabs.update(tabId, { active: true });
-    return "成功：已激活标签 tabId=" + tabId + "。";
-  }
-
-  if (scriptId === "tab_reload") {
-    const tabId = await getTargetTabId(p.tabId);
-    await chrome.tabs.reload(tabId);
-    return "成功：已刷新标签 tabId=" + tabId + "。";
-  }
-
-  if (scriptId === "tab_go_back") {
-    const tabId = await getTargetTabId(p.tabId);
-    await chrome.tabs.goBack(tabId);
-    return "成功：已在标签 tabId=" + tabId + " 执行后退。";
-  }
-
-  if (scriptId === "tab_go_forward") {
-    const tabId = await getTargetTabId(p.tabId);
-    await chrome.tabs.goForward(tabId);
-    return "成功：已在标签 tabId=" + tabId + " 执行前进。";
-  }
-
-  if (scriptId === "tab_close") {
-    const tabId = p.tabId != null ? Number(p.tabId) : NaN;
-    if (!Number.isFinite(tabId) || tabId <= 0) {
-      throw new Error("失败：tab_close 必须显式传入 tabId，禁止默认关闭当前页以免误关侧栏上下文。");
-    }
-    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (active?.id === tabId) {
-      throw new Error("失败：不允许关闭当前活动标签页，请先切换到其他标签再关闭。");
-    }
-    await chrome.tabs.remove(tabId);
-    return "成功：已关闭标签 tabId=" + tabId + "。";
-  }
-
-  if (scriptId === "tab_open") {
-    let url = typeof p.url === "string" ? p.url.trim() : "";
-    if (!url) url = "about:blank";
-    const tab = await chrome.tabs.create({ url });
-    return "成功：已新建标签 tabId=" + (tab.id != null ? tab.id : "?") + " url=" + url + "。";
-  }
-
-  throw new Error("未知扩展脚本: " + scriptId);
+  return typeof raw === "string" ? raw : JSON.stringify(raw);
 }
 
 // ───── RPC Handling ─────
@@ -3109,27 +3035,21 @@ async function handleRpcRequest(msg) {
       result = await executeInActiveTab(highlightTextInPage, params.text, params.color);
     } else if (method === "add_floating_note") {
       result = await executeInActiveTab(addFloatingNoteInPage, params.message, params.title, params.anchorText);
-    } else if (method === "run_builtin_page_script") {
-      const scriptId = params?.scriptId;
-      if (!scriptId || typeof scriptId !== "string") {
-        throw new Error("未知脚本 ID: " + (scriptId || ""));
+    } else if (method === "page_agent") {
+      const raw = params?.requestJson ?? params?.RequestJson;
+      if (typeof raw !== "string" || !raw.trim()) {
+        throw new Error("page_agent 需要非空的 requestJson（JSON 字符串）。");
       }
-      let paramsObj = params?.scriptParams ?? params?.params;
-      if (typeof paramsObj === "string") {
-        try {
-          paramsObj = paramsObj ? JSON.parse(paramsObj) : {};
-        } catch (_) {
-          paramsObj = {};
-        }
+      let requestObj;
+      try {
+        requestObj = JSON.parse(raw.trim());
+      } catch (e) {
+        throw new Error("page_agent 的 requestJson 不是合法 JSON：" + (e && e.message ? e.message : String(e)));
       }
-      paramsObj = paramsObj || {};
-      if (EXTENSION_PAGE_SCRIPT_IDS.has(scriptId)) {
-        result = await runExtensionPageScript(scriptId, paramsObj);
-      } else if (typeof PAGE_SCRIPTS[scriptId] === "function") {
-        result = await executeInActiveTab(PAGE_SCRIPTS[scriptId], paramsObj);
-      } else {
-        throw new Error("未知脚本 ID: " + scriptId);
+      if (!requestObj || typeof requestObj !== "object") {
+        throw new Error("page_agent 解析后须为 JSON 对象。");
       }
+      result = await executePageAgentInActiveTab(requestObj);
     } else if (method === "run_custom_javascript_in_page") {
       const scriptCode = params?.scriptCode;
       if (typeof scriptCode !== "string" || !scriptCode.trim()) {
@@ -3233,7 +3153,7 @@ function handleConfirmRequest(msg) {
   }
   if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
   if ($hitlAction) $hitlAction.textContent = action;
-  const showAddToList = hitlKind === "run_command" || hitlKind === "run_builtin_page_script";
+  const showAddToList = hitlKind === "run_command" || hitlKind === "page_agent";
   if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = showAddToList ? "" : "none";
   if ($hitlOverlay) {
     $hitlOverlay.style.display = "flex";
@@ -3528,427 +3448,6 @@ async function captureFullPage() {
   }
   return { viewportHeight, images };
 }
-
-// MCP 工具 run_builtin_page_script：预定义脚本注册表，仅执行白名单内 scriptId（函数在页面隔离世界执行，须自包含）
-const PAGE_SCRIPTS = {
-  scroll_to_top: function () {
-    window.scrollTo(0, 0);
-    return "成功：已滚动到页面顶部。";
-  },
-  scroll_to_bottom: function () {
-    window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
-    return "成功：已滚动到页面底部。";
-  },
-  get_visible_text: function (params) {
-    var p = params || {};
-    var text = document.body ? document.body.innerText : "";
-    /** 默认与上限一致：常见页面整段返回；极端长页仍截断以防 WS/上下文爆量。显式 maxLength 可再收紧。 */
-    var hardMax = 500000;
-    var max = p.maxLength > 0 ? Math.min(hardMax, Number(p.maxLength)) : hardMax;
-    var mode = (p.truncateMode != null ? String(p.truncateMode) : "head").toLowerCase();
-    if (mode !== "head" && mode !== "tail" && mode !== "both") mode = "head";
-    if (text.length <= max) return text || "(无文本)";
-    if (mode === "tail") {
-      var tailMarker = "\n...(以下为页面文本末尾，前部已省略)...\n";
-      var tailBudget = Math.max(0, max - tailMarker.length);
-      return tailMarker + text.slice(-tailBudget);
-    }
-    if (mode === "both") {
-      var midMarker = "\n...(已省略中间内容)...\n";
-      var usable = Math.max(0, max - midMarker.length);
-      var headLen = Math.floor(usable / 2);
-      var tailLen = usable - headLen;
-      var headPart = text.slice(0, headLen);
-      var tailPart = text.slice(-tailLen);
-      return headPart + midMarker + tailPart;
-    }
-    var headSuffix = "\n...(已截断：仅保留开头；需要页底请设 truncateMode 为 tail 或 both)";
-    var headBudget = Math.max(0, max - headSuffix.length);
-    return text.slice(0, headBudget) + headSuffix;
-  },
-  get_page_title: function () {
-    return document.title || "(无标题)";
-  },
-  /**
-   * 泛化「AI 对话页」末尾摘录：不绑某一产品；按常见 DOM 习惯尽力取偏末尾正文，失败时提示用 get_visible_text+tail。
-   * params: maxTailChars 可选，默认 16000，范围约 1500～80000。
-   */
-  chat_page_tail_glance: function (params) {
-    var p = params || {};
-    var maxTail = Math.min(80000, Math.max(1500, Number(p.maxTailChars) || 16000));
-    var candidates = [];
-
-    function add(label, el) {
-      if (!el) return;
-      var t = el.innerText != null ? String(el.innerText).trim() : "";
-      if (t.length > 80) candidates.push({ label: label, text: t });
-    }
-
-    try {
-      var roleMsgs = document.querySelectorAll(
-        '[data-message-author-role="assistant"], [data-message-author-role="model"]'
-      );
-      if (roleMsgs.length) add("末条助手气泡(data-message-author-role)", roleMsgs[roleMsgs.length - 1]);
-    } catch (e0) {}
-    try {
-      var mr = document.querySelectorAll("model-response");
-      if (mr.length) add("末条 model-response", mr[mr.length - 1]);
-    } catch (e1) {}
-    try {
-      var arts = document.querySelectorAll('[role="article"]');
-      if (arts.length) {
-        var take = Math.min(5, arts.length);
-        var parts = [];
-        for (var i = arts.length - take; i < arts.length; i++) {
-          parts.push(String((arts[i] && arts[i].innerText) || "").trim());
-        }
-        var joined = parts.filter(Boolean).join("\n\n·\n\n");
-        if (joined.length > 80) candidates.push({ label: "末数条 role=article", text: joined });
-      }
-    } catch (e2) {}
-    try {
-      add("main", document.querySelector("main"));
-      add('role="main"', document.querySelector('[role="main"]'));
-      var fd = document.querySelector('[role="feed"], [role="log"]');
-      if (fd) add("role=feed|log", fd);
-    } catch (e3) {}
-
-    var focused = candidates.filter(function (c) {
-      return /末条助手|model-response/.test(c.label);
-    });
-    var pick;
-    if (focused.length) pick = focused[0];
-    else if (candidates.length) {
-      candidates.sort(function (a, b) {
-        return b.text.length - a.text.length;
-      });
-      pick = candidates[0];
-    } else {
-      var bodyT = document.body && document.body.innerText ? String(document.body.innerText).trim() : "";
-      pick = { label: "document.body", text: bodyT };
-    }
-
-    if (!pick.text || !pick.text.trim()) {
-      return (
-        "泛化对话摘录：未取到足够文本。请先 scroll_to_bottom，再试 get_visible_text 且 paramsJson 含 truncateMode:\"tail\"；或在设置中允许 run_custom_javascript_in_page 写页面专属选择器。"
-      );
-    }
-
-    var full = pick.text;
-    var slice = full.length > maxTail ? full.slice(-maxTail) : full;
-    var prefix =
-      "说明：chat_page_tail_glance 为通用脚本，按常见聊天页结构尽力取「偏末尾」正文（来源：" +
-      pick.label +
-      "）；不同站点 DOM 差异大，不保证等于用户口中的「最后一轮」语义。\n";
-    if (full.length > maxTail) prefix += "（已按 maxTailChars 截取末尾 " + maxTail + " 字符）\n";
-    return prefix + "\n" + slice;
-  },
-  get_page_outline: function (params) {
-    try {
-      var p = params || {};
-      var maxLevel = Math.min(6, Math.max(1, Number(p.maxHeadingLevel) || 3));
-      var maxHeadings = Math.min(200, Math.max(1, Number(p.maxHeadings) || 50));
-      var includeTextPrefix = !!p.includeTextPrefix;
-      var maxLen = Math.min(100000, Math.max(0, Number(p.maxLength) || 2000));
-      var metaDesc = "";
-      var m = document.querySelector('meta[name="description"]');
-      if (m && m.content) metaDesc = String(m.content).trim();
-      var nodes = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
-      var headings = [];
-      for (var i = 0; i < nodes.length && headings.length < maxHeadings; i++) {
-        var n = nodes[i];
-        var lvl = parseInt(n.tagName.slice(1), 10);
-        if (lvl > maxLevel) continue;
-        var t = (n.innerText || "").replace(/\s+/g, " ").trim();
-        if (t) headings.push({ level: lvl, text: t });
-      }
-      var lines = [];
-      lines.push("url: " + (location.href || ""));
-      lines.push("title: " + (document.title || ""));
-      if (metaDesc) lines.push("meta_description: " + metaDesc);
-      lines.push("headings: " + JSON.stringify(headings));
-      if (includeTextPrefix && maxLen > 0 && document.body) {
-        var prefix = document.body.innerText.replace(/\s+/g, " ").trim().slice(0, maxLen);
-        lines.push("text_prefix: " + prefix + (document.body.innerText.length > maxLen ? "\n...(已截断)" : ""));
-      }
-      return "成功：页面概要如下。\n" + lines.join("\n");
-    } catch (e) {
-      return "失败：get_page_outline — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  extract_links: function (params) {
-    try {
-      var p = params || {};
-      var maxLinks = Math.min(500, Math.max(1, Number(p.maxLinks) || 100));
-      var sameOriginOnly = !!p.sameOriginOnly;
-      var origin = location.origin;
-      var anchors = document.querySelectorAll("a[href]");
-      var out = [];
-      for (var i = 0; i < anchors.length && out.length < maxLinks; i++) {
-        var a = anchors[i];
-        var href = "";
-        try {
-          href = a.href || "";
-        } catch (_) {
-          continue;
-        }
-        if (!href || href.indexOf("javascript:") === 0) continue;
-        if (sameOriginOnly) {
-          try {
-            var u = new URL(href, location.href);
-            if (u.origin !== origin) continue;
-          } catch (_) {
-            continue;
-          }
-        }
-        var label = (a.innerText || a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 500);
-        out.push({ text: label || "(无文本)", href: href });
-      }
-      return "成功：提取 " + out.length + " 条链接。\n" + JSON.stringify(out, null, 2);
-    } catch (e) {
-      return "失败：extract_links — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  extract_tables: function (params) {
-    try {
-      var p = params || {};
-      var sel = typeof p.selector === "string" && p.selector.trim() ? p.selector.trim() : "table";
-      if (sel.length > 500) return "失败：selector 过长。";
-      var maxTables = Math.min(20, Math.max(1, Number(p.maxTables) || 5));
-      var maxRows = Math.min(200, Math.max(1, Number(p.maxRows) || 30));
-      var maxCols = Math.min(50, Math.max(1, Number(p.maxCols) || 20));
-      var tables = document.querySelectorAll(sel);
-      var parts = [];
-      function escCell(s) {
-        return String(s == null ? "" : s)
-          .replace(/\|/g, "\\|")
-          .replace(/\r?\n/g, " ")
-          .trim();
-      }
-      for (var ti = 0; ti < tables.length && ti < maxTables; ti++) {
-        var tbl = tables[ti];
-        var rows = tbl.querySelectorAll("tr");
-        var md = [];
-        var rowCount = 0;
-        for (var ri = 0; ri < rows.length && rowCount < maxRows; ri++) {
-          var cells = rows[ri].querySelectorAll("th, td");
-          if (!cells.length) continue;
-          var cols = [];
-          for (var ci = 0; ci < cells.length && ci < maxCols; ci++) {
-            cols.push(escCell(cells[ci].innerText));
-          }
-          md.push("| " + cols.join(" | ") + " |");
-          rowCount++;
-          if (rowCount === 1) {
-            md.push("| " + cols.map(function () {
-              return "---";
-            }).join(" | ") + " |");
-          }
-        }
-        if (md.length) {
-          parts.push("### table_" + (ti + 1) + "\n" + md.join("\n"));
-        }
-      }
-      if (!parts.length) return "成功：未找到符合条件的表格（selector=" + sel + "）。";
-      return "成功：导出 " + parts.length + " 个表格（Markdown）。\n\n" + parts.join("\n\n");
-    } catch (e) {
-      return "失败：extract_tables — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  scroll_by: function (params) {
-    try {
-      var p = params || {};
-      var dy = Number(p.deltaY);
-      if (!isFinite(dy)) return "失败：deltaY 无效。";
-      var smooth = !!p.smooth;
-      window.scrollBy({ top: dy, behavior: smooth ? "smooth" : "auto" });
-      return "成功：已纵向滚动 " + dy + "px。";
-    } catch (e) {
-      return "失败：scroll_by — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  scroll_into_view: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      var block = p.block === "start" || p.block === "center" || p.block === "end" || p.block === "nearest" ? p.block : "nearest";
-      var inline = p.inline === "start" || p.inline === "center" || p.inline === "end" || p.inline === "nearest" ? p.inline : "nearest";
-      el.scrollIntoView({ block: block, inline: inline });
-      return "成功：已滚动到元素（selector=" + s + "）。";
-    } catch (e) {
-      return "失败：scroll_into_view — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  wait_for_selector: async function (params) {
-    var p = params || {};
-    var s = typeof p.selector === "string" ? p.selector.trim() : "";
-    if (!s) return "失败：selector 不能为空。";
-    if (s.length > 500) return "失败：selector 过长。";
-    var timeoutMs = Math.min(120000, Math.max(100, Number(p.timeoutMs) || 10000));
-    var requireVisible = !!p.requireVisible;
-    var t0 = Date.now();
-    while (Date.now() - t0 < timeoutMs) {
-      var el = document.querySelector(s);
-      if (el) {
-        if (requireVisible) {
-          var st = window.getComputedStyle(el);
-          var r = el.getBoundingClientRect();
-          if (st.display === "none" || st.visibility === "hidden" || r.width < 1 || r.height < 1) {
-            await new Promise(function (res) {
-              setTimeout(res, 100);
-            });
-            continue;
-          }
-        }
-        return "成功：已找到元素（selector=" + s + "）。";
-      }
-      await new Promise(function (res) {
-        setTimeout(res, 100);
-      });
-    }
-    return "失败：在 " + timeoutMs + "ms 内未找到元素（selector=" + s + "）。";
-  },
-  click_selector: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      if (typeof el.click !== "function") return "失败：该元素不可点击。";
-      if (p.doubleClick) {
-        el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
-      } else {
-        el.click();
-      }
-      return "成功：已" + (p.doubleClick ? "双击" : "点击") + "（selector=" + s + "）。";
-    } catch (e) {
-      return "失败：click_selector — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  fill_input: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      var tag = el.tagName;
-      if (tag !== "INPUT" && tag !== "TEXTAREA") return "失败：元素不是 input/textarea。";
-      var val = p.value != null ? String(p.value) : "";
-      el.focus();
-      el.value = val;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return "成功：已填充（selector=" + s + "）。";
-    } catch (e) {
-      return "失败：fill_input — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  select_option: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el || el.tagName !== "SELECT") return "失败：元素不是 select。";
-      var v = p.value != null ? String(p.value) : "";
-      el.value = v;
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return "成功：已选择 value=" + v + "。";
-    } catch (e) {
-      return "失败：select_option — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  set_checked: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      if (el.tagName !== "INPUT" || (el.type !== "checkbox" && el.type !== "radio")) {
-        return "失败：元素不是 checkbox/radio。";
-      }
-      el.checked = !!p.checked;
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return "成功：已设置 checked=" + !!p.checked + "。";
-    } catch (e) {
-      return "失败：set_checked — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  hover_selector: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
-      el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, view: window }));
-      return "成功：已派发悬停事件（selector=" + s + "）。";
-    } catch (e) {
-      return "失败：hover_selector — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  focus_selector: function (params) {
-    try {
-      var p = params || {};
-      var s = typeof p.selector === "string" ? p.selector.trim() : "";
-      if (!s) return "失败：selector 不能为空。";
-      if (s.length > 500) return "失败：selector 过长。";
-      var el = document.querySelector(s);
-      if (!el) return "失败：未找到元素（selector=" + s + "）。";
-      el.focus();
-      return "成功：已聚焦（selector=" + s + "）。";
-    } catch (e) {
-      return "失败：focus_selector — " + (e && e.message ? e.message : String(e));
-    }
-  },
-  press_key: function (params) {
-    try {
-      var p = params || {};
-      var key = typeof p.key === "string" ? p.key : "";
-      if (!key) return "失败：key 不能为空（合成键盘事件，部分站点可能不响应）。";
-      var sel = typeof p.selector === "string" ? p.selector.trim() : "";
-      var el = null;
-      if (sel) {
-        if (sel.length > 500) return "失败：selector 过长。";
-        el = document.querySelector(sel);
-        if (!el) return "失败：未找到元素（selector=" + sel + "）。";
-        el.focus();
-      } else {
-        el = document.activeElement;
-        if (!el || el === document.body) el = document.documentElement;
-      }
-      var code = typeof p.code === "string" && p.code ? p.code : key;
-      var evtInit = {
-        key: key,
-        code: code,
-        bubbles: true,
-        cancelable: true,
-        ctrlKey: !!p.ctrlKey,
-        altKey: !!p.altKey,
-        shiftKey: !!p.shiftKey,
-        metaKey: !!p.metaKey
-      };
-      el.dispatchEvent(new KeyboardEvent("keydown", evtInit));
-      el.dispatchEvent(new KeyboardEvent("keyup", evtInit));
-      return "成功：已在目标元素上派发 keydown/keyup（key=" + key + "）。注意：合成事件与真实键盘输入不等价。";
-    } catch (e) {
-      return "失败：press_key — " + (e && e.message ? e.message : String(e));
-    }
-  }
-};
 
 // These functions will run IN THE WEBPAGE CONTEXT
 function highlightTextInPage(searchText, color) {

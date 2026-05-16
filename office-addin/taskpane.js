@@ -3586,7 +3586,7 @@
     }
     if ($hitlRawLabel) $hitlRawLabel.style.display = humanSummary ? "" : "none";
     if ($hitlAction) $hitlAction.textContent = action;
-    if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "run_builtin_page_script") ? "" : "none";
+    if ($hitlAddToListBtn) $hitlAddToListBtn.style.display = (hitlKind === "run_command" || hitlKind === "page_agent") ? "" : "none";
     if ($hitlOverlay) {
       $hitlOverlay.style.display = "flex";
       $hitlOverlay.setAttribute("aria-hidden", "false");

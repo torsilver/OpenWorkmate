@@ -16,7 +16,7 @@ public class ToolQualifiedNameResolverTests
     {
         var reg = new ToolRegistry();
         reg.Register("Word", "word_document_create", StubFn("word_document_create"));
-        reg.Register("Browser", "run_builtin_page_script", StubFn("run_builtin_page_script"));
+        reg.Register("Browser", "page_agent", StubFn("page_agent"));
         reg.Register("Excel", "excel_range_read", StubFn("excel_range_read"));
         return reg;
     }
@@ -36,9 +36,9 @@ public class ToolQualifiedNameResolverTests
     public void BareName_ResolvesCaseInsensitive()
     {
         var reg = CreateRegistry();
-        Assert.True(ToolQualifiedNameResolver.TryResolve(reg, "RUN_BUILTIN_PAGE_SCRIPT", out var p, out var bare, out _));
+        Assert.True(ToolQualifiedNameResolver.TryResolve(reg, "PAGE_AGENT", out var p, out var bare, out _));
         Assert.Equal("Browser", p);
-        Assert.Equal("RUN_BUILTIN_PAGE_SCRIPT", bare);
+        Assert.Equal("PAGE_AGENT", bare);
     }
 
     [Fact]

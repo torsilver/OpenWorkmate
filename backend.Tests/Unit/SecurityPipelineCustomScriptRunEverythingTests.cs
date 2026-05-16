@@ -12,6 +12,59 @@ namespace backend.Tests.Unit;
 public class SecurityPipelineCustomScriptRunEverythingTests
 {
     [Fact]
+    public async Task PageAgent_RunEverything_ReturnsNullWithoutHitl()
+    {
+        var configService = CreateConfigServiceWithCliRunMode("RunEverything");
+        var sessionManager = new SessionManager(NullLogger<SessionManager>.Instance);
+        var hitl = new HitlManager(sessionManager, configService, NullLogger<HitlManager>.Instance);
+        var pipeline = new SecurityPipeline(
+            NullLogger<SecurityPipeline>.Instance,
+            configService,
+            hitl,
+            sessionManager,
+            new NoOpHitlPlainLanguage());
+
+        SessionContext.SetSessionId("any-session");
+        try
+        {
+            var args = new Dictionary<string, object?> { ["requestJson"] = """{"op":"observe"}""" };
+            var result = await pipeline.EvaluateAsync("Browser", "page_agent", args, default);
+            Assert.Null(result);
+        }
+        finally
+        {
+            SessionContext.SetSessionId(null);
+        }
+    }
+
+    [Fact]
+    public async Task PageAgent_UseAllowList_InvalidJson_ReturnsBlockingMessage()
+    {
+        var configService = CreateConfigServiceWithCliRunMode("UseAllowList");
+        var sessionManager = new SessionManager(NullLogger<SessionManager>.Instance);
+        var hitl = new HitlManager(sessionManager, configService, NullLogger<HitlManager>.Instance);
+        var pipeline = new SecurityPipeline(
+            NullLogger<SecurityPipeline>.Instance,
+            configService,
+            hitl,
+            sessionManager,
+            new NoOpHitlPlainLanguage());
+
+        SessionContext.SetSessionId("s1");
+        try
+        {
+            var args = new Dictionary<string, object?> { ["requestJson"] = "not-json" };
+            var result = await pipeline.EvaluateAsync("Browser", "page_agent", args, default);
+            Assert.NotNull(result);
+            Assert.Contains("requestJson", result, StringComparison.Ordinal);
+        }
+        finally
+        {
+            SessionContext.SetSessionId(null);
+        }
+    }
+
+    [Fact]
     public async Task RunCustomPageScript_RunEverything_ReturnsNullWithoutHitl()
     {
         var configService = CreateConfigServiceWithCliRunMode("RunEverything");

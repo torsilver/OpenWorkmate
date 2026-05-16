@@ -1465,14 +1465,8 @@ if (ragStoragePathEl) ragStoragePathEl.addEventListener('change', debouncedSaveC
 var CLI_SCRIPT_END_KEYS = ['chrome', 'backend', 'office', 'wps'];
 var CLI_SCRIPT_END_LABELS = { chrome: 'Chrome', backend: '后台', office: 'Office', wps: 'WPS' };
 var DEFAULT_CLI_COMMANDS_BACKEND = ['dir', 'echo', 'type', 'ping', 'systeminfo', 'ipconfig'];
-/** 与 backend CliScriptEndKeys.DefaultAllowedScriptIds 一致；tab_open 可打开任意 URL，默认不纳入须用户在设置中手动添加 */
-var DEFAULT_PAGE_SCRIPTS = [
-  'get_visible_text', 'get_page_title', 'chat_page_tail_glance', 'get_page_outline', 'extract_links', 'extract_tables',
-  'scroll_to_top', 'scroll_to_bottom', 'scroll_by', 'scroll_into_view',
-  'wait_for_selector',
-  'click_selector', 'fill_input', 'select_option', 'set_checked', 'hover_selector', 'focus_selector', 'press_key',
-  'tab_list', 'tab_list_all_windows', 'tab_activate', 'tab_reload', 'tab_go_back', 'tab_go_forward', 'tab_close'
-];
+/** 与 backend CliScriptEndKeys.DefaultAllowedPageAgentOps 对齐；默认仅 observe，其余 op 可勾选加入白名单 */
+var DEFAULT_PAGE_AGENT_OPS = ['observe', 'click', 'fill', 'waitfor', 'scrollintoview'];
 /** 与 Office 任务窗格 DOCUMENT_SCRIPTS 对齐（current_run_document_script） */
 var DEFAULT_OFFICE_DOCUMENT_SCRIPTS = ['word_read_selection', 'office_doc_meta', 'office_word_body_preview', 'office_host_quick_glance'];
 /** 与 WPS 任务窗格 DOCUMENT_SCRIPTS 对齐 */
@@ -2228,7 +2222,7 @@ async function saveConfig() {
       mcpServers: (fullConfig && fullConfig.mcpServers) || (fullConfig && fullConfig.McpServers) || [],
       cliRunMode: perEnd.cliRunMode,
       allowedCliCommandsByClient: perEnd.allowedCliCommandsByClient,
-      allowedPageScriptIdsByClient: perEnd.allowedPageScriptIdsByClient,
+      allowedPageAgentOpsByClient: perEnd.allowedPageAgentOpsByClient,
       allowedDocumentScriptIdsByClient: perEnd.allowedDocumentScriptIdsByClient,
       disabledBuiltInPlugins: getDisabledBuiltIn(),
       embeddingModels: embeddingModelsToSave,
@@ -2278,7 +2272,7 @@ async function saveConfig() {
       var data = await response.json().catch(function () { return {}; });
       throw new Error(data.message || '保存配置失败');
     }
-    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageScriptIdsByClient: payload.allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, telemetryUserObservabilityEnabled: payload.telemetryUserObservabilityEnabled, aiGatewayBaseUrl: payload.aiGatewayBaseUrl, aiGatewayApiKey: payload.aiGatewayApiKey, opsPolicyProfileId: payload.opsPolicyProfileId });
+    fullConfig = Object.assign({}, fullConfig || {}, { alwaysIncludePlugins: payload.alwaysIncludePlugins, aiModels: payload.aiModels, activeModelId: payload.activeModelId, agentProfiles: payload.agentProfiles, activeAgentProfileId: payload.activeAgentProfileId, skillEnv: payload.skillEnv, mcpServers: payload.mcpServers, cliRunMode: payload.cliRunMode, allowedCliCommandsByClient: payload.allowedCliCommandsByClient, allowedPageAgentOpsByClient: payload.allowedPageAgentOpsByClient, allowedDocumentScriptIdsByClient: payload.allowedDocumentScriptIdsByClient, disabledBuiltInPlugins: payload.disabledBuiltInPlugins, embeddingModels: payload.embeddingModels, activeEmbeddingModelId: payload.activeEmbeddingModelId, realtimeAsr: payload.realtimeAsr, ocrModels: payload.ocrModels, activeOcrModelId: payload.activeOcrModelId, ragStorageType: payload.ragStorageType, ragStoragePath: payload.ragStoragePath, activeContextPresetId: payload.activeContextPresetId, contextOptimizationPresets: payload.contextOptimizationPresets, uiThemeId: payload.uiThemeId, allowPrivateEndpointTests: payload.allowPrivateEndpointTests, webSocketAuthToken: payload.webSocketAuthToken, semanticKernel: payload.semanticKernel, chromeExtensionId: payload.chromeExtensionId, telemetryEnabled: payload.telemetryEnabled, telemetryUserObservabilityEnabled: payload.telemetryUserObservabilityEnabled, aiGatewayBaseUrl: payload.aiGatewayBaseUrl, aiGatewayApiKey: payload.aiGatewayApiKey, opsPolicyProfileId: payload.opsPolicyProfileId });
     try { delete fullConfig.ai; delete fullConfig.AI; } catch (e) { /* ignore */ }
     document.querySelectorAll('.save-config-status').forEach(function (el) {
       el.textContent = '已自动保存';
@@ -2727,7 +2721,7 @@ function renderCliScriptUnifiedConfig() {
   if (!contentContainer) return;
   if (tabsContainer) tabsContainer.innerHTML = '';
   var cliByClient = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) ? (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient) : {};
-  var scriptByClient = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) ? (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient) : {};
+  var scriptByClient = fullConfig && (fullConfig.allowedPageAgentOpsByClient || fullConfig.AllowedPageAgentOpsByClient) ? (fullConfig.allowedPageAgentOpsByClient || fullConfig.AllowedPageAgentOpsByClient) : {};
   var docScriptByClient = fullConfig && (fullConfig.allowedDocumentScriptIdsByClient || fullConfig.AllowedDocumentScriptIdsByClient) ? (fullConfig.allowedDocumentScriptIdsByClient || fullConfig.AllowedDocumentScriptIdsByClient) : {};
   var mode = getGlobalCliRunModeFromConfig();
   var showAllowlist = mode === 'UseAllowList';
@@ -2754,9 +2748,9 @@ function renderCliScriptUnifiedConfig() {
   }
 
   function renderScriptRows(scriptList, scriptListEmpty, scriptSet) {
-    var userScriptList = scriptList.filter(function (s) { return DEFAULT_PAGE_SCRIPTS.indexOf((s || '').toLowerCase()) < 0; });
+    var userScriptList = scriptList.filter(function (s) { return DEFAULT_PAGE_AGENT_OPS.indexOf((s || '').toLowerCase()) < 0; });
     var html = '<div class="script-allowlist-list" style="margin-bottom:12px;">';
-    DEFAULT_PAGE_SCRIPTS.forEach(function (sid) {
+    DEFAULT_PAGE_AGENT_OPS.forEach(function (sid) {
       var checked = (scriptListEmpty || scriptSet.indexOf(sid.toLowerCase()) >= 0) ? ' checked' : '';
       html += '<label class="script-allowlist-row script-builtin-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;"><input type="checkbox" class="script-default-cb" data-script="' + escapeAttr(sid) + '" aria-label="' + escapeAttr('加入白名单：' + sid) + '"' + checked + '><span>' + escapeHtml(sid) + '</span></label>';
     });
@@ -2765,7 +2759,7 @@ function renderCliScriptUnifiedConfig() {
       var checked = scriptSet.indexOf((sid || '').toLowerCase()) >= 0 ? ' checked' : '';
       html += '<div class="script-allowlist-row script-user-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;"><input type="checkbox" class="script-user-cb" data-script="' + escapeAttr(sid) + '" aria-label="' + escapeAttr('加入白名单：' + sid) + '"' + checked + '><span class="script-user-id">' + escapeHtml(sid) + '</span></label><button type="button" class="btn-secondary script-user-delete" data-script="' + escapeAttr(sid) + '" style="padding:2px 8px;font-size:12px;">删除</button></div>';
     });
-    html += '</div><div style="display:flex;gap:8px;"><input type="text" class="script-add-input" placeholder="添加 scriptId" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary script-add-btn">添加脚本</button></div>';
+    html += '</div><div style="display:flex;gap:8px;"><input type="text" class="script-add-input" placeholder="添加 op（如 hover）" style="flex:1;max-width:200px;"><button type="button" class="btn-secondary script-add-btn">添加 op</button></div>';
     return html;
   }
 
@@ -2827,10 +2821,10 @@ function renderCliScriptUnifiedConfig() {
 
   html += '<hr style="margin:24px 0;border:0;border-top:1px solid var(--border);">';
   html += '<div class="cli-location-section">';
-  html += '<h3 style="margin:0 0 8px;font-size:16px;">Chrome（浏览器内 · run_builtin_page_script / run_custom_javascript_in_page）</h3>';
-  html += '<p class="help-text" style="margin-bottom:8px;font-size:13px;">执行位置：当前浏览器标签页（扩展注入）。仅页面脚本白名单，不包含 CMD。</p>';
+  html += '<h3 style="margin:0 0 8px;font-size:16px;">Chrome（浏览器内 · page_agent / run_custom_javascript_in_page）</h3>';
+  html += '<p class="help-text" style="margin-bottom:8px;font-size:13px;">执行位置：当前浏览器标签页（扩展注入）。<code>page_agent</code> 按 op 白名单校验；不包含 CMD。</p>';
   html += '<div class="cli-end-block" data-end="chrome" data-chrome-part="pageScripts">';
-  html += '<p class="help-text" style="margin-bottom:8px;">页面脚本白名单（WebSocket RPC 与工具名一致：run_builtin_page_script）</p>';
+  html += '<p class="help-text" style="margin-bottom:8px;">page_agent op 白名单（工具名 <code>page_agent</code>，参数 <code>requestJson</code>）</p>';
   html += renderScriptRows(chromeScripts, chromeScriptEmpty, chromeScriptSet);
   html += '</div></div>';
 
@@ -2968,19 +2962,19 @@ function collectCliSecurityPayload() {
   var modeEl = container && container.querySelector('.global-cli-run-mode-select');
   var cliRunMode = (modeEl && modeEl.value) ? modeEl.value : getGlobalCliRunModeFromConfig();
   var allowedCliCommandsByClient = {};
-  var allowedPageScriptIdsByClient = {};
+  var allowedPageAgentOpsByClient = {};
   var allowedDocumentScriptIdsByClient = { office: [], wps: [] };
   var cliBy = fullConfig && (fullConfig.allowedCliCommandsByClient || fullConfig.AllowedCliCommandsByClient);
-  var scriptBy = fullConfig && (fullConfig.allowedPageScriptIdsByClient || fullConfig.AllowedPageScriptIdsByClient);
+  var scriptBy = fullConfig && (fullConfig.allowedPageAgentOpsByClient || fullConfig.AllowedPageAgentOpsByClient);
   var docBy = fullConfig && (fullConfig.allowedDocumentScriptIdsByClient || fullConfig.AllowedDocumentScriptIdsByClient);
   if (!container || cliRunMode !== 'UseAllowList') {
     CLI_SCRIPT_END_KEYS.forEach(function (endKey) {
       allowedCliCommandsByClient[endKey] = Array.isArray(cliBy && cliBy[endKey]) ? cliBy[endKey].slice() : [];
-      allowedPageScriptIdsByClient[endKey] = Array.isArray(scriptBy && scriptBy[endKey]) ? scriptBy[endKey].slice() : [];
+      allowedPageAgentOpsByClient[endKey] = Array.isArray(scriptBy && scriptBy[endKey]) ? scriptBy[endKey].slice() : [];
     });
     allowedDocumentScriptIdsByClient.office = Array.isArray(docBy && docBy.office) ? docBy.office.slice() : [];
     allowedDocumentScriptIdsByClient.wps = Array.isArray(docBy && docBy.wps) ? docBy.wps.slice() : [];
-    return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
+    return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageAgentOpsByClient: allowedPageAgentOpsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
   }
 
   function collectCliFromBlock(block) {
@@ -3033,17 +3027,17 @@ function collectCliSecurityPayload() {
   allowedCliCommandsByClient.wps = backendList.slice();
 
   var chromePs = container.querySelector('.cli-end-block[data-end="chrome"][data-chrome-part="pageScripts"]');
-  allowedPageScriptIdsByClient.chrome = collectScriptsFromBlock(chromePs);
-  allowedPageScriptIdsByClient.backend = Array.isArray(scriptBy && scriptBy.backend) ? scriptBy.backend.slice() : [];
-  allowedPageScriptIdsByClient.office = Array.isArray(scriptBy && scriptBy.office) ? scriptBy.office.slice() : [];
-  allowedPageScriptIdsByClient.wps = Array.isArray(scriptBy && scriptBy.wps) ? scriptBy.wps.slice() : [];
+  allowedPageAgentOpsByClient.chrome = collectScriptsFromBlock(chromePs);
+  allowedPageAgentOpsByClient.backend = Array.isArray(scriptBy && scriptBy.backend) ? scriptBy.backend.slice() : [];
+  allowedPageAgentOpsByClient.office = Array.isArray(scriptBy && scriptBy.office) ? scriptBy.office.slice() : [];
+  allowedPageAgentOpsByClient.wps = Array.isArray(scriptBy && scriptBy.wps) ? scriptBy.wps.slice() : [];
 
   var officeDocBlock = container.querySelector('.doc-script-end-block[data-end="office"]');
   var wpsDocBlock = container.querySelector('.doc-script-end-block[data-end="wps"]');
   allowedDocumentScriptIdsByClient.office = collectDocumentScriptsFromBlock(officeDocBlock);
   allowedDocumentScriptIdsByClient.wps = collectDocumentScriptsFromBlock(wpsDocBlock);
 
-  return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageScriptIdsByClient: allowedPageScriptIdsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
+  return { cliRunMode: cliRunMode, allowedCliCommandsByClient: allowedCliCommandsByClient, allowedPageAgentOpsByClient: allowedPageAgentOpsByClient, allowedDocumentScriptIdsByClient: allowedDocumentScriptIdsByClient };
 }
 
 function openWorkmateTelemetryRelayProfilesRead(callback) {

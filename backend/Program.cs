@@ -816,7 +816,7 @@ app.MapGet("/api/tools/builtin", () =>
 {
     var builtIn = new List<BuiltInPluginInfo>
     {
-        new() { Id = "Browser", Name = "Browser", Description = "网页高亮与便签；整页截图；读页/链接/表格与页内 DOM、多标签（run_builtin_page_script / run_custom_javascript_in_page 等，两阶段子类：Browser-页面读取/页面操作/标签页）" },
+        new() { Id = "Browser", Name = "Browser", Description = "网页高亮与便签；整页截图；页内基座 page_agent（observe/ref）与自定义页内 JS（run_custom_javascript_in_page）等" },
         new() { Id = "File", Name = "File", Description = "附件路径解析、文件大小查询、保存截图到下载文件夹" },
         new() { Id = "System", Name = "System", Description = "当前时间等系统信息，用于回答用户关于日期、时间的问题" },
         new() { Id = "MCP_STT", Name = "MCP_STT", Description = "内置语音转文字（百炼实时 ASR）：将音频文件转成文字，需在设置中配置百炼实时语音识别 API Key" },
@@ -839,7 +839,7 @@ app.MapGet("/api/tools/builtin", () =>
     return Results.Json(builtIn, JsonCtx.Default.ListBuiltInPluginInfo);
 });
 app.MapGet("/api/config/default-allowed-cli", () => Results.Json(CliScriptEndKeys.DefaultAllowedCommands));
-app.MapGet("/api/config/default-allowed-page-scripts", () => Results.Json(CliScriptEndKeys.DefaultAllowedScriptIds));
+app.MapGet("/api/config/default-allowed-page-agent-ops", () => Results.Json(CliScriptEndKeys.DefaultAllowedPageAgentOps));
 app.MapPost("/api/transcribe", async (HttpContext ctx, ITranscribeService transcribeService, ILogger<Program> logger) =>
 {
     if (!ctx.Request.HasFormContentType)

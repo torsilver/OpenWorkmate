@@ -353,10 +353,10 @@ public class AppConfig
     /// </summary>
     public Dictionary<string, List<string>> AllowedCliCommandsByClient { get; set; } = new();
     /// <summary>
-    /// 按端 Chrome 扩展 RPC <c>run_builtin_page_script</c> 的 scriptId 白名单（与模型工具名一致）；空则使用默认列表。
-    /// 键同上。仅在会话会调用 Browser 插件时参与校验（主要为 <c>chrome</c>；Office/WPS 不向模型暴露页内脚本工具，对应键多为保留项）。
+    /// 按端 Chrome 扩展工具 <c>page_agent</c> 的 <c>op</c> 白名单（如 observe、click）；空则使用 <see cref="CliScriptEndKeys.DefaultAllowedPageAgentOps"/>。
+    /// 键同上。主要为 <c>chrome</c> 端。
     /// </summary>
-    public Dictionary<string, List<string>> AllowedPageScriptIdsByClient { get; set; } = new();
+    public Dictionary<string, List<string>> AllowedPageAgentOpsByClient { get; set; } = new();
     /// <summary>
     /// 按端 <c>current_run_document_script</c> 的预定义 scriptId 白名单；空则使用 <see cref="CliScriptEndKeys"/> 中与任务窗格注册表一致的默认列表。
     /// 键主要为 <c>office</c>、<c>wps</c>（与宿主侧 <c>DOCUMENT_SCRIPTS</c> 对齐）。
@@ -449,15 +449,8 @@ public static class CliScriptEndKeys
 
     public static readonly string[] DefaultAllowedCommands = { "dir", "echo", "type", "ping", "systeminfo", "ipconfig" };
 
-    /// <summary>Chrome 扩展内置脚本 Id 默认白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_SCRIPTS</c> 一致；经工具 <c>run_builtin_page_script</c> 下发）。<c>tab_open</c> 可导航至任意 URL，默认不包含，由用户在设置中手动加入。</summary>
-    public static readonly string[] DefaultAllowedScriptIds =
-    {
-        "get_visible_text", "get_page_title", "chat_page_tail_glance", "get_page_outline", "extract_links", "extract_tables",
-        "scroll_to_top", "scroll_to_bottom", "scroll_by", "scroll_into_view",
-        "wait_for_selector",
-        "click_selector", "fill_input", "select_option", "set_checked", "hover_selector", "focus_selector", "press_key",
-        "tab_list", "tab_list_all_windows", "tab_activate", "tab_reload", "tab_go_back", "tab_go_forward", "tab_close"
-    };
+    /// <summary>Chrome <c>page_agent</c> 默认 op 白名单（与 <c>chrome-extension/options.js</c> <c>DEFAULT_PAGE_AGENT_OPS</c> 一致）。仅 <c>observe</c> 时其它 mutating op 在 UseAllowList 下首次常需确认。</summary>
+    public static readonly string[] DefaultAllowedPageAgentOps = { "observe" };
 
     /// <summary>Office 任务窗格 <c>DOCUMENT_SCRIPTS</c> 预置 scriptId（与 <c>office-addin/taskpane.js</c> 对齐）。</summary>
     public static readonly string[] DefaultAllowedDocumentScriptIdsOffice =
@@ -597,11 +590,11 @@ public sealed class ConfigService
         return null;
     }
 
-    /// <summary>获取指定端的页面脚本白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
-    public IReadOnlyList<string>? GetAllowedPageScriptIdsForEnd(string endKey)
+    /// <summary>获取指定端的 page_agent op 白名单；空或未配置时返回 null（调用方使用默认列表）。</summary>
+    public IReadOnlyList<string>? GetAllowedPageAgentOpsForEnd(string endKey)
     {
-        if (_currentConfig.AllowedPageScriptIdsByClient == null) return null;
-        if (!_currentConfig.AllowedPageScriptIdsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
+        if (_currentConfig.AllowedPageAgentOpsByClient == null) return null;
+        if (!_currentConfig.AllowedPageAgentOpsByClient.TryGetValue(endKey, out var list) || list == null || list.Count == 0)
             return null;
         return list;
     }
@@ -631,16 +624,16 @@ public sealed class ConfigService
         }
     }
 
-    /// <summary>将 scriptId 加入指定端白名单并持久化。</summary>
-    public void AddAllowedPageScriptIdForEnd(string endKey, string scriptId)
+    /// <summary>将 page_agent 的 op 加入指定端白名单并持久化。</summary>
+    public void AddAllowedPageAgentOpForEnd(string endKey, string op)
     {
-        if (string.IsNullOrWhiteSpace(scriptId)) return;
-        var key = scriptId.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(op)) return;
+        var key = op.Trim().ToLowerInvariant();
         lock (_lock)
         {
-            _currentConfig.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
-            if (!_currentConfig.AllowedPageScriptIdsByClient.TryGetValue(endKey, out var list) || list == null)
-                _currentConfig.AllowedPageScriptIdsByClient[endKey] = list = new List<string>();
+            _currentConfig.AllowedPageAgentOpsByClient ??= new Dictionary<string, List<string>>();
+            if (!_currentConfig.AllowedPageAgentOpsByClient.TryGetValue(endKey, out var list) || list == null)
+                _currentConfig.AllowedPageAgentOpsByClient[endKey] = list = new List<string>();
             if (list.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
             list.Add(key);
             SaveConfig(_currentConfig);
@@ -746,7 +739,7 @@ public sealed class ConfigService
         config.AlwaysIncludePlugins ??= new List<string>();
         MigrateCliRunModeFromLegacyJson(json, config);
         config.AllowedCliCommandsByClient ??= new Dictionary<string, List<string>>();
-        config.AllowedPageScriptIdsByClient ??= new Dictionary<string, List<string>>();
+        config.AllowedPageAgentOpsByClient ??= new Dictionary<string, List<string>>();
         config.AllowedDocumentScriptIdsByClient ??= new Dictionary<string, List<string>>();
         config.AiModels ??= new List<AiModelEntry>();
         config.EmbeddingModels ??= new List<EmbeddingModelEntry>();
@@ -1196,7 +1189,7 @@ public sealed class ConfigService
                 if (newConfig.ContextWindow == null) newConfig.ContextWindow = _currentConfig.ContextWindow ?? new ContextWindowConfig();
                 if (string.IsNullOrWhiteSpace(newConfig.CliRunMode)) newConfig.CliRunMode = _currentConfig.CliRunMode ?? "UseAllowList";
                 if (newConfig.AllowedCliCommandsByClient == null) newConfig.AllowedCliCommandsByClient = _currentConfig.AllowedCliCommandsByClient ?? new Dictionary<string, List<string>>();
-                if (newConfig.AllowedPageScriptIdsByClient == null) newConfig.AllowedPageScriptIdsByClient = _currentConfig.AllowedPageScriptIdsByClient ?? new Dictionary<string, List<string>>();
+                if (newConfig.AllowedPageAgentOpsByClient == null) newConfig.AllowedPageAgentOpsByClient = _currentConfig.AllowedPageAgentOpsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.AllowedDocumentScriptIdsByClient == null) newConfig.AllowedDocumentScriptIdsByClient = _currentConfig.AllowedDocumentScriptIdsByClient ?? new Dictionary<string, List<string>>();
                 if (newConfig.EmbeddingModels == null) newConfig.EmbeddingModels = _currentConfig.EmbeddingModels ?? new List<EmbeddingModelEntry>();
                 else

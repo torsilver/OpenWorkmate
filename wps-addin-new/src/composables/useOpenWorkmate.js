@@ -2691,7 +2691,7 @@ export function useOpenWorkmate() {
     pendingConfirmId.value = requestId
     hitlHumanSummary.value = humanSummary
     hitlAction.value = action
-    hitlShowAddToList.value = hitlKind === 'run_command' || hitlKind === 'run_builtin_page_script'
+    hitlShowAddToList.value = hitlKind === 'run_command' || hitlKind === 'page_agent'
     hitlVisible.value = true
   }
 

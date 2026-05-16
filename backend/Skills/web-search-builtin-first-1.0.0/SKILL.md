@@ -14,12 +14,12 @@ metadata: {"clawdbot":{"emoji":"🌐","os":["linux","darwin","win32"]}}
 ## 默认策略（优先内置检索）
 
 1. **先直接作答**：把用户问题写清楚，让 **模型自带的联网检索**（`enable_search`）在当轮生成里补全时效信息；在正文中归纳来源类型即可（如「据公开报道」「项目 Release 页显示」），**不必**先 `run_command` 去 `curl` 搜索引擎 HTML 再 `findstr`。
-2. **不要轻易**：`run_command` 打开系统默认浏览器、用 `run_custom_javascript_in_page` 里 `window.open` 仅为了搜关键词、或反复 `get_visible_text` 抠搜索结果页当「唯一信源」——除非用户明确要求或下文「例外」成立。
+2. **不要轻易**：`run_command` 打开系统默认浏览器、用 `run_custom_javascript_in_page` 里 `window.open` 仅为了搜关键词、或反复用 `page_agent` / `run_custom_javascript_in_page` 抠搜索结果页当「唯一信源」——除非用户明确要求或下文「例外」成立。
 3. **信息够了就停**：内置检索已给出要点时，不要为了「显得做了工具调用」再叠一层本地爬页。
 
 ## 例外（仍可用 Browser / CLI）
 
-- 用户明确要 **当前活动标签页** 里的内容（摘录、对比本页与摘要、操作页面元素）→ 用 **Browser** 的 `run_builtin_page_script` 等，与本技能不冲突。
+- 用户明确要 **当前活动标签页** 里的内容（摘录、对比本页与摘要、操作页面元素）→ 用 **Browser** 的 `page_agent` / `run_custom_javascript_in_page` 等，与本技能不冲突。
 - 用户给的 **具体 URL** 且需要 **页面结构/DOM**（表格、登录后才有的内容、站内导航）而不仅是「搜一下某某」→ 再考虑读页或命令行抓取，并说明局限。
 - **当前模型未配置** `enable_search`、或用户明确要「用我电脑上的命令行/浏览器打开某站」→ 按用户意图选用工具，并在回复里说明依据来源。
 

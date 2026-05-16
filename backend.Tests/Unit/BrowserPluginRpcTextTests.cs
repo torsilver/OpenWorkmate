@@ -45,7 +45,7 @@ public class BrowserPluginRpcTextTests
     public void PageScriptEmptyNotice_contains_kind()
     {
         var msg = BrowserPluginRpcText.PageScriptEmptyNotice(JsonValueKind.String);
-        Assert.Contains("tail", msg);
+        Assert.Contains("page_agent", msg);
         Assert.Contains("String", msg);
     }
 }

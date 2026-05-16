@@ -1,10 +1,11 @@
+using System.Text.Json;
 using OpenWorkmate.Server.Logging;
 using OpenWorkmate.Server.Services;
 
 namespace OpenWorkmate.Server.Services.ToolInvocation;
 
 /// <summary>
-/// HITL / 白名单安全检查：run_command、run_builtin_page_script（扩展 RPC 与 HITL hitlKind 同名）、current_run_document_script、
+/// HITL / 白名单安全检查：run_command、page_agent（扩展 RPC 与 HITL hitlKind 同名）、current_run_document_script、
 /// run_custom_javascript_in_page、current_run_custom_document_script。
 /// 从已删除的 SK <c>SecurityFilter</c> 迁入，接口为 <see cref="ISecurityPipeline"/>。
 /// </summary>
@@ -40,9 +41,9 @@ public sealed class SecurityPipeline : ISecurityPipeline
         if (functionName == "run_command" && arguments.TryGetValue("command", out var cmdObj))
             return await EvaluateRunCommandAsync(cmdObj, ruleEffect, ct).ConfigureAwait(false);
 
-        if (string.Equals(functionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase)
-            && arguments.TryGetValue("scriptId", out var scriptIdObj))
-            return await EvaluateRunPageScriptAsync(scriptIdObj, ruleEffect, ct).ConfigureAwait(false);
+        if (string.Equals(functionName, "page_agent", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("requestJson", out var pageAgentReqObj))
+            return await EvaluatePageAgentAsync(pageAgentReqObj, ruleEffect, ct).ConfigureAwait(false);
 
         if (functionName == "current_run_document_script" && arguments.TryGetValue("scriptId", out var docScriptIdObj))
             return await EvaluateDocumentScriptAsync(docScriptIdObj, ruleEffect, ct).ConfigureAwait(false);
@@ -105,47 +106,94 @@ public sealed class SecurityPipeline : ISecurityPipeline
         return null;
     }
 
-    // ─── run_builtin_page_script（Chrome 扩展 RPC 同名）──────────────────
+    // ─── page_agent（Chrome 扩展 RPC 同名）──────────────────────────────
 
-    private async Task<string?> EvaluateRunPageScriptAsync(object? scriptIdObj, ToolPermissionRuleEffect ruleEffect, CancellationToken ct)
+    private async Task<string?> EvaluatePageAgentAsync(object? requestJsonObj, ToolPermissionRuleEffect ruleEffect, CancellationToken ct)
     {
         var sessionId = SessionContext.GetSessionId();
         var clientType = !string.IsNullOrEmpty(sessionId) ? _sessionManager.GetClientType(sessionId) : null;
         var endKey = IsScheduledTaskSession(sessionId) ? CliScriptEndKeys.Backend : CliScriptEndKeys.ResolveEndKey(clientType);
         var mode = _configService.GetCliRunModeForEnd(endKey);
 
+        var rawJson = requestJsonObj?.ToString()?.Trim() ?? "";
+        if (!TryExtractPageAgentOp(rawJson, out var op, out var parseErr))
+            return "[系统拦截] page_agent 的 requestJson 无效：" + parseErr + "。无法校验白名单。";
+
+        var opNorm = op!.ToLowerInvariant();
+
         if (string.Equals(mode, "RunEverything", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行页面脚本 {ScriptId}", endKey, scriptIdObj?.ToString());
+            _logger.LogInformation("RunEverything 模式（端={EndKey}）：放行 page_agent op={Op}", endKey, opNorm);
             return null;
         }
 
-        var scriptId = scriptIdObj?.ToString()?.Trim();
-        var allowedScripts = _configService.GetAllowedPageScriptIdsForEnd(endKey);
-        var list = (allowedScripts != null && allowedScripts.Count > 0) ? allowedScripts : CliScriptEndKeys.DefaultAllowedScriptIds;
+        var allowedOps = _configService.GetAllowedPageAgentOpsForEnd(endKey);
+        var list = (allowedOps != null && allowedOps.Count > 0) ? allowedOps : CliScriptEndKeys.DefaultAllowedPageAgentOps;
         var normalized = list.Select(s => s?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!.ToLowerInvariant()).ToHashSet();
 
         if (IsScheduledTaskSession(sessionId))
         {
-            if (!string.IsNullOrEmpty(scriptId) && normalized.Contains(scriptId.ToLowerInvariant()))
+            if (normalized.Contains(opNorm))
                 return null;
-            return "[系统拦截] 定时任务到点执行无法弹出人工确认。请将脚本 id 加入设置「安全与确认 → Chrome」的页面脚本白名单，或将运行模式设为 RunEverything。";
+            return "[系统拦截] 定时任务到点执行无法弹出人工确认。请将 page_agent 的 op 加入设置「安全与确认 → Chrome」的白名单，或将运行模式设为 RunEverything。";
         }
 
         var needHitl = string.Equals(mode, "AskEverytime", StringComparison.OrdinalIgnoreCase)
-            || (string.IsNullOrEmpty(scriptId) || !normalized.Contains(scriptId.ToLowerInvariant()));
+            || !normalized.Contains(opNorm);
         ToolPermissionRuleEvaluator.ApplyToNeedHitl(ref needHitl, ruleEffect);
 
         if (needHitl)
         {
             if (string.IsNullOrEmpty(sessionId))
-                return "[系统拦截] 安全策略禁止执行该页面脚本，且当前无会话无法进行人工确认。";
-            var result = await RequestHitlWithPlainSummaryAsync(sessionId, scriptId ?? "", "run_builtin_page_script", scriptId ?? "", ct);
+                return "[系统拦截] 安全策略禁止执行 page_agent，且当前无会话无法进行人工确认。";
+            var result = await RequestHitlWithPlainSummaryAsync(sessionId, rawJson, "page_agent", opNorm, ct);
             if (!result.Allowed)
                 return "用户拒绝执行或未在限定时间内确认，已取消执行。";
-            _logger.LogInformation("用户已允许执行页面脚本: {ScriptId}", scriptId);
+            _logger.LogInformation("用户已允许执行 page_agent: op={Op}", opNorm);
         }
         return null;
+    }
+
+    private static bool TryExtractPageAgentOp(string requestJson, out string? op, out string parseErr)
+    {
+        op = null;
+        parseErr = "";
+        if (string.IsNullOrWhiteSpace(requestJson))
+        {
+            parseErr = "requestJson 为空";
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(requestJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("op", out var el))
+            {
+                parseErr = "缺少 op";
+                return false;
+            }
+
+            if (el.ValueKind != JsonValueKind.String)
+            {
+                parseErr = "op 须为字符串";
+                return false;
+            }
+
+            op = el.GetString()?.Trim();
+            if (string.IsNullOrEmpty(op))
+            {
+                parseErr = "op 为空";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            parseErr = ex.Message;
+            return false;
+        }
     }
 
     // ─── current_run_document_script ────────────────────────────────────

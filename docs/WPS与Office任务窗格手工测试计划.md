@@ -44,7 +44,7 @@
 
 | 序号 | 场景 | 操作 | 预期 |
 |------|------|------|------|
-| N1 | 无浏览器工具 | 要求「截图当前网页」「run_builtin_page_script」 | 模型侧**不应**成功调用 `Browser.*`；若误调应返回不可用说明 |
+| N1 | 无浏览器工具 | 要求「截图当前网页」「page_agent」 | 模型侧**不应**成功调用 `Browser.*`；若误调应返回不可用说明 |
 | NP1 | 无 **Plan** 插件 | 要求 `create_plan` / `get_plan` / `execute_plan_step` | **Plan** 未列入 `IsCommonPlugin`，`office-*`/`wps` 下**不在**允许列表；`activate_tools` 无法激活 |
 | N4 | 无会议转写链路 | 要求 `meeting_transcript_read` | 工具可能仍在列表中，但 **WPS 无 Chrome 会议监听**；失败或空结果须有清晰说明 |
 | N5 | 无 `run_browser_subtask` | 尝试子任务里跑浏览器 | `Subagent.run_browser_subtask` **仅 Chrome**；应被拒绝或不可见 |

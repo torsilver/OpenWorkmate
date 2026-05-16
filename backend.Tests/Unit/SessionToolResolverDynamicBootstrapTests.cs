@@ -11,7 +11,7 @@ public class SessionToolResolverDynamicBootstrapTests
     {
         void RegBrowser(string func) =>
             reg.Register("Browser", func, AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = func, Description = "d" }));
-        RegBrowser("run_builtin_page_script");
+        RegBrowser("page_agent");
         RegBrowser("run_custom_javascript_in_page");
         reg.Register("AgentTooling", DynamicToolingConstants.SearchFunctionName,
             AIFunctionFactory.Create(() => Task.FromResult(""), new AIFunctionFactoryOptions { Name = DynamicToolingConstants.SearchFunctionName, Description = "" }));
@@ -44,7 +44,7 @@ public class SessionToolResolverDynamicBootstrapTests
         Assert.Contains(DynamicToolingConstants.SearchFunctionName, names);
         Assert.Contains(DynamicToolingConstants.ActivateFunctionName, names);
         Assert.DoesNotContain("run_command", names);
-        Assert.DoesNotContain("run_builtin_page_script", names);
+        Assert.DoesNotContain("page_agent", names);
         Assert.DoesNotContain("run_subtask", names);
     }
 
@@ -56,7 +56,7 @@ public class SessionToolResolverDynamicBootstrapTests
 
         var tools = SessionToolResolver.GetDynamicBootstrapTools(reg, "chrome", null, mergePlanTools: false);
         var names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("run_builtin_page_script", names);
+        Assert.Contains("page_agent", names);
         Assert.Contains("run_custom_javascript_in_page", names);
         Assert.Contains(DynamicToolingConstants.SearchFunctionName, names);
         Assert.Contains(DynamicToolingConstants.ActivateFunctionName, names);

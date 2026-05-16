@@ -78,7 +78,7 @@ public sealed class AgentToolingPlugin
                 "\n【顺序与门控】当前存在已启用用户技能：在本轮已执行本检索后，若要 activate_tools，请先至少调用一次 search_available_skills（query 可为空），再 activate_tools。\n");
         }
 
-        sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"run_builtin_page_script\"]。");
+        sb.Append("activate_tools 可传裸函数名或 Plugin.function（用于消歧）；实际 tool_calls 仅认裸名，例如 [\"excel_range_read\",\"page_agent\"]。");
         var collisions = _runtime.ToolRegistry.GetBareFunctionNameCollisions();
         if (collisions.Count > 0)
         {
@@ -104,7 +104,7 @@ public sealed class AgentToolingPlugin
         + "固定协议（优先阅读）：若本轮已调用过 search_available_tools 且当前存在已启用的用户技能，须先至少调用一次 search_available_skills，再调用本工具；无启用技能或未使用过工具检索时不受此限。"
         + " 可传裸函数名或 Plugin.function；toolNames 为数组，支持一次激活多个工具，建议把本轮需要的业务工具尽量放在同一次调用中，避免只激活一部分导致后续 tool_calls 报 Function not found。"
         + " 推荐在首次 search_available_tools 之前已按需走通技能链（见 system「动态工具」）。"
-        + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.run_builtin_page_script\"]。")]
+        + "注意：之后发起 tool_calls 时名称必须与 OpenAPI 工具 schema 一致（裸函数名）。示例：[\"excel_range_read\",\"Browser.page_agent\"]。")]
     public Task<string> ActivateToolsAsync(
         [Description("要激活的工具函数名列表（裸函数名或 Plugin.function）")] string[] toolNames,
         CancellationToken ct = default)

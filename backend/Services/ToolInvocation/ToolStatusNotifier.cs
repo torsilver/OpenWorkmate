@@ -247,14 +247,14 @@ public sealed class ToolStatusNotifier : IToolStatusNotifier
             var cmd = cmdObj?.ToString()?.Trim();
             return string.IsNullOrEmpty(cmd) ? null : $"命令 «{LogPreview.HeadTail(cmd, 48, 48)}»";
         }
-        if (string.Equals(functionName, "run_builtin_page_script", StringComparison.OrdinalIgnoreCase)
-            && arguments.TryGetValue("scriptId", out var scriptObj))
+        if (string.Equals(functionName, "page_agent", StringComparison.OrdinalIgnoreCase)
+            && arguments.TryGetValue("requestJson", out var pageAgentJson))
         {
-            var scriptId = scriptObj?.ToString()?.Trim();
-            if (string.IsNullOrEmpty(scriptId)) return null;
-            if (arguments.TryGetValue("paramsJson", out var paramsObj) && paramsObj is string paramsStr && !string.IsNullOrWhiteSpace(paramsStr) && paramsStr != "{}")
-                return $"页面脚本 «{scriptId}» 参数: {LogPreview.HeadTail(paramsStr, 64, 64)}";
-            return $"页面脚本 «{scriptId}»";
+            var j = pageAgentJson?.ToString()?.Trim();
+            if (string.IsNullOrEmpty(j)) return null;
+            if (arguments.TryGetValue("paramsJson", out var legacy) && legacy is string legacyStr && !string.IsNullOrWhiteSpace(legacyStr))
+                return $"page_agent «{LogPreview.HeadTail(j, 48, 48)}» 参数: {LogPreview.HeadTail(legacyStr, 64, 64)}";
+            return $"page_agent «{LogPreview.HeadTail(j, 64, 64)}»";
         }
         if (string.Equals(functionName, "run_custom_javascript_in_page", StringComparison.OrdinalIgnoreCase)
             && arguments.TryGetValue("scriptCode", out var customCodeObj))

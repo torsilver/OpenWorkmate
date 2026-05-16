@@ -108,7 +108,7 @@
 | Excel | 21 | `excel_range_write` … |
 | Word | 23 | `word_document_create` … |
 | Ppt | 14 | `ppt_document_create` … |
-| Browser | 5 | `highlight_webpage_text`, `run_builtin_page_script`, `capture_full_page` … |
+| Browser | 5 | `highlight_webpage_text`, `page_agent`, `capture_full_page` … |
 | File | 5 | `get_attachment_path`, `get_file_size`, `save_screenshot_to_downloads`, `text_file_read`, `text_file_write` |
 | System | 1 | `get_current_time` |
 | MCP_STT | 1 | `transcribe_audio` |
