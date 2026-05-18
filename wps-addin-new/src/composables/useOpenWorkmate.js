@@ -18,6 +18,14 @@ import {
   usagePromptFillRatio,
   buildStreamUsageRingTitle
 } from '../lib/openWorkmateHostShared.js'
+import { preparseChatMarkdownForMarkedHtml } from '../utils/chatMarkdownPreparse.js'
+
+/** 对齐 Chrome：marked.parse 前对正文 `<` 预转义，避免 innerHTML 吞掉颜文字 */
+function markedParseChatSafe(raw) {
+  const s = raw != null ? String(raw) : ''
+  if (typeof marked.parse !== 'function') return s
+  return marked.parse(preparseChatMarkdownForMarkedHtml(s))
+}
 
 let WS_URL = 'ws://127.0.0.1:8765/ws'
 let API_BASE = 'http://127.0.0.1:8765'
@@ -1042,7 +1050,7 @@ export function useOpenWorkmate() {
   function addBotMessage(text, isError = false) {
     removeWelcome()
     const raw = (isError && text ? '⚠️ ' : '') + (text || '')
-    const html = typeof marked.parse === 'function' ? marked.parse(raw) : raw
+    const html = markedParseChatSafe(raw)
     messages.value.push({ type: 'bot', content: text, isError, html })
     scheduleMermaidRun()
   }
@@ -1286,11 +1294,9 @@ export function useOpenWorkmate() {
       }
       r.openAnswer = a
       a.body += chunk
-      a.parsedHtml =
-        typeof marked.parse === 'function' ? marked.parse(a.body) : a.body
+      a.parsedHtml = markedParseChatSafe(a.body)
       a.tail = formatActivityTail(a.body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
-      r.parsedHtml =
-        typeof marked.parse === 'function' ? marked.parse(r.streamContent) : r.streamContent
+      r.parsedHtml = markedParseChatSafe(r.streamContent)
       return
     }
 
@@ -1309,11 +1315,9 @@ export function useOpenWorkmate() {
     }
     const a = r.openAnswer
     a.body += chunk
-    a.parsedHtml =
-      typeof marked.parse === 'function' ? marked.parse(a.body) : a.body
+    a.parsedHtml = markedParseChatSafe(a.body)
     a.tail = formatActivityTail(a.body.replace(/\s+/g, ' ').trim(), TIMELINE_TAIL_MAX)
-    r.parsedHtml =
-      typeof marked.parse === 'function' ? marked.parse(r.streamContent) : r.streamContent
+    r.parsedHtml = markedParseChatSafe(r.streamContent)
   }
 
   function finalizeStream() {
@@ -1334,7 +1338,7 @@ export function useOpenWorkmate() {
       const answerSegs = round.timelineSegments.filter((s) => s.kind === 'answer')
       if (answerSegs.length) answerSegs[answerSegs.length - 1].open = true
       round.isStreaming = false
-      round.parsedHtml = typeof marked.parse === 'function' ? marked.parse(round.streamContent) : round.streamContent
+      round.parsedHtml = markedParseChatSafe(round.streamContent)
       removeWelcome()
       // 保留各段的 open（尤其最后一条「助手回复」应为展开），勿在入列时一律 false —— 否则历史轮总结永远折叠。
       const segs = round.timelineSegments.map((s) => ({ ...s }))

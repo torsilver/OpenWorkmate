@@ -430,6 +430,7 @@
 <script>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useOpenWorkmate } from '../composables/useOpenWorkmate'
+import { preparseChatMarkdownForMarkedHtml } from '../utils/chatMarkdownPreparse.js'
 
 export default {
   name: 'TaskPane',
@@ -484,7 +485,9 @@ export default {
 
     const planContentRendered = computed(() => {
       const raw = copilot.planContent.value || ''
-      return typeof copilot.marked?.parse === 'function' ? copilot.marked.parse(raw) : copilot.escapeHtml(raw)
+      return typeof copilot.marked?.parse === 'function'
+        ? copilot.marked.parse(preparseChatMarkdownForMarkedHtml(raw))
+        : copilot.escapeHtml(raw)
     })
 
     function formatHistoryTime(utc) {

@@ -92,9 +92,13 @@
     if ($detail) $detail.style.display = "block";
     if ($planTitle) $planTitle.textContent = meta.title || planId;
     if ($contentView) {
-      if (typeof marked !== "undefined")
-        $contentView.innerHTML = marked.parse(content || "");
-      else
+      if (typeof marked !== "undefined") {
+        var forParse =
+          typeof preparseChatMarkdownForMarkedHtml === "function"
+            ? preparseChatMarkdownForMarkedHtml(content || "")
+            : content || "";
+        $contentView.innerHTML = marked.parse(forParse);
+      } else
         $contentView.textContent = content || "";
     }
     if ($contentEdit) $contentEdit.value = content || "";
@@ -190,8 +194,13 @@
         }
         if (currentPlan) currentPlan.content = content;
         if ($contentView) {
-          if (typeof marked !== "undefined") $contentView.innerHTML = marked.parse(content || "");
-          else $contentView.textContent = content || "";
+          if (typeof marked !== "undefined") {
+            var forParseSave =
+              typeof preparseChatMarkdownForMarkedHtml === "function"
+                ? preparseChatMarkdownForMarkedHtml(content || "")
+                : content || "";
+            $contentView.innerHTML = marked.parse(forParseSave);
+          } else $contentView.textContent = content || "";
         }
         $contentEditWrap.style.display = "none";
         $contentView.style.display = "block";

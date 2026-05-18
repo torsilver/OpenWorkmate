@@ -1056,6 +1056,19 @@ async function refreshAgentProfileSelector() {
     console.warn("refreshAgentProfileSelector", e);
   } finally {
     _suppressAgentProfileSelectChange = false;
+    // 后台晚启动时首轮拉取会失败，避免下拉永久空白；WS 连上后仍会再拉一次
+    if ($agentProfileSelect && $agentProfileSelect.options.length === 0) {
+      _suppressAgentProfileSelectChange = true;
+      try {
+        const opt = document.createElement("option");
+        opt.value = "default";
+        opt.textContent = "默认助手";
+        $agentProfileSelect.appendChild(opt);
+        $agentProfileSelect.value = "default";
+      } finally {
+        _suppressAgentProfileSelectChange = false;
+      }
+    }
   }
 }
 
@@ -1122,6 +1135,11 @@ function connect() {
     setStatus("connected");
     addSystemMessage("已连接到本地服务");
     debugLog("WS", "connected sessionId=" + sessionId, "recv");
+    try {
+      await refreshAgentProfileSelector();
+    } catch (e) {
+      console.warn("refreshAgentProfileSelector after WS open", e);
+    }
     refreshConversationTitleLabel();
     const pageTitle = await getActiveTabTitle();
     sendSetContext(pageTitle);
@@ -2139,8 +2157,12 @@ function applyMarkedToElement(el, rawMarkdown) {
     el.textContent = raw;
     return;
   }
+  const forParse =
+    typeof preparseChatMarkdownForMarkedHtml === "function"
+      ? preparseChatMarkdownForMarkedHtml(raw)
+      : raw;
   try {
-    el.innerHTML = marked.parse(raw);
+    el.innerHTML = marked.parse(forParse);
   } catch (e) {
     console.warn("marked.parse failed, using plain text", e);
     el.textContent = raw;
@@ -3715,7 +3737,11 @@ function addBotMessage(text, isError = false, actionButton = null) {
   const div = appendMsg("msg--bot" + (isError ? " msg--error" : ""), "");
   const displayText = isError ? (text ? `⚠️ ${text}` : "⚠️ 请求失败") : text;
   if (typeof marked !== 'undefined') {
-    div.innerHTML = marked.parse(displayText);
+    const forParse =
+      typeof preparseChatMarkdownForMarkedHtml === "function"
+        ? preparseChatMarkdownForMarkedHtml(displayText)
+        : displayText;
+    div.innerHTML = marked.parse(forParse);
     if (typeof mermaid !== 'undefined') {
       const mermaidBlocks = div.querySelectorAll('.language-mermaid');
       mermaidBlocks.forEach((block, index) => {

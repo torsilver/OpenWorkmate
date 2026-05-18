@@ -118,7 +118,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Render Markdown
       $canvasFrame.style.display = 'none';
       $markdownContainer.style.display = 'block';
-      $markdownContainer.innerHTML = marked.parse(request.markdown);
+      const forParse =
+        typeof preparseChatMarkdownForMarkedHtml === "function"
+          ? preparseChatMarkdownForMarkedHtml(request.markdown)
+          : request.markdown;
+      $markdownContainer.innerHTML = marked.parse(forParse);
       
       // Render mermaid
       if (typeof mermaid !== 'undefined') {
