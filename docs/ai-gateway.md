@@ -51,6 +51,14 @@
   policy.user.json                   # 用户策略
 ```
 
+## 首次配置 `appsettings.json`
+
+`ai-gateway/appsettings.json` **不入库**（含 `AiGateway:ApiKey`）。克隆后：
+
+1. 复制 `ai-gateway/appsettings.Example.json` → `ai-gateway/appsettings.json`。
+2. 启动 Gateway，打开 `/admin.html`，使用「生成 API Key」写入本地 `appsettings.json`（或自行填入随机字符串），再把同一 Key 填到 OpenWorkmate 后台 `user-config.json` 的 `aiGatewayApiKey`。
+3. 若仓库曾公开且旧 Key 已泄露，**必须轮换**为新 Key（旧 Key 视为作废）。
+
 ## 端到端启动
 
 - 使用 `start-ai-and-gateway.cmd` 同时启动 AI 后台与 Gateway；`aiGatewayBaseUrl=http://127.0.0.1:8777` 为默认约定。
